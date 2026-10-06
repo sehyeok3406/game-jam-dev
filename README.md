@@ -1,4 +1,4 @@
-# Game Canvas
+# Game Canvas (game-jam-dev)
 
 ### v0.9.2 GitHub Releases 연결
 
