@@ -1,10 +1,14 @@
 # 앱 업데이트·GitHub Releases 연결 (v0.10.1)
 
-## v0.10.1 배포 준비
+## v0.10.1 배포
 
-프로젝트 실제 이름 변경·홈 분류 폴더·유형 필터·이름/날짜 정렬·썸네일/목록 보기와 설정 기억을 포함합니다. Windows x64 설치 파일 `Game.Canvas-0.10.1.Setup.exe`, 자동 업데이트 패키지 `game_canvas-0.10.1-full.nupkg`, `RELEASES`를 정식 릴리스에 함께 게시합니다. 설치된 v0.9.2/v0.10.0은 앱 업데이트로 확인하고 v0.9.1 이하는 수동 설치합니다.
+프로젝트 실제 이름 변경·홈 분류 폴더·유형 필터·이름/날짜 정렬·썸네일/목록 보기와 설정 기억을 포함합니다. [v0.10.1 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.1)에 [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.1/Game.Canvas-0.10.1.Setup.exe), 자동 업데이트 패키지 `game_canvas-0.10.1-full.nupkg`, `RELEASES`를 함께 게시했습니다. 설치된 v0.9.2/v0.10.0은 앱 업데이트로 확인하고 v0.9.1 이하는 수동 설치합니다.
 
 공동 프로젝트 실제 이름 변경·생성일·수정일 제공에는 별도 협업 서버도 v0.10.1 코드로 갱신해야 합니다. 앱 자동 업데이트는 별도 서버·터널을 갱신하지 않습니다. 로컬 원본·서버 사본은 계속 별개이며 저장 경로·세션·초대/복구 키는 보존합니다. [릴리스 노트](RELEASE_NOTES.md)
+
+2026-10-06 정식 게시 완료. 태그 `v0.10.1`은 검증한 커밋 `37417b7`을 가리킵니다. 세 파일의 GitHub SHA-256·크기를 로컬 빌드와 비교했고 로그인 없는 설치 파일/nupkg 접근(200), 공개 `RELEASES`의 바이트 해시 일치를 확인했습니다. v0.9.2/v0.10.0 업데이트 피드는 v0.10.1 설치판을 가리키며 Windows용 `RELEASES`의 전체 패키지 URL·SHA-1·크기도 일치합니다. v0.10.1 피드는 최신 버전 응답(204)을 확인했습니다.
+
+타입 검사·린트·166개 테스트·전체 통합 검증과 실제 Electron 홈/업데이트 화면·설정 복원·편집 중 재시작 보호 검사를 통과했습니다. 패키지의 버전·새 홈 기능·업데이트 저장소·사용자 운영 데이터 제외도 검사했습니다. 이 PC의 별도 서버 빌드는 갱신했지만 서버/터널을 시작하지 않았고 운영 저장 데이터·키·개인 프로젝트는 변경하지 않았습니다. 실제 설치 앱의 다운로드 → 재시작 → 설치 완료 과정은 별도 실사용 검증이 필요합니다.
 
 ## v0.10.0 배포
 
@@ -31,8 +35,8 @@
 
 ## 팀원에게 전달할 주소
 
-- [v0.9.2 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.9.2)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.9.2/Game.Canvas-0.9.2.Setup.exe)
+- [v0.10.1 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.1)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.1/Game.Canvas-0.10.1.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
