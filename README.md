@@ -6,6 +6,8 @@
 
 [v0.10.3 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.3) · [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.3/Game.Jam-0.10.3.Setup.exe) · [업데이트 안내](UPDATES.md)
 
+2026-10-06 정식 게시 완료. 168개 자동 테스트·전체 통합 검증을 통과했고, 세 배포 파일의 공개 다운로드·해시와 v0.10.1/v0.10.2 업데이트 피드의 v0.10.3 연결을 확인했습니다.
+
 ### v0.10.1 홈 프로젝트 정리
 
 [v0.10.1 설치판](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.1)을 정식 게시했습니다. v0.9.2/v0.10.0 업데이트 피드와 공개 다운로드·파일 해시를 검증했습니다.
