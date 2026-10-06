@@ -1,0 +1,128 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { GameCanvasApi } from './shared';
+
+const api: GameCanvasApi = {
+  getUpdateState: () => ipcRenderer.invoke('updates:state'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  setAutomaticUpdates: (enabled) =>
+    ipcRenderer.invoke('updates:automatic', enabled),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  onUpdateChanged: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      state: Parameters<typeof listener>[0],
+    ) => listener(state);
+    ipcRenderer.on('updates:changed', wrapped);
+    return () => ipcRenderer.removeListener('updates:changed', wrapped);
+  },
+  onUpdateRestartRequested: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, id: string) => {
+      void listener().then(
+        (blockers) => ipcRenderer.send('updates:prepared', id, blockers),
+        () =>
+          ipcRenderer.send('updates:prepared', id, [
+            '편집 상태를 확인하지 못했습니다.',
+          ]),
+      );
+    };
+    ipcRenderer.on('updates:prepare', wrapped);
+    return () => ipcRenderer.removeListener('updates:prepare', wrapped);
+  },
+  onUpdateRestartReleased: (listener) => {
+    const wrapped = () => listener();
+    ipcRenderer.on('updates:release', wrapped);
+    return () => ipcRenderer.removeListener('updates:release', wrapped);
+  },
+  importFiles: (input) => ipcRenderer.invoke('files:import', input),
+  readAsset: (relative) => ipcRenderer.invoke('assets:read', relative),
+  getUndoState: () => ipcRenderer.invoke('edit:state'),
+  undo: () => ipcRenderer.invoke('edit:undo'),
+  redo: () => ipcRenderer.invoke('edit:redo'),
+  getCollaboration: () => ipcRenderer.invoke('collaboration:get'),
+  getTestUsers: () => ipcRenderer.invoke('collaboration:test-users'),
+  launchTestUsers: (input) =>
+    ipcRenderer.invoke('collaboration:launch-test-users', input),
+  startLocalCollaborationServer: () =>
+    ipcRenderer.invoke('collaboration:start-local-server'),
+  createCollaboration: (input) =>
+    ipcRenderer.invoke('collaboration:create', input),
+  joinCollaboration: (input) => ipcRenderer.invoke('collaboration:join', input),
+  recoverCollaboration: (input) =>
+    ipcRenderer.invoke('collaboration:recover', input),
+  leaveCollaboration: () => ipcRenderer.invoke('collaboration:leave'),
+  rotateInvite: () => ipcRenderer.invoke('collaboration:invite'),
+  setMemberRole: (id, role) =>
+    ipcRenderer.invoke('collaboration:role', id, role),
+  acquireDocumentLock: (relative) =>
+    ipcRenderer.invoke('collaboration:lock', relative),
+  releaseDocumentLock: (relative) =>
+    ipcRenderer.invoke('collaboration:unlock', relative),
+  updateLayouts: (updates) => ipcRenderer.invoke('layouts:update', updates),
+  onCollaborationChanged: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      state: Parameters<typeof listener>[0],
+    ) => listener(state);
+    ipcRenderer.on('collaboration:changed', wrapped);
+    return () => ipcRenderer.removeListener('collaboration:changed', wrapped);
+  },
+  getActiveRun: () => ipcRenderer.invoke('codex:active'),
+  getPreviewWindow: (relativePath) =>
+    ipcRenderer.invoke('preview:window', relativePath),
+  savePreviewWindow: (state, relativePath) =>
+    ipcRenderer.invoke('preview:save-window', state, relativePath),
+  listPreviews: () => ipcRenderer.invoke('preview:list'),
+  listHistory: () => ipcRenderer.invoke('history:list'),
+  getFileAuthorship: (relative) =>
+    ipcRenderer.invoke('files:authorship', relative),
+  readHistoryFile: (id, relativePath, version) =>
+    ipcRenderer.invoke('history:read', id, relativePath, version),
+  restoreHistory: (id, relativePath, version) =>
+    ipcRenderer.invoke('history:restore', id, relativePath, version),
+  getWorkspace: () => ipcRenderer.invoke('workspace:get'),
+  selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
+  listDocuments: () => ipcRenderer.invoke('documents:list'),
+  listSections: () => ipcRenderer.invoke('sections:list'),
+  createIdea: (input) => ipcRenderer.invoke('documents:create-idea', input),
+  createSection: (input) => ipcRenderer.invoke('sections:create', input),
+  renameSection: (relativePath, title, revision) =>
+    ipcRenderer.invoke('sections:rename', { relativePath, title, revision }),
+  saveDocument: (input) => ipcRenderer.invoke('documents:save', input),
+  setDocumentCollapsed: (input) =>
+    ipcRenderer.invoke('documents:set-collapsed', input),
+  deleteDocument: (input) => ipcRenderer.invoke('documents:delete', input),
+  deleteDocuments: (documents) =>
+    ipcRenderer.invoke('documents:delete-many', { documents }),
+  deleteSection: (input) => ipcRenderer.invoke('sections:delete', input),
+  duplicateDocuments: (input) =>
+    ipcRenderer.invoke('documents:duplicate', input),
+  updateDocumentLayout: (input) =>
+    ipcRenderer.invoke('documents:update-layout', input),
+  updateSectionLayout: (input) =>
+    ipcRenderer.invoke('sections:update-layout', input),
+  moveDocumentToSection: (input) =>
+    ipcRenderer.invoke('sections:move-document', input),
+  createTask: (input) => ipcRenderer.invoke('tasks:create', input),
+  getCodexStatus: () => ipcRenderer.invoke('codex:status'),
+  getAiStatus: (providerId) => ipcRenderer.invoke('ai:status', providerId),
+  startCodexRun: (input) => ipcRenderer.invoke('codex:start', input),
+  cancelCodexRun: (runId) => ipcRenderer.invoke('codex:cancel', runId),
+  readPreview: (relativePath) =>
+    ipcRenderer.invoke('preview:read', relativePath),
+  revealPath: (relativePath) => ipcRenderer.invoke('path:reveal', relativePath),
+  openWorkspace: () => ipcRenderer.invoke('workspace:open-folder'),
+  copyText: (text) => ipcRenderer.invoke('clipboard:copy', text),
+  onWorkspaceChanged: (listener) => {
+    const wrapped = () => listener();
+    ipcRenderer.on('workspace:changed', wrapped);
+    return () => ipcRenderer.removeListener('workspace:changed', wrapped);
+  },
+  onCodexRunEvent: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, runEvent: unknown) =>
+      listener(runEvent as Parameters<typeof listener>[0]);
+    ipcRenderer.on('codex:run-event', wrapped);
+    return () => ipcRenderer.removeListener('codex:run-event', wrapped);
+  },
+};
+
+contextBridge.exposeInMainWorld('gameCanvas', api);
