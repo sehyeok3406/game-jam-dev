@@ -34,6 +34,8 @@ import {
   type CollaborationCredentials,
 } from './collaboration-client';
 import { createCollaborationServer } from './collaboration-server';
+import { ProjectLibrary } from './project-library';
+import { cardColor } from './card-colors';
 import {
   snapshotDocuments,
   snapshotSections,
@@ -224,7 +226,10 @@ const registerUpdates = async () => {
               collaboration.state.aiRun.status,
             )
           ),
-        pendingWrites: pendingAppOperations > 0,
+        pendingWrites:
+          pendingAppOperations > 0 ||
+          !!collaboration?.offline ||
+          !!collaboration?.outgoing,
         disconnected: !!collaboration && !collaboration.state.connected,
         hostingGuests:
           !!localCollaborationServer &&
@@ -323,6 +328,7 @@ const DOCUMENT_FOLDERS = ['ideas', 'docs', path.join('.ai', 'tasks')];
 const SECTION_FOLDER = 'sections';
 const SETTINGS_FILE = 'settings.json';
 let workspaceRoot: string | null = null;
+let projectLibrary: ProjectLibrary;
 let workspaceWatcher: FSWatcher | null = null;
 let mainWindow: BrowserWindow | null = null;
 let collaboration: CollaborationClient | null = null;
@@ -392,6 +398,40 @@ const recordUserEdit = async (
 };
 let lastSharedState = '';
 let sharedCacheQueue: Promise<unknown> = Promise.resolve();
+let lastQueuedCache = '';
+const cacheCollaboration = (client: CollaborationClient, cacheRoot: string) => {
+  const payload = JSON.stringify({
+    files: client.files,
+    revisions: client.revisions,
+    authorship: client.authorship,
+    offline: client.offline,
+    outgoing: client.outgoing,
+    state: {
+      ...client.state,
+      inviteCode: undefined,
+      recoveryKey: undefined,
+      conflicts: undefined,
+    },
+  });
+  const key = `${cacheRoot}:${createHash('sha256').update(payload).digest('hex')}`;
+  if (key === lastQueuedCache) return sharedCacheQueue;
+  lastQueuedCache = key;
+  const pending = sharedCacheQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const temporary = path.join(
+        cacheRoot,
+        `server-cache-${randomUUID()}.tmp`,
+      );
+      await fs.writeFile(temporary, payload, { mode: 0o600 });
+      await fs.rename(temporary, path.join(cacheRoot, 'server-cache.json'));
+    });
+  sharedCacheQueue = pending;
+  void pending.catch(() => {
+    if (lastQueuedCache === key) lastQueuedCache = '';
+  });
+  return pending;
+};
 
 const collaborationChanged = (state: CollaborationState, changed: boolean) => {
   const serialized = JSON.stringify(state);
@@ -406,24 +446,9 @@ const collaborationChanged = (state: CollaborationState, changed: boolean) => {
     workspaceRoot &&
     Object.keys(collaboration.files).length
   ) {
-    const cacheRoot = workspaceRoot;
-    const payload = JSON.stringify({
-      files: collaboration.files,
-      revisions: collaboration.revisions,
-      authorship: collaboration.authorship,
-      state: { ...state, inviteCode: undefined, recoveryKey: undefined },
-    });
-    sharedCacheQueue = sharedCacheQueue
-      .catch(() => undefined)
-      .then(async () => {
-        const temporary = path.join(
-          cacheRoot,
-          `server-cache-${randomUUID()}.tmp`,
-        );
-        await fs.writeFile(temporary, payload, { mode: 0o600 });
-        await fs.rename(temporary, path.join(cacheRoot, 'server-cache.json'));
-      })
-      .catch((error) => console.error('공동 프로젝트 캐시 저장 실패', error));
+    void cacheCollaboration(collaboration, workspaceRoot).catch((error) =>
+      console.error('공동 프로젝트 캐시 저장 실패', error),
+    );
   }
   if (
     activeCodexRun &&
@@ -465,7 +490,16 @@ const attachCollaboration = async (credentials: CollaborationCredentials) => {
   );
   await fs.mkdir(cache, { recursive: true });
   workspaceRoot = cache;
-  const client = new CollaborationClient(credentials, collaborationChanged);
+  const persistCache = async () => {
+    await cacheCollaboration(client, cache);
+  };
+  const client = new CollaborationClient(
+    credentials,
+    (state, changed) => {
+      if (collaboration === client) collaborationChanged(state, changed);
+    },
+    persistCache,
+  );
   collaboration = client;
   try {
     client.seedCache(
@@ -473,8 +507,16 @@ const attachCollaboration = async (credentials: CollaborationCredentials) => {
         await fs.readFile(path.join(cache, 'server-cache.json'), 'utf8'),
       ),
     );
-  } catch {
-    /* no previous valid cache */
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      client.stop();
+      collaboration = null;
+      workspaceRoot = null;
+      collaborationChanged(noCollaboration(), true);
+      throw new Error(
+        '이 PC의 공동 프로젝트 사본을 읽지 못했습니다. 미동기화 작업 보호를 위해 덮어쓰지 않았습니다. 캐시를 백업하고 복구해주세요.',
+      );
+    }
   }
   try {
     await client.refresh();
@@ -483,13 +525,25 @@ const attachCollaboration = async (credentials: CollaborationCredentials) => {
   }
   client.start();
   await saveCollaborationSession();
+  await projectLibrary.rememberShared(
+    credentials,
+    client.state.projectName ?? '공동 프로젝트',
+    client.state.role,
+    localWorkspaceBeforeCollaboration,
+  );
   notifyWorkspaceChanged();
   return client.state;
 };
 const leaveCollaboration = async () => {
+  if (collaboration?.offline || collaboration?.outgoing)
+    throw new Error(
+      '미동기화 작업을 먼저 반영하거나 충돌을 해결해주세요. 홈으로 돌아가기는 작업과 세션을 보관합니다.',
+    );
   if (activeCodexRun || runPreparing)
     throw new Error('AI 작업을 먼저 중지해주세요.');
   await collaboration?.leave();
+  if (collaboration)
+    await projectLibrary.forgetSession(collaboration.credentials.projectId);
   collaboration = null;
   workspaceRoot = localWorkspaceBeforeCollaboration;
   localWorkspaceBeforeCollaboration = null;
@@ -707,7 +761,15 @@ const saveSettings = async () => {
   await fs.mkdir(app.getPath('userData'), { recursive: true });
   await fs.writeFile(
     settingsPath(),
-    JSON.stringify({ workspaceRoot }, null, 2),
+    JSON.stringify(
+      {
+        workspaceRoot: collaboration
+          ? localWorkspaceBeforeCollaboration
+          : workspaceRoot,
+      },
+      null,
+      2,
+    ),
     'utf8',
   );
 };
@@ -857,6 +919,7 @@ const parseDocument = async (absolutePath: string): Promise<CanvasDocument> => {
     width: number('width', 340),
     height: number('height', 300),
     collapsed: data.collapsed === true,
+    backgroundColor: cardColor(data.background_color),
     sources: normalizeSources(data.sources),
     asset,
     htmlSource:
@@ -1017,6 +1080,10 @@ const setWorkspace = async (root: string) => {
   await ensureWorkspace();
   await recoverInterruptedHistory(workspaceRoot);
   await saveSettings();
+  await projectLibrary.rememberLocal(
+    workspaceRoot,
+    path.basename(workspaceRoot),
+  );
   await startWatcher();
   return workspaceState();
 };
@@ -1762,6 +1829,7 @@ const handle = (
         }
         if (commandLabels[channel])
           return enqueueMutation(async () => {
+            assertEditable();
             const result = await client.command(
               channel,
               channel === 'layouts:update' ? { updates: args[0] } : args[0],
@@ -1854,11 +1922,6 @@ const handle = (
         if (channel === 'path:reveal' || channel === 'workspace:open-folder')
           return (async () => {
             await syncSharedSnapshot(client.files);
-            return listener(event, ...args);
-          })();
-        if (channel === 'workspace:select')
-          return (async () => {
-            await leaveCollaboration();
             return listener(event, ...args);
           })();
       }
@@ -1956,10 +2019,16 @@ const handle = (
             if (!activeCodexRun) sharedRunId = null;
           }
         });
-      if (!guardedChannels.has(channel)) return listener(event, ...args);
+      if (
+        !guardedChannels.has(channel) &&
+        !channel.startsWith('projects:') &&
+        channel !== 'documents:set-color'
+      )
+        return listener(event, ...args);
       return enqueueMutation(async () => {
         assertEditable();
-        if (channel === 'workspace:select') return listener(event, ...args);
+        if (channel === 'workspace:select' || channel.startsWith('projects:'))
+          return listener(event, ...args);
         const root = requireWorkspace();
         const label = mutationLabels[channel];
         const before = label ? await captureProject(root) : null;
@@ -2222,6 +2291,172 @@ const registerIpc = () => {
     await recordUserEdit(root, before, next, '선택 문서 삭제');
   });
   handle('collaboration:get', () => collaboration?.state ?? noCollaboration());
+  handle(
+    'collaboration:resolve-offline',
+    async (_event, id: string, choice: 'local' | 'server') => {
+      if (!collaboration) throw new Error('공동 프로젝트를 먼저 열어주세요.');
+      const root = requireWorkspace();
+      // Keep a recoverable local copy before a user discards a competing variant.
+      if (collaboration.offline) {
+        const directory = path.join(
+          root,
+          '.history',
+          `offline-resolution-${historyId()}`,
+        );
+        await fs.mkdir(directory, { recursive: true });
+        await fs.writeFile(
+          path.join(directory, 'draft.json'),
+          JSON.stringify(collaboration.offline),
+          { mode: 0o600 },
+        );
+      }
+      await collaboration.resolveConflict(id, choice);
+    },
+  );
+  const suspendProject = async () => {
+    if (activeCodexRun || runPreparing)
+      throw new Error('AI 작업을 먼저 종료해주세요.');
+    await sharedCacheQueue;
+    if (collaboration) {
+      await projectLibrary.rememberShared(
+        collaboration.credentials,
+        collaboration.state.projectName ?? '공동 프로젝트',
+        collaboration.state.role,
+        localWorkspaceBeforeCollaboration,
+      );
+      // Release this window's locks; keep membership and encrypted credentials.
+      for (const relative of collaboration.heldLocks.keys())
+        await collaboration.unlock(relative).catch(() => undefined);
+      collaboration.stop();
+    }
+    collaboration = null;
+    await workspaceWatcher?.close();
+    workspaceWatcher = null;
+    workspaceRoot = null;
+    localWorkspaceBeforeCollaboration = null;
+    lastSharedState = '';
+    personalCollapsed.clear();
+    collaborationChanged(noCollaboration(), true);
+  };
+  handle('projects:list', async () => {
+    const entries = projectLibrary.list();
+    return Promise.all(
+      entries.map(async (entry) => {
+        if (entry.kind === 'shared') {
+          try {
+            const cached = JSON.parse(
+              await fs.readFile(
+                path.join(
+                  app.getPath('userData'),
+                  'shared-workspaces',
+                  entry.projectId!,
+                  'server-cache.json',
+                ),
+                'utf8',
+              ),
+            );
+            entry.pendingChanges = cached.offline
+              ? Object.keys({
+                  ...cached.offline.base,
+                  ...cached.offline.local,
+                }).filter(
+                  (key) =>
+                    cached.offline.base[key] !== cached.offline.local[key],
+                ).length
+              : cached.outgoing
+                ? 1
+                : 0;
+            entry.role = cached.state?.role ?? entry.role;
+          } catch {
+            /* no cached snapshot yet */
+          }
+          entry.current =
+            collaboration?.credentials.projectId === entry.projectId;
+          entry.connected = entry.current
+            ? collaboration?.state.connected
+            : undefined;
+        } else entry.current = !collaboration && workspaceRoot === entry.root;
+        return entry;
+      }),
+    );
+  });
+  handle('projects:home', suspendProject);
+  handle('projects:open', async (_event, id: string) => {
+    const entry = projectLibrary.get(id);
+    if (
+      (entry.kind === 'shared' &&
+        collaboration?.credentials.projectId === entry.projectId) ||
+      (entry.kind === 'local' && !collaboration && workspaceRoot === entry.root)
+    )
+      return workspaceState();
+    if (entry.kind === 'local') {
+      const root = await fs.realpath(entry.root!);
+      if (!(await fs.stat(root)).isDirectory())
+        throw new Error('프로젝트 폴더를 찾을 수 없습니다.');
+      await suspendProject();
+      return setWorkspace(root);
+    }
+    await suspendProject();
+    const credentials = entry.credentials!;
+    if (credentials.internalServer && !localCollaborationServer) {
+      localCollaborationServer = await createCollaborationServer({
+        dataDirectory: path.join(
+          app.getPath('userData'),
+          'collaboration-server',
+        ),
+        creationKey: localCollaborationKey,
+      });
+      credentials.serverUrl = `http://127.0.0.1:${localCollaborationServer.port}`;
+    }
+    localWorkspaceBeforeCollaboration = entry.localRoot ?? null;
+    await attachCollaboration(credentials);
+    return {
+      root: workspaceRoot,
+      name: collaboration?.state.projectName ?? entry.name,
+    };
+  });
+  handle('projects:server', async (_event, id: string, serverUrl: string) => {
+    const { serverAddress } = await import('./collaboration-client');
+    if (
+      collaboration?.credentials.projectId === projectLibrary.get(id).projectId
+    )
+      throw new Error('홈으로 돌아온 뒤 서버 주소를 변경해주세요.');
+    await projectLibrary.updateServer(id, serverAddress(serverUrl));
+  });
+  handle('projects:create', async (_event, name: string) => {
+    if (
+      typeof name !== 'string' ||
+      !name.trim() ||
+      name.length > 100 ||
+      /[<>:"/\\|?*]/.test(name) ||
+      /[. ]$/.test(name) ||
+      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ||
+      [...name].some((char) => char.charCodeAt(0) < 32)
+    )
+      throw new Error(
+        '프로젝트 이름에는 파일 이름에 사용할 수 있는 문자만 입력해주세요.',
+      );
+    const selected = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      title: '새 프로젝트를 저장할 상위 폴더 선택',
+    });
+    if (selected.canceled || !selected.filePaths[0]) return workspaceState();
+    const target = path.join(
+      await fs.realpath(selected.filePaths[0]),
+      name.trim(),
+    );
+    try {
+      await fs.mkdir(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+        throw new Error(
+          '같은 이름의 폴더가 이미 있습니다. 다른 프로젝트 이름을 입력하거나 기존 폴더를 열어주세요.',
+        );
+      throw error;
+    }
+    await suspendProject();
+    return setWorkspace(target);
+  });
   handle('collaboration:test-users', async () => ({
     supported: true,
     isTestUser: !!testProfile,
@@ -2272,6 +2507,7 @@ const registerIpc = () => {
     ) => {
       if (collaboration || activeCodexRun || runPreparing)
         throw new Error('현재 공동 프로젝트나 AI 작업을 먼저 종료해주세요.');
+      projectLibrary.assertSecureSession();
       const localRoot = requireWorkspace();
       const key =
         localCollaborationServer &&
@@ -2303,12 +2539,13 @@ const registerIpc = () => {
     ) => {
       if (activeCodexRun || runPreparing)
         throw new Error('AI 작업을 먼저 종료해주세요.');
+      projectLibrary.assertSecureSession();
       const joined = await CollaborationClient.join(
         input.serverUrl,
         input.code,
         input.nickname,
       );
-      await collaboration?.leave();
+      if (collaboration) await suspendProject();
       localWorkspaceBeforeCollaboration ??= workspaceRoot;
       return attachCollaboration(joined.credentials);
     },
@@ -2322,12 +2559,13 @@ const registerIpc = () => {
     ) => {
       if (activeCodexRun || runPreparing)
         throw new Error('AI 작업을 먼저 종료해주세요.');
+      projectLibrary.assertSecureSession();
       const recovered = await CollaborationClient.recover(
         input.serverUrl,
         input.projectId,
         input.recoveryKey,
       );
-      await collaboration?.leave();
+      if (collaboration) await suspendProject();
       localWorkspaceBeforeCollaboration ??= workspaceRoot;
       return attachCollaboration(recovered.credentials);
     },
@@ -2440,7 +2678,20 @@ const registerIpc = () => {
       title: '게임 프로젝트 폴더 선택',
     });
     if (result.canceled || !result.filePaths[0]) return workspaceState();
+    await suspendProject();
     return setWorkspace(result.filePaths[0]);
+  });
+  handle('documents:set-color', async (_event, input) => {
+    const root = requireWorkspace(),
+      before = await captureProject(root);
+    const next = reduceCollaboration(
+      before,
+      'documents:set-color',
+      input,
+    ).files;
+    await applyChanges(root, before, next);
+    await recordUserEdit(root, before, next, '카드 배경색 변경');
+    notifyWorkspaceChanged();
   });
   handle('documents:list', listDocuments);
   handle('sections:list', listSections);
@@ -2956,9 +3207,15 @@ app.whenReady().then(async () => {
     }
   }
   await registerUpdates();
+  projectLibrary = new ProjectLibrary(app.getPath('userData'), safeStorage);
+  await projectLibrary.load();
   registerIpc();
   await loadSettings();
   if (workspaceRoot) {
+    await projectLibrary.rememberLocal(
+      workspaceRoot,
+      path.basename(workspaceRoot),
+    );
     await ensureWorkspace();
     await recoverInterruptedHistory(workspaceRoot);
     await startWatcher();
@@ -2984,7 +3241,7 @@ app.whenReady().then(async () => {
         localRoot: string | null;
       };
       if (saved.credentials) {
-        if (saved.credentials.internalServer) {
+        if (testProfile && saved.credentials.internalServer) {
           try {
             localCollaborationServer = await createCollaborationServer({
               dataDirectory: path.join(
@@ -2998,12 +3255,50 @@ app.whenReady().then(async () => {
           }
         }
         localWorkspaceBeforeCollaboration = saved.localRoot;
-        await attachCollaboration(saved.credentials);
+        if (testProfile) await attachCollaboration(saved.credentials);
+        else {
+          let name = '공동 프로젝트';
+          let role: CollaborationRole | undefined;
+          try {
+            const cached = JSON.parse(
+              await fs.readFile(
+                path.join(
+                  app.getPath('userData'),
+                  'shared-workspaces',
+                  saved.credentials.projectId,
+                  'server-cache.json',
+                ),
+                'utf8',
+              ),
+            );
+            name = cached.state.projectName ?? name;
+            role = cached.state.role;
+          } catch {
+            /* session remains selectable without cache */
+          }
+          if (
+            !projectLibrary
+              .list()
+              .some((entry) => entry.projectId === saved.credentials!.projectId)
+          )
+            await projectLibrary.rememberShared(
+              saved.credentials,
+              name,
+              role,
+              saved.localRoot,
+            );
+        }
       }
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
       console.error('공동 프로젝트 세션 복원 실패', error);
+  }
+  if (!testProfile) {
+    await workspaceWatcher?.close();
+    workspaceWatcher = null;
+    workspaceRoot = null;
+    localWorkspaceBeforeCollaboration = null;
   }
   let presentationError: string | undefined;
   try {

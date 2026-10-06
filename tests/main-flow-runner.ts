@@ -13,6 +13,7 @@ import {
   importSelections,
   createdWindows,
   revealedPaths,
+  safeStorage,
 } from './mocks/electron';
 
 async function call(channel: string, ...args: unknown[]) {
@@ -56,7 +57,7 @@ try {
   const updateState = await call('updates:state');
   assert.equal(updateState.status, 'unavailable');
   assert.equal(updateState.repository, 'sehyeok3406/game-jam-dev');
-  assert.equal(updateState.currentVersion, '0.9.2');
+  assert.equal(updateState.currentVersion, '0.10.0');
   assert.equal((await call('updates:check')).available, false);
   assert.equal((await call('updates:install')).status, 'unavailable');
   assert.equal((await call('updates:automatic', false)).automatic, false);
@@ -93,6 +94,29 @@ try {
       role: 'editor',
     }),
     /관리자/,
+  );
+  assert.equal((await call('workspace:get')).root, null);
+  for (const name of ['', '../escape', 'CON', 'trailing.', 'bad:name'])
+    await assert.rejects(call('projects:create', name), /프로젝트 이름/);
+  const newProject = await call('projects:create', '홈 생성 검증');
+  assert.equal(newProject.root, path.join(root, '홈 생성 검증'));
+  const newProjectFile = path.join(newProject.root, 'project.md');
+  const originalProjectContent = await fs.readFile(newProjectFile, 'utf8');
+  await assert.rejects(call('projects:create', '홈 생성 검증'), /이미/);
+  assert.equal(
+    await fs.readFile(newProjectFile, 'utf8'),
+    originalProjectContent,
+  );
+  await call('projects:home');
+  const createdEntry = (await call('projects:list')).find(
+    (entry: any) => entry.root === newProject.root,
+  );
+  assert.equal(createdEntry.kind, 'local');
+  await call('projects:open', createdEntry.id);
+  assert.equal((await call('workspace:get')).root, newProject.root);
+  await call('projects:home');
+  console.log(
+    'PASS: home startup, safe new project creation and recent local selection preserve existing folders',
   );
   await call('workspace:select');
   const fixtures = path.join(root, 'external-import-fixtures');
@@ -990,6 +1014,7 @@ try {
     serverKey: 'test-key',
     nickname: '앱 관리자',
   });
+  safeStorage.isEncryptionAvailable = () => false;
   await assert.rejects(
     call('collaboration:launch-test-users', {
       count: 3,
@@ -998,6 +1023,7 @@ try {
     }),
     /안전한 세션 저장/,
   );
+  safeStorage.isEncryptionAvailable = () => true;
   const joined = await CollaborationClient.join(
     serverUrl,
     shared.inviteCode,
@@ -1128,6 +1154,79 @@ try {
   assert.equal(otherClient.state.aiRun!.status, 'completed');
   console.log(
     'PASS: shared gamejam keeps one administrator lease across both stages and publishes all four outputs to other participants',
+  );
+  const rememberedId = `shared:${shared.projectId}`;
+  const rememberedMember = shared.memberId;
+  const rememberedCache = path.join(
+    (await call('workspace:get')).root,
+    'server-cache.json',
+  );
+  await call('documents:set-color', {
+    relativePath: idea.relativePath,
+    color: 'yellow',
+  });
+  assert.equal(
+    (await call('documents:list')).find((doc: any) => doc.id === idea.id)
+      .backgroundColor,
+    'yellow',
+  );
+  await call('projects:home');
+  assert.equal((await call('workspace:get')).root, null);
+  assert.equal((await call('collaboration:get')).active, false);
+  const entries = await call('projects:list');
+  assert.ok(
+    entries.some(
+      (entry: any) => entry.id === rememberedId && entry.role === 'admin',
+    ),
+  );
+  assert.ok(!JSON.stringify(entries).includes(shared.recoveryKey));
+  await call('projects:open', rememberedId);
+  assert.equal((await call('collaboration:get')).memberId, rememberedMember);
+  assert.equal((await call('collaboration:get')).role, 'admin');
+  await call('projects:home');
+  const rememberedPort = collaborationServer.port;
+  await collaborationServer.close();
+  await call('projects:open', rememberedId);
+  assert.equal((await call('collaboration:get')).connected, false);
+  await call('collaboration:lock', idea.relativePath);
+  await call('documents:save', {
+    relativePath: idea.relativePath,
+    title: '오프라인 메모',
+    body: '서버 종료 중 IPC 저장',
+  });
+  await assert.rejects(call('collaboration:leave'), /미동기화/);
+  await call('projects:home');
+  assert.ok(
+    (await call('projects:list')).find(
+      (entry: any) => entry.id === rememberedId,
+    ).pendingChanges,
+  );
+  const savedOfflineCache = await fs.readFile(rememberedCache, 'utf8');
+  await fs.writeFile(rememberedCache, 'broken fixture');
+  await assert.rejects(call('projects:open', rememberedId), /덮어쓰지/);
+  assert.equal(await fs.readFile(rememberedCache, 'utf8'), 'broken fixture');
+  assert.equal((await call('workspace:get')).root, null);
+  await fs.writeFile(rememberedCache, savedOfflineCache);
+  await call('projects:open', rememberedId);
+  assert.equal(
+    (await call('documents:list')).find((doc: any) => doc.id === idea.id).body,
+    '서버 종료 중 IPC 저장',
+  );
+  await call('projects:home');
+  collaborationServer = await createCollaborationServer({
+    dataDirectory: path.join(root, 'test-server'),
+    port: rememberedPort,
+    creationKey: 'test-key',
+  });
+  await call('projects:open', rememberedId);
+  assert.equal((await call('collaboration:get')).pendingChanges, 0);
+  await otherClient.refresh();
+  assert.equal(
+    matter(otherClient.files[idea.relativePath]).content.trim(),
+    '서버 종료 중 IPC 저장',
+  );
+  console.log(
+    'PASS: project home preserves administrator membership, encrypted project selection, card colors and durable offline IPC edits across server shutdown/restart',
   );
   await call('collaboration:leave');
   assert.equal((await call('workspace:get')).root, root);

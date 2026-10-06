@@ -260,6 +260,7 @@ export async function createCollaborationServer(options: Options) {
     state: {
       active: true,
       connected: true,
+      offlineSync: true,
       taskInstructionsEditable: true,
       taskResultNaming: true,
       gamejamWorkflow: true,
@@ -680,8 +681,71 @@ export async function createCollaborationServer(options: Options) {
             projectLocks(id).delete(String(input.relativePath));
           return envelope(project, member);
         }
-        if (action === 'command') {
+        if (action === 'offline-sync') {
+          const operationId = input.id;
+          if (
+            typeof operationId !== 'string' ||
+            !/^[a-f0-9-]{36}$/.test(operationId)
+          )
+            throw new ApiError('동기화 작업 ID가 올바르지 않습니다.', 400);
+          const applied = project.applied.find(
+            (item) => item.id === operationId,
+          );
+          if (applied) {
+            if (applied.memberId !== member.id)
+              throw new ApiError('작업 ID가 충돌했습니다.');
+            return envelope(project, member);
+          }
           editable(project, member);
+          if (
+            !input.changes ||
+            typeof input.changes !== 'object' ||
+            Array.isArray(input.changes)
+          )
+            throw new ApiError('동기화 내용이 올바르지 않습니다.', 400);
+          const nextFiles = { ...project.files };
+          const changes = Object.entries(input.changes);
+          if (!changes.length || changes.length > 500)
+            throw new ApiError('동기화 파일 수가 올바르지 않습니다.', 400);
+          for (const [key, value] of changes) {
+            const relative = collaborationPath(key);
+            if (
+              relative.startsWith('.ai/tasks/') ||
+              relative.startsWith('output/') ||
+              relative.startsWith('docs/html-sources/')
+            )
+              throw new ApiError(
+                'AI 실행 및 HTML 결과는 온라인에서만 변경할 수 있습니다.',
+                403,
+              );
+            if (value === null) {
+              if (relative === 'project.md')
+                throw new ApiError('project.md는 삭제할 수 없습니다.', 400);
+              delete nextFiles[relative];
+            } else if (typeof value === 'string') nextFiles[relative] = value;
+            else
+              throw new ApiError('동기화 파일 내용이 올바르지 않습니다.', 400);
+          }
+          checkSnapshot(nextFiles);
+          assertBases(
+            project,
+            project.files,
+            nextFiles,
+            input.revisions as Record<string, number>,
+            member,
+          );
+          const next = structuredClone(project);
+          recordChanges(next, member, nextFiles, '오프라인 작업 동기화');
+          next.applied.push({
+            id: operationId,
+            memberId: member.id,
+            result: null,
+          });
+          next.applied = next.applied.slice(-500);
+          await persist(next);
+          return envelope(next, member);
+        }
+        if (action === 'command') {
           const command = input as unknown as CollaborationCommand;
           if (
             typeof command.id !== 'string' ||
@@ -705,6 +769,7 @@ export async function createCollaborationServer(options: Options) {
               historyId: stored?.historyId,
             };
           }
+          editable(project, member);
           if (command.channel === 'documents:save') {
             const relative = collaborationPath(
               (command.input as { relativePath: string })?.relativePath,

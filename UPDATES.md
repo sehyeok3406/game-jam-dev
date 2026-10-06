@@ -1,4 +1,14 @@
-# 앱 업데이트·GitHub Releases 연결 (v0.9.2)
+# 앱 업데이트·GitHub Releases 연결 (v0.10.0)
+
+## v0.10.0 배포
+
+[v0.10.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.0)는 프로젝트 홈·세션 재개·오프라인 공동 작업·Ctrl+F·카드 색상을 포함합니다. [설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.0/Game.Canvas-0.10.0.Setup.exe)을 수동 설치하거나, 설치된 v0.9.2에서 앱 업데이트를 확인하세요. v0.9.1 이하 사용자는 이번 설치판을 수동 설치해야 합니다.
+
+`Game.Canvas-0.10.0.Setup.exe`, `game_canvas-0.10.0-full.nupkg`, `RELEASES`를 같은 정식 릴리스에 게시합니다. 미반영 공동 작업·충돌이 남은 활성 프로젝트는 업데이트 재시작을 차단합니다. 홈으로 돌아가도 보관한 프로젝트 사본·세션은 삭제하지 않습니다.
+
+**별도 협업 서버는 따로 갱신해야 합니다.** 서버 정지 → 데이터 백업 → 소스 갱신 → `npm install` → `npm run collaboration:build` → 기존 시작 도구 순서로 진행합니다. 터널 주소가 바뀌면 홈 공동 카드에서 수정합니다. 서버 사본이 기준이며 공유 전 로컬 폴더에 역동기화되지 않습니다. 최신 상세 기능/제한은 [릴리스 노트](RELEASE_NOTES.md)와 [협업 안내](COLLABORATION.md)를 참고하세요.
+
+이하 v0.9.2 피드 연결 기록과 일반 배포 절차입니다.
 
 ## 지금 사용할 수 있는 화면
 

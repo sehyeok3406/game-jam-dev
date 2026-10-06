@@ -17,7 +17,8 @@ import type {
 } from './shared.ts';
 import { isPreviewPath } from './preview-output.ts';
 import type { Snapshot } from './project-store.ts';
-import { htmlSourceId, htmlSourcePath } from './html-source.ts';
+import { htmlSourceId, htmlSourcePath, sourceMetadata } from './html-source.ts';
+import { cardColor, CARD_COLORS } from './card-colors.ts';
 
 export function collaborationPath(relative: unknown): string {
   if (
@@ -160,6 +161,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
         width: number('width', 340),
         height: number('height', 300),
         collapsed: data.collapsed === true,
+        backgroundColor: cardColor(data.background_color),
         sources: Array.isArray(data.sources)
           ? data.sources.flatMap((source: unknown) =>
               typeof source === 'string'
@@ -202,6 +204,7 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
 }
 
 export const commandLabels: Record<string, string> = {
+  'documents:set-color': '카드 배경색 변경',
   'files:import-batch': '파일 불러오기',
   'documents:delete-many': '선택 문서 삭제',
   'documents:create-idea': '메모 추가',
@@ -356,6 +359,24 @@ export function reduceCollaboration(
     );
     result = snapshotDocuments(next).find(
       (doc) => doc.relativePath === relative,
+    );
+  } else if (channel === 'documents:set-color') {
+    let relative = collaborationPath(input.relativePath);
+    if (isPreviewPath(relative)) {
+      if (next[relative] === undefined)
+        throw new Error('HTML 파일을 찾을 수 없습니다.');
+      const source = htmlSourcePath(relative);
+      if (!next[source])
+        next[source] = sourceMetadata(relative, next[relative]);
+      relative = source;
+    }
+    const parsed = read(relative);
+    if (!CARD_COLORS.some((item) => item.id === input.color))
+      throw new Error('지원하지 않는 카드 색상입니다.');
+    write(
+      parsed.relative,
+      { ...parsed.data, background_color: input.color },
+      parsed.content,
     );
   } else if (channel === 'documents:save') {
     const parsed = read(input.relativePath);

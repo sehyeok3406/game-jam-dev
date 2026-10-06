@@ -6,6 +6,7 @@ import { inspectHtml } from './html-document.ts';
 import { isPreviewPath } from './preview-output.ts';
 import type { Snapshot } from './project-store.ts';
 import type { PreviewResult } from './shared.ts';
+import { cardColor } from './card-colors.ts';
 
 export const MAX_HTML_BYTES = 8_000_000;
 
@@ -109,6 +110,7 @@ export function describePreview(
     exists: files[relative] !== undefined,
     relativePath: relative,
     content,
+    backgroundColor: cardColor(data.background_color),
     sourceId: htmlSourceId(relative),
     sourcePath: recordPath,
     title: typeof data.title === 'string' ? data.title : undefined,

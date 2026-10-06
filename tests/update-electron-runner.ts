@@ -21,7 +21,7 @@ async function run() {
     window = BrowserWindow.getAllWindows()[0];
     if (window && window.isVisible() && !window.webContents.isLoading()) {
       const ready = await window.webContents.executeJavaScript(
-        '!!document.querySelector("button[aria-expanded][title*=설정]")',
+        '!!document.querySelector(".project-home")',
       );
       if (ready) break;
     }
@@ -50,11 +50,7 @@ async function run() {
   assert.equal(state.status, 'unavailable');
   assert.equal(state.repository, 'sehyeok3406/game-jam-dev');
   await js(
-    'document.querySelector("button[aria-expanded][title*=설정]").click()',
-  );
-  await wait('!!document.querySelector(".canvas-settings")');
-  await js(
-    '[...document.querySelectorAll(".canvas-settings button")].find(b=>b.textContent.includes("앱 업데이트")).click()',
+    '[...document.querySelectorAll(".home-sidebar button")].find(b=>b.textContent.includes("앱 업데이트")).click()',
   );
   await wait('!!document.querySelector(".update-dialog")');
   assert.ok(
@@ -159,6 +155,9 @@ async function run() {
   console.log(
     'PASS: actual Electron update UI shows connected repository without development network requests, saves preference through preload/IPC and renders dark/light layouts',
   );
+
+  await js('document.querySelector(".home-project-open").click()');
+  await wait('!!document.querySelector(".app-shell")');
 
   // Simulate the last safety handshake only, without an actual download or install.
   const reply = (id: string) =>

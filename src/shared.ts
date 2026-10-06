@@ -31,6 +31,7 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  backgroundColor?: import('./card-colors').CardColor;
   /** Hidden source record for an HTML execution window. */
   htmlSource?: string;
   asset?: ImageAsset;
@@ -178,6 +179,7 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  backgroundColor?: import('./card-colors').CardColor;
   title?: string;
   sourceId?: string;
   sourcePath?: string;
@@ -256,6 +258,20 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  listProjects: () => Promise<ProjectEntry[]>;
+  openProject: (id: string) => Promise<WorkspaceState>;
+  createProject: (name: string) => Promise<WorkspaceState>;
+  goHome: () => Promise<void>;
+  updateProjectServer: (id: string, serverUrl: string) => Promise<void>;
+  resolveOfflineConflict: (
+    id: string,
+    choice: 'local' | 'server',
+  ) => Promise<void>;
+  setDocumentColor: (input: {
+    relativePath: string;
+    color: string;
+    revision?: number;
+  }) => Promise<void>;
   getUpdateState: () => Promise<UpdateState>;
   checkForUpdates: () => Promise<UpdateState>;
   setAutomaticUpdates: (enabled: boolean) => Promise<UpdateState>;
@@ -446,6 +462,11 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  offlineSync?: boolean;
+  pendingChanges?: number;
+  conflicts?: OfflineConflict[];
+  syncMessage?: string;
+  accessDenied?: boolean;
   htmlResultFolders?: boolean;
   editorAi?: boolean;
   multiProviderAi?: boolean;
@@ -468,4 +489,25 @@ export type CollaborationState = {
   taskResultNaming?: boolean;
   gamejamWorkflow?: boolean;
   htmlImportAnalysis?: boolean;
+};
+
+export type ProjectEntry = {
+  id: string;
+  name: string;
+  kind: 'local' | 'shared';
+  root?: string;
+  serverUrl?: string;
+  projectId?: string;
+  role?: CollaborationRole;
+  lastOpenedAt: number;
+  connected?: boolean;
+  pendingChanges?: number;
+  current?: boolean;
+};
+
+export type OfflineConflict = {
+  id: string;
+  paths: string[];
+  local: { path: string; content: string | null }[];
+  server: { path: string; content: string | null }[];
 };

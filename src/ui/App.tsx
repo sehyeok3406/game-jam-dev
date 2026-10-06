@@ -21,6 +21,7 @@ import {
   AlignVerticalJustifyStart,
   AlignVerticalSpaceAround,
   Search,
+  Home,
   PanelLeft,
   Settings2,
   Keyboard,
@@ -111,6 +112,10 @@ import {
 } from '../ai-task-records';
 import { AiTaskDetails } from './AiTaskDetails';
 import { UpdatePanel } from './UpdatePanel';
+import { ProjectHome } from './ProjectHome';
+import { OfflineStatus } from './OfflineStatus';
+import { CanvasFind } from './CanvasFind';
+import { CARD_COLORS, cardColor } from '../card-colors';
 import {
   DEFAULT_TASK_INSTRUCTIONS,
   defaultTaskInstructions,
@@ -655,6 +660,8 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
       )}
       <article
         ref={cardRef}
+        data-find-document={document.id}
+        data-card-color={cardColor(document.backgroundColor)}
         className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}`}
       >
         <header className="document-card__header">
@@ -957,7 +964,10 @@ function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
         }}
       />
       <header className="section-card__header">
-        <div className="section-card__title">
+        <div
+          className="section-card__title"
+          data-find-section={sectionNodeId(data.section.id)}
+        >
           <Frame size={15} />
           <strong>{section.title}</strong>
           <span>{section.members.length}개 파일</span>
@@ -1091,10 +1101,14 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
       )}
       <section
         ref={cardRef}
+        data-card-color={cardColor(data.preview.backgroundColor)}
         className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
       >
         <header className={fullscreen ? 'nodrag' : 'preview-drag-handle'}>
-          <strong title={data.preview.relativePath}>
+          <strong
+            title={data.preview.relativePath}
+            data-find-section={previewNodeId(data.preview.relativePath)}
+          >
             <span className="preview-dot" /> HTML 실행 ·{' '}
             {data.preview.title ?? previewLabel(data.preview.relativePath)}
           </strong>
@@ -1296,6 +1310,19 @@ const nodeTypes: NodeTypes = {
 };
 
 function WorkspaceCanvas() {
+  const [home, setHome] = useState(true);
+  const [findOpen, setFindOpen] = useState(false);
+  const [collaborationTab, setCollaborationTab] = useState<
+    'create' | 'join' | 'recover'
+  >('create');
+  const connectionRef = useRef<{ id?: string; connected: boolean } | null>(
+    null,
+  );
+  useEffect(() => {
+    void window.gameCanvas.getTestUsers().then((state) => {
+      if (state.isTestUser) setHome(false);
+    });
+  }, []);
   const [collaboration, setCollaboration] = useState<CollaborationState>({
     active: false,
     connected: false,
@@ -1546,19 +1573,24 @@ function WorkspaceCanvas() {
   const aiBusy =
     preparingTask ||
     (!!codexRun &&
+      (!collaboration.active || collaboration.connected) &&
       ['starting', 'running', 'validating'].includes(codexRun.status)) ||
-    (!!collaboration.aiRun &&
+    (collaboration.connected &&
+      !!collaboration.aiRun &&
       ['starting', 'running', 'validating'].includes(
         collaboration.aiRun.status,
       ));
   const canRunAi =
     !collaboration.active ||
     (collaboration.connected &&
+      !collaboration.pendingChanges &&
       (collaboration.role === 'admin' ||
         (collaboration.role === 'editor' && collaboration.editorAi)));
   const canRestoreHistory =
     !collaboration.active ||
-    (collaboration.connected && collaboration.role === 'admin');
+    (collaboration.connected &&
+      !collaboration.pendingChanges &&
+      collaboration.role === 'admin');
   const canStopAi =
     !collaboration.active ||
     (collaboration.connected &&
@@ -1569,7 +1601,9 @@ function WorkspaceCanvas() {
     updateRestarting ||
     aiBusy ||
     (collaboration.active &&
-      (!collaboration.connected || collaboration.role === 'viewer'));
+      ((!collaboration.connected && !collaboration.offlineSync) ||
+        collaboration.accessDenied ||
+        collaboration.role === 'viewer'));
   const onBlocked = useCallback(() => {
     setBlockedMessage(
       collaboration.active && !collaboration.connected
@@ -1593,6 +1627,7 @@ function WorkspaceCanvas() {
   }, []);
   useEffect(() => {
     const event = collaboration.aiRun;
+    if (!collaboration.connected) return;
     if (!event) return;
     setCodexRun((current) =>
       current?.runId === event.runId
@@ -2208,7 +2243,9 @@ function WorkspaceCanvas() {
       );
       const nodeLocked =
         locked ||
-        !!foreignLock ||
+        (!!foreignLock &&
+          collaboration.connected &&
+          !collaboration.pendingChanges) ||
         (collaboration.active &&
           collaboration.role !== 'admin' &&
           document.type === 'ai-task');
@@ -2223,7 +2260,7 @@ function WorkspaceCanvas() {
           : { x: document.x, y: document.y },
         style: {
           width: document.width,
-          height: document.collapsed ? 38 : document.height,
+          height: document.collapsed && !findOpen ? 38 : document.height,
         },
         parentId: parent ? sectionNodeId(parent.id) : undefined,
         zIndex: 2,
@@ -2245,13 +2282,16 @@ function WorkspaceCanvas() {
               : onBlocked,
           collaborative: collaboration.active,
           draftKey: `game-canvas-draft:${collaboration.projectId ?? workspace.root}:${document.id}`,
-          editingBy: collaboration.locks.find(
-            (lock) => lock.relativePath === document.relativePath,
-          )?.nickname,
+          editingBy:
+            collaboration.connected && !collaboration.pendingChanges
+              ? collaboration.locks.find(
+                  (lock) => lock.relativePath === document.relativePath,
+                )?.nickname
+              : undefined,
           beginEdit,
           endEdit,
           registerEditor,
-          document,
+          document: findOpen ? { ...document, collapsed: false } : document,
           onSave: saveDocument,
           onResize: resizeDocument,
           onSource: focusSource,
@@ -2342,6 +2382,7 @@ function WorkspaceCanvas() {
       ) as CanvasNode[];
     });
   }, [
+    findOpen,
     locked,
     aiBusy,
     collaboration,
@@ -2370,7 +2411,9 @@ function WorkspaceCanvas() {
 
   const openWorkspace = async () => {
     try {
+      await flushEditors();
       const state = await window.gameCanvas.selectWorkspace();
+      if (state.root) setHome(false);
       setWorkspace(state);
       if (state.root) await loadProject(true);
     } catch (error) {
@@ -3247,6 +3290,20 @@ function WorkspaceCanvas() {
         return;
       if (document.activeElement?.tagName === 'IFRAME') return;
       const dialog = !!document.querySelector('[aria-modal="true"]');
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 'f' &&
+        !dialog &&
+        !home
+      ) {
+        event.preventDefault();
+        if (!findOpen)
+          void flushEditors()
+            .then(() => setFindOpen(true))
+            .catch(showError);
+        return;
+      }
+      if (home || (findOpen && !!target?.closest('.canvas-find'))) return;
       const action = canvasShortcut(event, {
         editable: !!target?.closest(
           'input, textarea, select, [contenteditable="true"], [data-editor-owner]',
@@ -3460,20 +3517,26 @@ function WorkspaceCanvas() {
       );
     if (collaboration.active && !collaboration.connected)
       reasons.push('협업 서버에 재연결한 뒤 저장 상태를 확인해주세요.');
+    if (collaboration.pendingChanges || collaboration.conflicts?.length)
+      reasons.push('공동 작업의 미반영 변경·충돌을 먼저 동기화해주세요.');
     return reasons;
   };
   const saveLabel =
     collaboration.active && !collaboration.connected
-      ? '서버 연결 끊김'
-      : relevantEdits.some((edit) => edit.failed)
-        ? '저장 실패 · 다시 확인 필요'
-        : relevantEdits.some((edit) => edit.saving)
-          ? '저장 중…'
-          : relevantEdits.some((edit) => edit.dirty)
-            ? '수정 중 · Ctrl+S로 저장'
-            : collaboration.active
-              ? '서버 저장 완료'
-              : '로컬 저장 완료';
+      ? collaboration.offlineSync
+        ? `이 PC에 저장 · 동기화 대기 ${collaboration.pendingChanges ?? 0}개`
+        : '서버 연결 끊김'
+      : collaboration.pendingChanges
+        ? `동기화 대기 ${collaboration.pendingChanges}개`
+        : relevantEdits.some((edit) => edit.failed)
+          ? '저장 실패 · 다시 확인 필요'
+          : relevantEdits.some((edit) => edit.saving)
+            ? '저장 중…'
+            : relevantEdits.some((edit) => edit.dirty)
+              ? '수정 중 · Ctrl+S로 저장'
+              : collaboration.active
+                ? '서버 저장 완료'
+                : '로컬 저장 완료';
   const aiDisabledReason = !canRunAi
     ? collaboration.connected
       ? collaboration.role === 'editor'
@@ -3728,6 +3791,7 @@ function WorkspaceCanvas() {
   const collaborationDialog = collaborationOpen ? (
     <CollaborationPanel
       state={collaboration}
+      initialTab={collaborationTab}
       close={() => setCollaborationOpen(false)}
       beforeSwitch={async () => {
         await Promise.all(
@@ -3735,8 +3799,16 @@ function WorkspaceCanvas() {
         );
       }}
       changed={async () => {
-        setCollaboration(await window.gameCanvas.getCollaboration());
+        const next = await window.gameCanvas.getCollaboration();
+        setCollaboration(next);
         await loadProject(true);
+        if (
+          (home || (!collaboration.active && next.active)) &&
+          (await window.gameCanvas.getWorkspace()).root
+        ) {
+          setHome(false);
+          setCollaborationOpen(false);
+        }
       }}
       report={setNotice}
     />
@@ -3744,6 +3816,70 @@ function WorkspaceCanvas() {
 
   const toggleTheme = () =>
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  const enterProject = async () => {
+    setCollaboration(await window.gameCanvas.getCollaboration());
+    await loadProject(true);
+    setHome(false);
+  };
+  const returnHome = async () => {
+    try {
+      await flushEditors();
+      await window.gameCanvas.goHome();
+      setCollaboration(await window.gameCanvas.getCollaboration());
+      setHome(true);
+      setFindOpen(false);
+      setNavigatorOpen(false);
+      setCommandOpen(false);
+      setSelectedIds([]);
+      setSelectedSectionIds([]);
+      setNodes([]);
+      setCodexRun(null);
+      setCompletion(null);
+      await loadProject();
+    } catch (error) {
+      showError(error);
+    }
+  };
+  useEffect(() => {
+    if (!collaboration.active || home) {
+      connectionRef.current = null;
+      return;
+    }
+    const previous = connectionRef.current;
+    const sameProject = previous?.id === collaboration.projectId;
+    if (
+      (!previous || !sameProject || previous.connected) &&
+      !collaboration.connected
+    ) {
+      setBlockedMessage(
+        collaboration.accessDenied
+          ? '참여 세션이 만료되었거나 권한이 회수되었습니다. 이 PC의 작업은 보관됩니다. 홈에서 관리자 복구 또는 초대 참여로 연결해주세요.'
+          : collaboration.offlineSync
+            ? '협업 서버에 연결할 수 없어 실시간 공유가 중단되었습니다. 계속 편집할 수 있으며 작업은 이 PC에 저장됩니다. 서버가 다시 연결되면 변경을 합치고, 겹친 내용은 직접 선택합니다.'
+            : '협업 서버에 연결할 수 없습니다. 오프라인 편집에는 협업 서버 업데이트가 필요합니다. 저장된 사본과 초안을 보관합니다.',
+      );
+    } else if (
+      sameProject &&
+      previous &&
+      !previous.connected &&
+      collaboration.connected
+    ) {
+      setBlockedMessage(
+        collaboration.pendingChanges
+          ? '협업 서버에 다시 연결되었습니다. 이 PC의 변경을 서버 작업과 비교 중입니다. 겹친 내용이 있으면 선택한 버전을 반영합니다.'
+          : '협업 서버에 다시 연결되었습니다. 작업 내용이 동기화되어 실시간 공유를 계속할 수 있습니다.',
+      );
+    }
+    connectionRef.current = {
+      id: collaboration.projectId,
+      connected: collaboration.connected,
+    };
+  }, [
+    collaboration.active,
+    collaboration.connected,
+    collaboration.projectId,
+    home,
+  ]);
 
   const openCanvasMenu = (clientX: number, clientY: number) => {
     const point = flowRef.current?.screenToFlowPosition({
@@ -3762,54 +3898,36 @@ function WorkspaceCanvas() {
     });
   };
 
-  if (!workspace.root && !loading) {
+  if (home || (!workspace.root && !loading)) {
     return (
-      <main className="welcome-screen">
-        <button
-          type="button"
-          className="welcome-theme-button icon-button"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-        <div className="welcome-mark">GC</div>
-        <p className="eyebrow">LOCAL-FIRST GAME PROTOTYPING</p>
-        <h1>
-          아이디어를 흩어놓고,
-          <br />
-          Markdown으로 정리하세요.
-        </h1>
-        <p>
-          프로젝트 폴더 안의 문서만 다루는 무한 캔버스입니다. 외부 AI가 만든
-          문서와 HTML 결과도 자동으로 불러옵니다.
-        </p>
-        <button
-          type="button"
-          className="button-primary button-large"
-          onClick={openWorkspace}
-        >
-          <FolderOpen size={18} /> 프로젝트 폴더 열기
-        </button>
-        <button type="button" onClick={() => setCollaborationOpen(true)}>
-          <Users size={18} /> 초대 코드로 참여
-        </button>
-        <button type="button" onClick={() => setUpdateOpen(true)}>
-          앱 업데이트
-        </button>
+      <>
+        <ProjectHome
+          opened={enterProject}
+          join={() => {
+            setCollaborationTab('join');
+            setCollaborationOpen(true);
+          }}
+          recover={() => {
+            setCollaborationTab('recover');
+            setCollaborationOpen(true);
+          }}
+          updates={() => setUpdateOpen(true)}
+          toggleTheme={toggleTheme}
+          theme={theme}
+        />
         <UpdatePanel
           open={updateOpen}
           close={() => setUpdateOpen(false)}
           show={() => setUpdateOpen(true)}
         />
         {collaborationDialog}
-      </main>
+      </>
     );
   }
 
   return (
     <main
-      className={`app-shell app-shell--tool-${tool}${codexRun ? ' app-shell--has-run' : ''}${completion && codexRunCollapsed ? ' app-shell--has-completion' : ''}`}
+      className={`app-shell app-shell--tool-${tool}${findOpen ? ' app-shell--has-find' : ''}${codexRun ? ' app-shell--has-run' : ''}${completion && codexRunCollapsed ? ' app-shell--has-completion' : ''}`}
     >
       <UpdatePanel
         open={updateOpen}
@@ -3821,14 +3939,23 @@ function WorkspaceCanvas() {
           작업 보호 확인 완료 · 업데이트 후 재시작 중…
         </div>
       )}
-      {collaboration.active && !collaboration.connected && (
-        <div
-          className={`collaboration-status floating-surface ${collaboration.connected ? '' : 'is-offline'}`}
-        >
-          {collaboration.connected
-            ? `공동 작업 · ${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'} · 서버 저장 버전 ${collaboration.revision ?? '…'}`
-            : '서버 연결 끊김 · 초안 보관 · 편집 일시 중지'}
-        </div>
+      <OfflineStatus
+        state={collaboration}
+        paused={
+          legacyModal || commandOpen || shortcutsOpen || compareFirst !== null
+        }
+        flush={flushEditors}
+        changed={async () => {
+          setCollaboration(await window.gameCanvas.getCollaboration());
+          await loadProject();
+        }}
+      />
+      {findOpen && (
+        <CanvasFind
+          close={() => setFindOpen(false)}
+          jump={jumpTo}
+          revision={`${documents.map((doc) => `${doc.id}:${doc.modifiedAt}`).join(',')}:${sections.map((section) => `${section.id}:${section.modifiedAt}`).join(',')}`}
+        />
       )}
       {collaborationDialog}
       {navigatorOpen && (
@@ -4145,10 +4272,10 @@ function WorkspaceCanvas() {
             <button
               type="button"
               className="icon-button subtle-button"
-              onClick={openWorkspace}
-              title="다른 프로젝트 열기"
+              onClick={() => void returnHome()}
+              title="프로젝트 홈으로 돌아가기"
             >
-              <FolderOpen size={16} />
+              <Home size={16} />
             </button>
             <span className="toolbar-divider" />
             <button
@@ -4172,7 +4299,10 @@ function WorkspaceCanvas() {
             <button
               type="button"
               className="collaboration-top-button"
-              onClick={() => setCollaborationOpen(true)}
+              onClick={() => {
+                setCollaborationTab('create');
+                setCollaborationOpen(true);
+              }}
               title={
                 collaboration.active
                   ? `${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'} · 참여자·초대 관리`
@@ -5335,6 +5465,43 @@ function WorkspaceCanvas() {
           role="menu"
           aria-label="HTML 결과 메뉴"
         >
+          <div
+            className="card-color-picker"
+            role="group"
+            aria-label="HTML 창 배경색"
+          >
+            <span>배경색</span>
+            {CARD_COLORS.map((color) => (
+              <button
+                key={color.id}
+                title={color.label}
+                aria-label={`${color.label} 배경색`}
+                aria-pressed={
+                  cardColor(previewContextMenu.preview.backgroundColor) ===
+                  color.id
+                }
+                data-card-color={color.id}
+                disabled={
+                  locked ||
+                  (collaboration.active &&
+                    (!collaboration.connected ||
+                      !!collaboration.pendingChanges))
+                }
+                onClick={() => {
+                  void window.gameCanvas
+                    .setDocumentColor({
+                      relativePath: previewContextMenu.preview.relativePath,
+                      color: color.id,
+                    })
+                    .then(() => {
+                      setPreviewContextMenu(null);
+                      return loadProject();
+                    })
+                    .catch(showError);
+                }}
+              />
+            ))}
+          </div>
           <div className="context-menu-title">
             {previewContextMenu.preview.title ||
               previewLabel(previewContextMenu.preview.relativePath)}
@@ -5382,6 +5549,41 @@ function WorkspaceCanvas() {
         >
           <div className="context-menu-title">
             {documentContextMenu.document.title}
+          </div>
+          <div
+            className="card-color-picker"
+            role="group"
+            aria-label="카드 배경색"
+          >
+            <span>배경색</span>
+            {CARD_COLORS.map((color) => (
+              <button
+                key={color.id}
+                title={color.label}
+                aria-label={`${color.label} 배경색`}
+                aria-pressed={
+                  cardColor(documentContextMenu.document.backgroundColor) ===
+                  color.id
+                }
+                data-card-color={color.id}
+                disabled={locked}
+                onClick={() => {
+                  void flushEditors()
+                    .then(() =>
+                      window.gameCanvas.setDocumentColor({
+                        relativePath: documentContextMenu.document.relativePath,
+                        revision: documentContextMenu.document.revision,
+                        color: color.id,
+                      }),
+                    )
+                    .then(() => {
+                      setDocumentContextMenu(null);
+                      return loadProject();
+                    })
+                    .catch(showError);
+                }}
+              />
+            ))}
           </div>
           <button
             type="button"

@@ -19,7 +19,7 @@ export const ipcMain = {
   ) => handlers.set(channel, handler),
 };
 export const app = Object.assign(new EventEmitter(), {
-  getVersion: () => '0.9.2',
+  getVersion: () => '0.10.0',
   isPackaged: false,
   whenReady: () => Promise.resolve(),
   getPath: () => root,
@@ -50,7 +50,7 @@ export const nativeImage = {
 };
 export const clipboard = { writeText: () => {} };
 export const safeStorage = {
-  isEncryptionAvailable: () => false,
+  isEncryptionAvailable: () => true,
   encryptString: (text: string) => Buffer.from(text),
   decryptString: (buffer: Buffer) => buffer.toString(),
 };

@@ -7,7 +7,12 @@ import type {
   FileAuthorshipMap,
 } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
-import { checkSnapshot } from './collaboration-model.ts';
+import { checkSnapshot, reduceCollaboration } from './collaboration-model.ts';
+import {
+  changedPaths,
+  planOfflineMerge,
+  snapshotChanges,
+} from './offline-sync.ts';
 import { CanvasError, errorText, failureInfo } from './app-errors.ts';
 import type {
   CollaborationCommand,
@@ -21,6 +26,21 @@ export type CollaborationCredentials = {
   inviteCode?: string;
   recoveryKey?: string;
   internalServer?: boolean;
+};
+export type OfflineDraft = {
+  base: Snapshot;
+  local: Snapshot;
+  transaction?: {
+    id: string;
+    changes: Record<string, string | null>;
+    revisions: Record<string, number>;
+    submitted?: Snapshot;
+  };
+};
+export type OnlineAttempt = {
+  command: CollaborationCommand;
+  base: Snapshot;
+  local?: Snapshot;
 };
 export const noCollaboration = (): CollaborationState => ({
   active: false,
@@ -71,6 +91,9 @@ export class CollaborationClient {
   private busy = 0;
   private failures = 0;
   private nextPollAt = 0;
+  offline: OfflineDraft | null = null;
+  outgoing: OnlineAttempt | null = null;
+  private readonly persist: () => Promise<void>;
   readonly credentials: CollaborationCredentials;
   private readonly onUpdate: (
     state: CollaborationState,
@@ -79,12 +102,14 @@ export class CollaborationClient {
   constructor(
     credentials: CollaborationCredentials,
     onUpdate: (state: CollaborationState, changed: boolean) => void,
+    persist: () => Promise<void> = async () => {},
   ) {
     serverAddress(credentials.serverUrl);
     if (!/^[a-f0-9-]{36}$/.test(credentials.projectId))
       throw new Error('서버가 반환한 프로젝트 ID가 올바르지 않습니다.');
     this.credentials = credentials;
     this.onUpdate = onUpdate;
+    this.persist = persist;
     this.state = {
       ...noCollaboration(),
       active: true,
@@ -205,7 +230,14 @@ export class CollaborationClient {
     let value: { error?: string };
     try {
       value = (await response.json()) as typeof value;
-      if (!value || typeof value !== 'object')
+      if (
+        (!value || typeof value !== 'object') &&
+        !(
+          response.ok &&
+          endpoint.endsWith('/history-read') &&
+          (value === null || typeof value === 'string')
+        )
+      )
         throw new Error('Invalid response');
     } catch (error) {
       if ((error as { name?: string })?.name === 'TimeoutError')
@@ -237,7 +269,10 @@ export class CollaborationClient {
           },
         );
       else
-        throw new Error(value.error ?? `협업 서버 오류 (${response.status})`);
+        throw Object.assign(
+          new Error(value.error ?? `협업 서버 오류 (${response.status})`),
+          { status: response.status },
+        );
     return value;
   }
   accept(result: CollaborationEnvelope) {
@@ -249,13 +284,19 @@ export class CollaborationClient {
     const changed = result.state.revision !== this.state.revision;
     if (result.files) {
       checkSnapshot(result.files);
-      this.files = result.files;
+      this.files = this.offline?.local ?? result.files;
     }
     if (result.revisions) this.revisions = result.revisions;
     if (result.authorship) this.authorship = result.authorship;
     else if (result.files) this.authorship = {};
     this.state = {
       ...result.state,
+      ...(this.offline
+        ? {
+            conflicts: this.state.conflicts,
+            syncMessage: this.state.syncMessage,
+          }
+        : {}),
       serverUrl: this.credentials.serverUrl,
       inviteCode:
         result.state.role === 'admin' ? this.credentials.inviteCode : undefined,
@@ -265,7 +306,163 @@ export class CollaborationClient {
         ? this.credentials.recoveryKey
         : undefined,
     };
+    this.decorateOffline();
     this.onUpdate(this.state, changed);
+  }
+  private decorateOffline() {
+    this.state = {
+      ...this.state,
+      pendingChanges: this.offline
+        ? changedPaths(this.offline.base, this.offline.local).length
+        : this.outgoing
+          ? 1
+          : 0,
+    };
+  }
+  private publishOffline() {
+    this.decorateOffline();
+    this.onUpdate(this.state, true);
+  }
+  private async finishOffline(ack: CollaborationEnvelope, draft: OfflineDraft) {
+    const submitted = draft.transaction?.submitted ?? draft.local;
+    if (changedPaths(submitted, draft.local).length) {
+      this.offline = { base: submitted, local: draft.local };
+      await this.persist();
+      await this.syncOffline(ack);
+    } else {
+      this.offline = null;
+      this.accept(ack);
+      await this.persist();
+    }
+  }
+  private async syncOffline(result: CollaborationEnvelope) {
+    if (this.stopped) return;
+    if (!this.offline || !result.files) {
+      this.accept(result);
+      return;
+    }
+    const draft = this.offline;
+    // The same persisted ID is retried before planning a new merge. This handles a lost acknowledgement.
+    if (draft.transaction) {
+      try {
+        const ack = (await this.request(
+          'offline-sync',
+          draft.transaction,
+        )) as CollaborationEnvelope;
+        await this.finishOffline(ack, draft);
+        return;
+      } catch (error) {
+        if (retryableTransport(error)) throw error;
+        draft.transaction = undefined;
+        await this.persist();
+        // A revision or lock rejection keeps the entire draft for a fresh merge.
+        this.state = {
+          ...this.state,
+          syncMessage: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    const plan = planOfflineMerge(draft.base, draft.local, result.files);
+    this.state = {
+      ...this.state,
+      ...result.state,
+      serverUrl: this.credentials.serverUrl,
+      inviteCode:
+        result.state.role === 'admin' ? this.credentials.inviteCode : undefined,
+      recoveryKey:
+        result.state.role === 'admin'
+          ? this.credentials.recoveryKey
+          : undefined,
+      conflicts: plan.conflicts,
+      accessDenied: false,
+      syncMessage: undefined,
+    };
+    this.revisions = result.revisions;
+    // Keep the draft displayed until its transaction has been acknowledged.
+    this.publishOffline();
+    if (
+      plan.conflicts.length ||
+      result.state.role === 'viewer' ||
+      !result.state.offlineSync
+    ) {
+      if (!result.state.offlineSync)
+        this.state.syncMessage =
+          '오프라인 작업 반영에는 갱신된 협업 서버가 필요합니다.';
+      if (result.state.role === 'viewer')
+        this.state.syncMessage =
+          '뷰어로 변경되어 반영할 수 없습니다. 내 작업은 이 PC에 보관됩니다.';
+      this.publishOffline();
+      return;
+    }
+    const changes = snapshotChanges(result.files, plan.merged);
+    if (!Object.keys(changes).length) {
+      this.offline = null;
+      this.accept(result);
+      await this.persist();
+      return;
+    }
+    draft.transaction = {
+      id: randomUUID(),
+      changes,
+      revisions: { ...result.revisions },
+      submitted: { ...draft.local },
+    };
+    await this.persist();
+    try {
+      const ack = (await this.request(
+        'offline-sync',
+        draft.transaction,
+      )) as CollaborationEnvelope;
+      await this.finishOffline(ack, draft);
+    } catch (error) {
+      if (retryableTransport(error)) throw error;
+      draft.transaction = undefined;
+      this.state.syncMessage =
+        error instanceof Error ? error.message : String(error);
+      await this.persist();
+      this.publishOffline();
+    }
+  }
+  async resolveConflict(id: string, choice: 'local' | 'server') {
+    return this.serial(async () => {
+      if (
+        !['local', 'server'].includes(choice) ||
+        !this.offline ||
+        !this.state.connected
+      )
+        throw new Error('서버 연결 후 충돌 내용을 다시 확인해주세요.');
+      const result = (await this.request('state')) as CollaborationEnvelope;
+      const plan = planOfflineMerge(
+        this.offline.base,
+        this.offline.local,
+        result.files,
+      );
+      const selected = plan.conflicts.find((item) => item.id === id);
+      if (!selected) {
+        await this.syncOffline(result);
+        throw new Error(
+          '서버 내용이 변경되었습니다. 최신 충돌 내용을 다시 확인해주세요.',
+        );
+      }
+      const previous = structuredClone(this.offline);
+      for (const path of selected.paths) {
+        if (result.files[path] === undefined) delete this.offline.base[path];
+        else this.offline.base[path] = result.files[path];
+        if (choice === 'server') {
+          if (result.files[path] === undefined) delete this.offline.local[path];
+          else this.offline.local[path] = result.files[path];
+        }
+      }
+      this.files = this.offline.local;
+      try {
+        await this.persist();
+      } catch (error) {
+        this.offline = previous;
+        this.files = previous.local;
+        throw error;
+      }
+      await this.syncOffline(result);
+    });
   }
   async request(action: string, input: unknown = {}) {
     return CollaborationClient.fetch(
@@ -276,33 +473,66 @@ export class CollaborationClient {
     );
   }
   async refresh() {
-    try {
-      if (this.lease)
-        await this.request('ai-heartbeat', { lease: this.lease }).catch(() => {
-          this.lease = null;
-        });
-      const result = (await this.request('state', {
-        knownRevision: this.state.revision,
-        renewLocks: [...this.heldLocks].map(([relativePath, token]) => ({
-          relativePath,
-          token,
-        })),
-      })) as CollaborationEnvelope;
-      this.accept(result);
-      this.failures = 0;
-      this.nextPollAt = 0;
-    } catch (error) {
-      this.failures++;
-      this.nextPollAt =
-        Date.now() + Math.min(15_000, 900 * 2 ** Math.min(this.failures, 5));
-      this.state = {
-        ...this.state,
-        connected: false,
-        message: errorText(failureInfo(error, 'GC-COLLAB-001')),
-      };
-      this.onUpdate(this.state, false);
-      throw error;
-    }
+    return this.serial(async () => {
+      if (this.stopped) return;
+      try {
+        if (this.lease)
+          await this.request('ai-heartbeat', { lease: this.lease }).catch(
+            () => {
+              this.lease = null;
+            },
+          );
+        let result = (await this.request('state', {
+          knownRevision:
+            this.offline || this.outgoing ? undefined : this.state.revision,
+          renewLocks: [...this.heldLocks].map(([relativePath, token]) => ({
+            relativePath,
+            token,
+          })),
+        })) as CollaborationEnvelope;
+        if (this.outgoing) {
+          const attempted = this.outgoing;
+          try {
+            result = (await this.request(
+              'command',
+              this.outgoing.command,
+            )) as CollaborationEnvelope;
+            if (this.offline && this.outgoing.local)
+              this.offline.base = this.outgoing.local;
+            this.outgoing = null;
+            await this.persist();
+          } catch (error) {
+            if (retryableTransport(error)) throw error;
+            if ((error as { status?: number }).status !== 409) throw error;
+            // A server rejection after the idempotency lookup proves this attempt was not applied.
+            if (!this.offline && attempted.local) {
+              this.offline = { base: attempted.base, local: attempted.local };
+              this.files = this.offline.local;
+            }
+            this.outgoing = null;
+            await this.persist();
+          }
+        }
+        await this.syncOffline(result);
+        this.failures = 0;
+        this.nextPollAt = 0;
+      } catch (error) {
+        if (this.stopped) return;
+        this.failures++;
+        this.nextPollAt =
+          Date.now() + Math.min(15_000, 900 * 2 ** Math.min(this.failures, 5));
+        this.state = {
+          ...this.state,
+          connected: false,
+          accessDenied:
+            this.state.accessDenied ||
+            (error as { status?: number }).status === 403,
+          message: errorText(failureInfo(error, 'GC-COLLAB-001')),
+        };
+        this.onUpdate(this.state, false);
+        throw error;
+      }
+    });
   }
   start() {
     if (this.timer) return;
@@ -328,9 +558,21 @@ export class CollaborationClient {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
-  seedCache(result: CollaborationEnvelope) {
+  seedCache(
+    result: CollaborationEnvelope & {
+      offline?: OfflineDraft | null;
+      outgoing?: OnlineAttempt | null;
+    },
+  ) {
     checkSnapshot(result.files);
     this.files = result.files;
+    this.outgoing = result.outgoing ?? null;
+    if (result.offline) {
+      checkSnapshot(result.offline.base);
+      checkSnapshot(result.offline.local);
+      this.offline = result.offline;
+      this.files = result.offline.local;
+    }
     this.revisions = result.revisions;
     this.authorship = result.authorship ?? {};
     this.state = {
@@ -340,7 +582,7 @@ export class CollaborationClient {
       serverUrl: this.credentials.serverUrl,
       message: '서버 재연결 중입니다. 저장된 사본을 표시합니다.',
     };
-    this.onUpdate(this.state, true);
+    this.publishOffline();
   }
   async leave() {
     this.stop();
@@ -356,6 +598,54 @@ export class CollaborationClient {
   }
   async command(channel: string, input: unknown) {
     return this.serial(async () => {
+      if (this.outgoing && !this.offline)
+        throw new Error(
+          '이전 저장 요청의 응답을 확인 중입니다. 서버 재연결 후 다시 시도해주세요. 초안은 보관됩니다.',
+        );
+      if (this.offline || !this.state.connected) {
+        if (
+          !this.state.offlineSync ||
+          this.state.accessDenied ||
+          !['admin', 'editor'].includes(this.state.role ?? '')
+        )
+          throw new Error(
+            '오프라인 편집 권한이 없거나 서버 업데이트가 필요합니다.',
+          );
+        if (channel === 'tasks:create')
+          throw new Error('AI 작업은 동기화 완료 후 온라인에서 실행해주세요.');
+        const before = this.files;
+        const reduced = reduceCollaboration(before, channel, input);
+        if (
+          changedPaths(before, reduced.files).some(
+            (path) =>
+              path.startsWith('.ai/') ||
+              path.startsWith('output/') ||
+              path.startsWith('docs/html-sources/'),
+          )
+        )
+          throw new Error(
+            'AI·HTML 결과 변경은 온라인에서 동기화 완료 후 진행해주세요.',
+          );
+        const previous = this.offline;
+        const candidate: OfflineDraft = {
+          base: previous?.base ?? { ...before },
+          local: reduced.files,
+          transaction: previous?.transaction,
+        };
+        this.offline = candidate;
+        this.files = reduced.files;
+        try {
+          await this.persist();
+        } catch (error) {
+          this.offline = previous;
+          this.files = before;
+          throw error;
+        }
+        this.lastCommandHistoryId = null;
+        this.state = { ...this.state, conflicts: [], syncMessage: undefined };
+        this.publishOffline();
+        return reduced.result;
+      }
       if (
         channel === 'tasks:create' &&
         ((input as CreateTaskInput)?.kind === 'implement' ||
@@ -447,21 +737,78 @@ export class CollaborationClient {
         result: unknown;
         historyId?: string;
       };
+      // Keep the exact operation ID across app crashes and lost responses.
+      const preview =
+        channel !== 'tasks:create'
+          ? reduceCollaboration(this.files, channel, input).files
+          : undefined;
+      this.outgoing = { command, base: { ...this.files }, local: preview };
+      try {
+        await this.persist();
+      } catch (error) {
+        this.outgoing = null;
+        throw error;
+      }
       try {
         result = (await this.request('command', command)) as typeof result;
       } catch (error) {
         // A lost response can be retried safely with the same operation ID.
-        if (!retryableTransport(error)) throw error;
-        result = (await this.request('command', command)) as typeof result;
+        if (!retryableTransport(error)) {
+          this.outgoing = null;
+          await this.persist();
+          throw error;
+        }
+        try {
+          result = (await this.request('command', command)) as typeof result;
+        } catch (retryError) {
+          if (!retryableTransport(retryError)) {
+            this.outgoing = null;
+            await this.persist();
+            throw retryError;
+          }
+          this.state = {
+            ...this.state,
+            connected: false,
+            locks: [],
+            syncMessage: '서버 재연결 후 이전 저장 요청의 결과를 확인합니다.',
+          };
+          // Deterministic edits can be acknowledged locally. Creations wait for the server's original ID.
+          if (
+            preview &&
+            changedPaths(this.files, preview).every(
+              (path) => this.files[path] !== undefined,
+            ) &&
+            !changedPaths(this.files, preview).some(
+              (path) =>
+                path.startsWith('.ai/') ||
+                path.startsWith('docs/html-sources/'),
+            )
+          ) {
+            this.offline = { base: { ...this.files }, local: preview };
+            this.files = preview;
+            this.lastCommandHistoryId = null;
+            await this.persist();
+            this.publishOffline();
+            return undefined;
+          }
+          await this.persist();
+          this.onUpdate(this.state, false);
+          throw retryError;
+        }
       }
+      this.outgoing = null;
       this.accept(result);
+      await this.persist();
       this.lastCommandHistoryId = result.historyId ?? null;
       return result.result;
     });
   }
   async changeHistory(id: string, direction: 'undo' | 'redo') {
     return this.serial(async () => {
-      if (!this.state.connected) throw new Error('서버에 먼저 연결해주세요.');
+      if (!this.state.connected || this.offline || this.outgoing)
+        throw new Error(
+          '서버 연결과 동기화를 완료한 뒤 실행 취소를 사용해주세요.',
+        );
       const input = { id, direction, operationId: randomUUID() };
       let result: CollaborationEnvelope;
       try {
@@ -481,6 +828,15 @@ export class CollaborationClient {
   }
   async lock(relativePath: string) {
     await this.serial(async () => {
+      if (this.offline || !this.state.connected) {
+        if (
+          !this.state.offlineSync ||
+          this.state.accessDenied ||
+          this.state.role === 'viewer'
+        )
+          throw new Error('현재 편집 권한이 없습니다.');
+        return;
+      }
       const result = (await this.request('lock', {
         relativePath,
       })) as CollaborationEnvelope & { lockToken: string };
@@ -493,6 +849,7 @@ export class CollaborationClient {
       const token = this.heldLocks.get(relativePath);
       this.heldLocks.delete(relativePath);
       if (!token) return;
+      if (!this.state.connected || this.offline) return;
       const result = (await this.request('unlock', {
         relativePath,
         token,
@@ -524,6 +881,10 @@ export class CollaborationClient {
     })) as string | null;
   }
   async restore(id: string, relativePath?: string, version?: string) {
+    if (!this.state.connected || this.offline || this.outgoing)
+      throw new Error(
+        '서버 연결과 동기화를 완료한 뒤 히스토리를 복원해주세요.',
+      );
     const revision = this.state.revision;
     this.accept(
       (await this.request('restore', {
@@ -540,7 +901,7 @@ export class CollaborationClient {
     providerId: import('./shared').AiProviderId = 'codex-cli',
   ) {
     return this.serial(async () => {
-      if (!this.state.connected || this.state.role === 'viewer')
+      if (!this.state.connected || this.offline || this.state.role === 'viewer')
         throw new Error('연결된 관리자·편집자만 AI를 실행할 수 있습니다.');
       if (
         (this.state.role === 'editor' && !this.state.editorAi) ||

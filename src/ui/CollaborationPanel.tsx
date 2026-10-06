@@ -10,14 +10,16 @@ export function CollaborationPanel({
   beforeSwitch,
   changed,
   report,
+  initialTab = 'create',
 }: {
   state: CollaborationState;
   close: () => void;
   beforeSwitch: () => Promise<void>;
   changed: () => Promise<void>;
   report: (message: string) => void;
+  initialTab?: 'create' | 'join' | 'recover';
 }) {
-  const [tab, setTab] = useState<'create' | 'join' | 'recover'>('create');
+  const [tab, setTab] = useState<'create' | 'join' | 'recover'>(initialTab);
   const [serverUrl, setServerUrl] = useState(
     state.serverUrl ?? 'http://127.0.0.1:4317',
   );
@@ -148,7 +150,9 @@ export function CollaborationPanel({
               <span>
                 {state.connected
                   ? '서버 연결됨 · 자동 동기화'
-                  : '연결 끊김 · 편집 일시 중지'}
+                  : state.offlineSync
+                    ? '오프라인 · 이 PC에 저장 후 재연결 시 동기화'
+                    : '연결 끊김 · 서버 업데이트 후 오프라인 편집 가능'}
               </span>
               <small>{state.serverUrl}</small>
               <small>
@@ -472,14 +476,17 @@ export function CollaborationPanel({
             {leaveConfirm ? (
               <div className="collaboration-confirm">
                 <p>
-                  공동 프로젝트를 닫고 이전 로컬 프로젝트로 돌아갈까요? 서버
-                  문서는 삭제되지 않습니다.
+                  이 PC에 저장된 참여 세션을 삭제하고 이전 로컬 프로젝트로
+                  돌아갈까요? 다음에는 초대 코드 또는 관리자 복구가 필요합니다.
+                  {state.pendingChanges
+                    ? ' 미동기화 작업이 있습니다. 먼저 동기화하거나 충돌을 해결해주세요.'
+                    : ''}
                 </p>
                 <button disabled={busy} onClick={() => setLeaveConfirm(false)}>
                   취소
                 </button>
                 <button
-                  disabled={busy}
+                  disabled={busy || !!state.pendingChanges}
                   onClick={() =>
                     void action(async () => {
                       await beforeSwitch();
@@ -489,12 +496,12 @@ export function CollaborationPanel({
                     })
                   }
                 >
-                  로컬로 돌아가기
+                  세션 삭제하고 나가기
                 </button>
               </div>
             ) : (
               <button disabled={busy} onClick={() => setLeaveConfirm(true)}>
-                공동 프로젝트 닫기
+                이 PC에서 참여 세션 삭제
               </button>
             )}
           </>

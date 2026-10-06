@@ -14,6 +14,7 @@ import { EditJournal } from './edit-journal';
 import { resolveDocumentOutputs } from './document-output';
 import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
+import { cardColor } from './card-colors';
 import {
   DEFAULT_PREVIEW_PATH,
   assertPreviewPath,
@@ -268,9 +269,34 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     return structuredClone(collab);
   };
   const api: GameCanvasApi = {
+    listProjects: async () => [
+      {
+        id: 'demo-local',
+        name: '밤의 농장',
+        kind: 'local',
+        root: 'demo-game',
+        lastOpenedAt: now,
+      },
+    ],
+    openProject: async () => api.getWorkspace(),
+    createProject: async () => {
+      throw new Error('새 프로젝트 생성은 데스크톱 앱에서 사용해주세요.');
+    },
+    goHome: async () => {},
+    updateProjectServer: async () => {},
+    resolveOfflineConflict: async () => {},
+    setDocumentColor: async ({ relativePath, color }) => {
+      const doc = documents.find((item) => item.relativePath === relativePath);
+      if (doc) doc.backgroundColor = cardColor(color);
+      const preview = previews.find(
+        (item) => item.relativePath === relativePath,
+      );
+      if (preview) preview.backgroundColor = cardColor(color);
+      notify();
+    },
     getUpdateState: async () => ({
       status: 'unconfigured',
-      currentVersion: '0.9.2',
+      currentVersion: '0.10.0',
       repository: null,
       available: false,
       automatic: true,
@@ -1021,6 +1047,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     'createIdea',
     'createSection',
     'saveDocument',
+    'setDocumentColor',
     'setDocumentCollapsed',
     'deleteDocument',
     'deleteSection',

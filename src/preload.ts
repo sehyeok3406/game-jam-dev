@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
 
 const api: GameCanvasApi = {
+  listProjects: () => ipcRenderer.invoke('projects:list'),
+  openProject: (id) => ipcRenderer.invoke('projects:open', id),
+  createProject: (name) => ipcRenderer.invoke('projects:create', name),
+  goHome: () => ipcRenderer.invoke('projects:home'),
+  updateProjectServer: (id, serverUrl) =>
+    ipcRenderer.invoke('projects:server', id, serverUrl),
+  resolveOfflineConflict: (id, choice) =>
+    ipcRenderer.invoke('collaboration:resolve-offline', id, choice),
+  setDocumentColor: (input) => ipcRenderer.invoke('documents:set-color', input),
   getUpdateState: () => ipcRenderer.invoke('updates:state'),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   setAutomaticUpdates: (enabled) =>
