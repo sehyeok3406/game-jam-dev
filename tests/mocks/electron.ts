@@ -19,7 +19,7 @@ export const ipcMain = {
   ) => handlers.set(channel, handler),
 };
 export const app = Object.assign(new EventEmitter(), {
-  getVersion: () => '0.10.0',
+  getVersion: () => '0.10.1',
   isPackaged: false,
   whenReady: () => Promise.resolve(),
   getPath: () => root,

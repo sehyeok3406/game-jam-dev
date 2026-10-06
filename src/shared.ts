@@ -258,7 +258,18 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
-  listProjects: () => Promise<ProjectEntry[]>;
+  listProjects: (refreshShared?: boolean) => Promise<ProjectEntry[]>;
+  listProjectFolders: () => Promise<ProjectFolder[]>;
+  renameProject: (
+    id: string,
+    name: string,
+    expectedName?: string,
+  ) => Promise<void>;
+  moveProject: (id: string, folderId: string | null) => Promise<void>;
+  createProjectFolder: (name: string) => Promise<void>;
+  renameProjectFolder: (id: string, name: string) => Promise<void>;
+  removeProjectFolder: (id: string) => Promise<void>;
+  revealProject: (id: string) => Promise<void>;
   openProject: (id: string) => Promise<WorkspaceState>;
   createProject: (name: string) => Promise<WorkspaceState>;
   goHome: () => Promise<void>;
@@ -462,6 +473,9 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  projectCreatedAt?: number;
+  projectModifiedAt?: number;
+  projectRename?: boolean;
   offlineSync?: boolean;
   pendingChanges?: number;
   conflicts?: OfflineConflict[];
@@ -500,10 +514,16 @@ export type ProjectEntry = {
   projectId?: string;
   role?: CollaborationRole;
   lastOpenedAt: number;
+  createdAt?: number;
+  modifiedAt?: number;
   connected?: boolean;
   pendingChanges?: number;
   current?: boolean;
+  folderId?: string;
 };
+
+/** Home-only grouping; never a filesystem or server directory. */
+export type ProjectFolder = { id: string; name: string };
 
 export type OfflineConflict = {
   id: string;

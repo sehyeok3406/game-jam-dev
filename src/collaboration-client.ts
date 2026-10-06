@@ -865,6 +865,26 @@ export class CollaborationClient {
     this.accept(result);
     return this.state;
   }
+  async renameProject(name: string, expectedName = this.state.projectName) {
+    await this.serial(async () => {
+      if (!this.state.connected || this.offline || this.outgoing)
+        throw new Error(
+          '서버에 연결하고 미동기화 작업을 반영한 뒤 이름을 변경해주세요.',
+        );
+      if (this.state.role !== 'admin')
+        throw new Error('공동 프로젝트 이름은 관리자만 변경할 수 있습니다.');
+      if (!this.state.projectRename)
+        throw new Error(
+          '공동 프로젝트 이름 변경을 지원하는 협업 서버로 업데이트해주세요.',
+        );
+      this.accept(
+        (await this.request('rename', {
+          name,
+          expectedName,
+        })) as CollaborationEnvelope,
+      );
+    });
+  }
   async setRole(memberId: string, role: string) {
     this.accept(
       (await this.request('role', { memberId, role })) as CollaborationEnvelope,

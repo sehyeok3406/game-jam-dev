@@ -49,6 +49,51 @@ async function run() {
   }>('window.gameCanvas.getUpdateState()');
   assert.equal(state.status, 'unavailable');
   assert.equal(state.repository, 'sehyeok3406/game-jam-dev');
+  await wait('!!document.querySelector(".home-project-open")');
+  const select = async (label: string, value: string) =>
+    js(
+      `(()=>{const input=document.querySelector('select[aria-label="${label}"]');input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    );
+  await select('프로젝트 유형 필터', 'shared');
+  await wait('!document.querySelector(".home-project-open")');
+  await select('프로젝트 유형 필터', 'local');
+  await wait('!!document.querySelector(".home-project-open")');
+  await js(`document.querySelector('button[aria-label="목록 보기"]').click()`);
+  await wait('!!document.querySelector(".home-project-list")');
+  await select('프로젝트 정렬 기준', 'created');
+  await js('document.querySelector(".home-sort-direction").click()');
+  await wait(
+    'document.querySelector(".home-result-count").textContent.includes("생성일 오래된 순")',
+  );
+  assert.deepEqual(
+    await js('JSON.parse(localStorage.getItem("game-canvas-home-view"))'),
+    { filter: 'local', sortBy: 'created', direction: 'asc', view: 'list' },
+  );
+  const homeBounds = await js<{ fits: boolean }>(
+    '(()=>{const b=document.querySelector(".home-list-controls").getBoundingClientRect();return{fits:b.left>=0&&b.right<=innerWidth};})()',
+  );
+  assert.ok(homeBounds.fits, 'Home controls fit the production renderer');
+  const reloaded = new Promise<void>((resolve) =>
+    window!.webContents.once('did-finish-load', () => resolve()),
+  );
+  window.webContents.reload();
+  await reloaded;
+  await wait(
+    '!!document.querySelector(".home-project-list .home-project-open")',
+  );
+  await wait(
+    'document.querySelector(".home-result-count").textContent.includes("생성일 오래된 순")',
+  );
+  await select('프로젝트 유형 필터', 'all');
+  await select('프로젝트 정렬 기준', 'modified');
+  await js('document.querySelector(".home-sort-direction").click()');
+  await js(
+    `document.querySelector('button[aria-label="썸네일 보기"]').click()`,
+  );
+  await wait('!document.querySelector(".home-project-list")');
+  console.log(
+    'PASS: production home filters local/shared, toggles list/grid, sorts by real dates and restores view settings on reload without losing projects',
+  );
   await js(
     '[...document.querySelectorAll(".home-sidebar button")].find(b=>b.textContent.includes("앱 업데이트")).click()',
   );
@@ -88,7 +133,7 @@ async function run() {
   );
   try {
     await fs.writeFile(
-      path.resolve('out/qa/update-panel-0.9.2-dark.png'),
+      path.resolve('out/qa/update-panel-0.10.1-dark.png'),
       (await window.capturePage()).toPNG(),
     );
   } catch {
@@ -102,7 +147,7 @@ async function run() {
   );
   try {
     await fs.writeFile(
-      path.resolve('out/qa/update-panel-0.9.2-light.png'),
+      path.resolve('out/qa/update-panel-0.10.1-light.png'),
       (await window.capturePage()).toPNG(),
     );
   } catch {

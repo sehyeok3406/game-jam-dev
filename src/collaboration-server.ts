@@ -31,6 +31,7 @@ import { materialize, type Snapshot } from './project-store.ts';
 import { isAssetPath } from './file-assets.ts';
 import { isImportedPreviewPath } from './preview-output.ts';
 import { invertEdit } from './edit-journal.ts';
+import { homeName } from './home-organization.ts';
 import { advanceAuthorship, rebuildAuthorship } from './file-authorship.ts';
 import type {
   CollaborationRole,
@@ -65,6 +66,8 @@ type Job = {
 type Project = {
   id: string;
   name: string;
+  createdAt?: number;
+  modifiedAt?: number;
   revision: number;
   files: Snapshot;
   revisions: Record<string, number>;
@@ -207,6 +210,13 @@ export async function createCollaborationServer(options: Options) {
       );
       checkSnapshot(project.files);
       project.authorship ??= rebuildAuthorship(project.history);
+      const directory = await fs.stat(path.join(root, entry.name));
+      project.createdAt ??=
+        directory.birthtimeMs > 0 ? directory.birthtimeMs : undefined;
+      project.modifiedAt ??=
+        project.history.at(-1)?.entry.finishedAt ??
+        project.history.at(-1)?.entry.createdAt ??
+        project.createdAt;
       if (project.job) {
         project.job.expiresAt = 0;
       }
@@ -261,6 +271,7 @@ export async function createCollaborationServer(options: Options) {
       active: true,
       connected: true,
       offlineSync: true,
+      projectRename: true,
       taskInstructionsEditable: true,
       taskResultNaming: true,
       gamejamWorkflow: true,
@@ -270,6 +281,8 @@ export async function createCollaborationServer(options: Options) {
       multiProviderAi: true,
       projectId: project.id,
       projectName: project.name,
+      projectCreatedAt: project.createdAt,
+      projectModifiedAt: project.modifiedAt,
       memberId: member.id,
       role: member.role,
       revision: project.revision,
@@ -315,6 +328,7 @@ export async function createCollaborationServer(options: Options) {
       project.revisions[relative] = (project.revisions[relative] ?? 0) + 1;
     }
     project.revision++;
+    project.modifiedAt = Date.now();
     project.history.push({
       entry: withTaskHistory(
         {
@@ -533,6 +547,8 @@ export async function createCollaborationServer(options: Options) {
         const project: Project = {
           id: randomUUID(),
           name,
+          createdAt: Date.now(),
+          modifiedAt: Date.now(),
           files: input.files,
           revision: 1,
           revisions: Object.fromEntries(
@@ -644,6 +660,7 @@ export async function createCollaborationServer(options: Options) {
               lock.expiresAt = Date.now() + 30_000;
           }
           const result = envelope(project, member);
+          if (input.metadataOnly === true) return { state: result.state };
           return input.knownRevision === project.revision
             ? { ...result, files: undefined, revisions: undefined }
             : result;
@@ -832,6 +849,34 @@ export async function createCollaborationServer(options: Options) {
           recordChanges(next, member, next.files, '초대 코드 재발급');
           await persist(next);
           return { ...envelope(next, member), code };
+        }
+        if (action === 'rename') {
+          admin(member);
+          editable(project, member);
+          let name: string;
+          try {
+            name = homeName(input.name as string);
+          } catch (error) {
+            throw new ApiError((error as Error).message, 400);
+          }
+          if (typeof input.expectedName !== 'string')
+            throw new ApiError('기존 프로젝트 이름을 확인해주세요.', 400);
+          if (name === project.name) return envelope(project, member);
+          if (input.expectedName !== project.name)
+            throw new ApiError(
+              '프로젝트 이름이 바뀌었습니다. 목록을 새로고침하고 다시 확인해주세요.',
+              409,
+            );
+          const next = structuredClone(project);
+          next.name = name;
+          recordChanges(
+            next,
+            member,
+            next.files,
+            `프로젝트 이름 변경 · ${project.name} → ${name}`,
+          );
+          await persist(next);
+          return envelope(next, member);
         }
         if (action === 'role') {
           admin(member);

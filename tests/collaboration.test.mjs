@@ -14,6 +14,108 @@ import {
 import { checkSnapshot } from '../src/collaboration-model.ts';
 import { setMarkdownTaskChecked } from '../src/markdown-editing.ts';
 
+test('authoritative project rename is admin-only, stale-safe, retry-safe, recorded and persistent without changing files or sessions', async (t) => {
+  const { owner, editor, url, restart } = await setup(t);
+  const before = structuredClone(owner.files);
+  const credentials = structuredClone(owner.credentials);
+  const createdAt = owner.state.projectCreatedAt;
+  const previousModifiedAt = owner.state.projectModifiedAt;
+  assert.ok(Number.isFinite(createdAt) && createdAt > 0);
+  assert.ok(Number.isFinite(previousModifiedAt) && previousModifiedAt > 0);
+  await assert.rejects(editor.renameProject('편집자 이름'), /관리자/);
+  // Server authorization must hold even if a client bypasses its own UI checks.
+  await assert.rejects(
+    CollaborationClient.fetch(
+      url,
+      `/projects/${credentials.projectId}/rename`,
+      { name: '우회', expectedName: 'test' },
+      editor.credentials.token,
+    ),
+    /관리자/,
+  );
+  for (const name of ['', '  ', 'x'.repeat(101), '이름\n줄바꿈'])
+    await assert.rejects(owner.renameProject(name), /이름/);
+  await owner.renameProject('팀 프로젝트');
+  await editor.refresh();
+  assert.equal(editor.state.projectName, '팀 프로젝트');
+  const info = await CollaborationClient.fetch(
+    url,
+    `/projects/${credentials.projectId}/state`,
+    { metadataOnly: true },
+    editor.credentials.token,
+  );
+  assert.equal(info.state.projectName, '팀 프로젝트');
+  assert.equal(info.state.projectCreatedAt, createdAt);
+  assert.ok(info.state.projectModifiedAt >= previousModifiedAt);
+  const renamedModifiedAt = info.state.projectModifiedAt;
+  await owner.refresh();
+  await editor.refresh();
+  assert.equal(owner.state.projectModifiedAt, renamedModifiedAt);
+  assert.equal(info.files, undefined);
+  assert.equal(info.revisions, undefined);
+  assert.equal(info.authorship, undefined);
+  assert.deepEqual(owner.files, before);
+  assert.deepEqual(owner.credentials, credentials);
+  const revision = owner.state.revision;
+  await owner.renameProject('팀 프로젝트', 'test');
+  assert.equal(owner.state.revision, revision);
+  await assert.rejects(
+    owner.renameProject('오래된 변경', 'test'),
+    /바뀌었습니다/,
+  );
+  assert.match(
+    (await owner.history())[0].label,
+    /프로젝트 이름 변경.*test.*팀 프로젝트/,
+  );
+  await restart();
+  await owner.refresh();
+  assert.equal(owner.state.projectName, '팀 프로젝트');
+  assert.equal(owner.state.projectCreatedAt, createdAt);
+  assert.equal(owner.state.projectModifiedAt, renamedModifiedAt);
+  assert.deepEqual(owner.files, before);
+  const task = await owner.command('tasks:create', {
+    kind: 'organize',
+    inputPaths: ['ideas/a.md'],
+    x: 0,
+    y: 0,
+  });
+  await owner.beginAi(task.relativePath);
+  await assert.rejects(owner.renameProject('AI 중'), /AI 작업/);
+  await owner.cancelAi();
+  await owner.setRole(editor.state.memberId, 'viewer');
+  await editor.refresh();
+  await assert.rejects(
+    CollaborationClient.fetch(
+      url,
+      `/projects/${credentials.projectId}/rename`,
+      { name: '뷰어 이름', expectedName: '팀 프로젝트' },
+      editor.credentials.token,
+    ),
+    /관리자/,
+  );
+});
+
+test('project rename does not use offline/legacy sessions to acknowledge an unsent server change', async () => {
+  const client = new CollaborationClient(
+    {
+      projectId: randomUUID(),
+      serverUrl: 'http://127.0.0.1:4318',
+      token: 'fixture',
+    },
+    () => {},
+  );
+  client.state = {
+    active: true,
+    connected: false,
+    role: 'admin',
+    members: [],
+    locks: [],
+  };
+  await assert.rejects(client.renameProject('오프라인'), /연결/);
+  client.state.connected = true;
+  await assert.rejects(client.renameProject('구버전'), /업데이트/);
+});
+
 test('Markdown checkbox edits synchronize, keep author history, respect locks/viewers/AI and survive restart', async (t) => {
   const { owner, editor, restart } = await setup(t);
   const relativePath = 'ideas/a.md';

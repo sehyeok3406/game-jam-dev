@@ -4164,6 +4164,52 @@ kbd {
   justify-content: space-between;
   gap: 20px;
   margin: 20px 0;
+  flex-wrap: wrap;
+}
+.home-list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  max-width: 100%;
+}
+.home-list-controls select {
+  max-width: 100%;
+  padding: 9px 10px;
+  font-size: 12px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-solid);
+}
+.home-sort-direction {
+  padding: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+}
+.home-view-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-solid);
+}
+.home-view-toggle button {
+  border: 0;
+  background: transparent;
+  padding: 7px;
+}
+.home-view-toggle button[aria-pressed='true'] {
+  background: var(--surface-hover);
+  color: var(--accent, #81a9ff);
+}
+.home-result-count {
+  margin: -6px 0 18px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 .home-list-toolbar h2 {
   font-size: 16px;
@@ -4202,6 +4248,91 @@ kbd {
 .home-project-card:hover {
   border-color: var(--border-strong);
   transform: translateY(-2px);
+}
+.home-folders-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 24px 12px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.home-folders-heading button,
+.home-folder-more {
+  border: 0;
+  background: transparent;
+  padding: 5px;
+}
+.home-folders-list {
+  max-height: 32vh;
+  overflow: auto;
+}
+.home-folders-hint {
+  margin: 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.home-folder-row {
+  display: flex;
+  align-items: center;
+}
+.home-folder-row .home-nav {
+  flex: 1;
+  min-width: 0;
+  padding-right: 4px;
+}
+.home-folder-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+.home-folder-row svg {
+  flex-shrink: 0;
+}
+.home-project-more {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  padding: 7px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.home-context-menu {
+  position: fixed;
+  z-index: 100;
+  width: 236px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 20%);
+}
+.home-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 11px 12px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 5px;
+}
+.home-context-menu button:hover,
+.home-context-menu button:focus-visible {
+  background: var(--surface-hover);
+}
+.home-context-menu button:disabled {
+  opacity: 0.45;
+}
+.home-project-folder {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .home-project-open {
   display: block;
@@ -4330,6 +4461,57 @@ kbd {
   color: var(--text-muted);
   padding: 9px;
 }
+.home-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.home-project-list .home-project-card {
+  min-width: 0;
+}
+.home-project-list .home-project-card:hover {
+  transform: none;
+}
+.home-project-list .home-project-open {
+  display: flex;
+  align-items: stretch;
+  min-height: 112px;
+  padding-right: 44px;
+}
+.home-project-list .home-project-cover {
+  flex: 0 0 82px;
+  height: auto;
+  align-self: stretch;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+}
+.home-project-list .home-mini-canvas {
+  display: none;
+}
+.home-project-list .home-project-cover > span {
+  bottom: auto;
+  top: 18px;
+  left: 7px;
+  font-size: 10px;
+}
+.home-project-list .home-project-details {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 18px;
+}
+.home-project-list .home-project-details h3 {
+  margin: 0;
+}
+.home-project-list .home-project-folder {
+  margin: 5px 0;
+}
+.home-project-list .home-project-location {
+  margin: 5px 0 8px;
+}
+.home-project-list .home-server-edit {
+  text-align: right;
+  padding-right: 16px;
+}
 .home-empty {
   display: grid;
   place-items: center;
@@ -4380,6 +4562,7 @@ kbd {
   box-shadow: 0 24px 80px rgb(0 0 0 / 24%);
 }
 .home-create-dialog input,
+.home-create-dialog select,
 .canvas-find input {
   min-width: 0;
   border: 1px solid var(--border-strong);

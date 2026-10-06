@@ -16,6 +16,14 @@ import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
 import { cardColor } from './card-colors';
 import {
+  displayHomeProjects,
+  editHomeOrganization,
+  readHomeOrganization,
+  homeName,
+  type HomeEdit,
+  type HomeOrganization,
+} from './home-organization';
+import {
   DEFAULT_PREVIEW_PATH,
   assertPreviewPath,
   isPreviewPath,
@@ -268,16 +276,64 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     collabListeners.forEach((listener) => listener(structuredClone(collab)));
     return structuredClone(collab);
   };
+  let home: HomeOrganization = { folders: [], projects: [] };
+  let demoProjectName =
+    localStorage.getItem('game-canvas-demo-project-name') || '밤의 농장';
+  try {
+    const saved = localStorage.getItem('game-canvas-demo-home');
+    if (saved) home = readHomeOrganization(saved);
+  } catch {
+    /* Demo storage can be unavailable in private browsing. */
+  }
+  const editHome = async (edit: HomeEdit) => {
+    if (edit.type === 'move-project' && edit.id !== 'demo-local')
+      throw new Error('프로젝트를 찾을 수 없습니다.');
+    const next = editHomeOrganization(home, edit);
+    localStorage.setItem('game-canvas-demo-home', JSON.stringify(next));
+    home = next;
+  };
   const api: GameCanvasApi = {
-    listProjects: async () => [
-      {
-        id: 'demo-local',
-        name: '밤의 농장',
-        kind: 'local',
-        root: 'demo-game',
-        lastOpenedAt: now,
-      },
-    ],
+    listProjects: async () =>
+      displayHomeProjects(
+        [
+          {
+            id: 'demo-local',
+            name: demoProjectName,
+            kind: 'local',
+            root: 'demo-game',
+            lastOpenedAt: now,
+            createdAt: now - 86400000,
+            modifiedAt: now,
+          },
+        ],
+        home,
+      ),
+    listProjectFolders: async () => structuredClone(home.folders),
+    renameProject: async (id, inputName, expectedName) => {
+      if (id !== 'demo-local') throw new Error('프로젝트를 찾을 수 없습니다.');
+      const name = homeName(inputName);
+      if (
+        expectedName !== undefined &&
+        expectedName !== demoProjectName &&
+        name !== demoProjectName
+      )
+        throw new Error(
+          '프로젝트 이름이 바뀌었습니다. 목록을 새로고침해주세요.',
+        );
+      localStorage.setItem('game-canvas-demo-project-name', name);
+      demoProjectName = name;
+      notify();
+    },
+    moveProject: (id, folderId) =>
+      editHome({ type: 'move-project', id, folderId }),
+    createProjectFolder: (name) =>
+      editHome({ type: 'create-folder', id: crypto.randomUUID(), name }),
+    renameProjectFolder: (id, name) =>
+      editHome({ type: 'rename-folder', id, name }),
+    removeProjectFolder: (id) => editHome({ type: 'remove-folder', id }),
+    revealProject: async () => {
+      throw new Error('저장 위치 보기는 데스크톱 앱에서 사용해주세요.');
+    },
     openProject: async () => api.getWorkspace(),
     createProject: async () => {
       throw new Error('새 프로젝트 생성은 데스크톱 앱에서 사용해주세요.');
@@ -537,11 +593,11 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
     getWorkspace: async () => ({
       root: '/demo/game-canvas',
-      name: 'demo-game',
+      name: demoProjectName,
     }),
     selectWorkspace: async () => ({
       root: '/demo/game-canvas',
-      name: 'demo-game',
+      name: demoProjectName,
     }),
     listDocuments: async () => structuredClone(documents),
     listSections: async () => structuredClone(sections),

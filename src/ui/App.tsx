@@ -4261,7 +4261,9 @@ function WorkspaceCanvas() {
           <div className="header-project floating-surface">
             <span className="brand-mark">GC</span>
             <div>
-              <strong>{workspace.name ?? 'Game Canvas'}</strong>
+              <strong>
+                {collaboration.projectName ?? workspace.name ?? 'Game Canvas'}
+              </strong>
               <span
                 className={`save-state${relevantEdits.some((edit) => edit.failed) || (collaboration.active && !collaboration.connected) ? ' save-state--warning' : ''}`}
                 role="status"

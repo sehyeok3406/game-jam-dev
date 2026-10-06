@@ -2,7 +2,19 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
 
 const api: GameCanvasApi = {
-  listProjects: () => ipcRenderer.invoke('projects:list'),
+  listProjects: (refreshShared) =>
+    ipcRenderer.invoke('projects:list', refreshShared),
+  listProjectFolders: () => ipcRenderer.invoke('projects:folders'),
+  renameProject: (id, name, expectedName) =>
+    ipcRenderer.invoke('projects:rename', id, name, expectedName),
+  moveProject: (id, folderId) =>
+    ipcRenderer.invoke('projects:move', id, folderId),
+  createProjectFolder: (name) =>
+    ipcRenderer.invoke('projects:folder-create', name),
+  renameProjectFolder: (id, name) =>
+    ipcRenderer.invoke('projects:folder-rename', id, name),
+  removeProjectFolder: (id) => ipcRenderer.invoke('projects:folder-remove', id),
+  revealProject: (id) => ipcRenderer.invoke('projects:reveal', id),
   openProject: (id) => ipcRenderer.invoke('projects:open', id),
   createProject: (name) => ipcRenderer.invoke('projects:create', name),
   goHome: () => ipcRenderer.invoke('projects:home'),

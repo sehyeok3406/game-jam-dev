@@ -750,9 +750,19 @@ const getAiStatus = async (providerId: import('./shared').AiProviderId) => {
     : otherCliStatus(providerId, collectProcess);
 };
 
-const workspaceState = (): WorkspaceState => ({
+const localProjectName = async (root: string) => {
+  const filename = await projectPath(root, 'project.md');
+  const data = matter(await fs.readFile(filename, 'utf8')).data;
+  return typeof data.project_name === 'string' && data.project_name.trim()
+    ? data.project_name.trim()
+    : path.basename(root);
+};
+const workspaceState = async (): Promise<WorkspaceState> => ({
   root: workspaceRoot,
-  name: workspaceRoot ? path.basename(workspaceRoot) : null,
+  name: workspaceRoot
+    ? (collaboration?.state.projectName ??
+      (await localProjectName(workspaceRoot)))
+    : null,
 });
 
 const settingsPath = () => path.join(app.getPath('userData'), SETTINGS_FILE);
@@ -1082,7 +1092,7 @@ const setWorkspace = async (root: string) => {
   await saveSettings();
   await projectLibrary.rememberLocal(
     workspaceRoot,
-    path.basename(workspaceRoot),
+    await localProjectName(workspaceRoot),
   );
   await startWatcher();
   return workspaceState();
@@ -2338,7 +2348,7 @@ const registerIpc = () => {
     personalCollapsed.clear();
     collaborationChanged(noCollaboration(), true);
   };
-  handle('projects:list', async () => {
+  handle('projects:list', async (_event, refreshShared = false) => {
     const entries = projectLibrary.list();
     return Promise.all(
       entries.map(async (entry) => {
@@ -2366,21 +2376,157 @@ const registerIpc = () => {
               : cached.outgoing
                 ? 1
                 : 0;
-            entry.role = cached.state?.role ?? entry.role;
+            entry.role = entry.role ?? cached.state?.role;
+            entry.createdAt = cached.state?.projectCreatedAt;
+            entry.modifiedAt = cached.state?.projectModifiedAt;
           } catch {
             /* no cached snapshot yet */
+          }
+          if (refreshShared === true) {
+            try {
+              const saved = projectLibrary.get(entry.id);
+              const result = (await CollaborationClient.fetch(
+                saved.credentials!.serverUrl,
+                `/projects/${saved.projectId}/state`,
+                { metadataOnly: true },
+                saved.credentials!.token,
+              )) as import('./collaboration-server').CollaborationEnvelope;
+              entry.name = result.state.projectName ?? entry.name;
+              entry.role = result.state.role;
+              entry.createdAt = result.state.projectCreatedAt;
+              entry.modifiedAt = result.state.projectModifiedAt;
+              await projectLibrary.renameProject(
+                entry.id,
+                entry.name,
+                entry.role,
+              );
+            } catch {
+              /* Keep last known name/session when the server is unavailable. */
+            }
           }
           entry.current =
             collaboration?.credentials.projectId === entry.projectId;
           entry.connected = entry.current
             ? collaboration?.state.connected
             : undefined;
-        } else entry.current = !collaboration && workspaceRoot === entry.root;
+        } else {
+          entry.current = !collaboration && workspaceRoot === entry.root;
+          try {
+            entry.name = await localProjectName(entry.root!);
+            const { localProjectTimestamps } =
+              await import('./project-timestamps');
+            Object.assign(entry, await localProjectTimestamps(entry.root!));
+          } catch {
+            /* Keep unavailable projects in the list. */
+          }
+        }
         return entry;
       }),
     );
   });
   handle('projects:home', suspendProject);
+  handle('projects:folders', () => projectLibrary.listFolders());
+  handle(
+    'projects:rename',
+    async (_event, id: string, inputName: string, expectedName?: string) => {
+      const { homeName } = await import('./home-organization');
+      const name = homeName(inputName);
+      const entry = projectLibrary.get(id);
+      if (entry.kind === 'shared') {
+        await sharedCacheQueue;
+        const cachePath = path.join(
+          app.getPath('userData'),
+          'shared-workspaces',
+          entry.projectId!,
+          'server-cache.json',
+        );
+        const cached = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+        if (cached.offline || cached.outgoing)
+          throw new Error(
+            '공동 프로젝트를 열어 미동기화 작업을 반영한 뒤 이름을 변경해주세요.',
+          );
+        const client =
+          collaboration &&
+          collaboration.credentials.projectId === entry.projectId
+            ? collaboration
+            : new CollaborationClient(entry.credentials!, () => {});
+        await client.refresh();
+        await client.renameProject(name, expectedName ?? entry.name);
+        await projectLibrary.renameProject(
+          id,
+          client.state.projectName!,
+          client.state.role,
+        );
+      } else {
+        const root = await fs.realpath(entry.root!);
+        const filename = await projectPath(root, 'project.md');
+        const raw = await fs.readFile(filename, 'utf8');
+        const previousName = await localProjectName(root);
+        if (
+          expectedName !== undefined &&
+          expectedName !== previousName &&
+          name !== previousName
+        )
+          throw new Error(
+            '프로젝트 이름이 바뀌었습니다. 목록을 새로고침하고 다시 확인해주세요.',
+          );
+        const parsed = matter(raw);
+        parsed.data.project_name = name;
+        parsed.data.title = name;
+        const next = matter.stringify(parsed.content, parsed.data);
+        if (next !== raw) {
+          const temporary = `${filename}.${randomUUID()}.tmp`;
+          try {
+            await fs.writeFile(temporary, next, { flag: 'wx' });
+            if ((await fs.readFile(filename, 'utf8')) !== raw)
+              throw new Error(
+                '프로젝트 문서가 변경되었습니다. 목록을 새로고침하고 다시 시도해주세요.',
+              );
+            await fs.rename(temporary, filename);
+          } finally {
+            await fs.rm(temporary, { force: true }).catch(() => undefined);
+          }
+          const history = historyId();
+          await saveHistory(
+            root,
+            { 'project.md': raw },
+            { 'project.md': next },
+            {
+              id: history,
+              label: `프로젝트 이름 변경 · ${previousName} → ${name}`,
+              kind: 'user',
+              status: 'completed',
+              createdAt: Date.now(),
+              finishedAt: Date.now(),
+            },
+          );
+        }
+        await projectLibrary.renameProject(id, name);
+      }
+      notifyWorkspaceChanged();
+    },
+  );
+  handle('projects:move', (_event, id: string, folderId: string | null) =>
+    projectLibrary.moveProject(id, folderId),
+  );
+  handle('projects:folder-create', (_event, name: string) =>
+    projectLibrary.createFolder(name),
+  );
+  handle('projects:folder-rename', (_event, id: string, name: string) =>
+    projectLibrary.renameFolder(id, name),
+  );
+  handle('projects:folder-remove', (_event, id: string) =>
+    projectLibrary.removeFolder(id),
+  );
+  handle('projects:reveal', async (_event, id: string) => {
+    const entry = projectLibrary.get(id);
+    if (entry.kind !== 'local' || !entry.root)
+      throw new Error('로컬 프로젝트를 선택해주세요.');
+    const root = await fs.realpath(entry.root);
+    if (!(await fs.stat(root)).isDirectory())
+      throw new Error('프로젝트 폴더를 찾을 수 없습니다.');
+    shell.showItemInFolder(root);
+  });
   handle('projects:open', async (_event, id: string) => {
     const entry = projectLibrary.get(id);
     if (
@@ -2518,7 +2664,7 @@ const registerIpc = () => {
         input.serverUrl,
         key,
         input.nickname,
-        path.basename(localRoot),
+        await localProjectName(localRoot),
         await captureProject(localRoot),
       );
       localWorkspaceBeforeCollaboration = localRoot;

@@ -57,7 +57,7 @@ try {
   const updateState = await call('updates:state');
   assert.equal(updateState.status, 'unavailable');
   assert.equal(updateState.repository, 'sehyeok3406/game-jam-dev');
-  assert.equal(updateState.currentVersion, '0.10.0');
+  assert.equal(updateState.currentVersion, '0.10.1');
   assert.equal((await call('updates:check')).available, false);
   assert.equal((await call('updates:install')).status, 'unavailable');
   assert.equal((await call('updates:automatic', false)).automatic, false);
@@ -112,8 +112,64 @@ try {
     (entry: any) => entry.root === newProject.root,
   );
   assert.equal(createdEntry.kind, 'local');
+  assert.ok(Number.isFinite(createdEntry.createdAt));
+  assert.ok(Number.isFinite(createdEntry.modifiedAt));
+  await call('projects:rename', createdEntry.id, '홈 표시 이름');
+  const datedEntry = (await call('projects:list')).find(
+    (entry: any) => entry.id === createdEntry.id,
+  );
+  assert.equal(datedEntry.createdAt, createdEntry.createdAt);
+  assert.ok(datedEntry.modifiedAt >= createdEntry.modifiedAt);
+  const renamedProject = matter(await fs.readFile(newProjectFile, 'utf8'));
+  const originalProject = matter(originalProjectContent);
+  assert.equal(renamedProject.data.project_name, '홈 표시 이름');
+  assert.equal(renamedProject.data.title, '홈 표시 이름');
+  assert.equal(renamedProject.data.id, originalProject.data.id);
+  assert.equal(renamedProject.content, originalProject.content);
+  await assert.rejects(
+    call('projects:rename', createdEntry.id, '덮어쓰기', '지난 이름'),
+    /바뀌었습니다/,
+  );
+  const renamedProjectContent = await fs.readFile(newProjectFile, 'utf8');
+  await call('projects:folder-create', '게임 아이디어');
+  const homeFolder = (await call('projects:folders'))[0];
+  await call('projects:move', createdEntry.id, homeFolder.id);
+  assert.equal(
+    (await call('projects:list')).find(
+      (entry: any) => entry.id === createdEntry.id,
+    ).name,
+    '홈 표시 이름',
+  );
+  assert.equal(
+    (await call('projects:list')).find(
+      (entry: any) => entry.id === createdEntry.id,
+    ).folderId,
+    homeFolder.id,
+  );
+  await call('projects:folder-rename', homeFolder.id, '테스트 프로젝트');
+  assert.equal((await call('projects:folders'))[0].name, '테스트 프로젝트');
+  await call('projects:reveal', createdEntry.id);
+  assert.ok(revealedPaths.includes(newProject.root));
+  await call('projects:folder-remove', homeFolder.id);
+  assert.equal(
+    (await call('projects:list')).find(
+      (entry: any) => entry.id === createdEntry.id,
+    ).folderId,
+    undefined,
+  );
+  assert.equal(
+    await fs.readFile(newProjectFile, 'utf8'),
+    renamedProjectContent,
+  );
   await call('projects:open', createdEntry.id);
   assert.equal((await call('workspace:get')).root, newProject.root);
+  assert.equal((await call('workspace:get')).name, '홈 표시 이름');
+  assert.equal(
+    (await call('projects:list')).find(
+      (entry: any) => entry.id === createdEntry.id,
+    ).name,
+    '홈 표시 이름',
+  );
   await call('projects:home');
   console.log(
     'PASS: home startup, safe new project creation and recent local selection preserve existing folders',
@@ -1180,12 +1236,50 @@ try {
     ),
   );
   assert.ok(!JSON.stringify(entries).includes(shared.recoveryKey));
+  await otherClient.refresh();
+  const originalSharedFiles = structuredClone(otherClient.files);
+  await call('projects:folder-create', '공동 게임');
+  const sharedFolder = (await call('projects:folders'))[0];
+  await call('projects:move', rememberedId, sharedFolder.id);
+  const previousSharedName = entries.find(
+    (entry: any) => entry.id === rememberedId,
+  ).name;
+  await call(
+    'projects:rename',
+    rememberedId,
+    '이름 변경된 공동 게임',
+    previousSharedName,
+  );
+  await otherClient.refresh();
+  assert.equal(otherClient.state.projectName, '이름 변경된 공동 게임');
+  assert.deepEqual(otherClient.files, originalSharedFiles);
+  assert.equal(
+    (await call('projects:list')).find(
+      (entry: any) => entry.id === rememberedId,
+    ).folderId,
+    sharedFolder.id,
+  );
+  assert.equal(
+    (await call('projects:list', true)).find(
+      (entry: any) => entry.id === rememberedId,
+    ).name,
+    '이름 변경된 공동 게임',
+  );
+  assert.equal(
+    (await call('projects:list')).find((entry: any) => entry.root === root)
+      .name,
+    path.basename(root),
+  );
   await call('projects:open', rememberedId);
   assert.equal((await call('collaboration:get')).memberId, rememberedMember);
   assert.equal((await call('collaboration:get')).role, 'admin');
   await call('projects:home');
   const rememberedPort = collaborationServer.port;
   await collaborationServer.close();
+  await assert.rejects(
+    call('projects:rename', rememberedId, '오프라인 이름'),
+    /서버|연결/,
+  );
   await call('projects:open', rememberedId);
   assert.equal((await call('collaboration:get')).connected, false);
   await call('collaboration:lock', idea.relativePath);

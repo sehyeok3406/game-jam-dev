@@ -11,9 +11,29 @@ import {
   Wifi,
   Settings2,
   RefreshCw,
+  Folder,
+  MoreHorizontal,
+  LayoutGrid,
+  List,
+  ArrowDownWideNarrow,
+  ArrowUpWideNarrow,
 } from 'lucide-react';
-import type { ProjectEntry } from '../shared';
+import type { ProjectEntry, ProjectFolder } from '../shared';
 import { ROLE_NAMES } from './CollaborationPanel';
+import {
+  DEFAULT_HOME_VIEW,
+  HOME_VIEW_KEY,
+  readHomeView,
+  selectHomeProjects,
+  homeDate,
+  homeDateLabel,
+  type HomeView,
+} from '../home-view';
+import {
+  HomeContextMenu,
+  HomeOrganizationDialog,
+  type HomeDialog,
+} from './HomeOrganizationControls';
 
 export function ProjectHome({
   opened,
@@ -31,7 +51,27 @@ export function ProjectHome({
   theme: 'dark' | 'light';
 }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
-  const [filter, setFilter] = useState<'all' | 'local' | 'shared'>('all');
+  const [folders, setFolders] = useState<ProjectFolder[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [organizationDialog, setOrganizationDialog] =
+    useState<HomeDialog | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    origin: HTMLElement;
+    project?: ProjectEntry;
+    folder?: ProjectFolder;
+  } | null>(null);
+  const [viewSettings, setViewSettings] = useState<HomeView>(() => {
+    try {
+      return readHomeView(localStorage.getItem(HOME_VIEW_KEY));
+    } catch {
+      return { ...DEFAULT_HOME_VIEW };
+    }
+  });
+  const filter = viewSettings.filter;
+  const setFilter = (value: HomeView['filter']) =>
+    setViewSettings((previous) => ({ ...previous, filter: value }));
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -41,6 +81,15 @@ export function ProjectHome({
   const [server, setServer] = useState<ProjectEntry | null>(null);
   const [address, setAddress] = useState('');
   const dialogRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem(HOME_VIEW_KEY, JSON.stringify(viewSettings));
+    } catch {
+      setError(
+        '보기 설정을 저장하지 못했습니다. 현재 보기는 적용되지만 다음 실행에서 초기화될 수 있습니다.',
+      );
+    }
+  }, [viewSettings]);
   useEffect(() => {
     if (!create && !server) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -73,9 +122,17 @@ export function ProjectHome({
       if (previous?.isConnected) previous.focus();
     };
   }, [create, server, busy]);
-  const refresh = async () => {
+  const refresh = async (refreshShared = false) => {
     try {
-      setProjects(await window.gameCanvas.listProjects());
+      const [entries, groups] = await Promise.all([
+        window.gameCanvas.listProjects(refreshShared),
+        window.gameCanvas.listProjectFolders(),
+      ]);
+      setProjects(entries);
+      setFolders(groups);
+      setSelectedFolder((id) =>
+        groups.some((folder) => folder.id === id) ? id : null,
+      );
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -101,12 +158,11 @@ export function ProjectHome({
       setBusy(false);
     }
   };
-  const visible = projects.filter(
-    (entry) =>
-      (filter === 'all' || entry.kind === filter) &&
-      `${entry.name} ${entry.root ?? ''} ${entry.serverUrl ?? ''}`
-        .toLocaleLowerCase()
-        .includes(query.toLocaleLowerCase()),
+  const visible = selectHomeProjects(
+    projects,
+    viewSettings,
+    query,
+    selectedFolder,
   );
   return (
     <main className="project-home">
@@ -126,8 +182,11 @@ export function ProjectHome({
           <button
             key={item.id}
             className="home-nav"
-            aria-pressed={filter === item.id}
-            onClick={() => setFilter(item.id)}
+            aria-pressed={!selectedFolder && filter === item.id}
+            onClick={() => {
+              setFilter(item.id);
+              setSelectedFolder(null);
+            }}
           >
             <item.icon size={17} />
             {item.label}
@@ -140,6 +199,76 @@ export function ProjectHome({
             </span>
           </button>
         ))}
+        <div className="home-folders-heading">
+          <span>폴더</span>
+          <button
+            aria-label="새 홈 폴더 만들기"
+            title="새 홈 폴더"
+            disabled={busy}
+            onClick={() => {
+              setError('');
+              setOrganizationDialog({ type: 'create-folder' });
+            }}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+        <div className="home-folders-list">
+          {folders.map((folder) => (
+            <div
+              className="home-folder-row"
+              key={folder.id}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                if (!busy)
+                  setMenu({
+                    folder,
+                    x: event.clientX,
+                    y: event.clientY,
+                    origin: event.currentTarget.querySelector('button')!,
+                  });
+              }}
+            >
+              <button
+                className="home-nav"
+                aria-pressed={selectedFolder === folder.id}
+                onClick={() => {
+                  setSelectedFolder(folder.id);
+                  setFilter('all');
+                }}
+              >
+                <Folder size={17} />
+                <strong title={folder.name}>{folder.name}</strong>
+                <span>
+                  {
+                    projects.filter((entry) => entry.folderId === folder.id)
+                      .length
+                  }
+                </span>
+              </button>
+              <button
+                className="home-folder-more"
+                aria-label={`${folder.name} 폴더 메뉴`}
+                aria-haspopup="menu"
+                disabled={busy}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setMenu({
+                    folder,
+                    x: rect.right,
+                    y: rect.bottom,
+                    origin: event.currentTarget,
+                  });
+                }}
+              >
+                <MoreHorizontal size={16} />
+              </button>
+            </div>
+          ))}
+          {!folders.length && (
+            <p className="home-folders-hint">폴더로 프로젝트를 정리하세요.</p>
+          )}
+        </div>
         <div className="home-sidebar-bottom">
           <button onClick={updates}>
             <RefreshCw size={16} /> 앱 업데이트
@@ -159,7 +288,7 @@ export function ProjectHome({
           <span>워크스페이스</span>
           <button
             disabled={busy}
-            onClick={() => void refresh()}
+            onClick={() => void action(() => refresh(true))}
             title="프로젝트 목록 새로고침"
           >
             <RefreshCw size={15} />
@@ -213,22 +342,126 @@ export function ProjectHome({
         </div>
         <div className="home-list-toolbar">
           <h2>
-            {filter === 'all'
-              ? '최근 프로젝트'
-              : filter === 'local'
-                ? '로컬 프로젝트'
-                : '공동 프로젝트'}
+            {selectedFolder
+              ? folders.find((folder) => folder.id === selectedFolder)?.name
+              : filter === 'all'
+                ? '최근 프로젝트'
+                : filter === 'local'
+                  ? '로컬 프로젝트'
+                  : '공동 프로젝트'}
           </h2>
-          <label className="home-search">
-            <Search size={16} />
-            <input
-              aria-label="프로젝트 검색"
-              placeholder="프로젝트 검색"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
+          <div className="home-list-controls">
+            <label className="home-search">
+              <Search size={16} />
+              <input
+                aria-label="프로젝트 검색"
+                placeholder="프로젝트 검색"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <select
+              aria-label="프로젝트 유형 필터"
+              value={filter}
+              onChange={(event) =>
+                setFilter(event.target.value as HomeView['filter'])
+              }
+            >
+              <option value="all">모든 유형</option>
+              <option value="local">로컬 프로젝트</option>
+              <option value="shared">공동 프로젝트</option>
+            </select>
+            <select
+              aria-label="프로젝트 정렬 기준"
+              value={viewSettings.sortBy}
+              onChange={(event) =>
+                setViewSettings((previous) => ({
+                  ...previous,
+                  sortBy: event.target.value as HomeView['sortBy'],
+                }))
+              }
+            >
+              <option value="name">이름</option>
+              <option value="created">생성일</option>
+              <option value="modified">마지막으로 수정됨</option>
+              <option value="opened">최근 열기</option>
+            </select>
+            <button
+              className="home-sort-direction"
+              title={
+                viewSettings.sortBy === 'name'
+                  ? viewSettings.direction === 'asc'
+                    ? '가나다순 · 역순으로 변경'
+                    : '역순 · 가나다순으로 변경'
+                  : viewSettings.direction === 'desc'
+                    ? '최신순 · 오래된 순으로 변경'
+                    : '오래된 순 · 최신순으로 변경'
+              }
+              aria-label={
+                viewSettings.sortBy === 'name'
+                  ? viewSettings.direction === 'asc'
+                    ? '이름 가나다순, 역순으로 변경'
+                    : '이름 역순, 가나다순으로 변경'
+                  : viewSettings.direction === 'desc'
+                    ? '최신순, 오래된 순으로 변경'
+                    : '오래된 순, 최신순으로 변경'
+              }
+              onClick={() =>
+                setViewSettings((previous) => ({
+                  ...previous,
+                  direction: previous.direction === 'asc' ? 'desc' : 'asc',
+                }))
+              }
+            >
+              {viewSettings.direction === 'desc' ? (
+                <ArrowDownWideNarrow size={16} />
+              ) : (
+                <ArrowUpWideNarrow size={16} />
+              )}
+            </button>
+            <div
+              className="home-view-toggle"
+              role="group"
+              aria-label="프로젝트 보기 방식"
+            >
+              <button
+                title="썸네일 보기"
+                aria-label="썸네일 보기"
+                aria-pressed={viewSettings.view === 'grid'}
+                onClick={() =>
+                  setViewSettings((previous) => ({ ...previous, view: 'grid' }))
+                }
+              >
+                <LayoutGrid size={16} />
+              </button>
+              <button
+                title="목록 보기"
+                aria-label="목록 보기"
+                aria-pressed={viewSettings.view === 'list'}
+                onClick={() =>
+                  setViewSettings((previous) => ({ ...previous, view: 'list' }))
+                }
+              >
+                <List size={16} />
+              </button>
+            </div>
+          </div>
         </div>
+        {!loading && (
+          <p className="home-result-count" role="status">
+            {visible.length}개 프로젝트 ·{' '}
+            {viewSettings.sortBy === 'name'
+              ? '이름'
+              : homeDateLabel(viewSettings.sortBy)}{' '}
+            {viewSettings.sortBy === 'name'
+              ? viewSettings.direction === 'asc'
+                ? '가나다순'
+                : '역순'
+              : viewSettings.direction === 'desc'
+                ? '최신순'
+                : '오래된 순'}
+          </p>
+        )}
         {error && (
           <p className="home-error" role="alert">
             {error}
@@ -237,9 +470,41 @@ export function ProjectHome({
         {loading ? (
           <p role="status">프로젝트 불러오는 중…</p>
         ) : (
-          <div className="home-project-grid">
+          <div
+            className={`home-project-grid${viewSettings.view === 'list' ? ' home-project-list' : ''}`}
+          >
             {visible.map((entry) => (
-              <article className="home-project-card" key={entry.id}>
+              <article
+                className="home-project-card"
+                key={entry.id}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  if (!busy)
+                    setMenu({
+                      project: entry,
+                      x: event.clientX,
+                      y: event.clientY,
+                      origin: event.currentTarget.querySelector('button')!,
+                    });
+                }}
+              >
+                <button
+                  className="home-project-more"
+                  disabled={busy}
+                  aria-label={`${entry.name} 프로젝트 메뉴`}
+                  aria-haspopup="menu"
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setMenu({
+                      project: entry,
+                      x: rect.left,
+                      y: rect.bottom,
+                      origin: event.currentTarget,
+                    });
+                  }}
+                >
+                  <MoreHorizontal size={17} />
+                </button>
                 <button
                   className="home-project-open"
                   disabled={busy}
@@ -253,7 +518,7 @@ export function ProjectHome({
                   <div
                     className={`home-project-cover home-project-cover--${entry.kind}`}
                   >
-                    <div className="home-mini-canvas">
+                    <div className="home-mini-canvas" aria-hidden="true">
                       <i />
                       <i />
                       <i />
@@ -270,6 +535,15 @@ export function ProjectHome({
                   </div>
                   <div className="home-project-details">
                     <h3>{entry.name}</h3>
+                    {entry.folderId && (
+                      <p className="home-project-folder">
+                        <Folder size={12} />
+                        {
+                          folders.find((folder) => folder.id === entry.folderId)
+                            ?.name
+                        }
+                      </p>
+                    )}
                     <p
                       className="home-project-location"
                       title={entry.root ?? entry.serverUrl}
@@ -290,10 +564,21 @@ export function ProjectHome({
                           '이 PC에 저장'
                         )}
                       </span>
-                      <time>
-                        {new Date(entry.lastOpenedAt).toLocaleDateString(
-                          'ko-KR',
-                        )}
+                      <time
+                        title={`${homeDateLabel(viewSettings.sortBy)}${entry.kind === 'shared' ? ' · 마지막 서버 확인 기준' : ''}`}
+                        dateTime={
+                          homeDate(entry, viewSettings.sortBy)
+                            ? new Date(
+                                homeDate(entry, viewSettings.sortBy)!,
+                              ).toISOString()
+                            : undefined
+                        }
+                      >
+                        {homeDate(entry, viewSettings.sortBy)
+                          ? new Date(
+                              homeDate(entry, viewSettings.sortBy)!,
+                            ).toLocaleDateString('ko-KR')
+                          : '날짜 정보 없음'}
                       </time>
                     </div>
                     {!!entry.pendingChanges && (
@@ -324,14 +609,18 @@ export function ProjectHome({
           <div className="home-empty">
             <FolderOpen size={34} />
             <h3>
-              {projects.length
-                ? '검색 결과가 없습니다.'
-                : '첫 게임 아이디어를 시작해보세요.'}
+              {selectedFolder && !query && filter === 'all'
+                ? '이 폴더는 비어 있습니다.'
+                : projects.length
+                  ? '검색 결과가 없습니다.'
+                  : '첫 게임 아이디어를 시작해보세요.'}
             </h3>
             <p>
-              {projects.length
-                ? '검색어나 프로젝트 종류를 바꿔보세요.'
-                : '새 프로젝트를 만들거나 기존 폴더를 열면 여기에 표시됩니다.'}
+              {selectedFolder && !query && filter === 'all'
+                ? '프로젝트 메뉴에서 ‘폴더로 이동’을 선택해 분류하세요.'
+                : projects.length
+                  ? '검색어나 프로젝트 종류를 바꿔보세요.'
+                  : '새 프로젝트를 만들거나 기존 폴더를 열면 여기에 표시됩니다.'}
             </p>
           </div>
         )}
@@ -342,6 +631,146 @@ export function ProjectHome({
           </button>
         </footer>
       </section>
+      {menu && (
+        <HomeContextMenu
+          x={menu.x}
+          y={menu.y}
+          origin={menu.origin}
+          close={() => setMenu(null)}
+          items={
+            menu.project
+              ? [
+                  {
+                    label: '열기',
+                    action: () =>
+                      void action(async () => {
+                        await window.gameCanvas.openProject(menu.project!.id);
+                        await opened();
+                      }),
+                  },
+                  {
+                    label: '이름 변경',
+                    disabled:
+                      menu.project.kind === 'shared' &&
+                      menu.project.role !== 'admin',
+                    title:
+                      menu.project.kind === 'shared'
+                        ? '공동 프로젝트 이름은 관리자만 온라인에서 변경할 수 있습니다.'
+                        : undefined,
+                    action: () => {
+                      setError('');
+                      setOrganizationDialog({
+                        type: 'rename-project',
+                        project: menu.project!,
+                      });
+                    },
+                  },
+                  {
+                    label: '폴더로 이동',
+                    action: () => {
+                      setError('');
+                      setOrganizationDialog({
+                        type: 'move-project',
+                        project: menu.project!,
+                      });
+                    },
+                  },
+                  menu.project.kind === 'local'
+                    ? {
+                        label: '저장 위치 보기',
+                        action: () =>
+                          void action(() =>
+                            window.gameCanvas.revealProject(menu.project!.id),
+                          ),
+                      }
+                    : {
+                        label: '서버 주소 변경',
+                        action: () => {
+                          setError('');
+                          setServer(menu.project!);
+                          setAddress(menu.project!.serverUrl ?? '');
+                        },
+                      },
+                ]
+              : [
+                  {
+                    label: '열기',
+                    action: () => {
+                      setSelectedFolder(menu.folder!.id);
+                      setFilter('all');
+                    },
+                  },
+                  {
+                    label: '이름 변경',
+                    action: () => {
+                      setError('');
+                      setOrganizationDialog({
+                        type: 'rename-folder',
+                        folder: menu.folder!,
+                      });
+                    },
+                  },
+                  {
+                    label: '폴더 삭제',
+                    action: () => {
+                      setError('');
+                      setOrganizationDialog({
+                        type: 'remove-folder',
+                        folder: menu.folder!,
+                      });
+                    },
+                  },
+                ]
+          }
+        />
+      )}
+      {organizationDialog && (
+        <HomeOrganizationDialog
+          dialog={organizationDialog}
+          folders={folders}
+          busy={busy}
+          error={error}
+          close={() => {
+            setOrganizationDialog(null);
+            setError('');
+          }}
+          submit={(value) =>
+            void action(async () => {
+              switch (organizationDialog.type) {
+                case 'rename-project':
+                  await window.gameCanvas.renameProject(
+                    organizationDialog.project.id,
+                    value,
+                    organizationDialog.project.name,
+                  );
+                  break;
+                case 'move-project':
+                  await window.gameCanvas.moveProject(
+                    organizationDialog.project.id,
+                    value || null,
+                  );
+                  break;
+                case 'create-folder':
+                  await window.gameCanvas.createProjectFolder(value);
+                  break;
+                case 'rename-folder':
+                  await window.gameCanvas.renameProjectFolder(
+                    organizationDialog.folder.id,
+                    value,
+                  );
+                  break;
+                case 'remove-folder':
+                  await window.gameCanvas.removeProjectFolder(
+                    organizationDialog.folder.id,
+                  );
+                  break;
+              }
+              setOrganizationDialog(null);
+              await refresh();
+            })
+          }
+        />
+      )}
       {(create || server) && (
         <div className="modal-backdrop">
           <form
