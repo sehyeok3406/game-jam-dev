@@ -22,7 +22,7 @@ assert.equal(
   'This smoke test checks Windows GUI visibility',
 );
 const executable = await fs.realpath(
-  path.resolve('out/Game Canvas-win32-x64/Game Canvas.exe'),
+  path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
 );
 const base = path.join(process.env.APPDATA, 'Game Canvas');
 const root = await fs.mkdtemp(
@@ -111,7 +111,7 @@ try {
       native.handle > 0,
       'Packaged application has no visible top-level window',
     );
-    assert.equal(native.title, `Game Canvas · ${windows[index].nickname}`);
+    assert.equal(native.title, `Game Jam! · ${windows[index].nickname}`);
     const status = JSON.parse(
       await fs.readFile(
         path.join(profiles[index], 'launch-status.json'),
@@ -121,7 +121,7 @@ try {
     assert.equal(status.windowVisible, true);
   }
   console.log(
-    'PASS: two packaged Game Canvas executables load the production canvas in separate visible Windows/taskbar windows and join an isolated fixture server',
+    'PASS: two packaged Game Jam! windows load the production canvas in separate visible Windows/taskbar windows and join an isolated fixture server',
   );
 } finally {
   owner?.stop();

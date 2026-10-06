@@ -11,8 +11,7 @@ async function bootstrap() {
   };
 
   if (!browserWindow.gameCanvas) {
-    if (!import.meta.env.DEV)
-      throw new Error('Game Canvas API is unavailable.');
+    if (!import.meta.env.DEV) throw new Error('Game Jam! API is unavailable.');
     const { createDevGameCanvasApi } = await import('./dev-api');
     browserWindow.gameCanvas = createDevGameCanvasApi();
   }

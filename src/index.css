@@ -243,6 +243,7 @@ button:disabled {
   flex: 0 0 auto;
   width: 32px;
   height: 32px;
+  object-fit: cover;
   border-radius: 8px;
   font-size: 11px;
 }

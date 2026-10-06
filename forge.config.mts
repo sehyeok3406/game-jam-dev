@@ -9,12 +9,21 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { PublisherGitHub } from '@electron-forge/publisher-github';
 import updateConfig from './update-config.json';
 import { releaseRepository } from './src/app-update';
+import { WINDOWS_EXECUTABLE_NAME } from './src/app-branding';
+import path from 'node:path';
 
 const repository = releaseRepository(updateConfig);
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    icon: path.resolve('assets/icon'),
+    executableName: WINDOWS_EXECUTABLE_NAME,
+    extraResource: [
+      path.resolve('assets/icon.png'),
+      path.resolve('assets/icon.ico'),
+      path.resolve('tools/repair-windows-branding.ps1'),
+    ],
   },
   rebuildConfig: {},
   // No token is bundled into the app. Publishing requires GITHUB_TOKEN only on the build machine.
@@ -32,10 +41,10 @@ const config: ForgeConfig = {
       ]
     : [],
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({ setupIcon: path.resolve('assets/icon.ico') }),
     new MakerZIP({}, ['darwin']),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    new MakerRpm({ options: { icon: path.resolve('assets/icon.png') } }),
+    new MakerDeb({ options: { icon: path.resolve('assets/icon.png') } }),
   ],
   plugins: [
     new VitePlugin({

@@ -11,6 +11,7 @@ import {
   type ReactFlowInstance,
   useNodesState,
 } from '@xyflow/react';
+import appIcon from '../../assets/icon.png';
 import {
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
@@ -4259,10 +4260,10 @@ function WorkspaceCanvas() {
       ) : (
         <header className="floating-header">
           <div className="header-project floating-surface">
-            <span className="brand-mark">GC</span>
+            <img className="brand-mark" src={appIcon} alt="" />
             <div>
               <strong>
-                {collaboration.projectName ?? workspace.name ?? 'Game Canvas'}
+                {collaboration.projectName ?? workspace.name ?? 'Game Jam!'}
               </strong>
               <span
                 className={`save-state${relevantEdits.some((edit) => edit.failed) || (collaboration.active && !collaboration.connected) ? ' save-state--warning' : ''}`}

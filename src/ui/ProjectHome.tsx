@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { APP_NAME } from '../app-branding';
+import appIcon from '../../assets/icon.png';
 import {
   FolderOpen,
   Plus,
@@ -168,8 +170,8 @@ export function ProjectHome({
     <main className="project-home">
       <aside className="home-sidebar">
         <div className="home-brand">
-          <span className="brand-mark">GC</span>
-          <strong>Game Canvas</strong>
+          <img className="brand-mark" src={appIcon} alt="" />
+          <strong>{APP_NAME}</strong>
         </div>
         <p className="home-sidebar-caption">내 프로젝트</p>
         {(

@@ -60,7 +60,7 @@ async function run() {
     'Test user joined the server, but its native window is hidden',
   );
   assert.equal(mainWindow.webContents.isLoading(), false);
-  assert.equal(mainWindow.getTitle(), `Game Canvas · ${test.nickname}`);
+  assert.equal(mainWindow.getTitle(), `Game Jam! · ${test.nickname}`);
   assert.ok(mainWindow.getNativeWindowHandle().length > 0);
   const launchStatus = JSON.parse(
     await fs.readFile(

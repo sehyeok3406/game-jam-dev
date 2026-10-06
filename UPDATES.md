@@ -1,4 +1,12 @@
-# 앱 업데이트·GitHub Releases 연결 (v0.10.1)
+# 앱 업데이트·GitHub Releases 연결 (v0.10.3)
+
+## v0.10.3 앱 이름 · 아이콘
+
+[Game Jam! v0.10.3 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.3)는 새 앱 이름과 아이콘, 설치 후 바로가기/설치된 앱 아이콘 갱신을 포함합니다. Windows x64 설치 파일 `Game.Jam-0.10.3.Setup.exe`, 자동 업데이트 패키지 `game_canvas-0.10.3-full.nupkg`, `RELEASES`를 함께 배포합니다.
+
+기존 설치의 내부 식별자 `game_canvas`, 실행 파일명 `Game Canvas.exe`와 데이터 저장 폴더 `Game Canvas`는 유지합니다. 앱 이름 변경으로 프로젝트 목록·설정·공유 참여 세션이 초기화되지 않습니다. 설치 후 첫 실행에서 번들 ICO를 바로가기와 설치된 앱 목록에 적용하고, 이 설치를 가리키는 이전 이름의 바로가기는 `branding-backup`에 백업 후 정리합니다. 버전별 처리가 완료되면 매번 바로가기를 재생성하지 않습니다.
+
+설치된 v0.9.2 이상은 앱 업데이트 메뉴에서 확인할 수 있고, v0.9.1 이하는 수동 설치합니다. 이번 릴리스는 별도 협업 서버나 터널을 갱신하지 않습니다. Windows 코드 서명과 실제 구버전 앱의 자동 재시작·설치 완료 검증은 별도입니다.
 
 ## v0.10.1 배포
 
@@ -35,8 +43,8 @@
 
 ## 팀원에게 전달할 주소
 
-- [v0.10.1 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.1)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.1/Game.Canvas-0.10.1.Setup.exe)
+- [v0.10.3 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.3)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.3/Game.Jam-0.10.3.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
@@ -47,7 +55,7 @@
 1. 저장소는 공개 GitHub Releases용으로 연결했습니다. 나중에 비공개로 전환하면 이 피드를 사용할 수 없으므로 토큰을 앱에 넣지 않고 별도 인증·배포 경로를 설계해야 합니다.
 2. `update-config.json`의 소유자·저장소는 빌드 시 고정되며 사용자 입력이나 공동 프로젝트 문서로 변경할 수 없습니다.
 3. `npm run make`로 Windows 설치 파일을 생성합니다. 배포 주소를 연결한 첫 버전은 기존 사용자에게 한 번 수동 설치해야 합니다. **이번 연결 대기 버전만 설치해서는 나중에 생성되는 저장소를 자동으로 알 수 없습니다.**
-4. 릴리스에 `Game Canvas-버전 Setup.exe`, `game_canvas-버전-full.nupkg`, `RELEASES` 세 파일을 함께 업로드합니다. 설치 파일만 올리면 자동 업데이트가 되지 않습니다. 버전 번호는 이전 버전보다 높아야 합니다.
+4. 릴리스에 `Game.Jam-버전.Setup.exe`, `game_canvas-버전-full.nupkg`, `RELEASES` 세 파일을 함께 업로드합니다. 설치 파일만 올리면 자동 업데이트가 되지 않습니다. 버전 번호는 이전 버전보다 높아야 합니다.
 5. 직접 업로드하거나, 빌드 PC에만 `GITHUB_TOKEN`을 설정하고 `npm run release`를 실행합니다. Forge GitHub Publisher는 **초안(draft)**으로 생성하도록 설정되어 있습니다. 파일을 확인하고 GitHub에서 정식 릴리스로 게시해야 업데이트 대상으로 노출됩니다. 토큰을 JSON/소스/프로젝트 문서/앱에 넣거나 채팅으로 전달하지 않습니다.
 6. 한 버전을 설치한 테스트 PC에서 그보다 높은 버전을 배포하고, 확인 → 다운로드 → 작업 보호 → 재시작 → 새 버전/기존 프로젝트 확인을 실제로 검증합니다. 이 단계는 저장소가 준비된 뒤 가능합니다.
 

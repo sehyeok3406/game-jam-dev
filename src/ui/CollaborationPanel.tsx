@@ -176,7 +176,7 @@ export function CollaborationPanel({
                       onClick={() =>
                         void action(() =>
                           window.gameCanvas.copyText(
-                            `Game Canvas 초대\n서버: ${state.serverUrl}\n코드: ${state.inviteCode}`,
+                            `Game Jam! 초대\n서버: ${state.serverUrl}\n코드: ${state.inviteCode}`,
                           ),
                         )
                       }

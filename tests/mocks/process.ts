@@ -4,6 +4,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 
+export function execFile(..._args: unknown[]): never {
+  throw new Error(
+    'Development integration must not modify a Windows installation.',
+  );
+}
+
 let nextPid = 1000;
 const children = new Map<number, ReturnType<typeof spawn>>();
 export const executionStarts: { pid: number; model: string; stage: string }[] =

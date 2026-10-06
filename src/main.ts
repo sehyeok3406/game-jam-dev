@@ -25,6 +25,8 @@ import {
   autoUpdater,
 } from 'electron';
 import updateConfig from '../update-config.json';
+import { APP_NAME, LEGACY_DATA_DIRECTORY } from './app-branding';
+import { repairWindowsBranding } from './windows-branding';
 import { AppUpdateController, updateBlockers } from './app-update';
 import started from 'electron-squirrel-startup';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -143,7 +145,16 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 if (started) app.quit();
 
 // Isolate both native settings/session files and Chromium storage before ready.
-const defaultUserData = app.getPath('userData');
+const configuredUserData = app.getPath('userData');
+const defaultUserData =
+  path.basename(configuredUserData) === APP_NAME
+    ? path.join(path.dirname(configuredUserData), LEGACY_DATA_DIRECTORY)
+    : configuredUserData;
+if (defaultUserData !== configuredUserData) {
+  mkdirSync(defaultUserData, { recursive: true });
+  app.setPath('userData', defaultUserData);
+  app.setPath('sessionData', defaultUserData);
+}
 const testProfile = testProfilePath(defaultUserData, process.argv);
 const testBootstrapKey = process.env[TEST_BOOTSTRAP_KEY_ENV];
 delete process.env[TEST_BOOTSTRAP_KEY_ENV];
@@ -248,7 +259,7 @@ const registerUpdates = async () => {
         buttons: ['나중에', '업데이트 후 재시작'],
         defaultId: 0,
         cancelId: 0,
-        title: 'Game Canvas 업데이트',
+        title: `${APP_NAME} 업데이트`,
         message: '작업을 마치고 업데이트를 적용할까요?',
         detail:
           '현재 앱이 종료된 뒤 새 버전으로 다시 열립니다. 프로젝트 문서와 설정은 유지됩니다. 내장 테스트 서버를 사용 중이라면 재시작하는 동안 서버도 중지됩니다.',
@@ -1278,7 +1289,7 @@ const startCodexRun = async (
   });
 
   const prompt = [
-    'You are executing a Game Canvas task in the current workspace.',
+    `You are executing a ${APP_NAME} task in the current workspace.`,
     `Open and follow the complete task specification at ${input.taskPath}.`,
     'Treat the task Markdown frontmatter and body as the authoritative scope.',
     'Follow the edited user task instructions for content and implementation choices. Fixed protection rules, selected inputs, output paths and version rules are mandatory and take priority over conflicting user instructions.',
@@ -3301,9 +3312,12 @@ const createWindow = async () => {
     minWidth: 980,
     minHeight: 640,
     backgroundColor: '#0f1115',
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.png')
+      : path.resolve(__dirname, '../../assets/icon.png'),
     title: testProfile
-      ? `Game Canvas · ${testNickname ?? '테스트 사용자'}`
-      : 'Game Canvas',
+      ? `${APP_NAME} · ${testNickname ?? '테스트 사용자'}`
+      : APP_NAME,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -3341,6 +3355,13 @@ const createWindow = async () => {
 };
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32' && app.isPackaged && !testProfile) {
+    await repairWindowsBranding(
+      process.execPath,
+      process.resourcesPath,
+      app.getVersion(),
+    ).catch((error) => console.error('Windows 앱 아이콘 갱신 실패', error));
+  }
   if (testProfile) {
     try {
       const metadata = JSON.parse(
