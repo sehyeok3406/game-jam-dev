@@ -37,6 +37,7 @@ import {
 } from './collaboration-client';
 import { createCollaborationServer } from './collaboration-server';
 import { WebViewerService } from './web-viewer-service';
+import { startWebViewerSync } from './web-viewer-sync';
 import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
 import {
@@ -181,6 +182,7 @@ if (testProfile) {
 let testNickname: string | undefined;
 let testUserLauncher: TestUserLauncher | null = null;
 let appUpdates: AppUpdateController;
+let stopWebViewerSync = () => {};
 let pendingAppOperations = 0;
 let updateRestartPrepared = false;
 let preparedReply: {
@@ -3529,19 +3531,9 @@ app.whenReady().then(async () => {
   }
   await registerUpdates();
   projectLibrary = new ProjectLibrary(app.getPath('userData'), safeStorage);
-  const webViewerService = new WebViewerService(
-    app.getPath('userData'),
-    safeStorage,
+  stopWebViewerSync = startWebViewerSync(
+    new WebViewerService(app.getPath('userData'), safeStorage),
   );
-  // Configured projects update while the app is running; the optional windowless
-  // companion keeps shared projects updating after the app window closes.
-  const webViewerTimer = setInterval(() => {
-    void webViewerService
-      .settings()
-      .then((settings) => settings && webViewerService.publish())
-      .catch(() => undefined);
-  }, 15_000);
-  webViewerTimer.unref();
   await projectLibrary.load();
   registerIpc();
   await loadSettings();
@@ -3680,6 +3672,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  stopWebViewerSync();
   appUpdates?.dispose();
   collaboration?.stop();
   void localCollaborationServer?.close();
