@@ -36,6 +36,8 @@ import {
   type CollaborationCredentials,
 } from './collaboration-client';
 import { createCollaborationServer } from './collaboration-server';
+import { WebViewerService } from './web-viewer-service';
+import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
 import { cardColor } from './card-colors';
 import {
@@ -2435,6 +2437,45 @@ const registerIpc = () => {
       }),
     );
   });
+  handle('web-viewer:get', () =>
+    new WebViewerService(app.getPath('userData'), safeStorage).status(),
+  );
+  handle('web-viewer:open', async () => {
+    const settings = await new WebViewerService(
+      app.getPath('userData'),
+      safeStorage,
+    ).settings();
+    await shell.openExternal(
+      settings
+        ? `${WEB_VIEWER_URL}/#connect=${encodeURIComponent(settings.accessCode)}`
+        : WEB_VIEWER_URL,
+    );
+  });
+  handle(
+    'web-viewer:publish',
+    async (_event, input: { projects: string[]; liveLocal: boolean }) => {
+      if (
+        !input ||
+        !Array.isArray(input.projects) ||
+        input.projects.length > 100 ||
+        typeof input.liveLocal !== 'boolean'
+      )
+        throw new Error('게시할 프로젝트를 확인해주세요.');
+      const service = new WebViewerService(
+        app.getPath('userData'),
+        safeStorage,
+      );
+      const settings = await service.settings();
+      if (!settings) throw new Error('웹 뷰어 연결 설정이 필요합니다.');
+      for (const id of input.projects) projectLibrary.get(id);
+      await service.save({
+        ...settings,
+        projects: [...new Set([...settings.projects, ...input.projects])],
+        liveLocal: input.liveLocal,
+      });
+      return service.publish(true);
+    },
+  );
   handle('projects:home', suspendProject);
   handle('projects:folders', () => projectLibrary.listFolders());
   handle(
@@ -3375,6 +3416,19 @@ app.whenReady().then(async () => {
   }
   await registerUpdates();
   projectLibrary = new ProjectLibrary(app.getPath('userData'), safeStorage);
+  const webViewerService = new WebViewerService(
+    app.getPath('userData'),
+    safeStorage,
+  );
+  // Configured projects update while the app is running; the optional windowless
+  // companion keeps shared projects updating after the app window closes.
+  const webViewerTimer = setInterval(() => {
+    void webViewerService
+      .settings()
+      .then((settings) => settings && webViewerService.publish())
+      .catch(() => undefined);
+  }, 15_000);
+  webViewerTimer.unref();
   await projectLibrary.load();
   registerIpc();
   await loadSettings();

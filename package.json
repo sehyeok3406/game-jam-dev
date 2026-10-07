@@ -12,6 +12,7 @@
   },
   "main": ".vite/build/main.cjs",
   "scripts": {
+    "web-viewer:build": "node scripts/build-web-viewer-worker.mjs",
     "collaboration:build": "node scripts/build-collaboration-server.mjs",
     "collaboration:server": "node src/collaboration-server-entry.ts",
     "test:integration": "node tests/run-integration.mjs",

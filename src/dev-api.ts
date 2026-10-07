@@ -293,6 +293,24 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     home = next;
   };
   const api: GameCanvasApi = {
+    getWebViewer: async () => ({
+      configured: false,
+      url: 'https://game-jam-web-viewer.vercel.app',
+      accessCode: '',
+      projects: [],
+      liveLocal: false,
+      errors: [],
+    }),
+    publishWebViewer: async () => {
+      throw new Error('웹 게시는 데스크톱 앱에서 사용해주세요.');
+    },
+    openWebViewer: async () => {
+      window.open(
+        'https://game-jam-web-viewer.vercel.app',
+        '_blank',
+        'noopener',
+      );
+    },
     listProjects: async () =>
       displayHomeProjects(
         [

@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
 
 const api: GameCanvasApi = {
+  getWebViewer: () => ipcRenderer.invoke('web-viewer:get'),
+  publishWebViewer: (input) => ipcRenderer.invoke('web-viewer:publish', input),
+  openWebViewer: () => ipcRenderer.invoke('web-viewer:open'),
   listProjects: (refreshShared) =>
     ipcRenderer.invoke('projects:list', refreshShared),
   listProjectFolders: () => ipcRenderer.invoke('projects:folders'),

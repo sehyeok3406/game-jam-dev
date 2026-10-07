@@ -258,6 +258,20 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  getWebViewer: () => Promise<{
+    configured: boolean;
+    url: string;
+    accessCode: string;
+    projects: string[];
+    liveLocal: boolean;
+    lastPublishedAt?: number;
+    errors: string[];
+  }>;
+  publishWebViewer: (input: {
+    projects: string[];
+    liveLocal: boolean;
+  }) => Promise<{ published: number; errors: string[] }>;
+  openWebViewer: () => Promise<void>;
   listProjects: (refreshShared?: boolean) => Promise<ProjectEntry[]>;
   listProjectFolders: () => Promise<ProjectFolder[]>;
   renameProject: (

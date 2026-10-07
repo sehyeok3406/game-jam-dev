@@ -19,6 +19,7 @@ import {
   List,
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
+  Globe2,
 } from 'lucide-react';
 import type { ProjectEntry, ProjectFolder } from '../shared';
 import { ROLE_NAMES } from './CollaborationPanel';
@@ -36,6 +37,7 @@ import {
   HomeOrganizationDialog,
   type HomeDialog,
 } from './HomeOrganizationControls';
+import { WebViewerDialog } from './WebViewerDialog';
 
 export function ProjectHome({
   opened,
@@ -53,6 +55,7 @@ export function ProjectHome({
   theme: 'dark' | 'light';
 }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [webViewer, setWebViewer] = useState(false);
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [organizationDialog, setOrganizationDialog] =
@@ -272,6 +275,9 @@ export function ProjectHome({
           )}
         </div>
         <div className="home-sidebar-bottom">
+          <button onClick={() => setWebViewer(true)}>
+            <Globe2 size={16} /> 웹 뷰어
+          </button>
           <button onClick={updates}>
             <RefreshCw size={16} /> 앱 업데이트
           </button>
@@ -285,6 +291,12 @@ export function ProjectHome({
           </p>
         </div>
       </aside>
+      {webViewer && (
+        <WebViewerDialog
+          projects={projects}
+          close={() => setWebViewer(false)}
+        />
+      )}
       <section className="home-content">
         <header className="home-topbar">
           <span>워크스페이스</span>
