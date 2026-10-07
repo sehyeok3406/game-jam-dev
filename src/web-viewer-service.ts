@@ -3,13 +3,12 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { captureProject } from './project-store.ts';
 import { ProjectLibrary } from './project-library.ts';
-import { CollaborationClient } from './collaboration-client.ts';
+import { webSharedProject } from './web-viewer-source.ts';
 import {
   projectForWeb,
   publishWebProject,
   WEB_VIEWER_URL,
 } from './web-viewer.ts';
-import type { CollaborationEnvelope } from './collaboration-server.ts';
 
 export type ViewerSettings = {
   publishToken: string;
@@ -97,12 +96,11 @@ export class WebViewerService {
         if (!force && entry.kind === 'local' && !settings.liveLocal) continue;
         const envelope =
           entry.kind === 'shared'
-            ? ((await CollaborationClient.fetch(
-                entry.credentials!.serverUrl,
-                `/projects/${entry.projectId}/state`,
-                {},
-                entry.credentials!.token,
-              )) as CollaborationEnvelope)
+            ? await webSharedProject(
+                entry.credentials!,
+                undefined,
+                entry.role === 'admin',
+              )
             : null;
         const project = projectForWeb({
           libraryId: entry.id,

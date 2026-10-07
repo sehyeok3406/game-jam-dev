@@ -51,3 +51,24 @@ test('HTML and image cards retain inline display data', () => {
   assert.equal(project.documents[0].kind, 'html');
   assert.match(project.documents[0].html, /Real output/);
 });
+
+test('AI-generated versioned Markdown stays readable and on its original canvas', () => {
+  const project = projectForWeb({
+    libraryId: 'shared:ufo',
+    name: 'UFO',
+    source: 'shared',
+    revision: 214,
+    files: {
+      'docs/versions/v8/UFO-core-loop.md':
+        '---\nid: ufo-loop\ntitle: UFO 핵심 플레이 흐름\ntype: system\nx: 3100\ny: -2900\n---\n## 플레이 흐름\nAI generated content',
+      '.ai/tasks/private.md':
+        '---\nid: private\ntype: ai-task\n---\nPRIVATE_AI_INSTRUCTIONS',
+    },
+  });
+  assert.equal(project.documents.length, 1);
+  assert.equal(project.documents[0].kind, 'document');
+  assert.equal(project.documents[0].title, 'UFO 핵심 플레이 흐름');
+  assert.match(project.documents[0].body, /AI generated content/);
+  assert.deepEqual(project.documents[0].position, { x: 3100, y: -2900 });
+  assert.notEqual(project.documents[0].onCanvas, false);
+});
