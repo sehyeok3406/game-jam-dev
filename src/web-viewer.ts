@@ -23,7 +23,6 @@ export type WebProject = {
     y: number;
     width: number;
     height: number;
-    onCanvas?: boolean;
   }[];
   documents: {
     id: string;
@@ -35,6 +34,7 @@ export type WebProject = {
     position: { x: number; y: number };
     width: number;
     height: number;
+    onCanvas?: boolean;
     color: 'cream' | 'green' | 'blue' | 'rose' | 'purple' | 'gray';
     image?: string;
     html?: string;
@@ -55,7 +55,9 @@ export function projectForWeb(input: {
   folder?: string;
 }): WebProject {
   const sections = snapshotSections(input.files);
-  const documents = snapshotDocuments(input.files)
+  const documents: (WebProject['documents'][number] & {
+    modifiedAt: number;
+  })[] = snapshotDocuments(input.files)
     .filter(
       (doc) => !doc.relativePath.startsWith('.ai/') && doc.type !== 'ai-task',
     )
