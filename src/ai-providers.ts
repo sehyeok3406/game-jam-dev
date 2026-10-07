@@ -56,6 +56,10 @@ export function aiArguments(
       'exec',
       ...choice,
       '--ignore-user-config',
+      // Codex 0.160.1 leaves the permission profile read-only when user config
+      // is ignored, even with --approve-for-me. Set the profile explicitly.
+      '--config',
+      'default_permissions=":workspace"',
       '--json',
       '--color',
       'never',

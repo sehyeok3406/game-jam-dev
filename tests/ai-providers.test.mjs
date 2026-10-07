@@ -43,6 +43,27 @@ test('exactly GPT, Claude and Gemini are supported; file-only adapters never ena
   assert.deepEqual(GEMINI_RUN_SETTINGS.context.includeDirectories, []);
 });
 
+test('switching Codex models keeps isolated configuration and workspace write permissions', () => {
+  for (const model of [null, 'gpt-6-luna', 'gpt-6.1-sol', 'custom-model']) {
+    const stage = 'C:/fixture with spaces';
+    const args = aiArguments('codex-cli', model, stage);
+    const overrides = args.flatMap((arg, index) =>
+      arg === '--config' ? [args[index + 1]] : [],
+    );
+    assert.ok(args.includes('--ignore-user-config'));
+    assert.ok(args.includes('--approve-for-me'));
+    assert.ok(overrides.includes('default_permissions=":workspace"'));
+    assert.equal(args[args.indexOf('--cd') + 1], stage);
+    assert.equal(args.includes('--model'), model !== null);
+    if (model) assert.equal(args[args.indexOf('--model') + 1], model);
+    // Legacy sandbox flags conflict with the approval preset and do not select
+    // the permission profile when the user configuration is ignored.
+    assert.ok(!args.includes('--sandbox'));
+    assert.ok(!overrides.some((value) => value.startsWith('sandbox_mode=')));
+    assert.ok(!args.includes('--dangerously-bypass-approvals-and-sandbox'));
+  }
+});
+
 test('Claude and Gemini structured failures are detected even when the process returns zero', () => {
   assert.equal(
     providerEvent('claude-cli', {

@@ -1,4 +1,10 @@
-# 앱 업데이트·GitHub Releases 연결 (v0.10.3)
+# 앱 업데이트·GitHub Releases 연결 (v0.10.4)
+
+## v0.10.4 Codex 파일 생성 권한 수정
+
+[Game Jam! v0.10.4 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.4)는 Codex AI 작업의 쓰기 권한 수정을 포함합니다. `--ignore-user-config`와 자동 승인 검토를 유지하면서 `default_permissions=":workspace"`를 명시하여 실제 권한이 읽기 전용으로 남는 문제를 해결합니다. 모델 자동 선택·프리셋·직접 입력 모두 같은 설정을 사용합니다.
+
+Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패키지 `game_canvas-0.10.4-full.nupkg`, `RELEASES`를 함께 배포합니다. 설치된 v0.9.2 이상은 **설정 및 도구 → 앱 업데이트**에서 확인합니다. 기존 프로젝트·설정·공유 세션을 유지하며, 별도 협업 서버나 터널 갱신은 필요하지 않습니다.
 
 ## v0.10.3 앱 이름 · 아이콘
 

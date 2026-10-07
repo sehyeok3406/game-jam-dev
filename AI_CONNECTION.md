@@ -28,6 +28,8 @@ Node.js/npm 터미널에서 `npm install -g @openai/codex` 후 `codex login`. �
 
 [공식 인증 안내](https://developers.openai.com/codex/auth/), [비대화형 실행](https://developers.openai.com/codex/noninteractive/).
 
+실행마다 사용자 설정을 격리하면서 `default_permissions=":workspace"` 권한 프로필과 자동 승인 검토를 명시합니다. Codex CLI 0.160.1에서는 `--ignore-user-config`와 `--approve-for-me`만 전달하면 실제 권한이 읽기 전용으로 남아 AI가 파일 생성을 중단할 수 있습니다. 모델을 변경해도 같은 작업 공간 쓰기 권한을 적용하며, 사용자 전역 설정은 수정하지 않습니다.
+
 ### Claude · Claude Code
 
 [공식 설치 안내](https://code.claude.com/docs/en/setup)의 Windows 요구사항에 따라 설치 후 `claude auth login`. **restricted 모드가 있는 v2.1.248 이상**이 필요하며 앱이 지원 옵션을 검사합니다. 자동 선택, `sonnet`·`opus`·`haiku` 별칭, 모델 ID 직접 입력을 지원합니다. 일반 Claude 채팅 앱의 로그인을 자동 가져오지는 않습니다.

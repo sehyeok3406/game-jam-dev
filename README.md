@@ -1,5 +1,11 @@
 # Game Jam! (game-jam-dev)
 
+### v0.10.4 Codex 파일 생성 권한 수정
+
+Codex의 사용자 설정을 격리한 상태에서도 작업 공간 쓰기 권한을 명시하여, AI가 읽기 전용을 이유로 결과 생성을 중단하던 문제를 수정했습니다. 자동 선택·프리셋·직접 입력 모델에 동일하게 적용합니다.
+
+[v0.10.4 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.4) · [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.4/Game.Jam-0.10.4.Setup.exe) · [업데이트 안내](UPDATES.md)
+
 ### v0.10.3 앱 이름 · 아이콘
 
 앱 이름을 **Game Jam!**으로 변경하고 홈·캔버스·창·설치 프로그램에 새 아이콘을 적용했습니다. 설치 후 첫 실행에서 바탕화면/시작 메뉴와 설치된 앱 아이콘도 갱신하며, 이 설치를 가리키는 예전 Game Canvas 바로가기는 백업 후 정리합니다. 기존 설정·프로젝트·공유 세션과 자동 업데이트 연결을 유지합니다. 호환성을 위해 내부 설치 폴더 `game_canvas`와 실행 파일명 `Game Canvas.exe`는 유지합니다.
