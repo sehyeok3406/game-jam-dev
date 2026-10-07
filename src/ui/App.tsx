@@ -12,6 +12,13 @@ import {
   useNodesState,
 } from '@xyflow/react';
 import appIcon from '../../assets/icon.png';
+import { AI_FILE_LOCK_MESSAGE, isAiFileLocked } from '../ai-file-lock';
+import { verticalLayouts, NEW_FILE_GAP } from '../canvas-placement';
+import {
+  readNewFileIndicators,
+  updateNewFileIndicators,
+  type NewFileIndicators,
+} from '../new-file-indicators';
 import { ResultFolderDialog } from './ResultFolderDialog';
 import {
   AlignHorizontalJustifyCenter,
@@ -213,6 +220,7 @@ type ArrangementItem = {
 };
 
 type CodexRunView = {
+  fileLock?: CodexRunEvent['fileLock'];
   runId: string;
   taskPath: string;
   status: CodexRunEvent['status'];
@@ -277,6 +285,7 @@ type DocumentNodeData = {
 
 type PreviewNodeData = {
   kind: 'preview';
+  locked: boolean;
   preview: PreviewResult;
   windowState: PreviewWindowState;
   busy: boolean;
@@ -697,6 +706,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
             <button
               className="icon-button"
               title={document.collapsed ? '메모 펼치기' : '메모 최소화'}
+              disabled={data.locked}
               onClick={data.onCollapse}
             >
               {document.collapsed ? (
@@ -1106,7 +1116,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
       {!preset && !collapsed && !fullscreen && (
         <NodeResizer
           color="var(--selection)"
-          isVisible={selected && !state.collapsed}
+          isVisible={selected && !state.collapsed && !data.locked}
           lineClassName="window-resize-edge"
           handleClassName="window-resize-handle"
           minWidth={420}
@@ -1199,7 +1209,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
               type="button"
               className="icon-button"
               title={state.collapsed ? 'HTML 창 펼치기' : 'HTML 창 최소화'}
-              disabled={fullscreen}
+              disabled={fullscreen || data.locked}
               onClick={() =>
                 void data.onWindowChange({
                   ...state,
@@ -1226,6 +1236,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
           <p>고정 해상도를 고르면 크기 조절이 잠깁니다.</p>
           <select
             aria-label="HTML 화면 비율"
+            disabled={data.locked}
             value={preset?.id ?? 'free'}
             onChange={(event) =>
               void data.onWindowChange(
@@ -1436,6 +1447,31 @@ function WorkspaceCanvas() {
     name: null,
   });
   const [documents, setDocuments] = useState<CanvasDocument[]>([]);
+  const [newFileNodes, setNewFileNodes] = useState<Set<string>>(new Set());
+  const newFileIndicatorsRef = useRef<{
+    root: string | null;
+    value?: NewFileIndicators;
+  }>({ root: null });
+  const saveNewFileIndicators = (root: string, value: NewFileIndicators) => {
+    try {
+      localStorage.setItem(
+        `game-canvas-new-files:${root}`,
+        JSON.stringify(value),
+      );
+    } catch {
+      /* Personal UI state is best effort. */
+    }
+  };
+  const acknowledgeNewFile = useCallback((id: string) => {
+    const current = newFileIndicatorsRef.current;
+    if (!current.root || !current.value?.unread.includes(id)) return;
+    current.value = {
+      ...current.value,
+      unread: current.value.unread.filter((item) => item !== id),
+    };
+    saveNewFileIndicators(current.root, current.value);
+    setNewFileNodes(new Set(current.value.unread));
+  }, []);
   const [taskDocuments, setTaskDocuments] = useState<CanvasDocument[]>([]);
   const [sections, setSections] = useState<CanvasSection[]>([]);
   const [previews, setPreviews] = useState<PreviewResult[]>([]);
@@ -1652,18 +1688,41 @@ function WorkspaceCanvas() {
           collaboration.aiRun?.actorId === collaboration.memberId)));
   const locked =
     updateRestarting ||
-    aiBusy ||
+    (aiBusy &&
+      !(collaboration.active
+        ? collaboration.aiRun?.fileLock
+        : codexRun?.fileLock)) ||
     (collaboration.active &&
       ((!collaboration.connected && !collaboration.offlineSync) ||
         collaboration.accessDenied ||
         collaboration.role === 'viewer'));
+  const aiFileLock = aiBusy
+    ? collaboration.active
+      ? collaboration.aiRun?.fileLock
+      : codexRun?.fileLock
+    : undefined;
+  const pathLocked = useCallback(
+    (path: string) => locked || isAiFileLocked(aiFileLock, path),
+    [locked, aiFileLock],
+  );
+  const sectionLocked = useCallback(
+    (section: CanvasSection) =>
+      pathLocked(section.relativePath) ||
+      section.members.some((member) => pathLocked(member.path)),
+    [pathLocked],
+  );
+  const blockAiFiles = (paths: string[]) => {
+    if (!paths.some((path) => isAiFileLocked(aiFileLock, path))) return false;
+    setBlockedMessage(AI_FILE_LOCK_MESSAGE);
+    return true;
+  };
   const onBlocked = useCallback(() => {
     setBlockedMessage(
       collaboration.active && !collaboration.connected
         ? '협업 서버 연결이 끊겼습니다. 문서 편집을 잠시 중지하고 저장되지 않은 초안은 보관합니다. 재연결 후 최신 내용을 확인해주세요.'
         : collaboration.role === 'viewer'
           ? '현재 뷰어 권한입니다. 관리자에게 편집자 권한을 요청해주세요.'
-          : `현재 AI가 ${codexRun?.taskPath.includes('gamejam-') ? 'gamejam! 문서 정리·HTML 구현' : codexRun?.taskPath.includes('implement') ? 'HTML 구현' : '문서 정리'}을 진행하고 있습니다. 결과에 영향을 줄 수 있어 문서 추가·수정·삭제와 배치 변경을 잠시 사용할 수 없습니다. 작업이 끝난 뒤 다시 시도하거나 작업을 중지해주세요.`,
+          : AI_FILE_LOCK_MESSAGE,
     );
   }, [
     codexRun?.taskPath,
@@ -1687,6 +1746,7 @@ function WorkspaceCanvas() {
         ? {
             ...current,
             status: event.status,
+            fileLock: event.fileLock,
             events:
               current.events.at(-1)?.timestamp === event.timestamp
                 ? current.events
@@ -1696,6 +1756,7 @@ function WorkspaceCanvas() {
             runId: event.runId,
             taskPath: event.taskPath,
             status: event.status,
+            fileLock: event.fileLock,
             events: [event],
             providerId: event.providerId ?? 'codex-cli',
             modelId: event.modelId ?? null,
@@ -1764,6 +1825,17 @@ function WorkspaceCanvas() {
       onBlocked();
       return;
     }
+    if (
+      blockAiFiles(
+        historyConfirm.entry.files
+          .filter(
+            (file) =>
+              !historyConfirm.path || file.relativePath === historyConfirm.path,
+          )
+          .map((file) => file.relativePath),
+      )
+    )
+      return;
     setRestoring(true);
     try {
       await Promise.all(
@@ -1811,6 +1883,8 @@ function WorkspaceCanvas() {
         setSections([]);
         setPreviews([]);
         setPreviewWindows({});
+        newFileIndicatorsRef.current = { root: null };
+        setNewFileNodes(new Set());
         setLoading(false);
         return;
       }
@@ -1826,7 +1900,7 @@ function WorkspaceCanvas() {
         ),
       );
       const canvasDocuments = nextDocuments.filter(isCanvasDocument);
-      let right = canvasDocuments.length
+      const right = canvasDocuments.length
         ? Math.max(
             ...canvasDocuments.map((document) => document.x + document.width),
           ) + 120
@@ -1835,18 +1909,35 @@ function WorkspaceCanvas() {
         ? Math.min(...canvasDocuments.map((document) => document.y))
         : 120;
       if (request !== projectLoadRef.current) return;
+      const occupied = [
+        ...canvasDocuments.map((doc) => ({
+          ...doc,
+          height: doc.collapsed ? 38 : doc.height,
+        })),
+        ...savedWindows
+          .filter((state): state is PreviewWindowState => !!state)
+          .map((state) => ({
+            ...state,
+            height: state.collapsed ? 38 : state.height,
+          })),
+      ];
+      let nextPreviewY = top;
       for (const [index, result] of nextPreviews.entries()) {
         const saved = savedWindows[index];
-        const layout = saved ??
-          result.initialWindow ?? {
-            x: right,
-            y: top,
-            width: 720,
-            height: 520,
-            collapsed: false,
-          };
+        const initial = result.initialWindow;
+        const layout = saved ?? {
+          ...verticalLayouts(
+            [{ width: initial?.width ?? 720, height: initial?.height ?? 520 }],
+            occupied,
+            initial ?? { x: right, y: nextPreviewY },
+          )[0],
+          collapsed: false,
+        };
         nextWindows[result.relativePath] = layout;
-        right = Math.max(right, layout.x + layout.width + 120);
+        if (!saved) {
+          occupied.push(layout);
+          nextPreviewY = layout.y + layout.height + NEW_FILE_GAP;
+        }
         if (!saved)
           await window.gameCanvas.savePreviewWindow(
             layout,
@@ -1854,6 +1945,37 @@ function WorkspaceCanvas() {
           );
       }
       if (request !== projectLoadRef.current) return;
+      let indicatorState =
+        newFileIndicatorsRef.current.root === state.root
+          ? newFileIndicatorsRef.current.value
+          : undefined;
+      if (!indicatorState) {
+        try {
+          indicatorState = readNewFileIndicators(
+            localStorage.getItem(`game-canvas-new-files:${state.root}`),
+          );
+        } catch {
+          /* Preferences may be unavailable. */
+        }
+      }
+      const indicators = updateNewFileIndicators(
+        indicatorState,
+        [
+          ...canvasDocuments.map((doc) => doc.id),
+          ...nextPreviews.map((result) => previewNodeId(result.relativePath)),
+        ],
+        Object.fromEntries(
+          nextPreviews.flatMap((result) =>
+            (result.previousPaths ?? []).map((old) => [
+              previewNodeId(old),
+              previewNodeId(result.relativePath),
+            ]),
+          ),
+        ),
+      );
+      newFileIndicatorsRef.current = { root: state.root, value: indicators };
+      saveNewFileIndicators(state.root, indicators);
+      setNewFileNodes(new Set(indicators.unread));
       setDocuments(canvasDocuments);
       setTaskDocuments(
         nextDocuments.filter(
@@ -1913,6 +2035,22 @@ function WorkspaceCanvas() {
   }, [loadProject]);
 
   useEffect(() => {
+    const onFrameFocus = () => {
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (active?.tagName === 'IFRAME') {
+          const id = active
+            .closest('.react-flow__node')
+            ?.getAttribute('data-id');
+          if (id) acknowledgeNewFile(id);
+        }
+      });
+    };
+    window.addEventListener('blur', onFrameFocus);
+    return () => window.removeEventListener('blur', onFrameFocus);
+  }, [acknowledgeNewFile]);
+
+  useEffect(() => {
     if (!historyOpen) return;
     return window.gameCanvas.onWorkspaceChanged(() => {
       void window.gameCanvas
@@ -1950,6 +2088,7 @@ function WorkspaceCanvas() {
                 runId: event.runId,
                 taskPath: event.taskPath,
                 status: event.status,
+                fileLock: event.fileLock,
                 events: [event],
                 providerId: event.providerId ?? 'codex-cli',
                 modelId: event.modelId ?? null,
@@ -1969,6 +2108,8 @@ function WorkspaceCanvas() {
             runId: event.runId,
             taskPath: event.taskPath,
             status: event.status,
+            fileLock:
+              event.fileLock ?? (sameRun ? current.fileLock : undefined),
             events: [...events, event].slice(-300),
             providerId:
               event.providerId ?? (sameRun ? current.providerId : 'codex-cli'),
@@ -2118,6 +2259,10 @@ function WorkspaceCanvas() {
   }, []);
 
   const runTaskWithCodex = async (task: CanvasDocument) => {
+    if (aiBusy)
+      return setNotice(
+        '이미 AI 작업이 진행 중입니다. 완료하거나 중지해주세요.',
+      );
     if (locked) {
       onBlocked();
       return;
@@ -2238,6 +2383,17 @@ function WorkspaceCanvas() {
   const confirmSectionAction = async () => {
     if (!sectionActionPrompt) return;
     const { section, deleteMembers } = sectionActionPrompt;
+    if (
+      blockAiFiles([
+        section.relativePath,
+        ...section.members.map((member) => member.path),
+      ])
+    )
+      return;
+    if (locked) {
+      onBlocked();
+      return;
+    }
     try {
       const result = await window.gameCanvas.deleteSection({
         sectionId: section.id,
@@ -2287,10 +2443,10 @@ function WorkspaceCanvas() {
       position: { x: section.x, y: section.y },
       style: { width: section.width, height: section.height },
       zIndex: 0,
-      draggable: !locked,
+      draggable: !sectionLocked(section),
       data: {
         kind: 'section',
-        locked,
+        locked: sectionLocked(section),
         section,
         onResize: resizeSection,
         onReveal: revealSection,
@@ -2303,7 +2459,7 @@ function WorkspaceCanvas() {
           lock.memberId !== collaboration.memberId,
       );
       const nodeLocked =
-        locked ||
+        pathLocked(document.relativePath) ||
         (!!foreignLock &&
           collaboration.connected &&
           !collaboration.pendingChanges) ||
@@ -2316,6 +2472,7 @@ function WorkspaceCanvas() {
       return {
         id: document.id,
         type: 'document',
+        className: newFileNodes.has(document.id) ? 'new-file-node' : undefined,
         position: parent
           ? { x: document.x - parent.x, y: document.y - parent.y }
           : { x: document.x, y: document.y },
@@ -2330,17 +2487,19 @@ function WorkspaceCanvas() {
         data: {
           kind: 'document',
           locked: nodeLocked,
-          onBlocked: foreignLock
-            ? () =>
-                setBlockedMessage(
-                  `${foreignLock.nickname}님이 이 문서를 편집 중입니다. 편집을 마칠 때까지 기다려주세요.`,
-                )
-            : nodeLocked && !locked
+          onBlocked: isAiFileLocked(aiFileLock, document.relativePath)
+            ? () => setBlockedMessage(AI_FILE_LOCK_MESSAGE)
+            : foreignLock
               ? () =>
                   setBlockedMessage(
-                    'AI 작업 문서는 관리자만 수정할 수 있습니다.',
+                    `${foreignLock.nickname}님이 이 문서를 편집 중입니다. 편집을 마칠 때까지 기다려주세요.`,
                   )
-              : onBlocked,
+              : nodeLocked && !locked
+                ? () =>
+                    setBlockedMessage(
+                      'AI 작업 문서는 관리자만 수정할 수 있습니다.',
+                    )
+                : onBlocked,
           collaborative: collaboration.active,
           draftKey: `game-canvas-draft:${collaboration.projectId ?? workspace.root}:${document.id}`,
           editingBy:
@@ -2392,8 +2551,8 @@ function WorkspaceCanvas() {
         : 120;
     const previewNodes: PreviewCanvasNode[] = previews.map((preview, index) => {
       const previewWindow = previewWindows[preview.relativePath] ?? {
-        x: previewX + index * 840,
-        y: previewY,
+        x: previewX,
+        y: previewY + index * (520 + NEW_FILE_GAP),
         width: 720,
         height: 520,
         collapsed: false,
@@ -2401,6 +2560,9 @@ function WorkspaceCanvas() {
       return {
         id: previewNodeId(preview.relativePath),
         type: 'preview',
+        className: newFileNodes.has(previewNodeId(preview.relativePath))
+          ? 'new-file-node'
+          : undefined,
         position: {
           x: previewWindow.x,
           y: previewWindow.y,
@@ -2410,12 +2572,14 @@ function WorkspaceCanvas() {
           height: previewWindow.collapsed ? 38 : previewWindow.height,
         },
         dragHandle: '.preview-drag-handle',
+        draggable: !pathLocked(preview.relativePath),
         zIndex: 3,
         data: {
           kind: 'preview',
+          locked: pathLocked(preview.relativePath),
           preview,
           windowState: previewWindow,
-          busy: aiBusy,
+          busy: aiBusy && isAiFileLocked(aiFileLock, preview.relativePath),
           onWindowChange: (state) =>
             updatePreviewWindow(preview.relativePath, state),
           onHistory: () => openHistory(preview.relativePath),
@@ -2431,7 +2595,8 @@ function WorkspaceCanvas() {
         (node) => ({
           ...node,
           selected: selectedNodeIds.has(node.id),
-          ...(currentNodes.find((existing) => existing.id === node.id)?.dragging
+          ...(currentNodes.find((existing) => existing.id === node.id)
+            ?.dragging && !node.data.locked
             ? {
                 position: currentNodes.find(
                   (existing) => existing.id === node.id,
@@ -2446,6 +2611,10 @@ function WorkspaceCanvas() {
     findOpen,
     locked,
     aiBusy,
+    aiFileLock,
+    pathLocked,
+    sectionLocked,
+    newFileNodes,
     collaboration,
     workspace.root,
     beginEdit,
@@ -2485,7 +2654,17 @@ function WorkspaceCanvas() {
   const addIdeaAt = async (x: number, y: number) => {
     if (!workspace.root) return openWorkspace();
     try {
-      await window.gameCanvas.createIdea({ x, y });
+      const [layout] = verticalLayouts(
+        [{ width: 340, height: 300 }],
+        [...documents, ...sections, ...Object.values(previewWindows)].map(
+          (item) => ({
+            ...item,
+            height: 'collapsed' in item && item.collapsed ? 38 : item.height,
+          }),
+        ),
+        { x, y },
+      );
+      await window.gameCanvas.createIdea({ x: layout.x, y: layout.y });
       await loadProject(false);
       setNotice('새 메모 파일을 만들었습니다. 카드를 클릭해 편집하세요.');
     } catch (error) {
@@ -2685,13 +2864,27 @@ function WorkspaceCanvas() {
       ...selected.map((document) => document.relativePath),
       ...(htmlInput ? [htmlInput.relativePath] : []),
     ];
+    const resultX = maxX + 100;
+    const resultY = Math.max(
+      minY,
+      ...Object.values(previewWindows)
+        .filter(
+          (window) =>
+            resultX < window.x + window.width + NEW_FILE_GAP &&
+            resultX + 720 + NEW_FILE_GAP > window.x,
+        )
+        .map(
+          (window) =>
+            window.y + (window.collapsed ? 38 : window.height) + NEW_FILE_GAP,
+        ),
+    );
     setAiRequest({
       organize: kind !== 'implement',
       implement: htmlInput ? kind === 'implement' : kind !== 'organize',
       sourceMode: htmlInput ? 'html' : undefined,
       inputPaths,
-      x: maxX + 100,
-      y: minY,
+      x: resultX,
+      y: resultY,
       htmlResult: htmlResult ?? {
         mode: 'new',
         ...(htmlInput ? { basePath: htmlInput.relativePath } : {}),
@@ -2712,6 +2905,7 @@ function WorkspaceCanvas() {
     if (
       !aiRequest ||
       creatingTaskRef.current ||
+      aiBusy ||
       locked ||
       !canRunAi ||
       (!aiRequest.organize && !aiRequest.implement) ||
@@ -2831,6 +3025,11 @@ function WorkspaceCanvas() {
   const selectedPreviews = nodes
     .filter((node) => node.selected && node.data.kind === 'preview')
     .map((node) => previewDeletionItem((node.data as PreviewNodeData).preview));
+  const selectionLocked =
+    locked ||
+    selectedDocuments.some((doc) => pathLocked(doc.relativePath)) ||
+    selectedSections.some(sectionLocked) ||
+    selectedPreviews.some((preview) => pathLocked(preview.relativePath));
 
   const arrangementItems = useMemo<ArrangementItem[]>(() => {
     const selectedSectionSet = new Set(selectedSectionIds);
@@ -2873,6 +3072,16 @@ function WorkspaceCanvas() {
   }, [sections, selectedDocuments, selectedSectionIds, selectedSections]);
 
   const arrangeSelection = async (action: ArrangementAction) => {
+    if (
+      blockAiFiles([
+        ...selectedDocuments.map((document) => document.relativePath),
+        ...selectedSections.flatMap((section) => [
+          section.relativePath,
+          ...section.members.map((member) => member.path),
+        ]),
+      ])
+    )
+      return;
     if (arrangementItems.length < 2) return;
     if (
       (action === 'distribute-x' || action === 'distribute-y') &&
@@ -2972,6 +3181,25 @@ function WorkspaceCanvas() {
     draggedNodes: CanvasNode[],
   ) => {
     const movedNodes = draggedNodes.length > 0 ? draggedNodes : [primaryNode];
+    if (
+      blockAiFiles(
+        movedNodes.flatMap((node) =>
+          node.data.kind === 'section'
+            ? [
+                node.data.section.relativePath,
+                ...node.data.section.members.map((member) => member.path),
+              ]
+            : [
+                node.data.kind === 'document'
+                  ? node.data.document.relativePath
+                  : node.data.preview.relativePath,
+              ],
+        ),
+      )
+    ) {
+      await loadProject(false);
+      return;
+    }
     for (const moved of movedNodes) {
       if (moved.data.kind === 'preview') {
         await updatePreviewWindow(moved.data.preview.relativePath, {
@@ -3256,6 +3484,10 @@ function WorkspaceCanvas() {
     }
   };
   const selectionSection = () => {
+    if (
+      blockAiFiles(selectedDocuments.map((document) => document.relativePath))
+    )
+      return;
     if (locked) {
       onBlocked();
       return;
@@ -3268,6 +3500,13 @@ function WorkspaceCanvas() {
     setSectionDialogOpen(true);
   };
   const minimizeSelection = async () => {
+    if (
+      blockAiFiles([
+        ...selectedDocuments.map((document) => document.relativePath),
+        ...selectedPreviews.map((preview) => preview.relativePath),
+      ])
+    )
+      return;
     try {
       await flushEditors();
       const selected = nodes.filter((node) => node.selected);
@@ -3296,6 +3535,17 @@ function WorkspaceCanvas() {
     }
   };
   const requestDelete = () => {
+    if (
+      blockAiFiles([
+        ...selectedDocuments.map((document) => document.relativePath),
+        ...selectedPreviews.map((preview) => preview.relativePath),
+        ...selectedSections.flatMap((section) => [
+          section.relativePath,
+          ...section.members.map((member) => member.path),
+        ]),
+      ])
+    )
+      return;
     if (locked) {
       onBlocked();
       return;
@@ -3790,7 +4040,7 @@ function WorkspaceCanvas() {
       id: 'section',
       title: '선택 파일로 섹션 만들기',
       shortcut: 'Ctrl+G',
-      disabled: !selectedDocuments.length || locked,
+      disabled: !selectedDocuments.length || selectionLocked,
       reason: '편집 가능한 문서를 선택해주세요',
       run: selectionSection,
     },
@@ -4432,7 +4682,7 @@ function WorkspaceCanvas() {
             </button>
             {aiBusy && (
               <span className="workspace-lock-label">
-                AI 작업 중 · 문서 잠금
+                AI 작업 중 · 관련 파일 보호
               </span>
             )}
             <button
@@ -4465,6 +4715,12 @@ function WorkspaceCanvas() {
 
       <div
         className="canvas-shell"
+        onClickCapture={(event) => {
+          const id = (event.target as Element)
+            .closest('.react-flow__node')
+            ?.getAttribute('data-id');
+          if (id) acknowledgeNewFile(id);
+        }}
         onPointerDownCapture={() => {
           selectionBeforeClick.current = new Set(
             nodes.filter((node) => node.selected).map((node) => node.id),
@@ -4485,6 +4741,7 @@ function WorkspaceCanvas() {
           }}
           onNodesChange={onNodesChange}
           onNodeClick={(event, node) => {
+            acknowledgeNewFile(node.id);
             if (inspectorId && !event.shiftKey) setInspectorId(node.id);
             setDocumentContextMenu(null);
             setSectionContextMenu(null);
@@ -4769,6 +5026,7 @@ function WorkspaceCanvas() {
           </button>
           <button
             title="선택 항목 최소화 또는 펼치기 (Ctrl+Shift+M)"
+            disabled={selectionLocked}
             onClick={() => void minimizeSelection()}
           >
             <Minimize2 size={14} />
@@ -4786,7 +5044,7 @@ function WorkspaceCanvas() {
           )}
           {(selectedDocuments.length > 0 || selectedPreviews.length > 0) && (
             <button
-              disabled={locked}
+              disabled={selectionLocked}
               title="선택 파일·HTML 결과 삭제 (Delete)"
               onClick={requestDelete}
             >
@@ -4854,7 +5112,7 @@ function WorkspaceCanvas() {
                     key={action}
                     aria-label={label}
                     disabled={
-                      locked ||
+                      selectionLocked ||
                       (action.startsWith('distribute') &&
                         arrangementItems.length < 3)
                     }
@@ -4933,7 +5191,7 @@ function WorkspaceCanvas() {
         </button>
         <button
           type="button"
-          disabled={selectedDocuments.length === 0 || locked}
+          disabled={selectedDocuments.length === 0 || selectionLocked}
           onClick={() => {
             setSectionTitle('새 섹션');
             setSectionDialogOpen(true);
@@ -5557,7 +5815,11 @@ function WorkspaceCanvas() {
           <button
             type="button"
             role="menuitem"
-            disabled={locked || editBusy || movingResults}
+            disabled={
+              pathLocked(previewContextMenu.preview.relativePath) ||
+              editBusy ||
+              movingResults
+            }
             onClick={() => {
               setResultFolderPrompt(previewContextMenu.preview);
               setPreviewContextMenu(null);
@@ -5586,7 +5848,7 @@ function WorkspaceCanvas() {
                 }
                 data-card-color={color.id}
                 disabled={
-                  locked ||
+                  pathLocked(previewContextMenu.preview.relativePath) ||
                   (collaboration.active &&
                     (!collaboration.connected ||
                       !!collaboration.pendingChanges))
@@ -5643,7 +5905,7 @@ function WorkspaceCanvas() {
             type="button"
             role="menuitem"
             className="danger-menu-item"
-            disabled={locked}
+            disabled={pathLocked(previewContextMenu.preview.relativePath)}
             onClick={() => {
               setDeletePrompt(previewDeletionItem(previewContextMenu.preview));
               setPreviewContextMenu(null);
@@ -5686,7 +5948,7 @@ function WorkspaceCanvas() {
                   color.id
                 }
                 data-card-color={color.id}
-                disabled={locked}
+                disabled={pathLocked(documentContextMenu.document.relativePath)}
                 onClick={() => {
                   void flushEditors()
                     .then(() =>
@@ -5747,7 +6009,7 @@ function WorkspaceCanvas() {
             role="menuitem"
             className="danger-menu-item"
             onClick={() => {
-              if (locked) {
+              if (pathLocked(documentContextMenu.document.relativePath)) {
                 onBlocked();
                 return;
               }
@@ -5779,6 +6041,7 @@ function WorkspaceCanvas() {
           <button
             type="button"
             role="menuitem"
+            disabled={sectionLocked(sectionContextMenu.section)}
             onClick={() => {
               setSectionActionPrompt({
                 section: sectionContextMenu.section,
@@ -5799,6 +6062,7 @@ function WorkspaceCanvas() {
             type="button"
             role="menuitem"
             className="danger-menu-item"
+            disabled={sectionLocked(sectionContextMenu.section)}
             onClick={() => {
               setSectionActionPrompt({
                 section: sectionContextMenu.section,
@@ -6022,8 +6286,9 @@ function WorkspaceCanvas() {
               게임 파일만 불러오세요.
             </small>
             <small>
-              공동 작업에서는 서버 사본에 공유됩니다. AI 작업 중에는 불러오기가
-              잠기며 뷰어는 파일을 추가할 수 없습니다.
+              공동 작업에서는 서버 사본에 공유됩니다. AI 작업 관련 파일만
+              보호하며 새 파일은 계속 불러올 수 있습니다. 뷰어는 파일을 추가할
+              수 없습니다.
             </small>
             {importError && (
               <p className="collaboration-error" role="alert">
@@ -6755,6 +7020,7 @@ function WorkspaceCanvas() {
                   creatingTask ||
                   !canRunAi ||
                   locked ||
+                  aiBusy ||
                   (!aiRequest.organize && !aiRequest.implement) ||
                   (collaboration.active &&
                     aiRequest.implement &&
@@ -6831,7 +7097,10 @@ function WorkspaceCanvas() {
               <button onClick={() => setSectionRename(null)}>취소</button>
               <button
                 className="button-primary"
-                disabled={!sectionRename.title.trim() || locked}
+                disabled={
+                  !sectionRename.title.trim() ||
+                  pathLocked(sectionRename.section.relativePath)
+                }
                 onClick={async () => {
                   try {
                     await window.gameCanvas.renameSection(
@@ -6881,7 +7150,10 @@ function WorkspaceCanvas() {
               </button>
               <button
                 className="button-danger"
-                disabled={locked || editBusy}
+                disabled={
+                  editBusy ||
+                  deleteManyPrompt.some((doc) => pathLocked(doc.relativePath))
+                }
                 onClick={async () => {
                   setEditBusy(true);
                   try {
@@ -7121,6 +7393,7 @@ function WorkspaceCanvas() {
                     ? 'button-danger'
                     : 'button-primary'
                 }
+                disabled={sectionLocked(sectionActionPrompt.section)}
                 onClick={() => void confirmSectionAction()}
               >
                 {sectionActionPrompt.deleteMembers ? (
@@ -7196,7 +7469,7 @@ function WorkspaceCanvas() {
               <button
                 type="button"
                 className="button-danger"
-                disabled={locked || editBusy}
+                disabled={pathLocked(deletePrompt.relativePath) || editBusy}
                 onClick={() => void deleteDocument()}
               >
                 <Trash2 size={14} /> 휴지통으로 이동

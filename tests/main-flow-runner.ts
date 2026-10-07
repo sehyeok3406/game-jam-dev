@@ -391,9 +391,9 @@ try {
       providerId: 'codex-cli',
       modelId,
     });
-    await assert.rejects(
-      call('files:import', { x: 0, y: 0, imagePurpose: 'asset' }),
-      /AI.*사용할 수 없습니다/,
+    assert.deepEqual(
+      await call('files:import', { x: 0, y: 0, imagePurpose: 'asset' }),
+      [],
     );
     if (expectedStatus === 'cancelled') await call('codex:cancel', run.runId);
     const end = await terminal(run.runId);
@@ -511,7 +511,7 @@ try {
   const run = await call('codex:start', {
     taskPath: task.relativePath,
     providerId: 'codex-cli',
-    modelId: 'fixture-valid',
+    modelId: 'fixture-concurrent',
   });
   await assert.rejects(
     call('documents:save', {
@@ -519,22 +519,77 @@ try {
       title: 'blocked',
       body: 'blocked',
     }),
-    /잠시 사용할 수 없습니다/,
+    /AI 작업에 사용 중인 파일/,
+  );
+  const concurrent = await call('documents:create-idea', { x: 0, y: 0 });
+  importSelections.push(path.join(fixtures, 'reference.md'));
+  const concurrentImport = await call('files:import', {
+    x: 900,
+    y: 600,
+    imagePurpose: 'asset',
+  });
+  assert.equal(concurrentImport.length, 1);
+  await call('documents:save', {
+    relativePath: concurrent.relativePath,
+    title: '동시 편집',
+    body: 'AI와 무관한 새 메모',
+  });
+  await call('documents:update-layout', {
+    relativePath: concurrent.relativePath,
+    x: 50,
+    y: 80,
+    width: 340,
+    height: 300,
+  });
+  const removed = await call('documents:create-idea', { x: 0, y: 0 });
+  await call('documents:delete', {
+    documentId: removed.id,
+    relativePath: removed.relativePath,
+  });
+  await assert.rejects(
+    call('documents:delete', {
+      documentId: idea.id,
+      relativePath: idea.relativePath,
+    }),
+    /AI 작업에 사용 중인 파일/,
   );
   await assert.rejects(
-    call('documents:create-idea', { x: 0, y: 0 }),
-    /잠시 사용할 수 없습니다/,
+    call('documents:update-layout', {
+      relativePath: idea.relativePath,
+      x: 20,
+      y: 40,
+      width: 340,
+      height: 300,
+    }),
+    /AI 작업에 사용 중인 파일/,
+  );
+  await assert.rejects(
+    call(
+      'preview:save-window',
+      { x: 10, y: 10, width: 720, height: 520, collapsed: false },
+      'output/index.html',
+    ),
+    /AI 작업에 사용 중인 파일/,
+  );
+  assert.ok(
+    await call('codex:active'),
+    'Concurrent mutations must happen while AI is still running',
   );
   assert.equal((await terminal(run.runId)).status, 'completed');
   const html = await fs.readFile(path.join(root, 'output/index.html'), 'utf8');
-  assert.ok(html.includes('fixture-valid'));
+  assert.ok(html.includes('fixture-concurrent'));
+  assert.match(
+    await fs.readFile(path.join(root, concurrent.relativePath), 'utf8'),
+    /AI와 무관한 새 메모/,
+  );
+  await assert.rejects(fs.access(path.join(root, removed.relativePath)));
   assert.ok(
     events.some(
       (event) => event.runId === run.runId && event.status === 'validating',
     ),
   );
   console.log(
-    'PASS: isolated run publishes valid output and enforces mutation lock',
+    'PASS: AI protects its inputs/output/window while unrelated notes can be created, edited, moved and deleted without blocking publication',
   );
 
   const stopped = await call('codex:start', {
@@ -837,6 +892,14 @@ try {
     ),
   );
   assert.equal(matter(firstDocs[0]).data.sources.length, 5);
+  const documentLayouts = firstDocs.map((raw: string) => matter(raw).data);
+  for (let index = 1; index < documentLayouts.length; index++) {
+    assert.equal(documentLayouts[index].x, documentLayouts[0].x);
+    assert.ok(
+      documentLayouts[index].y >=
+        documentLayouts[index - 1].y + documentLayouts[index - 1].height + 40,
+    );
+  }
   const implemented = await call('tasks:create', {
     kind: 'implement',
     inputPaths: docSpec.expected_outputs,
@@ -970,10 +1033,7 @@ try {
     providerId: 'codex-cli',
     modelId: 'fixture-gamejam-valid',
   });
-  await assert.rejects(
-    call('documents:create-idea', { x: 0, y: 0 }),
-    /진행|잠/,
-  );
+  const duringWorkflow = await call('documents:create-idea', { x: 0, y: 0 });
   const waitForStep2 = async (runId: string) => {
     for (let attempt = 0; attempt < 100; attempt++) {
       if (
@@ -989,11 +1049,20 @@ try {
   await waitForStep2(workflowRun.runId);
   for (const relative of workflowData.expected_outputs)
     await assert.rejects(fs.access(path.join(root, relative)));
-  await assert.rejects(
-    call('documents:create-idea', { x: 0, y: 0 }),
-    /진행|잠/,
-  );
+  const duringImplementation = await call('documents:create-idea', {
+    x: 0,
+    y: 0,
+  });
   const workflowCompleted = await terminal(workflowRun.runId);
+  assert.ok(
+    await fs.readFile(
+      path.join(root, duringImplementation.relativePath),
+      'utf8',
+    ),
+  );
+  assert.ok(
+    await fs.readFile(path.join(root, duringWorkflow.relativePath), 'utf8'),
+  );
   assert.equal(
     workflowCompleted.status,
     'completed',
@@ -1238,9 +1307,9 @@ try {
       otherClient.state.aiRun!.status,
     ),
   );
-  await assert.rejects(
-    otherClient.command('documents:create-idea', { x: 0, y: 0 }),
-    /AI 작업/,
+  const concurrentSharedIdea = await otherClient.command(
+    'documents:create-idea',
+    { x: 0, y: 0 },
   );
   const completedShared = await terminal(sharedRun.runId);
   assert.equal(completedShared.status, 'completed', completedShared.message);
@@ -1248,6 +1317,7 @@ try {
   const outputPath = matter(otherClient.files[sharedTask.relativePath]).data
     .expected_outputs[0];
   assert.ok(otherClient.files[outputPath].includes('<html'));
+  assert.ok(otherClient.files[concurrentSharedIdea.relativePath]);
   const sharedWorkspace = (await call('workspace:get')).root;
   assert.notEqual(sharedWorkspace, root);
   await call('path:reveal', outputPath);
@@ -1278,9 +1348,9 @@ try {
   });
   await waitForStep2(sharedWorkflowRun.runId);
   await otherClient.refresh();
-  await assert.rejects(
-    otherClient.command('documents:create-idea', { x: 0, y: 0 }),
-    /AI 작업/,
+  const concurrentWorkflowIdea = await otherClient.command(
+    'documents:create-idea',
+    { x: 0, y: 0 },
   );
   const sharedComplete = await terminal(sharedWorkflowRun.runId);
   assert.equal(sharedComplete.status, 'completed', sharedComplete.message);
@@ -1288,6 +1358,7 @@ try {
   const sharedExpected = matter(otherClient.files[sharedWorkflow.relativePath])
     .data.expected_outputs;
   for (const relative of sharedExpected) assert.ok(otherClient.files[relative]);
+  assert.ok(otherClient.files[concurrentWorkflowIdea.relativePath]);
   assert.equal(otherClient.state.aiRun!.status, 'completed');
   console.log(
     'PASS: shared gamejam keeps one administrator lease across both stages and publishes all four outputs to other participants',

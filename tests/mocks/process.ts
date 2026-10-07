@@ -260,7 +260,7 @@ export function spawn(
         child.emit('error', error);
       }
     },
-    isExecution ? 400 : 5,
+    isExecution ? (args.includes('fixture-concurrent') ? 2000 : 400) : 5,
   );
   return child;
 }

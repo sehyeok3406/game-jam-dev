@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import matter from 'gray-matter';
 import {
   buildFileImports,
@@ -209,7 +210,7 @@ test('image descriptors belong to sections, share assets on duplication and pres
   assert.match(task.result.body, /참고 자료/);
 });
 
-test('real collaboration imports are synchronized, actor-attributed, idempotent and blocked for viewers and during AI', async (t) => {
+test('real collaboration imports are synchronized, actor-attributed, idempotent and allowed during AI while selected images stay protected and viewers stay blocked', async (t) => {
   const root = await fs.mkdtemp(
     path.join(os.tmpdir(), 'canvas-import-server-'),
   );
@@ -274,6 +275,33 @@ test('real collaboration imports are synchronized, actor-attributed, idempotent 
     htmlResult: { mode: 'new' },
   });
   await owner.beginAi(task.relativePath);
-  await assert.rejects(editor.command('files:import-batch', batch()), /AI/);
+  const concurrent = await editor.command('files:import-batch', batch());
+  assert.ok(concurrent.length);
+  const originalAsset = owner.files[image.asset.path];
+  await assert.rejects(
+    editor.request('offline-sync', {
+      id: randomUUID(),
+      changes: {
+        [image.asset.path]: encodeAsset(
+          image.asset.path,
+          Buffer.concat([
+            decodeAsset(image.asset.path, originalAsset),
+            Buffer.from([0]),
+          ]),
+        ),
+      },
+      revisions: editor.revisions,
+    }),
+    /AI 작업/,
+  );
+  await editor.refresh();
+  assert.equal(editor.files[image.asset.path], originalAsset);
+  await assert.rejects(
+    editor.command('documents:delete', {
+      documentId: image.id,
+      relativePath: image.relativePath,
+    }),
+    /AI 작업/,
+  );
   await owner.cancelAi();
 });

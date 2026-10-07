@@ -21,6 +21,13 @@ import { validateHtmlAnalysis } from './html-source.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
 import { historyTaskPath } from './ai-task-records.ts';
 import { remapResultChanges } from './result-structure.ts';
+import { layoutNewDocuments } from './new-document-layout.ts';
+import {
+  taskFileLock,
+  assertAiFilesUnlocked,
+  assertAiMutation,
+  aiLockedSnapshot,
+} from './ai-file-lock.ts';
 import {
   CanvasError,
   ERROR_CODES,
@@ -52,6 +59,7 @@ type Member = {
 };
 type StoredHistory = { entry: HistoryEntry; before: Snapshot; after: Snapshot };
 type Job = {
+  fileLock?: import('./shared.ts').AiFileLock;
   providerId?: import('./shared.ts').AiProviderId;
   startedAt?: number;
   modelId?: string | null;
@@ -256,7 +264,7 @@ export async function createCollaborationServer(options: Options) {
   const editable = (project: Project, member: Member) => {
     if (member.role === 'viewer')
       throw new ApiError('뷰어는 문서를 편집할 수 없습니다.', 403);
-    if (project.job)
+    if (project.job && !project.job.fileLock)
       throw new ApiError(
         '현재 AI 작업이 진행 중입니다. 문서 편집이 잠겨 있습니다.',
       );
@@ -279,6 +287,7 @@ export async function createCollaborationServer(options: Options) {
       htmlImportAnalysis: true,
       htmlResultFolders: true,
       structuredResults: true,
+      scopedAiLocks: true,
       editorAi: true,
       multiProviderAi: true,
       projectId: project.id,
@@ -489,6 +498,7 @@ export async function createCollaborationServer(options: Options) {
           htmlImportAnalysis: true,
           htmlResultFolders: true,
           structuredResults: true,
+          scopedAiLocks: true,
         });
         return;
       }
@@ -677,6 +687,7 @@ export async function createCollaborationServer(options: Options) {
         if (action === 'lock') {
           editable(project, member);
           const relative = collaborationPath(input.relativePath);
+          assertAiFilesUnlocked(project.job?.fileLock, [relative]);
           if (
             !project.files[relative] ||
             !relative.endsWith('.md') ||
@@ -745,6 +756,7 @@ export async function createCollaborationServer(options: Options) {
               throw new ApiError('동기화 파일 내용이 올바르지 않습니다.', 400);
           }
           checkSnapshot(nextFiles);
+          assertAiMutation(project.job?.fileLock, project.files, nextFiles);
           assertBases(
             project,
             project.files,
@@ -807,6 +819,15 @@ export async function createCollaborationServer(options: Options) {
             command.channel,
             command.input,
           );
+          if (project.job && command.channel === 'tasks:create')
+            throw new ApiError('이미 AI 작업이 진행 중입니다.');
+          assertAiMutation(
+            project.job?.fileLock,
+            project.files,
+            reduced.files,
+            command.channel,
+            command.input as Record<string, unknown>,
+          );
           assertBases(
             project,
             project.files,
@@ -854,6 +875,10 @@ export async function createCollaborationServer(options: Options) {
         if (action === 'rename') {
           admin(member);
           editable(project, member);
+          if (project.job)
+            throw new ApiError(
+              'AI 작업이 끝난 뒤 프로젝트 이름을 변경해주세요.',
+            );
           let name: string;
           try {
             name = homeName(input.name as string);
@@ -945,6 +970,7 @@ export async function createCollaborationServer(options: Options) {
             record.after,
             input.direction,
           );
+          assertAiMutation(project.job?.fileLock, project.files, files);
           checkSnapshot(files);
           const next = structuredClone(project);
           recordChanges(
@@ -1047,6 +1073,7 @@ export async function createCollaborationServer(options: Options) {
             else files[key] = value;
           }
           checkSnapshot(files);
+          assertAiMutation(project.job?.fileLock, project.files, files);
           recordChanges(next, member, files, '이전 버전 복원', 'restore');
           await persist(next);
           return envelope(next, member);
@@ -1066,10 +1093,6 @@ export async function createCollaborationServer(options: Options) {
               );
             if (project.job)
               throw new ApiError('이미 AI 작업이 진행 중입니다.');
-            if (projectLocks(id).size)
-              throw new ApiError(
-                '편집 중인 메모가 있습니다. 참여자들이 저장하고 편집을 종료한 뒤 실행해주세요.',
-              );
             if (input.revision !== project.revision)
               throw new ApiError(
                 'AI 실행 직전 문서가 변경되었습니다. 최신 내용을 확인하고 다시 실행해주세요.',
@@ -1078,6 +1101,14 @@ export async function createCollaborationServer(options: Options) {
             if (!taskPath.startsWith('.ai/tasks/') || !project.files[taskPath])
               throw new ApiError('AI 작업 명세를 찾을 수 없습니다.');
             const outputs = expectedArtifacts(project.files[taskPath]);
+            const fileLock = taskFileLock(project.files, taskPath);
+            try {
+              assertAiFilesUnlocked(fileLock, [...projectLocks(id).keys()]);
+            } catch {
+              throw new ApiError(
+                'AI 작업 관련 문서를 편집 중입니다. 해당 문서를 저장하고 편집을 종료한 뒤 실행해주세요.',
+              );
+            }
             validateHtmlAnalysis(project.files[taskPath], project.files);
             if (
               matter(project.files[taskPath]).data.source_mode === 'html' &&
@@ -1127,10 +1158,12 @@ export async function createCollaborationServer(options: Options) {
               taskPath,
               status: 'starting',
               kind: 'status',
-              message: `${member.nickname}님이 AI 작업을 시작했습니다. 문서 편집이 잠깁니다.`,
+              message: `${member.nickname}님이 AI 작업을 시작했습니다. 작업 관련 파일만 보호합니다.`,
+              fileLock,
               timestamp: Date.now(),
             };
             next.job = {
+              fileLock,
               providerId,
               startedAt: Date.now(),
               modelId:
@@ -1142,7 +1175,9 @@ export async function createCollaborationServer(options: Options) {
               taskPath,
               outputs,
               revision: project.revision,
-              baselineHash: digest(JSON.stringify(next.files)),
+              baselineHash: digest(
+                JSON.stringify(aiLockedSnapshot(next.files, fileLock)),
+              ),
               expiresAt: Date.now() + 30_000,
               event,
             };
@@ -1207,7 +1242,16 @@ export async function createCollaborationServer(options: Options) {
           if (action === 'ai-finish') {
             const next = structuredClone(project),
               success = input.status === 'completed';
-            if (job.baselineHash !== digest(JSON.stringify(project.files)))
+            if (
+              job.baselineHash !==
+              digest(
+                JSON.stringify(
+                  job.fileLock
+                    ? aiLockedSnapshot(project.files, job.fileLock)
+                    : project.files,
+                ),
+              )
+            )
               throw new CanvasError(
                 'GC-SYNC-001',
                 'AI 입력 버전이 변경되어 결과를 반영하지 않습니다.',
@@ -1233,6 +1277,15 @@ export async function createCollaborationServer(options: Options) {
                 files,
                 job.outputs,
               );
+              const taskData = matter(project.files[job.taskPath]).data;
+              files = {
+                ...files,
+                ...layoutNewDocuments(project.files, artifacts as Snapshot, {
+                  x: Number.isFinite(taskData.x) ? taskData.x : 120,
+                  y: Number.isFinite(taskData.y) ? taskData.y : 120,
+                }),
+              };
+              checkSnapshot(files);
             }
             const status = success
               ? 'completed'

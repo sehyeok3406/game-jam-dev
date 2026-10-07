@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { createTaskFiles } from './task-plan.ts';
+import { documentBounds, layoutNewDocuments } from './new-document-layout.ts';
+import { verticalLayouts } from './canvas-placement.ts';
 import {
   isAssetPath,
   decodeAsset,
@@ -293,7 +295,12 @@ export function reduceCollaboration(
     return { files: relocated, result: moves };
   }
   if (channel === 'files:import-batch') {
-    const additions = buildFileImports(input as ImportBatchInput);
+    const additions = layoutNewDocuments(
+      files,
+      buildFileImports(input as ImportBatchInput),
+      { x: Number(input.x), y: Number(input.y) },
+      true,
+    );
     if (Object.keys(additions).some((relative) => next[relative] !== undefined))
       throw new CanvasError(
         'GC-IMPORT-001',
@@ -377,6 +384,11 @@ export function reduceCollaboration(
   if (channel === 'documents:create-idea') {
     const id = `idea-${randomUUID().slice(0, 8)}`,
       relative = `ideas/${id}.md`;
+    const [layout] = verticalLayouts(
+      [{ width: 340, height: 300 }],
+      documentBounds(next),
+      { x: number(input.x), y: number(input.y) },
+    );
     write(
       relative,
       {
@@ -384,10 +396,7 @@ export function reduceCollaboration(
         title: '새 아이디어',
         type: 'idea',
         status: 'draft',
-        x: number(input.x),
-        y: number(input.y),
-        width: 340,
-        height: 300,
+        ...layout,
         sources: [],
       },
       '# 새 아이디어\n\n여기에 게임 아이디어를 적어보세요.',

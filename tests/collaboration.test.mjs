@@ -420,7 +420,15 @@ test('shared document versions reserve separately, preserve IDs and propagate fa
     ).failure.code,
     'GC-HTML-002',
   );
-  for (const path of outputs) assert.equal(owner.files[path], artifacts[path]);
+  for (const path of outputs) {
+    const actual = matter(owner.files[path]);
+    const expected = matter(artifacts[path]);
+    const { x, y, width, height, collapsed, ...metadata } = actual.data;
+    assert.deepEqual(metadata, expected.data);
+    assert.equal(actual.content, expected.content);
+    assert.ok([x, y, width, height].every(Number.isFinite));
+    assert.equal(collapsed, false);
+  }
 });
 async function setup(t) {
   const root = await fs.mkdtemp(
@@ -510,15 +518,16 @@ test('editors execute their own three-provider AI with a single authoritative le
       }),
       /실행 권한/,
     );
-    await assert.rejects(
-      other.command('documents:create-idea', { x: 0, y: 0 }),
-      /AI 작업/,
-    );
+    const concurrent = await other.command('documents:create-idea', {
+      x: 0,
+      y: 0,
+    });
     await editor.finishAi('completed', {
       'output/inbox/untitled/v001/index.html':
         '<html><body>' + providerId + '</body></html>',
     });
     await owner.refresh();
+    assert.ok(owner.files[concurrent.relativePath]);
     assert.match(
       owner.files['output/inbox/untitled/v001/index.html'],
       new RegExp(providerId),
@@ -783,7 +792,7 @@ test('section membership, deleted Markdown, author history and restore survive s
   assert.equal((await owner.history())[0].kind, 'restore');
 });
 
-test('AI leases lock everyone, publish only assigned outputs, preserve versions and fence cancellation', async (t) => {
+test('AI leases protect related inputs, publish only assigned outputs, preserve versions and fence cancellation', async (t) => {
   const { owner, editor } = await setup(t);
   const task = await owner.command('tasks:create', {
     kind: 'implement',

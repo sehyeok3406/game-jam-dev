@@ -15,6 +15,8 @@ import { resolveDocumentOutputs } from './document-output';
 import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
 import { cardColor } from './card-colors';
+import { assertAiFilesUnlocked } from './ai-file-lock';
+import { verticalLayouts, NEW_FILE_GAP } from './canvas-placement';
 import {
   moveDestination,
   legacyResultMoves,
@@ -37,6 +39,7 @@ import {
 } from './preview-output';
 
 const now = Date.now();
+const taskInputs = new Map<string, string[]>();
 
 let documents: CanvasDocument[] = [
   {
@@ -217,6 +220,7 @@ const recordDevHistory = (
   historyStates.set(entry.id, { before, after });
 };
 let activeDevRun: {
+  fileLock: NonNullable<CodexRunEvent['fileLock']>;
   runId: string;
   taskPath: string;
   modelId?: string | null;
@@ -259,10 +263,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
   };
   const journal = new EditJournal();
   const changeHistory = (direction: 'undo' | 'redo') => {
-    if (
-      activeDevRun ||
-      (collab.active && (!collab.connected || collab.role === 'viewer'))
-    )
+    if (collab.active && (!collab.connected || collab.role === 'viewer'))
       throw new Error('현재 문서 편집을 사용할 수 없습니다.');
     const item = journal.peek(direction),
       stored = historyStates.get(item.id);
@@ -275,6 +276,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     const touched = Object.keys({ ...left, ...right }).filter(
       (key) => left[key] !== right[key],
     );
+    assertAiFilesUnlocked(activeDevRun?.fileLock, touched);
     if (touched.some((key) => current[key] !== left[key]))
       throw new Error('이후 변경과 충돌하여 중단했습니다.');
     const before = devSnapshot();
@@ -675,6 +677,11 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     listSections: async () => structuredClone(sections),
     createIdea: async ({ x, y }) => {
       const id = `idea-${documents.length + 1}`;
+      const [layout] = verticalLayouts(
+        [{ width: 340, height: 300 }],
+        [...documents, ...previewWindows.values()],
+        { x, y },
+      );
       const document: CanvasDocument = {
         id,
         title: '새 아이디어',
@@ -682,10 +689,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         status: 'raw',
         relativePath: `ideas/${id}.md`,
         body: '여기에 아이디어를 적어보세요.',
-        x,
-        y,
-        width: 340,
-        height: 300,
+        ...layout,
         collapsed: false,
         sources: [],
         modifiedAt: Date.now(),
@@ -973,6 +977,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         });
       }
       documents = [...documents, document];
+      taskInputs.set(document.relativePath, inputPaths);
       if (output)
         document.body +=
           kind === 'organize'
@@ -1010,7 +1015,28 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         throw new Error('지원하지 않는 AI 제공자입니다.');
       const runId = `dev-run-${Date.now()}`;
       const before = devSnapshot();
-      activeDevRun = { runId, taskPath, modelId, providerId };
+      const target = taskOutputs.get(taskPath);
+      const docTarget = taskDocumentOutputs.get(taskPath);
+      const fileLock = {
+        paths: [
+          ...new Set([
+            taskPath,
+            ...(docTarget?.inputs ?? taskInputs.get(taskPath) ?? []),
+            ...(docTarget?.outputs ?? []),
+            ...(target
+              ? [target.output, ...(target.base ? [target.base] : [])]
+              : []),
+          ]),
+        ],
+        folders: [] as string[],
+      };
+      for (const relative of fileLock.paths) {
+        const image = documents.find(
+          (doc) => doc.relativePath === relative,
+        )?.asset;
+        if (image) fileLock.paths.push(image.path);
+      }
+      activeDevRun = { runId, taskPath, modelId, providerId, fileLock };
       const send = (
         status: CodexRunEvent['status'],
         kind: CodexRunEvent['kind'],
@@ -1026,6 +1052,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           providerId,
           modelId,
           actorId: collab.memberId,
+          fileLock,
         });
       send(
         'starting',
@@ -1088,8 +1115,10 @@ export function createDevGameCanvasApi(): GameCanvasApi {
                 status: 'draft',
                 body: `## 정리 결과\n\n선택한 원본 메모 ${sources.length}개를 정리했습니다.`,
                 sources,
-                x: previous?.x ?? docTarget.x + 450 * index,
-                y: previous?.y ?? docTarget.y + 400,
+                x: previous?.x ?? docTarget.x,
+                y:
+                  previous?.y ??
+                  docTarget.y + 400 + (340 + NEW_FILE_GAP) * index,
                 width: previous?.width ?? 380,
                 height: previous?.height ?? 340,
                 collapsed: false,

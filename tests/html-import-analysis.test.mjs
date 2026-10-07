@@ -390,10 +390,8 @@ test('real collaboration imports and analyzes one HTML with admin permissions, l
     );
     const raw = owner.files[task.relativePath];
     await owner.beginAi(task.relativePath);
-    await assert.rejects(
-      editor.command('files:import-batch', batch),
-      /AI 작업/,
-    );
+    const concurrent = await editor.command('files:import-batch', batch);
+    assert.equal(concurrent.length, 1);
     const bad = artifacts(raw, 'bad');
     const first = Object.keys(bad)[0],
       parsed = matter(bad[first]);

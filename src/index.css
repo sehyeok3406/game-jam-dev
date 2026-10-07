@@ -1137,6 +1137,15 @@ button:disabled {
     var(--shadow-card);
 }
 
+.react-flow__node.new-file-node .document-card,
+.react-flow__node.new-file-node .preview-card {
+  border-color: #79b9ff;
+  box-shadow:
+    0 0 0 2px rgb(121 185 255 / 65%),
+    0 0 18px 5px rgb(93 152 255 / 38%),
+    var(--shadow-card);
+}
+
 .react-flow__resize-control.handle {
   width: 9px;
   height: 9px;

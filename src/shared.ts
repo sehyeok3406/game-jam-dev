@@ -209,7 +209,10 @@ export type CodexRunStatus =
   | 'failed'
   | 'cancelled';
 
+export type AiFileLock = { paths: string[]; folders: string[] };
+
 export type CodexRunEvent = {
+  fileLock?: AiFileLock;
   providerId?: AiProviderId;
   modelId?: string | null;
   actorId?: string;
@@ -493,6 +496,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  scopedAiLocks?: boolean;
   projectCreatedAt?: number;
   projectModifiedAt?: number;
   projectRename?: boolean;

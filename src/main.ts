@@ -10,6 +10,14 @@ import {
 } from './ai-providers';
 import { findOtherCli, otherCliStatus } from './ai-cli';
 import { embedSelectedAssets } from './ai-asset-links';
+import { remapResultChanges } from './result-structure';
+import { layoutNewDocuments } from './new-document-layout';
+import {
+  taskFileLock,
+  assertAiFilesUnlocked,
+  assertAiMutation,
+  changedAiFile,
+} from './ai-file-lock';
 import fs from 'node:fs/promises';
 import { mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -609,19 +617,91 @@ let executionProvider: import('./shared').AiProviderId = 'codex-cli';
 let executionModelId: string | null = null;
 let runPreparing = false;
 let preparationCancelled = false;
+let preparingFileLock: import('./shared').AiFileLock | null = null;
 let mutationQueue: Promise<unknown> = Promise.resolve();
 const enqueueMutation = <T>(operation: () => Promise<T>): Promise<T> => {
   const next = mutationQueue.then(operation);
   mutationQueue = next.catch(() => undefined);
   return next;
 };
+const aiIsActive = () =>
+  runPreparing ||
+  !!activeCodexRun ||
+  (!!collaboration?.state.aiRun &&
+    ['starting', 'running', 'validating'].includes(
+      collaboration.state.aiRun.status,
+    ));
+const currentAiFileLock = () =>
+  activeCodexRun?.fileLock ??
+  preparingFileLock ??
+  (aiIsActive() ? collaboration?.state.aiRun?.fileLock : null);
 const assertEditable = () => {
-  if (runPreparing || activeCodexRun)
+  if (aiIsActive())
     throw new Error(
-      `현재 AI가 ${(activeCodexRun?.taskPath ?? lastRunEvent?.taskPath)?.includes('gamejam-') ? 'gamejam! 문서 정리·HTML 구현' : (activeCodexRun?.taskPath ?? lastRunEvent?.taskPath)?.includes('implement') ? 'HTML 구현' : '문서 정리'}을 진행하고 있습니다. 결과에 영향을 줄 수 있어 문서 추가·수정·삭제와 배치 변경을 잠시 사용할 수 없습니다. 작업이 끝난 뒤 다시 시도하거나 작업을 중지해주세요.`,
+      '이미 AI 작업이 진행 중입니다. 프로젝트 전환과 추가 AI 실행은 작업이 끝난 뒤 진행해주세요.',
     );
 };
+const assertMutationAllowed = async (channel: string, args: unknown[]) => {
+  if (!aiIsActive()) return;
+  if (
+    channel === 'tasks:create' ||
+    channel === 'workspace:select' ||
+    channel.startsWith('projects:')
+  )
+    return assertEditable();
+  const lock = currentAiFileLock();
+  // Older servers still enforce a project lease; retain their protection.
+  if (!lock) return assertEditable();
+  if (channel === 'files:import') return;
+  if (
+    channel === 'history:restore' ||
+    channel === 'edit:undo' ||
+    channel === 'edit:redo'
+  ) {
+    const root = requireWorkspace();
+    const id =
+      channel === 'history:restore'
+        ? args[0]
+        : journal().peek(channel === 'edit:undo' ? 'undo' : 'redo').id;
+    const entry = (await listHistory(root)).find((entry) => entry.id === id);
+    const paths =
+      entry?.files
+        .filter(
+          (file) =>
+            channel !== 'history:restore' ||
+            !args[1] ||
+            file.relativePath === args[1],
+        )
+        .map((file) => file.relativePath) ?? [];
+    assertAiFilesUnlocked(lock, paths);
+    if (channel === 'history:restore') {
+      const changes: Record<string, string | null> = {};
+      for (const relative of paths)
+        changes[relative] = await readHistoryFile(
+          root,
+          String(id),
+          relative,
+          args[2] === 'after' ? 'after' : 'before',
+        );
+      const current = await captureProject(root);
+      assertAiFilesUnlocked(
+        lock,
+        Object.keys(remapResultChanges(current, changes)),
+      );
+    }
+    return;
+  }
+  const before =
+    collaboration?.files ?? (await captureProject(requireWorkspace()));
+  const input = (
+    channel === 'layouts:update' ? { updates: args[0] } : args[0]
+  ) as Record<string, unknown>;
+  const reduced = reduceCollaboration(before, channel, input);
+  assertAiMutation(lock, before, reduced.files, channel, input);
+};
 let activeCodexRun: {
+  fileLock: import('./shared').AiFileLock;
+  lockBaseline: Snapshot;
   runId: string;
   taskPath: string;
   child: ChildProcessWithoutNullStreams;
@@ -1084,21 +1164,6 @@ const writeSection = async (
   return parseSection(absolute);
 };
 
-const writeMarkdown = async (
-  relativePath: string,
-  data: Record<string, unknown>,
-  content: string,
-) => {
-  const absolute = await safePath(relativePath, true);
-  await fs.mkdir(path.dirname(absolute), { recursive: true });
-  await fs.writeFile(
-    absolute,
-    matter.stringify(`\n${content.trim()}\n`, data),
-    'utf8',
-  );
-  return parseDocument(absolute);
-};
-
 const notifyWorkspaceChanged = () => {
   if (changeTimer) clearTimeout(changeTimer);
   changeTimer = setTimeout(() => {
@@ -1182,6 +1247,7 @@ const emitCodexRunEvent = (
   failure?: FailureInfo,
 ) => {
   const event: CodexRunEvent = {
+    fileLock: currentAiFileLock() ?? undefined,
     providerId: activeCodexRun?.providerId ?? executionProvider,
     modelId: activeCodexRun?.modelId ?? executionModelId,
     actorId: collaboration?.state.memberId,
@@ -1301,7 +1367,7 @@ const startCodexRun = async (
     input.taskPath,
     'starting',
     'status',
-    '입력 문서와 이전 결과를 보관하고 있습니다. 문서 변경이 잠시 잠깁니다.',
+    '입력 문서와 이전 결과를 보관하고 있습니다. 작업 관련 파일만 보호합니다.',
   );
   const connection = await getAiStatus(input.providerId);
   if (!connection.available || !connection.executablePath)
@@ -1351,6 +1417,11 @@ const startCodexRun = async (
     ai_finished_at: null,
     ai_error: null,
   });
+  const fileLock = taskFileLock(baseline, input.taskPath);
+  const lockBaseline = {
+    ...baseline,
+    [input.taskPath]: await fs.readFile(taskAbsolute, 'utf8'),
+  };
 
   const prompt = [
     `You are executing a ${APP_NAME} task in the current workspace.`,
@@ -1417,6 +1488,8 @@ const startCodexRun = async (
     });
   let child = spawnPhase();
   activeCodexRun = {
+    fileLock,
+    lockBaseline,
     runId,
     taskPath: input.taskPath,
     child,
@@ -1577,66 +1650,76 @@ const startCodexRun = async (
           await validateHtml(staged[relative], relative);
         if (currentRun.cancelRequested)
           throw new Error('결과 확인을 중지했습니다.');
-        const current = await captureProject(root);
-        phase = 'input-conflict';
-        const external = Object.keys({ ...baseline, ...current }).find(
-          (relative) =>
-            relative !== input.taskPath &&
-            current[relative] !== baseline[relative],
-        );
-        if (external)
-          throw new CanvasError(
-            'GC-SYNC-001',
-            `작업 중 외부 변경을 발견했습니다. 결과를 보류합니다: ${external}`,
+        await enqueueMutation(async () => {
+          const current = await captureProject(root);
+          phase = 'input-conflict';
+          const external = changedAiFile(
+            currentRun.lockBaseline,
+            current,
+            currentRun.fileLock,
           );
-        const changes = Object.fromEntries(
-          outputs.map((relative) => [relative, staged[relative]]),
-        );
-        const previous = Object.fromEntries(
-          outputs
-            .filter((relative) => baseline[relative] !== undefined)
-            .map((relative) => [relative, baseline[relative]]),
-        );
-        phase = 'publish';
-        if (collaboration?.lease) {
-          await collaboration.finishAi('completed', changes, modelId);
-        } else if (sharedRunId) {
-          throw new Error(
-            '공동 AI 작업의 실행 권한이 만료되어 결과를 반영하지 않습니다.',
+          if (external)
+            throw new CanvasError(
+              'GC-SYNC-001',
+              `작업 중 외부 변경을 발견했습니다. 결과를 보류합니다: ${external}`,
+            );
+          const artifacts = Object.fromEntries(
+            outputs.map((relative) => [relative, staged[relative]]),
           );
-        } else {
-          await saveHistory(root, previous, changes, {
-            ...initialMeta,
-            status: 'validating',
-          });
-          await applyChanges(
-            root,
-            baseline,
-            changes,
-            () => currentRun.cancelRequested,
+          const taskData = matter(baseline[input.taskPath]).data;
+          const changes = collaboration?.lease
+            ? artifacts
+            : layoutNewDocuments(current, artifacts, {
+                x: Number.isFinite(taskData.x) ? taskData.x : 120,
+                y: Number.isFinite(taskData.y) ? taskData.y : 120,
+              });
+          validateArtifacts(current, { ...current, ...changes }, outputs);
+          const previous = Object.fromEntries(
+            outputs
+              .filter((relative) => baseline[relative] !== undefined)
+              .map((relative) => [relative, baseline[relative]]),
           );
-          try {
-            if (currentRun.cancelRequested)
-              throw new Error('결과 반영을 중지했습니다.');
+          phase = 'publish';
+          if (collaboration?.lease) {
+            await collaboration.finishAi('completed', changes, modelId);
+          } else if (sharedRunId) {
+            throw new Error(
+              '공동 AI 작업의 실행 권한이 만료되어 결과를 반영하지 않습니다.',
+            );
+          } else {
             await saveHistory(root, previous, changes, {
               ...initialMeta,
-              status: 'completed',
-              finishedAt: Date.now(),
+              status: 'validating',
             });
-          } catch (error) {
             await applyChanges(
               root,
+              baseline,
               changes,
-              Object.fromEntries(
-                outputs.map((relative) => [
-                  relative,
-                  baseline[relative] ?? null,
-                ]),
-              ),
+              () => currentRun.cancelRequested,
             );
-            throw error;
+            try {
+              if (currentRun.cancelRequested)
+                throw new Error('결과 반영을 중지했습니다.');
+              await saveHistory(root, previous, changes, {
+                ...initialMeta,
+                status: 'completed',
+                finishedAt: Date.now(),
+              });
+            } catch (error) {
+              await applyChanges(
+                root,
+                changes,
+                Object.fromEntries(
+                  outputs.map((relative) => [
+                    relative,
+                    baseline[relative] ?? null,
+                  ]),
+                ),
+              );
+              throw error;
+            }
           }
-        }
+        });
       } catch (error) {
         tracedError = error;
         status = currentRun.cancelRequested ? 'cancelled' : 'failed';
@@ -1902,7 +1985,7 @@ const handle = (
         }
         if (channel === 'files:import')
           return enqueueMutation(async () => {
-            assertEditable();
+            await assertMutationAllowed(channel, args);
             return listener(event, ...args);
           });
         if (channel === 'assets:read') {
@@ -1916,7 +1999,7 @@ const handle = (
         }
         if (commandLabels[channel])
           return enqueueMutation(async () => {
-            assertEditable();
+            await assertMutationAllowed(channel, args);
             const before = client.files;
             const result = await client.command(
               channel,
@@ -1969,6 +2052,7 @@ const handle = (
           };
         if (channel === 'documents:set-collapsed') {
           const input = args[0] as SetDocumentCollapsedInput;
+          assertAiFilesUnlocked(currentAiFileLock(), [input.relativePath]);
           personalCollapsed.set(input.relativePath, input.collapsed);
           notifyWorkspaceChanged();
           return;
@@ -2026,6 +2110,11 @@ const handle = (
       if (channel === 'codex:start')
         return enqueueMutation(async () => {
           assertEditable();
+          const taskPath = (args[0] as StartCodexRunInput).taskPath;
+          preparingFileLock = taskFileLock(
+            collaboration?.files ?? (await captureProject(requireWorkspace())),
+            taskPath,
+          );
           runPreparing = true;
           preparationCancelled = false;
           lastRunEvent = null;
@@ -2114,6 +2203,7 @@ const handle = (
             throw error;
           } finally {
             runPreparing = false;
+            preparingFileLock = null;
             if (!activeCodexRun) sharedRunId = null;
           }
         });
@@ -2124,7 +2214,7 @@ const handle = (
       )
         return listener(event, ...args);
       return enqueueMutation(async () => {
-        assertEditable();
+        await assertMutationAllowed(channel, args);
         if (channel === 'workspace:select' || channel.startsWith('projects:'))
           return listener(event, ...args);
         const root = requireWorkspace();
@@ -2223,16 +2313,11 @@ const registerIpc = () => {
       );
     if (
       collaboration &&
-      (!collaboration.state.connected ||
-        collaboration.state.role === 'viewer' ||
-        (collaboration.state.aiRun &&
-          ['starting', 'running', 'validating'].includes(
-            collaboration.state.aiRun.status,
-          )))
+      (!collaboration.state.connected || collaboration.state.role === 'viewer')
     )
       throw new CanvasError(
         'GC-IMPORT-001',
-        '연결된 관리자·편집자만 파일을 불러올 수 있습니다. AI 작업 중에는 파일 추가가 잠깁니다.',
+        '연결된 관리자·편집자만 파일을 불러올 수 있습니다.',
       );
     const chosen = await dialog.showOpenDialog({
       title: 'Markdown · HTML 게임 · 이미지 불러오기',
@@ -2329,6 +2414,7 @@ const registerIpc = () => {
     const root = requireWorkspace(),
       before = await captureProject(root);
     const reduced = reduceCollaboration(before, 'files:import-batch', payload);
+    assertAiMutation(currentAiFileLock(), before, reduced.files);
     const additions = Object.fromEntries(
       Object.entries(reduced.files).filter(
         ([relative]) => before[relative] === undefined,
@@ -2904,6 +2990,7 @@ const registerIpc = () => {
     },
   );
   handle('collaboration:lock', async (_event, relativePath: string) => {
+    assertAiFilesUnlocked(currentAiFileLock(), [relativePath]);
     await collaboration?.lock(relativePath);
   });
   handle('collaboration:unlock', async (_event, relativePath: string) => {
@@ -2920,7 +3007,6 @@ const registerIpc = () => {
     ) => {
       // Local mode also applies the entire batch as one transaction/history entry.
       const root = requireWorkspace();
-      assertEditable();
       const before = await captureProject(root);
       const after = (await import('./collaboration-model')).reduceCollaboration(
         before,
@@ -2965,6 +3051,7 @@ const registerIpc = () => {
       )
         throw new Error('올바르지 않은 창 상태입니다.');
       return enqueueMutation(async () => {
+        assertAiFilesUnlocked(currentAiFileLock(), [relative, windowPath]);
         const absolute = await projectPath(requireWorkspace(), windowPath);
         await fs.mkdir(path.dirname(absolute), { recursive: true });
         const temporary = `${absolute}.${randomUUID()}.tmp`;
@@ -3031,23 +3118,19 @@ const registerIpc = () => {
   handle('documents:list', listDocuments);
   handle('sections:list', listSections);
   handle('documents:create-idea', async (_event, input: CreateIdeaInput) => {
-    const id = `idea-${randomUUID().slice(0, 8)}`;
-    return writeMarkdown(
-      `ideas/${id}.md`,
-      {
-        id,
-        title: '새 아이디어',
-        type: 'idea',
-        status: 'draft',
-        x: input.x,
-        y: input.y,
-        width: 340,
-        height: 300,
-        collapsed: false,
-        sources: [],
-      },
-      '# 새 아이디어\n\n여기에 게임 아이디어를 적어보세요.',
+    const root = requireWorkspace();
+    const before = await captureProject(root);
+    const reduced = reduceCollaboration(before, 'documents:create-idea', input);
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.entries(reduced.files).filter(
+          ([key, raw]) => before[key] !== raw,
+        ),
+      ),
     );
+    return reduced.result;
   });
   handle('sections:create', async (_event, input: CreateSectionInput) => {
     const title = input.title.trim() || '새 섹션';

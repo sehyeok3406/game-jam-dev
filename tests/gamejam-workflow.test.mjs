@@ -269,13 +269,14 @@ test('workflow server gates old executors, enforces admins and one lease, and pu
     await editor.command('tasks:create', gamejamTaskInput(request));
     await owner.refresh();
     await owner.beginAi(task.relativePath);
-    await assert.rejects(
-      editor.command('documents:create-idea', { x: 0, y: 0 }),
-      /AI 작업/,
-    );
+    const concurrent = await editor.command('documents:create-idea', {
+      x: 0,
+      y: 0,
+    });
     const expected = matter(owner.files[task.relativePath]).data
       .expected_outputs;
     await owner.finishAi('cancelled', {}, null);
+    assert.ok(owner.files[concurrent.relativePath]);
     for (const relative of expected)
       assert.equal(owner.files[relative], undefined);
     const next = await owner.command('tasks:create', gamejamTaskInput(request));
@@ -298,8 +299,19 @@ test('workflow server gates old executors, enforces admins and one lease, and pu
     );
     await owner.finishAi('completed', artifacts, 'fixture');
     await editor.refresh();
-    for (const relative of outputs)
-      assert.equal(editor.files[relative], artifacts[relative]);
+    for (const relative of outputs) {
+      if (relative.endsWith('.html')) {
+        assert.equal(editor.files[relative], artifacts[relative]);
+      } else {
+        const actual = matter(editor.files[relative]);
+        const expected = matter(artifacts[relative]);
+        const { x, y, width, height, collapsed, ...metadata } = actual.data;
+        assert.deepEqual(metadata, expected.data);
+        assert.equal(actual.content, expected.content);
+        assert.ok([x, y, width, height].every(Number.isFinite));
+        assert.equal(collapsed, false);
+      }
+    }
     assert.equal(editor.files['output/index.html'], files['output/index.html']);
     assert.equal(editor.state.aiRun.status, 'completed');
     const history = await editor.history();
