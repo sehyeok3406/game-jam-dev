@@ -14,6 +14,50 @@ import {
 import { checkSnapshot } from '../src/collaboration-model.ts';
 import { setMarkdownTaskChecked } from '../src/markdown-editing.ts';
 
+test('shared HTML deletion removes source metadata, preserves other results, synchronizes and can be undone', async (t) => {
+  const { owner, editor, restart } = await setup(t);
+  await owner.command('files:import-batch', {
+    x: 0,
+    y: 0,
+    imagePurpose: 'asset',
+    files: [
+      {
+        name: 'one.html',
+        content: '<!doctype html><html><body>one</body></html>',
+      },
+      {
+        name: 'two.html',
+        content: '<!doctype html><html><body>two</body></html>',
+      },
+    ],
+  });
+  const results = Object.keys(owner.files).filter((key) =>
+    key.endsWith('.html'),
+  );
+  const target = results[0];
+  const source = Object.entries(owner.files).find(
+    ([, raw]) => matter(raw).data.html_source === target,
+  )[0];
+  await editor.refresh();
+  await editor.command('documents:delete', {
+    documentId: target,
+    relativePath: target,
+    revision: editor.revisions[target],
+  });
+  const deletionHistory = editor.lastCommandHistoryId;
+  await owner.refresh();
+  assert.equal(owner.files[target], undefined);
+  assert.equal(owner.files[source], undefined);
+  assert.ok(owner.files[results[1]]);
+  await restart();
+  await owner.refresh();
+  assert.equal(owner.files[target], undefined);
+  await editor.changeHistory(deletionHistory, 'undo');
+  await owner.refresh();
+  assert.ok(owner.files[target]);
+  assert.ok(owner.files[source]);
+});
+
 test('authoritative project rename is admin-only, stale-safe, retry-safe, recorded and persistent without changing files or sessions', async (t) => {
   const { owner, editor, url, restart } = await setup(t);
   const before = structuredClone(owner.files);
@@ -266,10 +310,10 @@ test('section rename preserves identity and batch deletion plus undo restores me
     owner.command('documents:delete-many', {
       documents: [
         { documentId: 'a', relativePath: 'ideas/a.md' },
-        { documentId: 'project', relativePath: 'project.md' },
+        { documentId: 'wrong-project-id', relativePath: 'project.md' },
       ],
     }),
-    /기본|삭제/,
+    /ID/,
   );
   await owner.refresh();
   assert.deepEqual(owner.files, before);

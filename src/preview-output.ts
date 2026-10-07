@@ -17,6 +17,14 @@ export function isImportedPreviewPath(relative: string) {
   return IMPORT_PATH.test(relative);
 }
 
+/** Dedicated result folders belong to one HTML result; legacy parents are shared. */
+export function previewDeletionTarget(relative: string) {
+  assertPreviewPath(relative);
+  return isResultFolderPath(relative)
+    ? relative.slice(0, relative.lastIndexOf('/'))
+    : relative;
+}
+
 export function isPreviewPath(relative: string): boolean {
   return (
     relative === DEFAULT_PREVIEW_PATH ||

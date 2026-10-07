@@ -62,6 +62,7 @@ type Options = {
   available: boolean;
   unavailableReason: string;
   automatic: boolean;
+  startupDelayMs?: number;
   persistAutomatic: (enabled: boolean) => Promise<void>;
   blockers: () => Promise<string[]>;
   prepareRestart: () => Promise<string[]>;
@@ -80,6 +81,7 @@ export class AppUpdateController {
   private interval?: ReturnType<typeof setInterval>;
   private preferences = Promise.resolve();
   private installing = false;
+  private started = false;
   constructor(options: Options) {
     this.options = options;
     let repository: string | null = null;
@@ -188,12 +190,21 @@ export class AppUpdateController {
     return { ...this.state };
   }
   start() {
-    this.stopTimers();
-    if (!this.state.available || !this.state.automatic) return;
-    // Squirrel first-run holds an installer lock for several seconds.
-    this.startup = setTimeout(() => this.check(), 30_000);
-    this.interval = setInterval(() => this.check(), 6 * 60 * 60 * 1000);
+    if (this.started || !this.state.available) return;
+    this.started = true;
+    // Check once on every launch; the preference controls periodic checks.
+    this.startup = setTimeout(() => {
+      this.startup = undefined;
+      this.check();
+    }, this.options.startupDelayMs ?? 1_000);
     this.startup.unref?.();
+    this.schedulePeriodicChecks();
+  }
+  private schedulePeriodicChecks() {
+    clearInterval(this.interval);
+    this.interval = undefined;
+    if (!this.started || !this.state.available || !this.state.automatic) return;
+    this.interval = setInterval(() => this.check(), 6 * 60 * 60 * 1000);
     this.interval.unref?.();
   }
   private stopTimers() {
@@ -214,7 +225,7 @@ export class AppUpdateController {
         throw new Error('[GC-UPD-006] 업데이트 설정을 저장하지 못했습니다.');
       }
       this.patch({ automatic: enabled });
-      this.start();
+      this.schedulePeriodicChecks();
       return this.snapshot();
     });
     this.preferences = save.then(

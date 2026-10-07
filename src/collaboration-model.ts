@@ -15,7 +15,7 @@ import type {
   ImportBatchInput,
   CreateTaskInput,
 } from './shared.ts';
-import { isPreviewPath } from './preview-output.ts';
+import { isPreviewPath, previewDeletionTarget } from './preview-output.ts';
 import type { Snapshot } from './project-store.ts';
 import { htmlSourceId, htmlSourcePath, sourceMetadata } from './html-source.ts';
 import { cardColor, CARD_COLORS } from './card-colors.ts';
@@ -53,10 +53,8 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
   const entries = Object.entries(files);
-  if (entries.length > 500 || !entries.some(([key]) => key === 'project.md'))
-    throw new Error(
-      'project.md가 필요하며 최대 500개 파일을 공유할 수 있습니다.',
-    );
+  if (entries.length > 500)
+    throw new Error('최대 500개 파일을 공유할 수 있습니다.');
   let bytes = 0;
   const ids = new Set<string>();
   const paths = new Set<string>();
@@ -386,16 +384,26 @@ export function reduceCollaboration(
       text(input.body, 2_000_000),
     );
   } else if (channel === 'documents:delete') {
-    const parsed = read(input.relativePath);
-    if (parsed.relative === 'project.md')
-      throw new Error('project.md는 삭제할 수 없습니다.');
-    if (
-      parsed.data.id !== input.documentId &&
-      parsed.relative !== input.documentId
-    )
-      throw new Error('문서 ID가 올바르지 않습니다.');
-    delete next[parsed.relative];
-    removeMembers(new Set([parsed.relative]));
+    const relative = collaborationPath(input.relativePath);
+    const removed = new Set<string>();
+    if (isPreviewPath(relative)) {
+      if (next[relative] === undefined)
+        throw new Error('삭제할 HTML 결과를 찾을 수 없습니다.');
+      const target = previewDeletionTarget(relative);
+      for (const key of Object.keys(next))
+        if (key === relative || key.startsWith(`${target}/`)) removed.add(key);
+      removed.add(htmlSourcePath(relative));
+    } else {
+      const parsed = read(relative);
+      if (
+        parsed.data.id !== input.documentId &&
+        parsed.relative !== input.documentId
+      )
+        throw new Error('문서 ID가 올바르지 않습니다.');
+      removed.add(relative);
+    }
+    for (const key of removed) delete next[key];
+    removeMembers(removed);
   } else if (channel === 'documents:duplicate') {
     const paths: string[] = [];
     for (const item of array(input.documents)) {
@@ -492,15 +500,12 @@ export function reduceCollaboration(
     let deletedDocumentCount = 0;
     if (input.deleteMembers === true)
       for (const relative of paths)
-        if (relative !== 'project.md' && next[relative]) {
+        if (next[relative]) {
           delete next[relative];
           deletedDocumentCount++;
         }
     delete next[parsed.relative];
-    if (input.deleteMembers === true)
-      removeMembers(
-        new Set([...paths].filter((relative) => relative !== 'project.md')),
-      );
+    if (input.deleteMembers === true) removeMembers(paths);
     result = {
       deletedDocumentCount,
       preservedDocumentCount: paths.size - deletedDocumentCount,

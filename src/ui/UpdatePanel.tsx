@@ -124,7 +124,10 @@ export function UpdatePanel({
           >
             <header>
               <h2 id="update-title">
-                <Download size={22} /> 앱 업데이트
+                <Download size={22} />{' '}
+                {state && ['downloading', 'ready'].includes(state.status)
+                  ? '새 버전이 있습니다'
+                  : '앱 업데이트'}
               </h2>
               <button
                 type="button"
@@ -174,9 +177,9 @@ export function UpdatePanel({
                 }
               />
               <span>
-                새 버전 자동 확인·다운로드
+                6시간마다 자동 확인·다운로드
                 <small>
-                  앱 시작 후와 6시간마다 확인합니다. 자동 재시작하지 않습니다.
+                  앱 시작 시에는 항상 확인합니다. 자동 재시작하지 않습니다.
                 </small>
               </span>
             </label>

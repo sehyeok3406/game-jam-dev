@@ -260,9 +260,9 @@ test('asynchronous native install error also releases renderer input protection'
   controller.dispose();
 });
 
-test('automatic checks wait for first-run lock, repeat every six hours and stop when disabled', async (t) => {
+test('first-run checks wait for installer lock, repeat every six hours and stop periodic checks when disabled', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
-  const { controller, events, calls } = fixture();
+  const { controller, events, calls } = fixture({ startupDelayMs: 30_000 });
   controller.start();
   t.mock.timers.tick(29_999);
   assert.equal(calls.checks, 0);
@@ -276,4 +276,36 @@ test('automatic checks wait for first-run lock, repeat every six hours and stop 
   t.mock.timers.tick(12 * 60 * 60 * 1000);
   assert.equal(calls.checks, 2);
   controller.dispose();
+});
+
+test('ordinary launch checks promptly exactly once even with periodic checking disabled', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const { controller, events, calls } = fixture({ automatic: false });
+  controller.start();
+  controller.start();
+  t.mock.timers.tick(999);
+  assert.equal(calls.checks, 0);
+  t.mock.timers.tick(1);
+  assert.equal(calls.checks, 1);
+  events.emit('update-not-available');
+  t.mock.timers.tick(12 * 60 * 60 * 1000);
+  assert.equal(calls.checks, 1);
+  await controller.setAutomatic(true);
+  t.mock.timers.tick(1_000);
+  assert.equal(calls.checks, 1);
+  t.mock.timers.tick(6 * 60 * 60 * 1000 - 1_000);
+  assert.equal(calls.checks, 2);
+  controller.dispose();
+});
+
+test('changing periodic preferences before startup does not cancel or repeat the launch check', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const { controller, calls } = fixture();
+  controller.start();
+  await controller.setAutomatic(false);
+  t.mock.timers.tick(1_000);
+  assert.equal(calls.checks, 1);
+  controller.dispose();
+  t.mock.timers.tick(12 * 60 * 60 * 1000);
+  assert.equal(calls.checks, 1);
 });

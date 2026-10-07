@@ -160,6 +160,40 @@ async function run() {
   );
   await wait('!document.querySelector(".update-dialog")');
   // Feed UI events only. Development controller remains unavailable, with no update network access.
+  const settle = () =>
+    js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+  for (const status of ['current', 'error']) {
+    window.webContents.send('updates:changed', {
+      ...state,
+      available: true,
+      status,
+    });
+    await settle();
+    assert.equal(await js('!!document.querySelector(".update-dialog")'), false);
+  }
+  window.webContents.send('updates:changed', {
+    ...state,
+    available: true,
+    status: 'downloading',
+    message: '새 버전을 다운로드하고 있습니다.',
+  });
+  await wait('!!document.querySelector(".update-dialog")');
+  assert.ok(
+    await js(
+      'document.querySelector("#update-title").textContent.includes("새 버전")',
+    ),
+  );
+  await js(
+    '[...document.querySelectorAll(".update-dialog button")].find(b=>b.textContent.includes("나중에")).click()',
+  );
+  await wait('!document.querySelector(".update-dialog")');
+  window.webContents.send('updates:changed', {
+    ...state,
+    available: true,
+    status: 'downloading',
+  });
+  await settle();
+  assert.equal(await js('!!document.querySelector(".update-dialog")'), false);
   window.webContents.send('updates:changed', {
     ...state,
     available: true,
@@ -203,6 +237,16 @@ async function run() {
 
   await js('document.querySelector(".home-project-open").click()');
   await wait('!!document.querySelector(".app-shell")');
+  window.webContents.send('updates:changed', {
+    ...state,
+    available: true,
+    status: 'ready',
+  });
+  await settle();
+  assert.equal(await js('!!document.querySelector(".update-dialog")'), false);
+  console.log(
+    'PASS: new-version popup opens automatically, stays quiet for current/error, and respects Later across repeated events and home/canvas navigation',
+  );
 
   // Simulate the last safety handshake only, without an actual download or install.
   const reply = (id: string) =>
@@ -247,6 +291,37 @@ async function run() {
   window.webContents.send('updates:release');
   console.log(
     'PASS: actual renderer restart guard blocks active editing; clean handshake locks and failed/cancelled handshake restores input',
+  );
+  // The initial IPC snapshot must prompt too, even if native events preceded mounting.
+  let initialUpdate = {
+    ...state,
+    available: true,
+    status: 'current',
+    currentVersion: '0.10.4',
+  };
+  ipcMain.removeHandler('updates:state');
+  ipcMain.handle('updates:state', () => initialUpdate);
+  const reload = async () => {
+    const loaded = new Promise<void>((resolve) =>
+      window!.webContents.once('did-finish-load', () => resolve()),
+    );
+    window!.webContents.reload();
+    await loaded;
+    await wait('!!document.querySelector(".project-home")');
+    await settle();
+  };
+  await reload();
+  assert.equal(await js('!!document.querySelector(".update-dialog")'), false);
+  initialUpdate = { ...initialUpdate, status: 'ready' };
+  await reload();
+  await wait('!!document.querySelector(".update-dialog")');
+  assert.ok(
+    await js(
+      '[...document.querySelectorAll(".update-dialog button")].some(b=>b.textContent.includes("업데이트 후 재시작"))',
+    ),
+  );
+  console.log(
+    'PASS: startup snapshot keeps the latest-version launch quiet and opens the popup for an already downloaded update without any install call',
   );
 }
 void run().then(

@@ -86,7 +86,11 @@ import {
   fitPreviewViewport,
   withPreviewKeyboardBridge,
 } from '../preview-window';
-import { previewLabel } from '../preview-output';
+import {
+  previewLabel,
+  isPreviewPath,
+  previewDeletionTarget,
+} from '../preview-output';
 import { PREVIEW_SANDBOX } from '../preview-permissions';
 import { gamejamTaskInput, type GamejamRequest } from '../gamejam-request';
 import { documentSets } from '../document-output';
@@ -169,6 +173,11 @@ type SectionActionPrompt = {
   section: CanvasSection;
   deleteMembers: boolean;
 };
+
+type DeletionItem = Pick<
+  CanvasDocument,
+  'id' | 'title' | 'relativePath' | 'revision' | 'asset'
+>;
 
 type MembershipPrompt = {
   document: CanvasDocument;
@@ -303,6 +312,12 @@ function sameIds(left: string[], right: string[]) {
 
 const sectionNodeId = (id: string) => `section:${id}`;
 const previewNodeId = (relative: string) => `preview:${relative}`;
+const previewDeletionItem = (preview: PreviewResult): DeletionItem => ({
+  id: previewNodeId(preview.relativePath),
+  title: preview.title || previewLabel(preview.relativePath),
+  relativePath: preview.relativePath,
+  revision: preview.revision,
+});
 
 const TYPE_LABELS: Record<CanvasDocument['type'], string> = {
   reference: '참고 문서',
@@ -1336,6 +1351,38 @@ function WorkspaceCanvas() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const updatePrompted = useRef(false);
+  useEffect(() => {
+    let mounted = true,
+      eventReceived = false;
+    const prompt = (
+      state: Awaited<ReturnType<typeof window.gameCanvas.getUpdateState>>,
+    ) => {
+      if (
+        !mounted ||
+        updatePrompted.current ||
+        !state.available ||
+        !['downloading', 'ready'].includes(state.status)
+      )
+        return;
+      updatePrompted.current = true;
+      setUpdateOpen(true);
+    };
+    const unsubscribe = window.gameCanvas.onUpdateChanged((state) => {
+      eventReceived = true;
+      prompt(state);
+    });
+    void window.gameCanvas
+      .getUpdateState()
+      .then((state) => {
+        if (!eventReceived) prompt(state);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
   const [updateRestarting, setUpdateRestarting] = useState(false);
   const restartGuard = useRef<() => string[]>(() => [
     '앱을 불러오고 있습니다.',
@@ -1381,7 +1428,7 @@ function WorkspaceCanvas() {
     title: string;
   } | null>(null);
   const [deleteManyPrompt, setDeleteManyPrompt] = useState<
-    CanvasDocument[] | null
+    DeletionItem[] | null
   >(null);
   const [workspace, setWorkspace] = useState<WorkspaceState>({
     root: null,
@@ -1454,7 +1501,7 @@ function WorkspaceCanvas() {
     useState<SectionContextMenuState | null>(null);
   const [previewContextMenu, setPreviewContextMenu] =
     useState<PreviewContextMenuState | null>(null);
-  const [deletePrompt, setDeletePrompt] = useState<CanvasDocument | null>(null);
+  const [deletePrompt, setDeletePrompt] = useState<DeletionItem | null>(null);
   const [sectionActionPrompt, setSectionActionPrompt] =
     useState<SectionActionPrompt | null>(null);
   const [membershipPrompt, setMembershipPrompt] =
@@ -2156,19 +2203,30 @@ function WorkspaceCanvas() {
   const deleteDocument = async () => {
     if (!deletePrompt) return;
     const document = deletePrompt;
+    setEditBusy(true);
     try {
+      await flushEditors();
+      const currentItems = isPreviewPath(document.relativePath)
+        ? await window.gameCanvas.listPreviews()
+        : await window.gameCanvas.listDocuments();
       await window.gameCanvas.deleteDocument({
         documentId: document.id,
         relativePath: document.relativePath,
-        revision: document.revision,
+        revision: currentItems.find(
+          (item) => item.relativePath === document.relativePath,
+        )?.revision,
       });
       setDeletePrompt(null);
       setSelectedIds((current) => current.filter((id) => id !== document.id));
       await loadProject(false);
-      setNotice(`'${document.title}' 파일을 휴지통으로 이동했습니다.`);
+      setNotice(
+        `'${document.title}'${isPreviewPath(document.relativePath) ? ' HTML 결과와 관련 파일' : ' 파일'}을 휴지통으로 이동했습니다.`,
+      );
     } catch (error) {
       setDeletePrompt(null);
       showError(error);
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -2196,11 +2254,8 @@ function WorkspaceCanvas() {
       );
       await loadProject(false);
       if (deleteMembers) {
-        const protectedMessage = result.preservedDocumentCount
-          ? ` project.md ${result.preservedDocumentCount}개는 보호되어 남겨두었습니다.`
-          : '';
         setNotice(
-          `'${section.title}' 섹션과 파일 ${result.deletedDocumentCount}개를 휴지통으로 이동했습니다.${protectedMessage}`,
+          `'${section.title}' 섹션과 파일 ${result.deletedDocumentCount}개를 휴지통으로 이동했습니다.`,
         );
       } else {
         setNotice(
@@ -2768,6 +2823,9 @@ function WorkspaceCanvas() {
     () => sections.filter((section) => selectedSectionIds.includes(section.id)),
     [sections, selectedSectionIds],
   );
+  const selectedPreviews = nodes
+    .filter((node) => node.selected && node.data.kind === 'preview')
+    .map((node) => previewDeletionItem((node.data as PreviewNodeData).preview));
 
   const arrangementItems = useMemo<ArrangementItem[]>(() => {
     const selectedSectionSet = new Set(selectedSectionIds);
@@ -3237,8 +3295,8 @@ function WorkspaceCanvas() {
       onBlocked();
       return;
     }
-    if (selectedDocuments.length) {
-      setDeleteManyPrompt(selectedDocuments);
+    if (selectedDocuments.length || selectedPreviews.length) {
+      setDeleteManyPrompt([...selectedDocuments, ...selectedPreviews]);
       return;
     }
     if (selectedSections.length === 1)
@@ -3246,10 +3304,7 @@ function WorkspaceCanvas() {
         section: selectedSections[0],
         deleteMembers: true,
       });
-    else
-      setNotice(
-        '삭제할 메모·파일 또는 섹션 하나를 선택해주세요. HTML 결과 파일은 히스토리로 관리합니다.',
-      );
+    else setNotice('삭제할 메모·파일·HTML 결과 또는 섹션 하나를 선택해주세요.');
   };
   const compareWindows = async (a: string, b: string, presetId: string) => {
     if (a === b) throw new Error('서로 다른 버전을 선택해주세요.');
@@ -4698,14 +4753,16 @@ function WorkspaceCanvas() {
               >
                 <Plus size={14} />
               </button>
-              <button
-                disabled={locked}
-                title="선택 문서 삭제 (Delete)"
-                onClick={requestDelete}
-              >
-                <Trash2 size={14} />
-              </button>
             </>
+          )}
+          {(selectedDocuments.length > 0 || selectedPreviews.length > 0) && (
+            <button
+              disabled={locked}
+              title="선택 파일·HTML 결과 삭제 (Delete)"
+              onClick={requestDelete}
+            >
+              <Trash2 size={14} />
+            </button>
           )}
           {selectedSections.length === 1 && !selectedDocuments.length && (
             <button
@@ -5538,6 +5595,22 @@ function WorkspaceCanvas() {
               <small>이 결과의 이전 버전 확인</small>
             </span>
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger-menu-item"
+            disabled={locked}
+            onClick={() => {
+              setDeletePrompt(previewDeletionItem(previewContextMenu.preview));
+              setPreviewContextMenu(null);
+            }}
+          >
+            <Trash2 size={16} />
+            <span>
+              <strong>삭제</strong>
+              <small>결과 폴더와 관련 파일을 함께 휴지통으로 이동</small>
+            </span>
+          </button>
         </div>
       )}
 
@@ -5629,9 +5702,6 @@ function WorkspaceCanvas() {
             type="button"
             role="menuitem"
             className="danger-menu-item"
-            disabled={
-              documentContextMenu.document.relativePath === 'project.md'
-            }
             onClick={() => {
               if (locked) {
                 onBlocked();
@@ -5644,11 +5714,7 @@ function WorkspaceCanvas() {
             <Trash2 size={16} />
             <span>
               <strong>삭제</strong>
-              <small>
-                {documentContextMenu.document.relativePath === 'project.md'
-                  ? '프로젝트 기본 문서는 삭제할 수 없음'
-                  : '확인 후 Windows 휴지통으로 이동'}
-              </small>
+              <small>확인 후 Windows 휴지통으로 이동</small>
             </span>
           </button>
         </div>
@@ -6703,19 +6769,15 @@ function WorkspaceCanvas() {
               if (event.key === 'Escape') setDeleteManyPrompt(null);
             }}
           >
-            <h2>선택한 문서 {deleteManyPrompt.length}개를 삭제할까요?</h2>
+            <h2>선택한 파일·결과 {deleteManyPrompt.length}개를 삭제할까요?</h2>
             <p>
-              섹션의 멤버 목록에서도 제거됩니다. 실행 취소 또는 히스토리에서
-              복원할 수 있습니다. HTML 결과와 섹션 자체는 삭제하지 않습니다.
+              선택한 파일을 휴지통으로 이동하고 섹션의 멤버 목록에서도
+              제거합니다. HTML 결과는 전용 결과 폴더 안의 모든 파일과 창
+              설정·관리 문서를 함께 삭제합니다.
             </p>
             <ul>
               {deleteManyPrompt.map((doc) => (
-                <li key={doc.id}>
-                  {doc.title}
-                  {doc.relativePath === 'project.md'
-                    ? ' · 기본 문서 보호됨'
-                    : ''}
-                </li>
+                <li key={doc.id}>{doc.title}</li>
               ))}
             </ul>
             <div className="section-dialog__actions">
@@ -6724,34 +6786,33 @@ function WorkspaceCanvas() {
               </button>
               <button
                 className="button-danger"
-                disabled={
-                  locked ||
-                  editBusy ||
-                  !deleteManyPrompt.some(
-                    (doc) => doc.relativePath !== 'project.md',
-                  )
-                }
+                disabled={locked || editBusy}
                 onClick={async () => {
                   setEditBusy(true);
                   try {
                     await flushEditors();
-                    const currentDocuments =
-                      await window.gameCanvas.listDocuments();
+                    const [currentDocuments, currentPreviews] =
+                      await Promise.all([
+                        window.gameCanvas.listDocuments(),
+                        window.gameCanvas.listPreviews(),
+                      ]);
                     await window.gameCanvas.deleteDocuments(
-                      deleteManyPrompt
-                        .filter((doc) => doc.relativePath !== 'project.md')
-                        .map((doc) => ({
-                          documentId: doc.id,
-                          relativePath: doc.relativePath,
-                          revision: currentDocuments.find(
-                            (current) => current.id === doc.id,
-                          )?.revision,
-                        })),
+                      deleteManyPrompt.map((doc) => ({
+                        documentId: doc.id,
+                        relativePath: doc.relativePath,
+                        revision: [
+                          ...currentDocuments,
+                          ...currentPreviews,
+                        ].find(
+                          (current) =>
+                            current.relativePath === doc.relativePath,
+                        )?.revision,
+                      })),
                     );
                     setDeleteManyPrompt(null);
                     await loadProject(false);
                     setNotice(
-                      '선택 문서를 삭제했습니다. 실행 취소로 복원할 수 있습니다.',
+                      '선택한 파일·HTML 결과와 관련 파일을 휴지통으로 이동했습니다.',
                     );
                   } catch (error) {
                     showError(error);
@@ -6760,7 +6821,7 @@ function WorkspaceCanvas() {
                   }
                 }}
               >
-                선택 문서 삭제
+                선택 파일·결과 삭제
               </button>
             </div>
           </section>
@@ -6947,16 +7008,6 @@ function WorkspaceCanvas() {
                   : `섹션 정의만 Windows 휴지통으로 이동하며, 안에 있는 메모·파일 ${sectionActionPrompt.section.members.length}개는 캔버스에 그대로 남습니다.`}
               </span>
             </div>
-            {sectionActionPrompt.deleteMembers &&
-              sectionActionPrompt.section.members.some(
-                (member) => member.path === 'project.md',
-              ) && (
-                <div className="delete-dialog__path">
-                  <strong>
-                    project.md는 프로젝트 기본 문서이므로 삭제하지 않습니다.
-                  </strong>
-                </div>
-              )}
             <div className="delete-dialog__path">
               <code>{sectionActionPrompt.section.relativePath}</code>
             </div>
@@ -7014,14 +7065,24 @@ function WorkspaceCanvas() {
             </div>
             <div>
               <p>DELETE FILE</p>
-              <h2 id="delete-dialog-title">이 파일을 삭제할까요?</h2>
+              <h2 id="delete-dialog-title">
+                {isPreviewPath(deletePrompt.relativePath)
+                  ? '이 HTML 결과를 삭제할까요?'
+                  : '이 파일을 삭제할까요?'}
+              </h2>
               <span id="delete-dialog-description">
                 <strong>{deletePrompt.title}</strong> 파일을 Windows 휴지통으로
                 이동합니다. 섹션에 포함되어 있다면 멤버 목록에서도 제거됩니다.
+                {isPreviewPath(deletePrompt.relativePath) &&
+                  ' 전용 결과 폴더 안의 모든 파일과 창 설정·관리 문서도 함께 삭제합니다.'}
               </span>
             </div>
             <div className="delete-dialog__path">
-              <code>{deletePrompt.relativePath}</code>
+              <code>
+                {isPreviewPath(deletePrompt.relativePath)
+                  ? previewDeletionTarget(deletePrompt.relativePath)
+                  : deletePrompt.relativePath}
+              </code>
               {deletePrompt.asset && (
                 <p>
                   이미지 카드의 설명 문서만 삭제합니다. 다른 문서나 HTML에서
@@ -7040,6 +7101,7 @@ function WorkspaceCanvas() {
               <button
                 type="button"
                 className="button-danger"
+                disabled={locked || editBusy}
                 onClick={() => void deleteDocument()}
               >
                 <Trash2 size={14} /> 휴지통으로 이동

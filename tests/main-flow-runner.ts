@@ -164,11 +164,64 @@ try {
   await call('projects:open', createdEntry.id);
   assert.equal((await call('workspace:get')).root, newProject.root);
   assert.equal((await call('workspace:get')).name, '홈 표시 이름');
+  const deletedHtml = 'output/games/v1-delete/index.html';
+  const retainedHtml = 'output/games/v2-keep/index.html';
+  for (const relative of [deletedHtml, retainedHtml]) {
+    await fs.mkdir(path.dirname(path.join(newProject.root, relative)), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(newProject.root, relative),
+      '<!doctype html><html><body>game</body></html>',
+    );
+  }
+  const deletedFolder = path.dirname(path.join(newProject.root, deletedHtml));
+  await fs.mkdir(path.join(deletedFolder, 'assets/empty'), { recursive: true });
+  await fs.writeFile(path.join(deletedFolder, 'assets/game.js'), 'game()');
+  await call(
+    'preview:save-window',
+    { x: 0, y: 0, width: 720, height: 520, collapsed: false },
+    deletedHtml,
+  );
+  await call('documents:delete', {
+    documentId: deletedHtml,
+    relativePath: deletedHtml,
+  });
+  await assert.rejects(fs.access(deletedFolder));
+  assert.equal(
+    await fs.readFile(
+      path.join(`${deletedFolder}.trashed`, 'assets/game.js'),
+      'utf8',
+    ),
+    'game()',
+  );
+  assert.equal(await call('preview:window', deletedHtml), null);
+  assert.equal((await call('preview:list')).length, 1);
+  await call('documents:delete-many', {
+    documents: [
+      { documentId: 'project', relativePath: 'project.md' },
+      { documentId: retainedHtml, relativePath: retainedHtml },
+    ],
+  });
+  assert.equal((await call('documents:list')).length, 0);
+  assert.equal((await call('preview:list')).length, 0);
+  await call('edit:undo');
+  assert.equal((await call('documents:list')).length, 1);
+  assert.equal((await call('preview:list')).length, 1);
+  await call('edit:redo');
+  await call('projects:home');
+  await call('projects:rename', createdEntry.id, '기본 문서 없는 프로젝트');
+  await call('projects:open', createdEntry.id);
+  assert.equal((await call('workspace:get')).name, '기본 문서 없는 프로젝트');
+  await assert.rejects(fs.access(newProjectFile));
+  console.log(
+    'PASS: IPC deletion removes default documents and owned HTML folders/assets/settings; undo, reopen and rename work without recreating project.md',
+  );
   assert.equal(
     (await call('projects:list')).find(
       (entry: any) => entry.id === createdEntry.id,
     ).name,
-    '홈 표시 이름',
+    '기본 문서 없는 프로젝트',
   );
   await call('projects:home');
   console.log(

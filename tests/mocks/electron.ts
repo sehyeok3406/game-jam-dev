@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export const root = await fs.mkdtemp(
   path.join(os.tmpdir(), 'game-canvas-flow-'),
@@ -56,7 +57,16 @@ export const safeStorage = {
 };
 export const revealedPaths: string[] = [];
 export const shell = {
-  trashItem: async (target: string) => fs.rename(target, `${target}.trashed`),
+  trashItem: async (target: string) => {
+    let destination = `${target}.trashed`;
+    try {
+      await fs.access(destination);
+      destination += `-${randomUUID()}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    await fs.rename(target, destination);
+  },
   showItemInFolder: (target: string) => {
     revealedPaths.push(target);
   },

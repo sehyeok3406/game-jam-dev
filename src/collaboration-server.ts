@@ -736,8 +736,6 @@ export async function createCollaborationServer(options: Options) {
                 403,
               );
             if (value === null) {
-              if (relative === 'project.md')
-                throw new ApiError('project.md는 삭제할 수 없습니다.', 400);
               delete nextFiles[relative];
             } else if (typeof value === 'string') nextFiles[relative] = value;
             else

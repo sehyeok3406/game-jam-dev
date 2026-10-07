@@ -179,6 +179,7 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  revision?: number;
   backgroundColor?: import('./card-colors').CardColor;
   title?: string;
   sourceId?: string;

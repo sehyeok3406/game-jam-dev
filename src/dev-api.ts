@@ -398,8 +398,6 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
     },
     deleteDocuments: async (items) => {
-      if (items.some((item) => item.relativePath === 'project.md'))
-        throw new Error('프로젝트 기본 문서는 삭제할 수 없습니다.');
       const ids = new Set(items.map((item) => item.documentId)),
         paths = new Set(items.map((item) => item.relativePath));
       documents = documents.filter(
@@ -409,6 +407,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         section.members = section.members.filter(
           (member) => !ids.has(member.id) && !paths.has(member.path),
         );
+      previews = previews.filter((item) => !paths.has(item.relativePath));
+      for (const relative of paths) previewWindows.delete(relative);
       notify();
     },
     getCollaboration: async () => structuredClone(collab),
@@ -684,8 +684,12 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
     },
     deleteDocument: async ({ documentId, relativePath }) => {
-      if (relativePath === 'project.md')
-        throw new Error('프로젝트 기본 문서 project.md는 삭제할 수 없습니다.');
+      if (isPreviewPath(relativePath)) {
+        previews = previews.filter(
+          (item) => item.relativePath !== relativePath,
+        );
+        previewWindows.delete(relativePath);
+      }
       documents = documents.filter(
         (document) =>
           document.id !== documentId && document.relativePath !== relativePath,
@@ -713,9 +717,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         );
         const deletable = documents.filter(
           (document) =>
-            document.relativePath !== 'project.md' &&
-            (memberKeys.has(document.id) ||
-              memberKeys.has(document.relativePath)),
+            memberKeys.has(document.id) ||
+            memberKeys.has(document.relativePath),
         );
         const deletedKeys = new Set(
           deletable.flatMap((document) => [document.id, document.relativePath]),
@@ -731,9 +734,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           ),
         }));
         deletedDocumentCount = deletable.length;
-        preservedDocumentCount = section.members.filter(
-          (member) => member.path === 'project.md',
-        ).length;
+        preservedDocumentCount = 0;
       }
       sections = sections.filter((candidate) => candidate.id !== section.id);
       notify();

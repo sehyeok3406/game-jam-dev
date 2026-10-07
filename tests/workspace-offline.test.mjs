@@ -370,11 +370,10 @@ test('viewer downgrade, revoked sessions, server locks and AI leases cannot bypa
   assert.equal(body(owner), '원본');
 });
 
-test('offline publication validates paths, protects project.md and AI/output files, and checks stale revisions atomically', async (t) => {
+test('offline publication validates paths, protects AI/output files, and checks stale revisions atomically', async (t) => {
   const { owner, editor } = await setup(t);
   for (const changes of [
     { '../escape.md': raw('bad') },
-    { 'project.md': null },
     { '.ai/tasks/evil.md': raw('ai') },
     { 'output/index.html': '<html></html>' },
   ])
@@ -401,6 +400,21 @@ test('offline publication validates paths, protects project.md and AI/output fil
   await editor.refresh();
   assert.equal(body(editor), '새 서버 작업');
   assert.equal(body(editor, 'ideas/b.md'), '원본');
+});
+
+test('project document deletion syncs from offline editing and survives reconnect', async (t) => {
+  const { owner, editor, offline, request } = await setup(t);
+  await offline();
+  await editor.command('documents:delete', {
+    documentId: 'project',
+    relativePath: 'project.md',
+  });
+  assert.equal(editor.files['project.md'], undefined);
+  editor.request = request;
+  await editor.refresh();
+  await owner.refresh();
+  assert.equal(owner.files['project.md'], undefined);
+  assert.equal(editor.state.projectName, '복귀 테스트');
 });
 
 test('card colors survive Markdown serialization, duplication, shared state and HTML window metadata', () => {

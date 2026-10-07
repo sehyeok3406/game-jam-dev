@@ -39,6 +39,12 @@ import { createCollaborationServer } from './collaboration-server';
 import { WebViewerService } from './web-viewer-service';
 import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
+import {
+  initializeProjectDocument,
+  localProjectName,
+  saveProjectName,
+} from './project-metadata';
+import { trashDeletedFiles } from './result-deletion';
 import { cardColor } from './card-colors';
 import {
   snapshotDocuments,
@@ -219,6 +225,10 @@ const registerUpdates = async () => {
           ? '개발 실행에서는 업데이트를 설치하지 않습니다.'
           : 'Setup.exe로 설치한 앱에서 자동 업데이트를 사용할 수 있습니다.',
     automatic,
+    // Squirrel's first launch holds an installer lock; ordinary launches check promptly.
+    startupDelayMs: process.argv.includes('--squirrel-firstrun')
+      ? 30_000
+      : 1_000,
     persistAutomatic: async (enabled) => {
       await fs.mkdir(path.dirname(preferencesFile), { recursive: true });
       await fs.writeFile(
@@ -453,12 +463,7 @@ const collaborationChanged = (state: CollaborationState, changed: boolean) => {
     mainWindow?.webContents.send('collaboration:changed', state);
   }
   if (changed) notifyWorkspaceChanged();
-  if (
-    changed &&
-    collaboration &&
-    workspaceRoot &&
-    Object.keys(collaboration.files).length
-  ) {
+  if (changed && collaboration && workspaceRoot) {
     void cacheCollaboration(collaboration, workspaceRoot).catch((error) =>
       console.error('공동 프로젝트 캐시 저장 실패', error),
     );
@@ -580,6 +585,9 @@ const syncSharedSnapshot = async (snapshot: Snapshot) => {
       ]),
     ),
   );
+  // Shared snapshots remove tracked files first, then dispose of local result
+  // folders (including auxiliary files) and personal preview settings.
+  await trashWorkspaceFiles(current, snapshot);
 };
 let changeTimer: NodeJS.Timeout | null = null;
 let lastRunEvent: CodexRunEvent | null = null;
@@ -763,13 +771,6 @@ const getAiStatus = async (providerId: import('./shared').AiProviderId) => {
     : otherCliStatus(providerId, collectProcess);
 };
 
-const localProjectName = async (root: string) => {
-  const filename = await projectPath(root, 'project.md');
-  const data = matter(await fs.readFile(filename, 'utf8')).data;
-  return typeof data.project_name === 'string' && data.project_name.trim()
-    ? data.project_name.trim()
-    : path.basename(root);
-};
 const workspaceState = async (): Promise<WorkspaceState> => ({
   root: workspaceRoot,
   name: workspaceRoot
@@ -850,16 +851,7 @@ const ensureWorkspace = async () => {
     ),
   );
 
-  const projectFile = path.join(root, 'project.md');
-  try {
-    await fs.access(projectFile);
-  } catch {
-    await fs.writeFile(
-      projectFile,
-      `---\nid: project\ntitle: ${path.basename(root)}\ntype: overview\nstatus: draft\nx: 80\ny: 80\nwidth: 360\nheight: 320\nsources: []\n---\n\n# ${path.basename(root)}\n\n게임 아이디어를 자유롭게 기록해보세요.\n`,
-      'utf8',
-    );
-  }
+  await initializeProjectDocument(root);
 };
 
 const normalizeSources = (value: unknown): SourceReference[] => {
@@ -1010,6 +1002,7 @@ const listDocuments = async () => {
       try {
         return await parseDocument(file);
       } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         console.error(`Failed to parse ${file}`, error);
         return null;
       }
@@ -1096,6 +1089,23 @@ const startWatcher = async () => {
     awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
   });
   workspaceWatcher.on('all', notifyWorkspaceChanged);
+};
+
+const trashWorkspaceFiles = async (before: Snapshot, after: Snapshot) => {
+  const root = requireWorkspace();
+  // Windows directory watchers can hold a result folder open during a move.
+  const restartWatcher = !!workspaceWatcher;
+  if (restartWatcher) {
+    await workspaceWatcher!.close();
+    workspaceWatcher = null;
+  }
+  try {
+    await trashDeletedFiles(root, before, after, (absolute) =>
+      shell.trashItem(absolute),
+    );
+  } finally {
+    if (restartWatcher) await startWatcher();
+  }
 };
 
 const setWorkspace = async (root: string) => {
@@ -1853,10 +1863,16 @@ const handle = (
         if (commandLabels[channel])
           return enqueueMutation(async () => {
             assertEditable();
+            const before = client.files;
             const result = await client.command(
               channel,
               channel === 'layouts:update' ? { updates: args[0] } : args[0],
             );
+            if (
+              channel === 'documents:delete' ||
+              channel === 'documents:delete-many'
+            )
+              await trashWorkspaceFiles(before, client.files);
             if (client.lastCommandHistoryId && channel !== 'tasks:create')
               journal().push({
                 id: client.lastCommandHistoryId,
@@ -1905,7 +1921,10 @@ const handle = (
           return Object.keys(client.files)
             .filter(isPreviewPath)
             .sort((left, right) => previewVersion(left) - previewVersion(right))
-            .map((relativePath) => describePreview(client.files, relativePath));
+            .map((relativePath) => ({
+              ...describePreview(client.files, relativePath),
+              revision: client.revisions[relativePath],
+            }));
         if (channel === 'preview:read') {
           const relativePath = assertPreviewPath(
             (args[0] as string) ?? DEFAULT_PREVIEW_PATH,
@@ -2274,6 +2293,7 @@ const registerIpc = () => {
           ]),
         ),
       );
+      await trashWorkspaceFiles(current, next);
       await saveHistory(root, current, next, {
         id: historyId(),
         label: `${direction === 'undo' ? '실행 취소' : '다시 실행'} · ${item.label}`,
@@ -2302,13 +2322,12 @@ const registerIpc = () => {
       'documents:delete-many',
       input,
     ).files;
+    await trashWorkspaceFiles(before, next);
     await applyChanges(
       root,
       before,
       Object.fromEntries(
-        Object.keys({ ...before, ...next })
-          .filter((key) => before[key] !== next[key])
-          .map((key) => [key, next[key] ?? null]),
+        Object.entries(next).filter(([key, value]) => before[key] !== value),
       ),
     );
     await recordUserEdit(root, before, next, '선택 문서 삭제');
@@ -2512,7 +2531,12 @@ const registerIpc = () => {
       } else {
         const root = await fs.realpath(entry.root!);
         const filename = await projectPath(root, 'project.md');
-        const raw = await fs.readFile(filename, 'utf8');
+        const raw = await fs
+          .readFile(filename, 'utf8')
+          .catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+            return null;
+          });
         const previousName = await localProjectName(root);
         if (
           expectedName !== undefined &&
@@ -2522,37 +2546,40 @@ const registerIpc = () => {
           throw new Error(
             '프로젝트 이름이 바뀌었습니다. 목록을 새로고침하고 다시 확인해주세요.',
           );
-        const parsed = matter(raw);
-        parsed.data.project_name = name;
-        parsed.data.title = name;
-        const next = matter.stringify(parsed.content, parsed.data);
-        if (next !== raw) {
-          const temporary = `${filename}.${randomUUID()}.tmp`;
-          try {
-            await fs.writeFile(temporary, next, { flag: 'wx' });
-            if ((await fs.readFile(filename, 'utf8')) !== raw)
-              throw new Error(
-                '프로젝트 문서가 변경되었습니다. 목록을 새로고침하고 다시 시도해주세요.',
-              );
-            await fs.rename(temporary, filename);
-          } finally {
-            await fs.rm(temporary, { force: true }).catch(() => undefined);
+        if (raw !== null) {
+          const parsed = matter(raw);
+          parsed.data.project_name = name;
+          parsed.data.title = name;
+          const next = matter.stringify(parsed.content, parsed.data);
+          if (next !== raw) {
+            const temporary = `${filename}.${randomUUID()}.tmp`;
+            try {
+              await fs.writeFile(temporary, next, { flag: 'wx' });
+              if ((await fs.readFile(filename, 'utf8')) !== raw)
+                throw new Error(
+                  '프로젝트 문서가 변경되었습니다. 목록을 새로고침하고 다시 시도해주세요.',
+                );
+              await fs.rename(temporary, filename);
+            } finally {
+              await fs.rm(temporary, { force: true }).catch(() => undefined);
+            }
+            const history = historyId();
+            await saveHistory(
+              root,
+              { 'project.md': raw },
+              { 'project.md': next },
+              {
+                id: history,
+                label: `프로젝트 이름 변경 · ${previousName} → ${name}`,
+                kind: 'user',
+                status: 'completed',
+                createdAt: Date.now(),
+                finishedAt: Date.now(),
+              },
+            );
           }
-          const history = historyId();
-          await saveHistory(
-            root,
-            { 'project.md': raw },
-            { 'project.md': next },
-            {
-              id: history,
-              label: `프로젝트 이름 변경 · ${previousName} → ${name}`,
-              kind: 'user',
-              status: 'completed',
-              createdAt: Date.now(),
-              finishedAt: Date.now(),
-            },
-          );
         }
+        await saveProjectName(root, name);
         await projectLibrary.renameProject(id, name);
       }
       notifyWorkspaceChanged();
@@ -2975,39 +3002,17 @@ const registerIpc = () => {
     },
   );
   handle('documents:delete', async (_event, input: DeleteDocumentInput) => {
-    if (input.relativePath === 'project.md') {
-      throw new Error('프로젝트 기본 문서 project.md는 삭제할 수 없습니다.');
-    }
-    const absolute = await safePath(input.relativePath);
-    const currentDocument = await parseDocument(absolute);
-    if (
-      currentDocument.id !== input.documentId &&
-      currentDocument.relativePath !== input.relativePath
-    ) {
-      throw new Error('삭제할 문서를 확인할 수 없습니다.');
-    }
-
-    await shell.trashItem(absolute);
-
-    const existingSections = await listSections();
-    for (const section of existingSections) {
-      const remaining = section.members.filter(
-        (member) =>
-          member.id !== currentDocument.id &&
-          member.path !== currentDocument.relativePath,
-      );
-      if (remaining.length !== section.members.length) {
-        await writeSection(section.relativePath, {
-          id: section.id,
-          title: section.title,
-          x: section.x,
-          y: section.y,
-          width: section.width,
-          height: section.height,
-          members: remaining,
-        });
-      }
-    }
+    const root = requireWorkspace();
+    const before = await captureProject(root);
+    const next = reduceCollaboration(before, 'documents:delete', input).files;
+    await trashWorkspaceFiles(before, next);
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.entries(next).filter(([key, value]) => before[key] !== value),
+      ),
+    );
   });
   handle(
     'documents:duplicate',
@@ -3083,9 +3088,7 @@ const registerIpc = () => {
             memberKeys.has(document.id) ||
             memberKeys.has(document.relativePath),
         );
-        const deletableDocuments = memberDocuments.filter(
-          (document) => document.relativePath !== 'project.md',
-        );
+        const deletableDocuments = memberDocuments;
         preservedDocumentCount =
           memberDocuments.length - deletableDocuments.length;
 
