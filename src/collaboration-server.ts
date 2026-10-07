@@ -20,6 +20,7 @@ import { newOutputsAlreadyExist, workflowStages } from './task-plan.ts';
 import { validateHtmlAnalysis } from './html-source.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
 import { historyTaskPath } from './ai-task-records.ts';
+import { remapResultChanges } from './result-structure.ts';
 import {
   CanvasError,
   ERROR_CODES,
@@ -277,6 +278,7 @@ export async function createCollaborationServer(options: Options) {
       gamejamWorkflow: true,
       htmlImportAnalysis: true,
       htmlResultFolders: true,
+      structuredResults: true,
       editorAi: true,
       multiProviderAi: true,
       projectId: project.id,
@@ -486,6 +488,7 @@ export async function createCollaborationServer(options: Options) {
           gamejamWorkflow: true,
           htmlImportAnalysis: true,
           htmlResultFolders: true,
+          structuredResults: true,
         });
         return;
       }
@@ -1030,12 +1033,18 @@ export async function createCollaborationServer(options: Options) {
             );
           const next = structuredClone(project),
             files = { ...next.files };
+          const restoration: Record<string, string | null> = {};
           for (const file of record.entry.files.filter(
             (file) => !single || file.relativePath === single,
           )) {
             const value = record[version][file.relativePath];
-            if (value === undefined) delete files[file.relativePath];
-            else files[file.relativePath] = value;
+            restoration[file.relativePath] = value ?? null;
+          }
+          for (const [key, value] of Object.entries(
+            remapResultChanges(project.files, restoration),
+          )) {
+            if (value === null) delete files[key];
+            else files[key] = value;
           }
           checkSnapshot(files);
           recordChanges(next, member, files, '이전 버전 복원', 'restore');

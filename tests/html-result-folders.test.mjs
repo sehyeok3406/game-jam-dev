@@ -58,7 +58,7 @@ test('first HTML and sequential workflow use dedicated folders with identical lo
   ]) {
     const local = plan(initial, options);
     const html = local.data.expected_outputs.at(-1);
-    assert.equal(html, 'output/games/v1-한밤의-카페/index.html');
+    assert.equal(html, 'output/inbox/한밤의-카페/v001/index.html');
     assert.equal(previewVersion(html), 1);
     assert.equal(expectedArtifacts(local.raw).at(-1), html);
     const shared = reduceCollaboration(initial, 'tasks:create', options);
@@ -88,17 +88,17 @@ test('pending requests reserve unique folders across legacy, imported and new ou
   const second = plan({ ...files, ...first.tasks }, options, 'second');
   assert.equal(
     first.data.expected_outputs[0],
-    'output/games/v9-한밤의-카페/index.html',
+    'output/inbox/한밤의-카페/v001/index.html',
   );
   assert.equal(
     second.data.expected_outputs[0],
-    'output/games/v10-한밤의-카페/index.html',
+    'output/inbox/한밤의-카페/v002/index.html',
   );
   assert.equal(
     nextPreviewPath([
       'output/imported/import-00000000-0000-0000-0000-000000000000.html',
     ]),
-    'output/games/v1/index.html',
+    'output/inbox/untitled/v001/index.html',
   );
   for (const invalid of [
     'output/games/v01-game/index.html',

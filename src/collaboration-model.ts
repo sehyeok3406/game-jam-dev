@@ -19,6 +19,14 @@ import { isPreviewPath, previewDeletionTarget } from './preview-output.ts';
 import type { Snapshot } from './project-store.ts';
 import { htmlSourceId, htmlSourcePath, sourceMetadata } from './html-source.ts';
 import { cardColor, CARD_COLORS } from './card-colors.ts';
+import {
+  relocateResults,
+  legacyResultMoves,
+  moveDestination,
+  RESULT_CATALOG_PATH,
+  readResultCatalog,
+  type MoveResultInput,
+} from './result-structure.ts';
 
 export function collaborationPath(relative: unknown): string {
   if (
@@ -31,6 +39,8 @@ export function collaborationPath(relative: unknown): string {
         relative,
       ) ||
       isPreviewPath(relative) ||
+      relative === 'output/README.md' ||
+      relative === RESULT_CATALOG_PATH ||
       isAssetPath(relative)
     ) ||
     relative
@@ -41,7 +51,9 @@ export function collaborationPath(relative: unknown): string {
           /[<>:"|?*]/.test(segment) ||
           [...segment].some((character) => character.charCodeAt(0) < 32) ||
           /[. ]$/.test(segment) ||
-          (segment.startsWith('.') && segment !== '.ai') ||
+          (segment.startsWith('.') &&
+            segment !== '.ai' &&
+            !(relative === RESULT_CATALOG_PATH && segment === '.canvas')) ||
           /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment),
       )
   )
@@ -77,6 +89,10 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
     bytes += Buffer.byteLength(value);
+    if (key === RESULT_CATALOG_PATH) {
+      readResultCatalog(value);
+      continue;
+    }
     if (isAssetPath(key)) {
       decodeAsset(key, value);
       continue;
@@ -132,7 +148,12 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
 
 export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
   return Object.entries(files)
-    .filter(([key]) => key.endsWith('.md') && !key.startsWith('sections/'))
+    .filter(
+      ([key]) =>
+        key.endsWith('.md') &&
+        !key.startsWith('sections/') &&
+        !key.startsWith('output/'),
+    )
     .map(([relativePath, raw]) => {
       const { data, content } = matter(raw);
       const number = (key: string, fallback: number) =>
@@ -202,6 +223,8 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
 }
 
 export const commandLabels: Record<string, string> = {
+  'results:move': 'HTML 결과물 폴더 이동',
+  'results:organize': '기존 HTML 결과물 폴더 정리',
   'documents:set-color': '카드 배경색 변경',
   'files:import-batch': '파일 불러오기',
   'documents:delete-many': '선택 문서 삭제',
@@ -255,6 +278,20 @@ export function reduceCollaboration(
     throw new Error('허용되지 않은 공동 작업입니다.');
   const next = { ...files };
   const input = record(value);
+  if (channel === 'results:move' || channel === 'results:organize') {
+    const moves =
+      channel === 'results:organize'
+        ? legacyResultMoves(files)
+        : [
+            {
+              from: input.relativePath as string,
+              to: moveDestination(files, input as MoveResultInput),
+            },
+          ];
+    const relocated = relocateResults(files, moves);
+    checkSnapshot(relocated);
+    return { files: relocated, result: moves };
+  }
   if (channel === 'files:import-batch') {
     const additions = buildFileImports(input as ImportBatchInput);
     if (Object.keys(additions).some((relative) => next[relative] !== undefined))

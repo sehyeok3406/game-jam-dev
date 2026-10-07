@@ -4,6 +4,7 @@ import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { inspectHtml } from './html-document.ts';
 import { isPreviewPath } from './preview-output.ts';
+import { resultPreviousPaths } from './result-structure.ts';
 import type { Snapshot } from './project-store.ts';
 import type { PreviewResult } from './shared.ts';
 import { cardColor } from './card-colors.ts';
@@ -109,6 +110,7 @@ export function describePreview(
   return {
     exists: files[relative] !== undefined,
     relativePath: relative,
+    previousPaths: resultPreviousPaths(files, relative),
     content,
     backgroundColor: cardColor(data.background_color),
     sourceId: htmlSourceId(relative),

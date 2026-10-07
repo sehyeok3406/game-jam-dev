@@ -12,6 +12,7 @@ import {
   useNodesState,
 } from '@xyflow/react';
 import appIcon from '../../assets/icon.png';
+import { ResultFolderDialog } from './ResultFolderDialog';
 import {
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
@@ -1502,6 +1503,10 @@ function WorkspaceCanvas() {
   const [previewContextMenu, setPreviewContextMenu] =
     useState<PreviewContextMenuState | null>(null);
   const [deletePrompt, setDeletePrompt] = useState<DeletionItem | null>(null);
+  const [resultFolderPrompt, setResultFolderPrompt] = useState<
+    PreviewResult | 'legacy' | null
+  >(null);
+  const [movingResults, setMovingResults] = useState(false);
   const [sectionActionPrompt, setSectionActionPrompt] =
     useState<SectionActionPrompt | null>(null);
   const [membershipPrompt, setMembershipPrompt] =
@@ -3719,10 +3724,22 @@ function WorkspaceCanvas() {
       (!historyAiOnly || entry.kind === 'ai' || !!historyTaskPath(entry)) &&
       (!historyFilter ||
         historyTaskPath(entry) === historyFilter ||
-        entry.files.some((file) => file.relativePath === historyFilter) ||
-        (entry.kind === 'ai' &&
-          entryTaskRecord(entry, taskDocuments)?.outputs.includes(
+        entry.files.some((file) =>
+          [
             historyFilter,
+            ...(previews.find(
+              (preview) => preview.relativePath === historyFilter,
+            )?.previousPaths ?? []),
+          ].includes(file.relativePath),
+        ) ||
+        (entry.kind === 'ai' &&
+          entryTaskRecord(entry, taskDocuments)?.outputs.some((output) =>
+            [
+              historyFilter,
+              ...(previews.find(
+                (preview) => preview.relativePath === historyFilter,
+              )?.previousPaths ?? []),
+            ].includes(output),
           ))),
   );
 
@@ -4083,6 +4100,15 @@ function WorkspaceCanvas() {
             <FolderOpen size={16} /> 프로젝트 폴더 열기
           </button>
           <button
+            disabled={locked || editBusy || movingResults}
+            onClick={() => {
+              setSettingsOpen(false);
+              setResultFolderPrompt('legacy');
+            }}
+          >
+            <FolderOpen size={16} /> 기존 결과물 폴더 정리
+          </button>
+          <button
             aria-pressed={snapEnabled}
             onClick={() => setSnapEnabled((value) => !value)}
           >
@@ -4253,6 +4279,9 @@ function WorkspaceCanvas() {
                         inspectorAiRecords.entries,
                         item.path,
                         taskDocuments,
+                        previews.find(
+                          (preview) => preview.relativePath === item.path,
+                        )?.previousPaths,
                       );
                       return entries.length ? (
                         <>
@@ -5525,6 +5554,21 @@ function WorkspaceCanvas() {
           role="menu"
           aria-label="HTML 결과 메뉴"
         >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={locked || editBusy || movingResults}
+            onClick={() => {
+              setResultFolderPrompt(previewContextMenu.preview);
+              setPreviewContextMenu(null);
+            }}
+          >
+            <FolderOpen size={16} />
+            <span>
+              <strong>폴더 분류·이동</strong>
+              <small>시스템 · UI·UX · 콘텐츠 · 통합 시제품</small>
+            </span>
+          </button>
           <div
             className="card-color-picker"
             role="group"
@@ -5864,6 +5908,57 @@ function WorkspaceCanvas() {
         </div>
       )}
 
+      {resultFolderPrompt && (
+        <ResultFolderDialog
+          key={
+            typeof resultFolderPrompt === 'string'
+              ? 'legacy'
+              : resultFolderPrompt.relativePath
+          }
+          preview={
+            typeof resultFolderPrompt === 'string'
+              ? undefined
+              : resultFolderPrompt
+          }
+          previews={previews}
+          busy={movingResults}
+          onClose={() => setResultFolderPrompt(null)}
+          onMove={async (input) => {
+            setMovingResults(true);
+            try {
+              await flushEditors();
+              const latest = (await window.gameCanvas.listPreviews()).find(
+                (item) => item.relativePath === input.relativePath,
+              );
+              if (!latest)
+                throw new Error('이동할 HTML 결과를 찾을 수 없습니다.');
+              await window.gameCanvas.moveResult({
+                ...input,
+                revision: latest.revision,
+              });
+              await loadProject(false);
+              setResultFolderPrompt(null);
+              setNotice('결과물과 관련 파일을 새 폴더로 이동했습니다.');
+            } finally {
+              setMovingResults(false);
+            }
+          }}
+          onOrganize={async () => {
+            setMovingResults(true);
+            try {
+              await flushEditors();
+              const moves = await window.gameCanvas.organizeResults();
+              await loadProject(false);
+              setResultFolderPrompt(null);
+              setNotice(
+                `${moves.length}개 결과물을 미분류·기능·버전 폴더로 정리했습니다.`,
+              );
+            } finally {
+              setMovingResults(false);
+            }
+          }}
+        />
+      )}
       {importTarget && (
         <div
           className="dialog-backdrop"

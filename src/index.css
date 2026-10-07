@@ -3859,12 +3859,16 @@ kbd {
   gap: 8px;
   font-size: 13px;
 }
-.import-dialog select {
+.import-dialog select,
+.import-dialog input {
   background: var(--surface-subtle);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
+}
+.import-dialog code {
+  overflow-wrap: anywhere;
 }
 .import-dialog-actions {
   display: flex;

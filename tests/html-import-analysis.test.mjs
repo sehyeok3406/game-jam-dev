@@ -99,10 +99,10 @@ test('HTML imports preserve exact bytes, own stable source metadata and canvas p
   checkSnapshot(files);
   assert.equal(files[html], game);
   assert.equal(previewVersion(html), 0);
-  assert.equal(previewLabel(html), '불러온 HTML');
+  assert.match(previewLabel(html), /미분류/);
   assert.equal(
     nextPreviewPath(Object.keys(files)),
-    'output/games/v1/index.html',
+    'output/inbox/untitled/v001/index.html',
   );
   const record = snapshotDocuments(files).find((doc) => doc.htmlSource);
   assert.equal(record.id, htmlSourceId(html));

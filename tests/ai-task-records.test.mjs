@@ -75,7 +75,7 @@ test('AI task and HTML source records never become selectable canvas documents',
 test('task records contain exact input/output paths and instructions without frontmatter', () => {
   const record = taskHistoryRecord(raw);
   assert.deepEqual(record.inputs, ['project.md']);
-  assert.deepEqual(record.outputs, ['output/games/v1/index.html']);
+  assert.deepEqual(record.outputs, ['output/inbox/untitled/v001/index.html']);
   assert.match(record.specification, /이동 속도를 2로/);
   assert.equal(record.origin, 'snapshot');
   assert.ok(!record.specification.includes('expected_outputs:'));
@@ -87,7 +87,7 @@ test('related result history includes failed attempts but excludes input referen
   const run = entry(),
     creation = { ...entry(), kind: 'user' };
   assert.deepEqual(
-    relatedAiEntries([run, creation], 'output/games/v1/index.html'),
+    relatedAiEntries([run, creation], 'output/inbox/untitled/v001/index.html'),
     [run],
   );
   assert.deepEqual(relatedAiEntries([run], 'project.md'), []);
@@ -143,7 +143,9 @@ test('task creation history captures the specification without rewriting the wor
     {},
     snapshot,
   );
-  assert.deepEqual(oldRecord.aiTask.outputs, ['output/games/v1/index.html']);
+  assert.deepEqual(oldRecord.aiTask.outputs, [
+    'output/inbox/untitled/v001/index.html',
+  ]);
 });
 
 test('legacy local history prefers immutable input snapshots and labels current-file fallback', async (t) => {

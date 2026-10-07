@@ -16,6 +16,11 @@ import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
 import { cardColor } from './card-colors';
 import {
+  moveDestination,
+  legacyResultMoves,
+  type ResultMove,
+} from './result-folder-plan';
+import {
   displayHomeProjects,
   editHomeOrganization,
   readHomeOrganization,
@@ -223,6 +228,35 @@ const emitRun = (event: CodexRunEvent) => {
 };
 
 export function createDevGameCanvasApi(): GameCanvasApi {
+  const moveDevResults = (moves: ResultMove[]) => {
+    for (const { from, to } of moves) {
+      if (from === to) continue;
+      if (previews.some((item) => item.relativePath === to))
+        throw new Error('이미 사용 중인 결과 폴더입니다.');
+      previews = previews.map((item) =>
+        item.relativePath === from
+          ? {
+              ...item,
+              relativePath: to,
+              sourceId: item.sourceId ?? item.relativePath,
+              previousPaths: [from, ...(item.previousPaths ?? [])],
+            }
+          : item,
+      );
+      const state = previewWindows.get(from);
+      if (state) {
+        previewWindows.set(to, state);
+        previewWindows.delete(from);
+      }
+      const replace = (raw: string) => raw.replaceAll(from, to);
+      documents = documents.map(
+        (document) =>
+          JSON.parse(replace(JSON.stringify(document))) as CanvasDocument,
+      );
+    }
+    notify();
+    return moves;
+  };
   const journal = new EditJournal();
   const changeHistory = (direction: 'undo' | 'redo') => {
     if (
@@ -560,6 +594,26 @@ export function createDevGameCanvasApi(): GameCanvasApi {
               previewVersion(left.relativePath) -
               previewVersion(right.relativePath),
           ),
+      ),
+    moveResult: async (input) =>
+      moveDevResults([
+        {
+          from: input.relativePath,
+          to: moveDestination(
+            Object.fromEntries(
+              previews.map((item) => [item.relativePath, item.content ?? '']),
+            ),
+            input,
+          ),
+        },
+      ]),
+    organizeResults: async () =>
+      moveDevResults(
+        legacyResultMoves(
+          Object.fromEntries(
+            previews.map((item) => [item.relativePath, item.content ?? '']),
+          ),
+        ),
       ),
     listHistory: async () => structuredClone(histories),
     getFileAuthorship: async (relative) =>
@@ -1119,6 +1173,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
   };
   const mutating = new Set([
+    'moveResult',
+    'organizeResults',
     'createIdea',
     'createSection',
     'saveDocument',

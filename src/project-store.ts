@@ -13,6 +13,7 @@ import type { FileAuthorshipMap } from './shared';
 import { isImportedPreviewPath } from './preview-output.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
 import { historyTaskPath } from './ai-task-records.ts';
+import { remapResultChanges, RESULT_CATALOG_PATH } from './result-structure.ts';
 
 export type Snapshot = Record<string, string>;
 
@@ -76,6 +77,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     } else if (
       relative.endsWith('.md') ||
       isPreviewPath(relative) ||
+      relative === RESULT_CATALOG_PATH ||
       isAssetPath(relative)
     ) {
       snapshot[relative] = await readSnapshotFile(absolute, relative);
@@ -87,6 +89,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     'docs',
     'sections',
     '.ai/tasks',
+    RESULT_CATALOG_PATH,
     'output',
     'assets/images',
   ])
@@ -461,7 +464,22 @@ export async function restoreHistory(
       version,
     );
   }
-  await applyChanges(root, before, changes);
+  const remapped = remapResultChanges(before, changes);
+  const after = { ...before };
+  for (const [key, value] of Object.entries(remapped)) {
+    if (value === null) delete after[key];
+    else after[key] = value;
+  }
+  const { moveResultFiles, resultFileBaseline, removeEmptyResultParents } =
+    await import('./result-file-moves.ts');
+  const rollbackMoves = await moveResultFiles(root, before, after);
+  try {
+    await applyChanges(root, resultFileBaseline(before, after), remapped);
+  } catch (error) {
+    await rollbackMoves();
+    throw error;
+  }
+  await removeEmptyResultParents(root, before, after);
   await saveHistory(root, before, await captureProject(root), {
     id: historyId(),
     label: `${entry.label} 버전 복원`,

@@ -657,6 +657,14 @@ export class CollaborationClient {
           'HTML 결과 폴더를 사용하려면 협업 서버를 v0.8.1 이상으로 업데이트하고 다시 시작해주세요.',
         );
       if (
+        (channel === 'results:move' || channel === 'results:organize') &&
+        !this.state.structuredResults
+      )
+        throw new CanvasError(
+          'GC-COLLAB-001',
+          '결과물 폴더 구조를 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
+      if (
         channel === 'tasks:create' &&
         this.state.role === 'editor' &&
         !this.state.editorAi
@@ -708,6 +716,20 @@ export class CollaborationClient {
       if (!this.state.connected)
         throw new Error(
           '서버에 연결되어 있지 않습니다. 초안을 보관하고 재연결을 기다려주세요.',
+        );
+      if (
+        !this.state.structuredResults &&
+        ((channel === 'tasks:create' &&
+          ((input as CreateTaskInput)?.kind === 'implement' ||
+            (input as CreateTaskInput)?.thenImplement)) ||
+          (channel === 'files:import-batch' &&
+            (input as { files?: { name: string }[] })?.files?.some((file) =>
+              /\.html?$/i.test(file.name),
+            )))
+      )
+        throw new CanvasError(
+          'GC-COLLAB-001',
+          '새 결과물 폴더 구조를 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
         );
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {

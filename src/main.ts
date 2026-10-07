@@ -110,6 +110,13 @@ import { presentWindow } from './window-presentation';
 import { resolveAuthorship } from './file-authorship';
 import { normalizePreviewWindow } from './preview-window';
 import {
+  moveResultFiles,
+  removeEmptyResultParents,
+  resultFileBaseline,
+} from './result-file-moves';
+import { OUTPUT_STRUCTURE_README } from './result-files';
+import { RESULT_CATEGORIES } from './preview-output';
+import {
   DEFAULT_PREVIEW_PATH,
   assertPreviewPath,
   isPreviewPath,
@@ -575,19 +582,26 @@ const syncSharedSnapshot = async (snapshot: Snapshot) => {
   const root = requireWorkspace();
   await ensureWorkspace();
   const current = await captureProject(root);
-  await applyChanges(
-    root,
-    current,
-    Object.fromEntries(
-      Object.keys({ ...current, ...snapshot }).map((relative) => [
-        relative,
-        snapshot[relative] ?? null,
-      ]),
-    ),
-  );
+  const rollbackMoves = await moveWorkspaceResults(current, snapshot);
+  try {
+    await applyChanges(
+      root,
+      resultFileBaseline(current, snapshot),
+      Object.fromEntries(
+        Object.keys({ ...current, ...snapshot }).map((relative) => [
+          relative,
+          snapshot[relative] ?? null,
+        ]),
+      ),
+    );
+  } catch (error) {
+    await rollbackMoves();
+    throw error;
+  }
   // Shared snapshots remove tracked files first, then dispose of local result
   // folders (including auxiliary files) and personal preview settings.
   await trashWorkspaceFiles(current, snapshot);
+  await removeEmptyResultParents(root, current, snapshot);
 };
 let changeTimer: NodeJS.Timeout | null = null;
 let lastRunEvent: CodexRunEvent | null = null;
@@ -846,12 +860,24 @@ const safePath = async (relativePath: string, allowMissing = false) => {
 const ensureWorkspace = async () => {
   const root = requireWorkspace();
   await Promise.all(
-    [...DOCUMENT_FOLDERS, SECTION_FOLDER, 'output'].map((folder) =>
-      fs.mkdir(path.join(root, folder), { recursive: true }),
-    ),
+    [
+      ...DOCUMENT_FOLDERS,
+      SECTION_FOLDER,
+      'output',
+      ...Object.keys(RESULT_CATEGORIES).map((category) => `output/${category}`),
+    ].map((folder) => fs.mkdir(path.join(root, folder), { recursive: true })),
   );
 
   await initializeProjectDocument(root);
+  try {
+    await fs.writeFile(
+      path.join(root, 'output/README.md'),
+      OUTPUT_STRUCTURE_README,
+      { flag: 'wx' },
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
 };
 
 const normalizeSources = (value: unknown): SourceReference[] => {
@@ -1106,6 +1132,32 @@ const trashWorkspaceFiles = async (before: Snapshot, after: Snapshot) => {
   } finally {
     if (restartWatcher) await startWatcher();
   }
+};
+const moveWorkspaceResults = async (before: Snapshot, after: Snapshot) => {
+  const root = requireWorkspace();
+  const paused = !!workspaceWatcher;
+  if (paused) {
+    await workspaceWatcher!.close();
+    workspaceWatcher = null;
+  }
+  let rollback: () => Promise<void>;
+  try {
+    rollback = await moveResultFiles(root, before, after);
+  } finally {
+    if (paused) await startWatcher();
+  }
+  return async () => {
+    const watching = !!workspaceWatcher;
+    if (watching) {
+      await workspaceWatcher!.close();
+      workspaceWatcher = null;
+    }
+    try {
+      await rollback();
+    } finally {
+      if (watching) await startWatcher();
+    }
+  };
 };
 
 const setWorkspace = async (root: string) => {
@@ -1799,6 +1851,8 @@ const startCodexRun = async (
 };
 
 const mutationLabels: Record<string, string> = {
+  'results:move': 'HTML 결과물 폴더 이동',
+  'results:organize': '기존 HTML 결과물 폴더 정리',
   'files:import': '파일 불러오기',
   'documents:create-idea': '메모 추가',
   'documents:save': '문서 저장',
@@ -1868,6 +1922,8 @@ const handle = (
               channel,
               channel === 'layouts:update' ? { updates: args[0] } : args[0],
             );
+            if (channel === 'results:move' || channel === 'results:organize')
+              await syncSharedSnapshot(client.files);
             if (
               channel === 'documents:delete' ||
               channel === 'documents:delete-many'
@@ -2109,6 +2165,38 @@ const handle = (
 };
 
 const registerIpc = () => {
+  for (const channel of ['results:move', 'results:organize'])
+    handle(channel, async (_event, input: unknown) => {
+      const root = requireWorkspace();
+      const before = await captureProject(root);
+      const reduced = reduceCollaboration(before, channel, input);
+      const restartWatcher = !!workspaceWatcher;
+      if (restartWatcher) {
+        await workspaceWatcher!.close();
+        workspaceWatcher = null;
+      }
+      let rollback: (() => Promise<void>) | undefined;
+      try {
+        rollback = await moveResultFiles(root, before, reduced.files);
+        await applyChanges(
+          root,
+          resultFileBaseline(before, reduced.files),
+          Object.fromEntries(
+            Object.keys({ ...before, ...reduced.files }).map((key) => [
+              key,
+              reduced.files[key] ?? null,
+            ]),
+          ),
+        );
+        await removeEmptyResultParents(root, before, reduced.files);
+        return reduced.result;
+      } catch (error) {
+        await rollback?.();
+        throw error;
+      } finally {
+        if (restartWatcher) await startWatcher();
+      }
+    });
   handle('files:authorship', (_event, relative: string) =>
     enqueueMutation(() =>
       localFileAuthorship(requireWorkspace(), collaborationPath(relative)),
@@ -2283,17 +2371,24 @@ const registerIpc = () => {
       const current = await captureProject(root);
       const next = invertEdit(current, before, after, direction);
       checkSnapshot(next);
-      await applyChanges(
-        root,
-        current,
-        Object.fromEntries(
-          entry.files.map((file) => [
-            file.relativePath,
-            next[file.relativePath] ?? null,
-          ]),
-        ),
-      );
+      const rollbackMoves = await moveWorkspaceResults(current, next);
+      try {
+        await applyChanges(
+          root,
+          resultFileBaseline(current, next),
+          Object.fromEntries(
+            entry.files.map((file) => [
+              file.relativePath,
+              next[file.relativePath] ?? null,
+            ]),
+          ),
+        );
+      } catch (error) {
+        await rollbackMoves();
+        throw error;
+      }
       await trashWorkspaceFiles(current, next);
+      await removeEmptyResultParents(root, current, next);
       await saveHistory(root, current, next, {
         id: historyId(),
         label: `${direction === 'undo' ? '실행 취소' : '다시 실행'} · ${item.label}`,
@@ -2893,8 +2988,23 @@ const registerIpc = () => {
   );
   handle(
     'history:restore',
-    (_event, id: string, relative?: string, version?: 'before' | 'after') =>
-      restoreHistory(requireWorkspace(), id, relative, version),
+    async (
+      _event,
+      id: string,
+      relative?: string,
+      version?: 'before' | 'after',
+    ) => {
+      const paused = !!workspaceWatcher;
+      if (paused) {
+        await workspaceWatcher!.close();
+        workspaceWatcher = null;
+      }
+      try {
+        await restoreHistory(requireWorkspace(), id, relative, version);
+      } finally {
+        if (paused) await startWatcher();
+      }
+    },
   );
   handle('workspace:get', () => workspaceState());
   handle('workspace:select', async () => {

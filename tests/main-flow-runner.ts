@@ -4,6 +4,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { createCollaborationServer } from '../src/collaboration-server';
 import { CollaborationClient } from '../src/collaboration-client';
+import { isImportedPreviewPath } from '../src/preview-output';
 import '../src/main';
 import { executionStarts, executionSpecs } from './mocks/process';
 import {
@@ -41,7 +42,7 @@ async function terminal(id: string) {
 }
 const generatedPreviews = async () =>
   (await call('preview:list')).filter(
-    (item: any) => !item.relativePath.startsWith('output/imported/'),
+    (item: any) => !isImportedPreviewPath(item.relativePath),
   );
 
 let collaborationServer: Awaited<
@@ -183,6 +184,33 @@ try {
     { x: 0, y: 0, width: 720, height: 520, collapsed: false },
     deletedHtml,
   );
+  const migratedHtml = 'output/systems/combat/v001/index.html';
+  await call('results:move', {
+    relativePath: deletedHtml,
+    category: 'systems',
+    feature: 'combat',
+  });
+  await assert.rejects(fs.access(deletedFolder));
+  assert.equal(
+    await fs.readFile(
+      path.join(newProject.root, 'output/systems/combat/v001/assets/game.js'),
+      'utf8',
+    ),
+    'game()',
+  );
+  assert.equal((await call('preview:window', migratedHtml)).width, 720);
+  assert.ok(
+    (await call('preview:list')).some(
+      (item: any) => item.relativePath === migratedHtml,
+    ),
+  );
+  await call('edit:undo');
+  assert.equal(
+    await fs.readFile(path.join(deletedFolder, 'assets/game.js'), 'utf8'),
+    'game()',
+  );
+  await call('edit:redo');
+  await call('edit:undo');
   await call('documents:delete', {
     documentId: deletedHtml,
     relativePath: deletedHtml,
@@ -313,7 +341,7 @@ try {
     imagePurpose: 'asset',
   });
   const importedHtmlPath = htmlImports[0].htmlSource;
-  assert.ok(importedHtmlPath.startsWith('output/imported/'));
+  assert.ok(isImportedPreviewPath(importedHtmlPath));
   assert.equal(
     (await call('preview:list')).find(
       (item: any) => item.relativePath === importedHtmlPath,
@@ -593,7 +621,7 @@ try {
     await fs.readFile(path.join(root, versionTask.relativePath), 'utf8'),
   ).data;
   const versionPath = versionSpec.expected_outputs[0];
-  assert.equal(versionPath, 'output/games/v2/index.html');
+  assert.equal(versionPath, 'output/inbox/untitled/v001/index.html');
   assert.equal(versionSpec.base_html, 'output/index.html');
   assert.equal(versionSpec.html_output_mode, 'new');
   assert.equal((await generatedPreviews()).length, 1);
@@ -622,8 +650,8 @@ try {
   );
   assert.equal(revealedPaths.at(-1), path.join(root, versionPath));
   assert.deepEqual(
-    (await generatedPreviews()).map((item: any) => item.relativePath),
-    ['output/index.html', versionPath],
+    (await generatedPreviews()).map((item: any) => item.relativePath).sort(),
+    ['output/index.html', versionPath].sort(),
   );
   await call(
     'preview:save-window',

@@ -21,7 +21,7 @@ import { expectedArtifacts } from '../src/ai-artifacts.ts';
 test('version paths are restricted, ordered and reserved independently from legacy output', () => {
   assert.equal(
     nextPreviewPath(['output/index.html']),
-    'output/games/v2/index.html',
+    'output/inbox/untitled/v001/index.html',
   );
   assert.equal(
     nextPreviewPath([
@@ -29,7 +29,7 @@ test('version paths are restricted, ordered and reserved independently from lega
       'output/versions/v2.html',
       'output/versions/v7.html',
     ]),
-    'output/games/v8/index.html',
+    'output/inbox/untitled/v001/index.html',
   );
   assert.equal(previewLabel('output/versions/v2.html'), '버전 2');
   assert.equal(previewWindowPath(), '.canvas/preview.json');

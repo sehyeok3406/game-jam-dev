@@ -74,16 +74,16 @@ test('named document sets are reserved, recognized and updated without renaming 
 });
 test('named HTML versions have independent window state and preserve legacy paths', () => {
   const first = nextPreviewPath([], '한밤의 카페');
-  assert.equal(first, 'output/games/v1-한밤의-카페/index.html');
+  assert.equal(first, 'output/inbox/한밤의-카페/v001/index.html');
   assert.equal(isPreviewPath(first), true);
   assert.equal(
     nextPreviewPath([first], '다른 게임'),
-    'output/games/v2-다른-게임/index.html',
+    'output/inbox/다른-게임/v001/index.html',
   );
-  assert.equal(previewLabel(first), '한밤의-카페 · 버전 1');
+  assert.equal(previewLabel(first), '미분류 / 한밤의-카페 · 버전 1');
   assert.equal(
     previewWindowPath(first),
-    '.canvas/previews/game-v1-한밤의-카페.json',
+    '.canvas/previews/result-inbox-한밤의-카페-v1.json',
   );
   assert.notEqual(
     previewWindowPath(first),

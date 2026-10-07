@@ -40,12 +40,17 @@ export function relatedAiEntries(
   entries: HistoryEntry[],
   path: string,
   tasks: CanvasDocument[] = [],
+  previousPaths: string[] = [],
 ) {
   // Inputs are not results. Task creation is not an actual AI execution either.
   return entries.filter(
     (entry) =>
       entry.kind === 'ai' &&
-      (entry.files.some((file) => file.relativePath === path) ||
-        entryTaskRecord(entry, tasks)?.outputs.includes(path)),
+      (entry.files.some((file) =>
+        [path, ...previousPaths].includes(file.relativePath),
+      ) ||
+        entryTaskRecord(entry, tasks)?.outputs.some((output) =>
+          [path, ...previousPaths].includes(output),
+        )),
   );
 }

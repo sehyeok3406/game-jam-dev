@@ -179,6 +179,7 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  previousPaths?: string[];
   revision?: number;
   backgroundColor?: import('./card-colors').CardColor;
   title?: string;
@@ -355,6 +356,10 @@ export type GameCanvasApi = {
     relativePath?: string,
   ) => Promise<void>;
   listPreviews: () => Promise<PreviewResult[]>;
+  moveResult: (
+    input: import('./result-structure').MoveResultInput,
+  ) => Promise<import('./result-structure').ResultMove[]>;
+  organizeResults: () => Promise<import('./result-structure').ResultMove[]>;
   listHistory: () => Promise<HistoryEntry[]>;
   getFileAuthorship: (relativePath: string) => Promise<FileAuthorship>;
   readHistoryFile: (
@@ -497,6 +502,7 @@ export type CollaborationState = {
   syncMessage?: string;
   accessDenied?: boolean;
   htmlResultFolders?: boolean;
+  structuredResults?: boolean;
   editorAi?: boolean;
   multiProviderAi?: boolean;
   active: boolean;

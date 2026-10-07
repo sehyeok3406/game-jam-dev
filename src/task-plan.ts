@@ -7,7 +7,7 @@ import { expectedArtifacts } from './ai-artifacts.ts';
 import { taskInstructions } from './task-instructions.ts';
 import type { CreateTaskInput } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
-import { prepareHtmlSource } from './html-source.ts';
+import { prepareHtmlSource, htmlSourcePath } from './html-source.ts';
 
 /** Source records and tasks are committed together under the same user history. */
 export function createTaskFiles(
@@ -73,13 +73,27 @@ export function createTaskPlan(
   if (!['new', 'update'].includes(choice.mode))
     throw new CanvasError('GC-AI-004', 'HTML 결과 방식이 올바르지 않습니다.');
   const base = choice.basePath;
+  if (
+    base &&
+    choice.mode === 'update' &&
+    files[htmlSourcePath(base)] &&
+    matter(files[htmlSourcePath(base)]).data.imported_from
+  )
+    throw new CanvasError(
+      'GC-AI-007',
+      '불러온 원본 HTML은 유지해야 합니다. 새 HTML 결과를 선택해주세요.',
+    );
   if (base !== undefined && (!isPreviewPath(base) || files[base] === undefined))
     throw new CanvasError(
       'GC-AI-004',
       '기준 HTML 결과 파일을 찾을 수 없습니다. 다시 선택해주세요.',
     );
   const resolved = resolvePreviewOutput(
-    Object.keys(files),
+    Object.keys(files).filter(
+      (relative) =>
+        !files[htmlSourcePath(relative)] ||
+        !matter(files[htmlSourcePath(relative)]).data.imported_from,
+    ),
     reserved,
     choice,
     htmlInput.resultName,
