@@ -4,6 +4,10 @@
 
 프로젝트 기본 문서 삭제, HTML 결과 폴더·관련 파일 정리, 앱 시작 시 버전 확인과 새 버전 팝업을 포함합니다. 설치 파일은 `Game.Jam-0.10.5.Setup.exe`이며 `game_canvas-0.10.5-full.nupkg`, `RELEASES`를 함께 배포합니다. 공동 프로젝트 삭제 기능은 별도 협업 서버도 v0.10.5 코드로 갱신해야 합니다. [릴리스 노트](RELEASE_NOTES.md)
 
+2026-10-07 [v0.10.5 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.5) 게시 완료. 태그는 검증한 배포 커밋 `b2468cef8b9249d56c44e9408b5304c0b0660eb7`을 가리킵니다. 미추적 운영 도구를 제외한 별도 체크아웃에서 빌드했고, 181개 자동 테스트·타입·린트·전체 IPC/Electron 통합 검증·실제 Windows 패키지 창과 업데이트 팝업 검증을 통과했습니다.
+
+설치 파일·nupkg·RELEASES의 GitHub SHA-256·크기가 로컬 빌드와 일치하고 인증 없는 공개 다운로드(200)를 확인했습니다. 공개 RELEASES의 바이트 해시와 nupkg의 SHA-1·크기도 일치합니다. v0.10.4 피드는 v0.10.5를 안내하고 v0.10.5 피드는 최신 버전 응답(204)을 반환합니다. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 검증 대상입니다. 별도 운영 서버·터널·프로젝트 데이터는 이번 게시 과정에서 변경하지 않았습니다.
+
 ## v0.10.4 Codex 파일 생성 권한 수정
 
 [Game Jam! v0.10.4 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.4)는 Codex AI 작업의 쓰기 권한 수정을 포함합니다. `--ignore-user-config`와 자동 승인 검토를 유지하면서 `default_permissions=":workspace"`를 명시하여 실제 권한이 읽기 전용으로 남는 문제를 해결합니다. 모델 자동 선택·프리셋·직접 입력 모두 같은 설정을 사용합니다.
