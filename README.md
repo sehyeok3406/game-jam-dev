@@ -6,6 +6,8 @@ Codex의 사용자 설정을 격리한 상태에서도 작업 공간 쓰기 권�
 
 [v0.10.4 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.4) · [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.4/Game.Jam-0.10.4.Setup.exe) · [업데이트 안내](UPDATES.md)
 
+2026-10-07 정식 게시 완료. 169개 자동 테스트·전체 통합 검증·실제 패키지 실행과 업데이트 화면 검증을 통과했고, 공개 다운로드·파일 해시와 v0.10.3 자동 업데이트 피드의 v0.10.4 연결을 확인했습니다.
+
 ### v0.10.3 앱 이름 · 아이콘
 
 앱 이름을 **Game Jam!**으로 변경하고 홈·캔버스·창·설치 프로그램에 새 아이콘을 적용했습니다. 설치 후 첫 실행에서 바탕화면/시작 메뉴와 설치된 앱 아이콘도 갱신하며, 이 설치를 가리키는 예전 Game Canvas 바로가기는 백업 후 정리합니다. 기존 설정·프로젝트·공유 세션과 자동 업데이트 연결을 유지합니다. 호환성을 위해 내부 설치 폴더 `game_canvas`와 실행 파일명 `Game Canvas.exe`는 유지합니다.

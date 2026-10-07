@@ -6,6 +6,8 @@
 
 Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패키지 `game_canvas-0.10.4-full.nupkg`, `RELEASES`를 함께 배포합니다. 설치된 v0.9.2 이상은 **설정 및 도구 → 앱 업데이트**에서 확인합니다. 기존 프로젝트·설정·공유 세션을 유지하며, 별도 협업 서버나 터널 갱신은 필요하지 않습니다.
 
+2026-10-07 정식 게시 완료. 태그 `v0.10.4`는 검증한 소스 커밋 `b7fbb2636b2135874d5948ae083b0f2348ebaac5`를 가리킵니다. 타입 검사·린트·169개 자동 테스트·전체 IPC/Electron 통합 검증·실제 Windows 패키지 창과 업데이트 화면 검증을 통과했습니다. 세 파일의 GitHub SHA-256·크기가 로컬 빌드와 일치하며, 인증 없는 공개 다운로드 응답(200)과 공개 `RELEASES`의 바이트 해시도 확인했습니다. v0.10.3 업데이트 피드가 v0.10.4를 안내하고, Windows RELEASES 피드의 전체 패키지 URL·SHA-1·크기가 일치합니다. v0.10.4 피드는 최신 버전 응답(204)을 반환합니다. 실제 설치 앱의 자동 다운로드·재시작·설치 완료는 별도 실사용 확인이 필요합니다.
+
 ## v0.10.3 앱 이름 · 아이콘
 
 [Game Jam! v0.10.3 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.3)는 새 앱 이름과 아이콘, 설치 후 바로가기/설치된 앱 아이콘 갱신을 포함합니다. Windows x64 설치 파일 `Game.Jam-0.10.3.Setup.exe`, 자동 업데이트 패키지 `game_canvas-0.10.3-full.nupkg`, `RELEASES`를 함께 배포합니다.
@@ -51,8 +53,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.10.3 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.3)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.3/Game.Jam-0.10.3.Setup.exe)
+- [v0.10.4 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.4)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.4/Game.Jam-0.10.4.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
