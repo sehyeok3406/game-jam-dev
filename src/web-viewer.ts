@@ -23,6 +23,7 @@ export type WebProject = {
     y: number;
     width: number;
     height: number;
+    onCanvas?: boolean;
   }[];
   documents: {
     id: string;
@@ -117,6 +118,7 @@ export function projectForWeb(input: {
       height: 300,
       color: 'blue',
       html,
+      onCanvas: false,
       modifiedAt: 0,
     });
   }
