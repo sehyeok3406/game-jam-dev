@@ -28,6 +28,7 @@ if ($Action -eq 'Stop') {
 if (-not (Test-Path -LiteralPath $taskWorker) -or -not (Test-Path -LiteralPath $taskElectron)) { throw 'Run npm ci and npm run web-viewer:build first.' }
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 if ($Action -in @('Open','CopyCode')) {
+  if ($Action -eq 'Open' -and -not $owned) { & $PSCommandPath -Action Start }
   $mode = if ($Action -eq 'Open') { '--open' } else { '--copy-code' }
   Start-Process -FilePath $taskElectron -ArgumentList @("`"$taskWorker`"", $mode) -WindowStyle Hidden | Out-Null
   exit 0
