@@ -109,3 +109,4 @@ await build({
   },
 });
 await run(electron, ['out/test-validation/test-users-electron-runner.cjs']);
+await run(process.execPath, ['tests/run-canvas-sheets-ui.mjs']);

@@ -1712,6 +1712,122 @@ try {
   console.log(
     'PASS: selected image bytes reach AI staging and embed in published HTML; altered input images reject publication and preserve originals',
   );
+  // Exercise the production IPC adapter, not only the pure shared reducer.
+  await call('collaboration:join', {
+    serverUrl,
+    code: shared.inviteCode,
+    nickname: '캔버스 검증 편집자',
+  });
+  const sharedSheets = await call('canvases:list');
+  await call('canvases:change', {
+    action: 'add',
+    id: 'ipc-shared',
+    name: '공동 캔버스',
+    expected: sharedSheets.raw,
+  });
+  const sharedNote = await call('documents:create-idea', {
+    canvasId: 'ipc-shared',
+    x: 0,
+    y: 0,
+  });
+  assert.equal(sharedNote.canvasId, 'ipc-shared');
+  await otherClient!.refresh();
+  assert.equal(
+    matter(otherClient!.files[sharedNote.relativePath]).data.canvas_id,
+    'ipc-shared',
+  );
+  await call('collaboration:leave');
+  await call('projects:home');
+  const canvasProject = await call('projects:create', '캔버스 IPC 검증');
+  assert.equal((await call('canvases:list')).raw, null);
+  await call('canvases:change', {
+    action: 'add',
+    id: 'ipc-combat',
+    name: '전투',
+    expected: null,
+  });
+  const canvasNote = await call('documents:create-idea', {
+    canvasId: 'ipc-combat',
+    x: 0,
+    y: 0,
+  });
+  const canvasTask = await call('tasks:create', {
+    canvasId: 'ipc-combat',
+    kind: 'implement',
+    inputPaths: [canvasNote.relativePath],
+    x: 0,
+    y: 0,
+    htmlResult: { mode: 'new' },
+  });
+  const canvasOutput = matter(
+    await fs.readFile(
+      path.join(canvasProject.root, canvasTask.relativePath),
+      'utf8',
+    ),
+  ).data.expected_outputs[0];
+  const canvasRun = await call('codex:start', {
+    taskPath: canvasTask.relativePath,
+    providerId: 'codex-cli',
+    modelId: 'fixture-valid',
+  });
+  await assert.rejects(
+    call('canvases:change', {
+      action: 'delete',
+      id: 'ipc-combat',
+      targetId: 'default',
+      expected: (await call('canvases:list')).raw,
+    }),
+    /AI 작업/,
+  );
+  await call('canvases:change', {
+    action: 'add',
+    id: 'ipc-shop',
+    name: '상점',
+    expected: (await call('canvases:list')).raw,
+  });
+  const canvasResult = await terminal(canvasRun.runId);
+  assert.equal(canvasResult.status, 'completed', canvasResult.message);
+  assert.equal(
+    (await call('preview:list')).find(
+      (item: any) => item.relativePath === canvasOutput,
+    ).canvasId,
+    'ipc-combat',
+  );
+  await call('canvases:change', {
+    action: 'delete',
+    id: 'ipc-combat',
+    targetId: 'ipc-shop',
+    expected: (await call('canvases:list')).raw,
+  });
+  assert.equal(
+    (await call('documents:list')).find(
+      (item: any) => item.id === canvasNote.id,
+    ).canvasId,
+    'ipc-shop',
+  );
+  assert.equal(
+    (await call('preview:list')).find(
+      (item: any) => item.relativePath === canvasOutput,
+    ).canvasId,
+    'ipc-shop',
+  );
+  await call('edit:undo');
+  assert.equal(
+    (await call('preview:list')).find(
+      (item: any) => item.relativePath === canvasOutput,
+    ).canvasId,
+    'ipc-combat',
+  );
+  await call('edit:redo');
+  assert.equal(
+    (await call('preview:list')).find(
+      (item: any) => item.relativePath === canvasOutput,
+    ).canvasId,
+    'ipc-shop',
+  );
+  console.log(
+    'PASS: production IPC synchronizes canvas membership, freezes local AI destination, allows new sheets during AI, preserves files on canvas deletion and restores them with undo/redo',
+  );
 } finally {
   if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = originalGeminiKey;

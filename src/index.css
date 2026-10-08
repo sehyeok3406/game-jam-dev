@@ -4912,3 +4912,164 @@ kbd {
   gap: 10px;
   margin-top: 22px;
 }
+
+.canvas-tabs {
+  position: fixed;
+  left: 22px;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  gap: 4px;
+  max-width: calc(100vw - 330px);
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.canvas-tabs__list {
+  display: flex;
+  overflow-x: auto;
+  gap: 3px;
+}
+.app-shell .bottom-toolbar,
+.app-shell .canvas-utility {
+  bottom: 72px;
+}
+.app-shell .status-toast {
+  bottom: 130px;
+}
+.app-shell .selection-context {
+  bottom: 141px;
+}
+.canvas-tabs__item {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.canvas-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 7px;
+  min-height: 31px;
+  padding: 5px 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.canvas-tabs button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.canvas-tabs [aria-selected='true'] {
+  background: var(--selection-soft);
+  color: var(--selection);
+  font-weight: 700;
+}
+.canvas-tabs .canvas-tabs__manage {
+  padding: 4px;
+}
+.canvas-tabs__unread {
+  width: 6px;
+  height: 6px;
+  background: #46a0ff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #46a0ff;
+}
+.canvas-sheet-dialog {
+  padding: 24px;
+  border-radius: 18px;
+  width: min(440px, calc(100vw - 40px));
+  display: grid;
+  gap: 16px;
+  color: var(--text);
+}
+.canvas-sheet-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.canvas-sheet-dialog h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.canvas-sheet-dialog p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.canvas-sheet-dialog label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.canvas-sheet-dialog input,
+.canvas-sheet-dialog select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-solid);
+  color: var(--text);
+}
+.canvas-sheet-dialog button {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+.canvas-sheet-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.canvas-sheet-dialog__actions button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.canvas-tabs__error {
+  position: fixed;
+  bottom: 68px;
+  left: 22px;
+  z-index: 40;
+  background: var(--surface-solid);
+  padding: 12px;
+  border-radius: 8px;
+}
+.canvas-material-picker {
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.canvas-material-picker summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.canvas-material-picker fieldset {
+  margin: 12px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  max-height: 190px;
+  overflow: auto;
+}
+.canvas-material-picker label,
+.canvas-search-scope {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  padding: 4px;
+}
+.canvas-material-picker input {
+  width: auto;
+}
+@media (max-width: 700px) {
+  .canvas-tabs {
+    max-width: calc(100vw - 40px);
+    bottom: 60px;
+  }
+}

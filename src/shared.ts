@@ -1,3 +1,19 @@
+export type CanvasSheet = { id: string; name: string };
+export type CanvasSheets = {
+  version: 1;
+  canvases: CanvasSheet[];
+  raw?: string | null;
+};
+export type CanvasSheetCommand = {
+  action: 'add' | 'rename' | 'reorder' | 'move' | 'delete';
+  expected: string | null;
+  id: string;
+  name?: string;
+  order?: string[];
+  targetId?: string;
+  paths?: string[];
+};
+
 export type DocumentType =
   | 'idea'
   | 'system'
@@ -31,6 +47,7 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  canvasId?: string;
   backgroundColor?: import('./card-colors').CardColor;
   /** Hidden source record for an HTML execution window. */
   htmlSource?: string;
@@ -58,6 +75,7 @@ export type SectionMember = {
 };
 
 export type CanvasSection = {
+  canvasId?: string;
   revision?: number;
   id: string;
   title: string;
@@ -115,17 +133,20 @@ export type DeleteSectionResult = {
 };
 
 export type DuplicateDocumentsInput = {
+  canvasId?: string;
   documents: SectionMember[];
   offsetX: number;
   offsetY: number;
 };
 
 export type CreateIdeaInput = {
+  canvasId?: string;
   x: number;
   y: number;
 };
 
 export type CreateSectionInput = {
+  canvasId?: string;
   title: string;
   x: number;
   y: number;
@@ -156,6 +177,7 @@ export type MoveDocumentSectionInput = {
 };
 
 export type CreateTaskInput = {
+  canvasId?: string;
   sourceMode?: 'html' | 'html-compose';
   kind: 'organize' | 'implement';
   inputPaths: string[];
@@ -180,6 +202,7 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  canvasId?: string;
   previousPaths?: string[];
   revision?: number;
   backgroundColor?: import('./card-colors').CardColor;
@@ -264,6 +287,8 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  getCanvasSheets: () => Promise<CanvasSheets>;
+  changeCanvasSheets: (input: CanvasSheetCommand) => Promise<void>;
   getWebViewer: () => Promise<{
     configured: boolean;
     url: string;
@@ -419,6 +444,7 @@ export type ImageAsset = {
   bytes: number;
 };
 export type ImportFilesInput = {
+  canvasId?: string;
   x: number;
   y: number;
   imagePurpose: 'asset' | 'diagram';
@@ -497,6 +523,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  canvasSheets?: boolean;
   htmlComposition?: boolean;
   scopedAiLocks?: boolean;
   projectCreatedAt?: number;

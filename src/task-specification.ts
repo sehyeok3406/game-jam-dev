@@ -87,6 +87,7 @@ export function createTaskSpecification(
       id,
       title,
       type: 'ai-task',
+      canvas_id: input.canvasId ?? 'default',
       status: 'pending',
       x: input.x,
       y: input.y,

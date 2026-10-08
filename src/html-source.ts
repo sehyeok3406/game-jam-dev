@@ -3,7 +3,7 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { inspectHtml } from './html-document.ts';
-import { isPreviewPath } from './preview-output.ts';
+import { isPreviewPath, previewLabel } from './preview-output.ts';
 import { resultPreviousPaths } from './result-structure.ts';
 import type { Snapshot } from './project-store.ts';
 import type { PreviewResult } from './shared.ts';
@@ -77,7 +77,7 @@ export function sourceMetadata(
     '# HTML 원본 관리\n\n이 문서는 HTML 창의 고유 ID와 원본 정보를 관리합니다.\n',
     {
       id,
-      title: options.title ?? relative.split('/').at(-1),
+      title: options.title ?? previewLabel(relative),
       type: 'reference',
       status: 'imported',
       sources: [],
@@ -109,6 +109,7 @@ export function describePreview(
     }
   }
   return {
+    canvasId: typeof data.canvas_id === 'string' ? data.canvas_id : 'default',
     exists: files[relative] !== undefined,
     relativePath: relative,
     previousPaths: resultPreviousPaths(files, relative),

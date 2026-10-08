@@ -1,3 +1,4 @@
+import { canvasId, CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   createHash,
@@ -92,6 +93,7 @@ type Project = {
 };
 type Lock = { memberId: string; token: string; expiresAt: number };
 export type CollaborationCommand = {
+  canvasSheetsVersion?: number;
   id: string;
   channel: string;
   input: unknown;
@@ -289,6 +291,7 @@ export async function createCollaborationServer(options: Options) {
       structuredResults: true,
       scopedAiLocks: true,
       htmlComposition: true,
+      canvasSheets: true,
       editorAi: true,
       multiProviderAi: true,
       projectId: project.id,
@@ -501,6 +504,7 @@ export async function createCollaborationServer(options: Options) {
           structuredResults: true,
           scopedAiLocks: true,
           htmlComposition: true,
+          canvasSheets: true,
         });
         return;
       }
@@ -715,6 +719,13 @@ export async function createCollaborationServer(options: Options) {
           return envelope(project, member);
         }
         if (action === 'offline-sync') {
+          if (
+            project.files[CANVAS_SHEETS_PATH] &&
+            input.canvasSheetsVersion !== 1
+          )
+            throw new ApiError(
+              '캔버스가 있는 프로젝트를 동기화하려면 앱을 v0.11.0 이상으로 업데이트해주세요.',
+            );
           const operationId = input.id;
           if (
             typeof operationId !== 'string' ||
@@ -743,6 +754,7 @@ export async function createCollaborationServer(options: Options) {
           for (const [key, value] of changes) {
             const relative = collaborationPath(key);
             if (
+              relative === CANVAS_SHEETS_PATH ||
               relative.startsWith('.ai/tasks/') ||
               relative.startsWith('output/') ||
               relative.startsWith('docs/html-sources/')
@@ -816,6 +828,13 @@ export async function createCollaborationServer(options: Options) {
                 '문서 편집 잠금이 만료되었습니다. 초안을 복사하고 다시 편집해주세요.',
               );
           }
+          if (
+            project.files[CANVAS_SHEETS_PATH] &&
+            command.canvasSheetsVersion !== 1
+          )
+            throw new ApiError(
+              '캔버스가 있는 프로젝트를 편집하려면 앱을 v0.11.0 이상으로 업데이트해주세요.',
+            );
           const reduced = reduceCollaboration(
             project.files,
             command.channel,
@@ -1102,6 +1121,14 @@ export async function createCollaborationServer(options: Options) {
             const taskPath = collaborationPath(input.taskPath);
             if (!taskPath.startsWith('.ai/tasks/') || !project.files[taskPath])
               throw new ApiError('AI 작업 명세를 찾을 수 없습니다.');
+            if (
+              canvasId(matter(project.files[taskPath]).data.canvas_id) !==
+                'default' &&
+              input.canvasSheetsVersion !== 1
+            )
+              throw new ApiError(
+                '여러 캔버스의 AI 작업에는 앱 v0.11.0 이상이 필요합니다.',
+              );
             const outputs = expectedArtifacts(project.files[taskPath]);
             const fileLock = taskFileLock(project.files, taskPath);
             try {
@@ -1281,7 +1308,6 @@ export async function createCollaborationServer(options: Options) {
               )
                 throw new ApiError('허용된 AI 결과만 제출할 수 있습니다.');
               files = { ...files, ...(artifacts as Snapshot) };
-              checkSnapshot(files);
               validateArtifacts(project.files, files, job.outputs);
               validateHtmlAnalysis(
                 project.files[job.taskPath],
@@ -1294,6 +1320,7 @@ export async function createCollaborationServer(options: Options) {
                 ...layoutNewDocuments(project.files, artifacts as Snapshot, {
                   x: Number.isFinite(taskData.x) ? taskData.x : 120,
                   y: Number.isFinite(taskData.y) ? taskData.y : 120,
+                  canvasId: canvasId(taskData.canvas_id),
                 }),
               };
               checkSnapshot(files);

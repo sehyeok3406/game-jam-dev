@@ -1,3 +1,4 @@
+import { assertCanvas } from './canvas-sheets.ts';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { reservePaths, resolveDocumentOutputs } from './document-output.ts';
@@ -16,6 +17,7 @@ export function createTaskFiles(
   id: string,
   files: Snapshot,
 ): Snapshot {
+  assertCanvas(files, input.canvasId);
   const source = prepareHtmlSource(files, input.inputPaths, input.sourceMode);
   return {
     ...source?.additions,
@@ -159,6 +161,7 @@ export function createTaskPlan(
   const second = createTaskSpecification(
     {
       kind: 'implement',
+      canvasId: input.canvasId,
       inputPaths: [
         ...new Set([
           ...docOutputs,

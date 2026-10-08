@@ -468,7 +468,9 @@ export class CollaborationClient {
     return CollaborationClient.fetch(
       this.credentials.serverUrl,
       `/projects/${this.credentials.projectId}/${action}`,
-      input,
+      action === 'offline-sync'
+        ? { ...(input as object), canvasSheetsVersion: 1 }
+        : input,
       this.credentials.token,
     );
   }
@@ -598,6 +600,13 @@ export class CollaborationClient {
   }
   async command(channel: string, input: unknown) {
     return this.serial(async () => {
+      if (
+        channel === 'canvases:change' &&
+        (this.offline || !this.state.connected || this.state.pendingChanges)
+      )
+        throw new Error(
+          '캔버스 구성 변경은 동기화 완료 후 온라인에서 진행해주세요.',
+        );
       if (this.outgoing && !this.offline)
         throw new Error(
           '이전 저장 요청의 응답을 확인 중입니다. 서버 재연결 후 다시 시도해주세요. 초안은 보관됩니다.',
@@ -610,6 +619,10 @@ export class CollaborationClient {
         )
           throw new Error(
             '오프라인 편집 권한이 없거나 서버 업데이트가 필요합니다.',
+          );
+        if (channel === 'canvases:change')
+          throw new Error(
+            '캔버스 구성 변경은 동기화 완료 후 온라인에서 진행해주세요.',
           );
         if (channel === 'tasks:create')
           throw new Error('AI 작업은 동기화 완료 후 온라인에서 실행해주세요.');
@@ -743,9 +756,18 @@ export class CollaborationClient {
           'GC-COLLAB-001',
           '새 결과물 폴더 구조를 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
         );
+      if (
+        (channel === 'canvases:change' ||
+          (input as { canvasId?: string })?.canvasId) &&
+        !this.state.canvasSheets
+      )
+        throw new Error(
+          '여러 캔버스를 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {
         id: randomUUID(),
+        canvasSheetsVersion: 1,
         channel,
         input,
         revisions: { ...this.revisions },
@@ -972,6 +994,7 @@ export class CollaborationClient {
         gamejamVersion: 1,
         htmlAnalysisVersion: 1,
         htmlInputVersion: 1,
+        canvasSheetsVersion: 1,
         revision: this.state.revision,
       })) as CollaborationEnvelope & { lease: string };
       this.lease = result.lease;

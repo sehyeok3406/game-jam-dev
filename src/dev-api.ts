@@ -1,3 +1,8 @@
+import {
+  CANVAS_SHEETS_PATH,
+  readCanvasSheets,
+  canvasId,
+} from './canvas-sheets';
 import type {
   CanvasDocument,
   CanvasSection,
@@ -98,6 +103,7 @@ let documents: CanvasDocument[] = [
   },
 ];
 
+let sheetsRaw: string | null = null;
 let sections: CanvasSection[] = [
   {
     id: 'section-farm-automation',
@@ -135,15 +141,17 @@ const previewWindows = new Map<string, PreviewWindowState>();
 const histories: HistoryEntry[] = [];
 const devAuthorship: Record<string, FileAuthorship> = {};
 type DevState = {
+  sheetsRaw: string | null;
   documents: CanvasDocument[];
   sections: CanvasSection[];
   previews: PreviewResult[];
 };
 const historyStates = new Map<string, { before: DevState; after: DevState }>();
 const devSnapshot = (): DevState =>
-  structuredClone({ documents, sections, previews });
+  structuredClone({ documents, sections, previews, sheetsRaw });
 const devFiles = (state: DevState): Record<string, string> =>
   Object.fromEntries([
+    ...(state.sheetsRaw ? [[CANVAS_SHEETS_PATH, state.sheetsRaw]] : []),
     ...state.documents.map((item) => [
       item.relativePath,
       `${JSON.stringify(item)}\n\n${item.body}`,
@@ -280,6 +288,13 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     if (touched.some((key) => current[key] !== left[key]))
       throw new Error('이후 변경과 충돌하여 중단했습니다.');
     const before = devSnapshot();
+    if (touched.includes(CANVAS_SHEETS_PATH)) sheetsRaw = desired.sheetsRaw;
+    previews = [
+      ...previews.filter((item) => !touched.includes(item.relativePath)),
+      ...structuredClone(
+        desired.previews.filter((item) => touched.includes(item.relativePath)),
+      ),
+    ];
     documents = [
       ...documents.filter((doc) => !touched.includes(doc.relativePath)),
       ...structuredClone(
@@ -479,6 +494,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         gamejamWorkflow: true,
         htmlImportAnalysis: true,
         htmlComposition: true,
+        canvasSheets: true,
         htmlResultFolders: true,
         editorAi: true,
         multiProviderAi: true,
@@ -513,6 +529,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         gamejamWorkflow: true,
         htmlImportAnalysis: true,
         htmlComposition: true,
+        canvasSheets: true,
         htmlResultFolders: true,
         editorAi: true,
         multiProviderAi: true,
@@ -637,6 +654,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         (!version && entry.files.some((file) => !file.after))
           ? states.before
           : states.after;
+      if (!relative || relative === CANVAS_SHEETS_PATH)
+        sheetsRaw = selected.sheetsRaw;
       for (const file of entry.files.filter(
         (item) => !relative || item.relativePath === relative,
       )) {
@@ -675,16 +694,74 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       root: '/demo/game-canvas',
       name: demoProjectName,
     }),
+    getCanvasSheets: async () => ({
+      ...readCanvasSheets(sheetsRaw ?? undefined),
+      raw: sheetsRaw,
+    }),
+    changeCanvasSheets: async (input) => {
+      if (input.expected !== sheetsRaw)
+        throw new Error('캔버스 목록이 변경되었습니다.');
+      const registry = readCanvasSheets(sheetsRaw ?? undefined);
+      const sheet = registry.canvases.find((item) => item.id === input.id);
+      if (input.action === 'add')
+        registry.canvases.push({
+          id: input.id,
+          name: input.name?.trim() || '새 캔버스',
+        });
+      else if (input.action === 'rename' && sheet)
+        sheet.name = input.name?.trim() || sheet.name;
+      else if (input.action === 'reorder' && input.order)
+        registry.canvases = input.order.map(
+          (id) => registry.canvases.find((item) => item.id === id)!,
+        );
+      else if (
+        (input.action === 'move' || input.action === 'delete') &&
+        sheet
+      ) {
+        if (
+          !registry.canvases.some((item) => item.id === input.targetId) ||
+          input.targetId === input.id
+        )
+          throw new Error('대상 캔버스를 확인해주세요.');
+        const paths = new Set(input.paths ?? []);
+        const selected = (item: { relativePath: string; canvasId?: string }) =>
+          canvasId(item.canvasId) === input.id &&
+          (input.action === 'delete' || paths.has(item.relativePath));
+        for (const section of sections.filter(selected))
+          for (const member of section.members) paths.add(member.path);
+        for (const item of [...documents, ...sections, ...previews])
+          if (selected(item)) item.canvasId = input.targetId;
+        for (const section of sections)
+          section.members = section.members.filter(
+            (member) =>
+              canvasId(
+                documents.find((doc) => doc.relativePath === member.path)
+                  ?.canvasId,
+              ) === canvasId(section.canvasId),
+          );
+        if (input.action === 'delete')
+          registry.canvases = registry.canvases.filter(
+            (item) => item.id !== input.id,
+          );
+      } else throw new Error('캔버스를 찾을 수 없습니다.');
+      sheetsRaw =
+        JSON.stringify(readCanvasSheets(JSON.stringify(registry)), null, 2) +
+        '\n';
+      notify();
+    },
     listDocuments: async () => structuredClone(documents),
     listSections: async () => structuredClone(sections),
-    createIdea: async ({ x, y }) => {
+    createIdea: async ({ x, y, canvasId: selectedCanvas }) => {
       const id = `idea-${documents.length + 1}`;
       const [layout] = verticalLayouts(
         [{ width: 340, height: 300 }],
-        [...documents, ...previewWindows.values()],
+        documents.filter(
+          (item) => canvasId(item.canvasId) === canvasId(selectedCanvas),
+        ),
         { x, y },
       );
       const document: CanvasDocument = {
+        canvasId: canvasId(selectedCanvas),
         id,
         title: '새 아이디어',
         type: 'idea',
@@ -700,7 +777,15 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
       return structuredClone(document);
     },
-    createSection: async ({ title, x, y, width, height, members }) => {
+    createSection: async ({
+      title,
+      x,
+      y,
+      width,
+      height,
+      members,
+      canvasId: selectedCanvas,
+    }) => {
       const memberKeys = new Set(
         members.flatMap((member) => [member.id, member.path]),
       );
@@ -713,6 +798,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       }));
       const id = `section-${Date.now()}`;
       const section: CanvasSection = {
+        canvasId: canvasId(selectedCanvas),
         id,
         title,
         relativePath: `sections/${id}.md`,
@@ -800,7 +886,12 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
       return { deletedDocumentCount, preservedDocumentCount };
     },
-    duplicateDocuments: async ({ documents: members, offsetX, offsetY }) => {
+    duplicateDocuments: async ({
+      documents: members,
+      offsetX,
+      offsetY,
+      canvasId: selectedCanvas,
+    }) => {
       const copies = members.flatMap((member) => {
         const source = documents.find(
           (document) =>
@@ -821,6 +912,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         return [
           {
             ...source,
+            canvasId: selectedCanvas ?? source.canvasId,
             id: `${source.id}-copy-${suffix}`,
             title: `${source.title} 복사본`,
             relativePath: `${sourceDirectory}/${sourceName}-copy-${suffix}.md`,
@@ -908,6 +1000,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
     },
     createTask: async ({
+      canvasId: selectedCanvas,
       kind,
       sourceMode,
       inputPaths,
@@ -935,6 +1028,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
             ).path
           : undefined;
       const document: CanvasDocument = {
+        canvasId: canvasId(selectedCanvas),
         id,
         title: thenImplement
           ? 'gamejam! · 문서 정리 → HTML 구현'
@@ -1110,6 +1204,10 @@ export function createDevGameCanvasApi(): GameCanvasApi {
               ...documents.filter((doc) => doc.relativePath !== relativePath),
               {
                 ...previous,
+                canvasId:
+                  previous?.canvasId ??
+                  documents.find((doc) => doc.relativePath === taskPath)
+                    ?.canvasId,
                 id: previous?.id ?? `${runId}-doc-${index}`,
                 relativePath,
                 title: ['게임 개요', '핵심 게임 루프', '미결정 사항'][index],
@@ -1137,6 +1235,11 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           previews = [
             ...previews.filter((item) => item.relativePath !== target.output),
             {
+              canvasId:
+                previews.find((item) => item.relativePath === target.output)
+                  ?.canvasId ??
+                documents.find((doc) => doc.relativePath === taskPath)
+                  ?.canvasId,
               exists: true,
               relativePath: target.output,
               content: base.content + `<!-- dev result ${Date.now()} -->`,
@@ -1204,6 +1307,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
   };
   const mutating = new Set([
+    'changeCanvasSheets',
     'moveResult',
     'organizeResults',
     'createIdea',
@@ -1242,12 +1346,34 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           property === 'restoreHistory'
         )
           throw new Error('관리자만 사용할 수 있습니다.');
-        if (activeDevRun)
+        if (
+          activeDevRun &&
+          ['createTask', 'selectWorkspace'].includes(property)
+        )
           throw new Error(
             '현재 AI가 문서 정리 또는 HTML 구현을 진행하고 있습니다. 문서 추가·수정·삭제와 배치 변경을 잠시 사용할 수 없습니다.',
           );
         const before = devSnapshot();
         const result = await Reflect.apply(method, target, args);
+        if (activeDevRun) {
+          const left = devFiles(before),
+            right = devFiles(devSnapshot());
+          try {
+            assertAiFilesUnlocked(
+              activeDevRun.fileLock,
+              Object.keys({ ...left, ...right }).filter(
+                (path) => left[path] !== right[path],
+              ),
+            );
+          } catch (error) {
+            documents = before.documents;
+            sections = before.sections;
+            previews = before.previews;
+            sheetsRaw = before.sheetsRaw;
+            notify();
+            throw error;
+          }
+        }
         if (!noHistory.has(property)) {
           recordDevHistory(
             before,

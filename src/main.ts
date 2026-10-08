@@ -1,3 +1,9 @@
+import {
+  CANVAS_SHEETS_PATH,
+  readCanvasSheets,
+  canvasId,
+  assertCanvas,
+} from './canvas-sheets';
 import { randomUUID, createHash } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
@@ -1022,6 +1028,7 @@ const parseDocument = async (absolutePath: string): Promise<CanvasDocument> => {
     typeof data[key] === 'number' ? data[key] : fallback;
 
   return {
+    canvasId: canvasId(data.canvas_id),
     id: typeof data.id === 'string' ? data.id : relativePath,
     title: typeof data.title === 'string' ? data.title : fallbackTitle,
     type:
@@ -1068,6 +1075,7 @@ const parseSection = async (absolutePath: string): Promise<CanvasSection> => {
     typeof data[key] === 'number' ? data[key] : fallback;
 
   return {
+    canvasId: canvasId(data.canvas_id),
     id: typeof data.id === 'string' ? data.id : relativePath,
     title: typeof data.title === 'string' ? data.title : fallbackTitle,
     relativePath,
@@ -1150,6 +1158,12 @@ const writeSection = async (
     matter.stringify(
       `\n# ${section.title}\n\n이 파일은 캔버스 섹션의 멤버십과 위치를 관리합니다.\n`,
       {
+        canvas_id:
+          section.canvasId ??
+          (await fs
+            .readFile(absolute, 'utf8')
+            .then((raw) => canvasId(matter(raw).data.canvas_id))
+            .catch(() => 'default')),
         id: section.id,
         title: section.title,
         type: 'section',
@@ -1177,7 +1191,17 @@ const startWatcher = async () => {
   await workspaceWatcher?.close();
   if (!workspaceRoot) return;
   workspaceWatcher = chokidar.watch(workspaceRoot, {
-    ignored: [/(^|[/\\])\../, '**/node_modules/**'],
+    ignored: (target) => {
+      const relative = path
+        .relative(workspaceRoot!, target)
+        .replaceAll('\\', '/');
+      if (relative === '.canvas' || relative === CANVAS_SHEETS_PATH)
+        return false;
+      return (
+        /(^|\/)\./.test(relative) ||
+        relative.split('/').includes('node_modules')
+      );
+    },
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
   });
@@ -1385,6 +1409,7 @@ const startCodexRun = async (
 
   if (preparationCancelled) throw new Error('작업 준비를 중지했습니다.');
   const baseline = await captureProject(root);
+  assertCanvas(baseline, matter(baseline[input.taskPath]).data.canvas_id);
   const outputs = expectedArtifacts(baseline[input.taskPath]);
   validateHtmlAnalysis(baseline[input.taskPath], baseline);
   if (newOutputsAlreadyExist(baseline[input.taskPath], baseline))
@@ -1674,6 +1699,7 @@ const startCodexRun = async (
             : layoutNewDocuments(current, artifacts, {
                 x: Number.isFinite(taskData.x) ? taskData.x : 120,
                 y: Number.isFinite(taskData.y) ? taskData.y : 120,
+                canvasId: canvasId(taskData.canvas_id),
               });
           validateArtifacts(current, { ...current, ...changes }, outputs);
           const previous = Object.fromEntries(
@@ -1936,6 +1962,7 @@ const startCodexRun = async (
 };
 
 const mutationLabels: Record<string, string> = {
+  'canvases:change': '캔버스 구성 변경',
   'results:move': 'HTML 결과물 폴더 이동',
   'results:organize': '기존 HTML 결과물 폴더 정리',
   'files:import': '파일 불러오기',
@@ -2031,6 +2058,11 @@ const handle = (
             stack.finish(direction, item.id);
             notifyWorkspaceChanged();
           });
+        if (channel === 'canvases:list')
+          return {
+            ...readCanvasSheets(client.files[CANVAS_SHEETS_PATH]),
+            raw: client.files[CANVAS_SHEETS_PATH] ?? null,
+          };
         if (channel === 'documents:list')
           return snapshotDocuments(client.files).map((document) => ({
             ...document,
@@ -2257,6 +2289,25 @@ const handle = (
 };
 
 const registerIpc = () => {
+  handle('canvases:list', async () => {
+    const files = await captureProject(requireWorkspace());
+    return {
+      ...readCanvasSheets(files[CANVAS_SHEETS_PATH]),
+      raw: files[CANVAS_SHEETS_PATH] ?? null,
+    };
+  });
+  handle('canvases:change', async (_event, input) => {
+    const root = requireWorkspace();
+    const before = await captureProject(root);
+    const next = reduceCollaboration(before, 'canvases:change', input).files;
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.entries(next).filter(([key, raw]) => before[key] !== raw),
+      ),
+    );
+  });
   for (const channel of ['results:move', 'results:organize'])
     handle(channel, async (_event, input: unknown) => {
       const root = requireWorkspace();
@@ -3135,43 +3186,19 @@ const registerIpc = () => {
     return reduced.result;
   });
   handle('sections:create', async (_event, input: CreateSectionInput) => {
-    const title = input.title.trim() || '새 섹션';
-    const members = normalizeSectionMembers(input.members);
-    if (members.length === 0)
-      throw new Error('섹션에 포함할 문서를 하나 이상 선택해주세요.');
-    await Promise.all(members.map((member) => safePath(member.path)));
-
-    const memberKeys = new Set(
-      members.flatMap((member) => [member.id, member.path]),
+    const root = requireWorkspace();
+    const before = await captureProject(root);
+    const reduced = reduceCollaboration(before, 'sections:create', input);
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.entries(reduced.files).filter(
+          ([key, raw]) => before[key] !== raw,
+        ),
+      ),
     );
-    const existingSections = await listSections();
-    for (const section of existingSections) {
-      const remaining = section.members.filter(
-        (member) => !memberKeys.has(member.id) && !memberKeys.has(member.path),
-      );
-      if (remaining.length !== section.members.length) {
-        await writeSection(section.relativePath, {
-          id: section.id,
-          title: section.title,
-          x: section.x,
-          y: section.y,
-          width: section.width,
-          height: section.height,
-          members: remaining,
-        });
-      }
-    }
-
-    const id = `section-${randomUUID().slice(0, 8)}`;
-    return writeSection(`${SECTION_FOLDER}/${id}.md`, {
-      id,
-      title,
-      x: input.x,
-      y: input.y,
-      width: Math.max(input.width, 420),
-      height: Math.max(input.height, 280),
-      members,
-    });
+    return reduced.result;
   });
   handle('documents:save', async (_event, input: SaveDocumentInput) => {
     const absolute = await safePath(input.relativePath);
@@ -3220,6 +3247,7 @@ const registerIpc = () => {
       const offsetX = Number.isFinite(input.offsetX) ? input.offsetX : 32;
       const offsetY = Number.isFinite(input.offsetY) ? input.offsetY : 32;
       const copies: CanvasDocument[] = [];
+      const beforeSnapshot = await captureProject(requireWorkspace());
 
       for (const member of members) {
         const sourceAbsolute = await safePath(member.path);
@@ -3238,6 +3266,10 @@ const registerIpc = () => {
         const relativePath = `${sourceDirectory}/${sourceName}-copy-${suffix}.md`;
         const targetAbsolute = await safePath(relativePath, true);
         Object.assign(parsed.data, {
+          canvas_id:
+            input.canvasId !== undefined
+              ? assertCanvas(beforeSnapshot, input.canvasId)
+              : canvasId(parsed.data.canvas_id),
           id: `${source.id}-copy-${suffix}`,
           title: `${source.title} 복사본`,
           x: Math.round(source.x + offsetX),
@@ -3397,72 +3429,19 @@ const registerIpc = () => {
   handle(
     'sections:move-document',
     async (_event, input: MoveDocumentSectionInput) => {
-      const documentPath = await safePath(input.documentPath);
-      const currentDocument = await parseDocument(documentPath);
-      if (
-        currentDocument.id !== input.documentId &&
-        currentDocument.relativePath !== input.documentPath
-      ) {
-        throw new Error('옮길 문서를 확인할 수 없습니다.');
-      }
-
-      const existingSections = await listSections();
-      const targetSection = input.targetSectionId
-        ? existingSections.find(
-            (section) => section.id === input.targetSectionId,
-          )
-        : null;
-      if (input.targetSectionId && !targetSection) {
-        throw new Error('대상 섹션을 찾을 수 없습니다.');
-      }
-
-      for (const section of existingSections) {
-        const remaining = section.members.filter(
-          (member) =>
-            member.id !== currentDocument.id &&
-            member.path !== currentDocument.relativePath,
-        );
-        const nextMembers =
-          section.id === targetSection?.id
-            ? [
-                ...remaining,
-                {
-                  id: currentDocument.id,
-                  path: currentDocument.relativePath,
-                },
-              ]
-            : remaining;
-        const membershipChanged =
-          nextMembers.length !== section.members.length ||
-          nextMembers.some(
-            (member, index) =>
-              member.id !== section.members[index]?.id ||
-              member.path !== section.members[index]?.path,
-          );
-        if (membershipChanged) {
-          await writeSection(section.relativePath, {
-            id: section.id,
-            title: section.title,
-            x: section.x,
-            y: section.y,
-            width: section.width,
-            height: section.height,
-            members: nextMembers,
-          });
-        }
-      }
-
-      const parsed = matter(await fs.readFile(documentPath, 'utf8'));
-      Object.assign(parsed.data, {
-        x: Math.round(input.x),
-        y: Math.round(input.y),
-        width: Math.round(input.width),
-        height: Math.round(input.height),
-      });
-      await fs.writeFile(
-        documentPath,
-        matter.stringify(parsed.content, parsed.data),
-        'utf8',
+      const root = requireWorkspace(),
+        before = await captureProject(root);
+      const next = reduceCollaboration(
+        before,
+        'sections:move-document',
+        input,
+      ).files;
+      await applyChanges(
+        root,
+        before,
+        Object.fromEntries(
+          Object.entries(next).filter(([key, raw]) => before[key] !== raw),
+        ),
       );
     },
   );

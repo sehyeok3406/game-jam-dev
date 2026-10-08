@@ -1,3 +1,7 @@
+import { ArrowRight } from 'lucide-react';
+import { CanvasTabs } from './CanvasTabs';
+import { canvasId, readCanvasSheets } from '../canvas-sheets';
+import type { CanvasSheets, CanvasSheetCommand } from '../shared';
 import {
   Background,
   Controls,
@@ -1446,6 +1450,22 @@ function WorkspaceCanvas() {
     root: null,
     name: null,
   });
+  const [canvasSheets, setCanvasSheets] = useState<CanvasSheets>(() =>
+    readCanvasSheets(),
+  );
+  const [activeCanvas, setActiveCanvas] = useState('default');
+  const activeCanvasRef = useRef('default');
+  const canvasProjectRef = useRef<string | null>(null);
+  const switchingCanvasRef = useRef(false);
+  const [movingCanvasItems, setMovingCanvasItems] = useState<{
+    paths: string[];
+    source: string;
+  } | null>(null);
+  const [moveCanvasTarget, setMoveCanvasTarget] = useState('');
+  const [canvasOperationBusy, setCanvasOperationBusy] = useState(false);
+  const pendingCanvasJump = useRef<string | null>(null);
+  const firstCanvasView = useRef<string | null>(null);
+  const navigateCanvasItem = useRef<((id: string) => void) | null>(null);
   const [documents, setDocuments] = useState<CanvasDocument[]>([]);
   const [newFileNodes, setNewFileNodes] = useState<Set<string>>(new Set());
   const newFileIndicatorsRef = useRef<{
@@ -1888,11 +1908,36 @@ function WorkspaceCanvas() {
         setLoading(false);
         return;
       }
-      const [nextDocuments, nextSections, nextPreviews] = await Promise.all([
-        window.gameCanvas.listDocuments(),
-        window.gameCanvas.listSections(),
-        window.gameCanvas.listPreviews(),
-      ]);
+      const [nextDocuments, nextSections, nextPreviews, nextSheets] =
+        await Promise.all([
+          window.gameCanvas.listDocuments(),
+          window.gameCanvas.listSections(),
+          window.gameCanvas.listPreviews(),
+          window.gameCanvas.getCanvasSheets(),
+        ]);
+      if (request !== projectLoadRef.current) return;
+      const projectChanged = canvasProjectRef.current !== state.root;
+      let selectedCanvas = activeCanvasRef.current;
+      if (projectChanged) {
+        try {
+          selectedCanvas =
+            localStorage.getItem('game-canvas-active-sheet:' + state.root) ??
+            'default';
+        } catch {
+          /* Personal preferences are optional. */
+        }
+      }
+      if (!nextSheets.canvases.some((sheet) => sheet.id === selectedCanvas))
+        selectedCanvas = nextSheets.canvases[0].id;
+      if (projectChanged || selectedCanvas !== activeCanvasRef.current) {
+        activeCanvasRef.current = selectedCanvas;
+        setActiveCanvas(selectedCanvas);
+        setSelectedIds([]);
+        setSelectedSectionIds([]);
+        setNodes([]);
+      }
+      canvasProjectRef.current = state.root;
+      setCanvasSheets(nextSheets);
       const nextWindows: Record<string, PreviewWindowState> = {};
       const savedWindows = await Promise.all(
         nextPreviews.map((result) =>
@@ -1925,10 +1970,32 @@ function WorkspaceCanvas() {
       for (const [index, result] of nextPreviews.entries()) {
         const saved = savedWindows[index];
         const initial = result.initialWindow;
+        const localOccupied = [
+          ...canvasDocuments.filter(
+            (doc) => canvasId(doc.canvasId) === canvasId(result.canvasId),
+          ),
+          ...nextPreviews.flatMap((preview, i) =>
+            canvasId(preview.canvasId) === canvasId(result.canvasId) &&
+            savedWindows[i]
+              ? [savedWindows[i]!]
+              : [],
+          ),
+          ...nextPreviews
+            .filter(
+              (preview) =>
+                canvasId(preview.canvasId) === canvasId(result.canvasId) &&
+                nextWindows[preview.relativePath] &&
+                !savedWindows[nextPreviews.indexOf(preview)],
+            )
+            .map((preview) => nextWindows[preview.relativePath]),
+        ].map((item) => ({
+          ...item,
+          height: item.collapsed ? 38 : item.height,
+        }));
         const layout = saved ?? {
           ...verticalLayouts(
             [{ width: initial?.width ?? 720, height: initial?.height ?? 520 }],
-            occupied,
+            localOccupied,
             initial ?? { x: right, y: nextPreviewY },
           )[0],
           collapsed: false,
@@ -2008,15 +2075,36 @@ function WorkspaceCanvas() {
         `${canvasDocuments.length}개 Markdown 문서 · HTML ${nextPreviews.length}개를 불러왔습니다.`,
       );
       setLoading(false);
-      if (fit)
+      let hasSavedViewport = false;
+      try {
+        hasSavedViewport = !!localStorage.getItem(
+          'game-canvas-sheet-view:' + state.root + ':' + selectedCanvas,
+        );
+      } catch {
+        /* Optional preference. */
+      }
+      if (fit && !hasSavedViewport)
         setTimeout(() => void flowRef.current?.fitView({ padding: 0.16 }), 60);
-      else if (addedResult && previous.root === state.root)
+      else if (
+        addedResult &&
+        previous.root === state.root &&
+        nextPreviews.some(
+          (result) =>
+            canvasId(result.canvasId) === activeCanvasRef.current &&
+            !previous.paths.has(result.relativePath),
+        )
+      )
         setTimeout(
           () =>
             void flowRef.current?.fitView({
-              nodes: nextPreviews.map((result) => ({
-                id: previewNodeId(result.relativePath),
-              })),
+              nodes: nextPreviews
+                .filter(
+                  (result) =>
+                    canvasId(result.canvasId) === activeCanvasRef.current,
+                )
+                .map((result) => ({
+                  id: previewNodeId(result.relativePath),
+                })),
               padding: 0.2,
               duration: 350,
             }),
@@ -2222,6 +2310,10 @@ function WorkspaceCanvas() {
       if (!target) {
         const preview = previews.find((item) => item.sourceId === id);
         if (preview) {
+          if (canvasId(preview.canvasId) !== activeCanvasRef.current) {
+            navigateCanvasItem.current?.(previewNodeId(preview.relativePath));
+            return;
+          }
           const layout = previewWindows[preview.relativePath];
           if (layout)
             void flowRef.current?.setCenter(
@@ -2238,6 +2330,10 @@ function WorkspaceCanvas() {
           return;
         }
         setNotice(`출처 '${id}' 문서를 찾지 못했습니다.`);
+        return;
+      }
+      if (canvasId(target.canvasId) !== activeCanvasRef.current) {
+        navigateCanvasItem.current?.(target.id);
         return;
       }
       void flowRef.current?.setCenter(
@@ -2437,108 +2533,114 @@ function WorkspaceCanvas() {
         sectionByMember.set(member.path, section);
       });
     });
-    const sectionNodes: SectionCanvasNode[] = sections.map((section) => ({
-      id: sectionNodeId(section.id),
-      type: 'section',
-      position: { x: section.x, y: section.y },
-      style: { width: section.width, height: section.height },
-      zIndex: 0,
-      draggable: !sectionLocked(section),
-      data: {
-        kind: 'section',
-        locked: sectionLocked(section),
-        section,
-        onResize: resizeSection,
-        onReveal: revealSection,
-      },
-    }));
-    const documentNodes: DocumentCanvasNode[] = documents.map((document) => {
-      const foreignLock = collaboration.locks.find(
-        (lock) =>
-          lock.relativePath === document.relativePath &&
-          lock.memberId !== collaboration.memberId,
-      );
-      const nodeLocked =
-        pathLocked(document.relativePath) ||
-        (!!foreignLock &&
-          collaboration.connected &&
-          !collaboration.pendingChanges) ||
-        (collaboration.active &&
-          collaboration.role !== 'admin' &&
-          document.type === 'ai-task');
-      const parent =
-        sectionByMember.get(document.id) ??
-        sectionByMember.get(document.relativePath);
-      return {
-        id: document.id,
-        type: 'document',
-        className: newFileNodes.has(document.id) ? 'new-file-node' : undefined,
-        position: parent
-          ? { x: document.x - parent.x, y: document.y - parent.y }
-          : { x: document.x, y: document.y },
-        style: {
-          width: document.width,
-          height: document.collapsed && !findOpen ? 38 : document.height,
-        },
-        parentId: parent ? sectionNodeId(parent.id) : undefined,
-        zIndex: 2,
-        dragHandle: '.document-card__header',
-        draggable: !nodeLocked,
+    const sectionNodes: SectionCanvasNode[] = sections
+      .filter((section) => canvasId(section.canvasId) === activeCanvas)
+      .map((section) => ({
+        id: sectionNodeId(section.id),
+        type: 'section',
+        position: { x: section.x, y: section.y },
+        style: { width: section.width, height: section.height },
+        zIndex: 0,
+        draggable: !sectionLocked(section),
         data: {
-          kind: 'document',
-          locked: nodeLocked,
-          onBlocked: isAiFileLocked(aiFileLock, document.relativePath)
-            ? () => setBlockedMessage(AI_FILE_LOCK_MESSAGE)
-            : foreignLock
-              ? () =>
-                  setBlockedMessage(
-                    `${foreignLock.nickname}님이 이 문서를 편집 중입니다. 편집을 마칠 때까지 기다려주세요.`,
-                  )
-              : nodeLocked && !locked
+          kind: 'section',
+          locked: sectionLocked(section),
+          section,
+          onResize: resizeSection,
+          onReveal: revealSection,
+        },
+      }));
+    const documentNodes: DocumentCanvasNode[] = documents
+      .filter((document) => canvasId(document.canvasId) === activeCanvas)
+      .map((document) => {
+        const foreignLock = collaboration.locks.find(
+          (lock) =>
+            lock.relativePath === document.relativePath &&
+            lock.memberId !== collaboration.memberId,
+        );
+        const nodeLocked =
+          pathLocked(document.relativePath) ||
+          (!!foreignLock &&
+            collaboration.connected &&
+            !collaboration.pendingChanges) ||
+          (collaboration.active &&
+            collaboration.role !== 'admin' &&
+            document.type === 'ai-task');
+        const parent =
+          sectionByMember.get(document.id) ??
+          sectionByMember.get(document.relativePath);
+        return {
+          id: document.id,
+          type: 'document',
+          className: newFileNodes.has(document.id)
+            ? 'new-file-node'
+            : undefined,
+          position: parent
+            ? { x: document.x - parent.x, y: document.y - parent.y }
+            : { x: document.x, y: document.y },
+          style: {
+            width: document.width,
+            height: document.collapsed && !findOpen ? 38 : document.height,
+          },
+          parentId: parent ? sectionNodeId(parent.id) : undefined,
+          zIndex: 2,
+          dragHandle: '.document-card__header',
+          draggable: !nodeLocked,
+          data: {
+            kind: 'document',
+            locked: nodeLocked,
+            onBlocked: isAiFileLocked(aiFileLock, document.relativePath)
+              ? () => setBlockedMessage(AI_FILE_LOCK_MESSAGE)
+              : foreignLock
                 ? () =>
                     setBlockedMessage(
-                      'AI 작업 문서는 관리자만 수정할 수 있습니다.',
+                      `${foreignLock.nickname}님이 이 문서를 편집 중입니다. 편집을 마칠 때까지 기다려주세요.`,
                     )
-                : onBlocked,
-          collaborative: collaboration.active,
-          draftKey: `game-canvas-draft:${collaboration.projectId ?? workspace.root}:${document.id}`,
-          editingBy:
-            collaboration.connected && !collaboration.pendingChanges
-              ? collaboration.locks.find(
-                  (lock) => lock.relativePath === document.relativePath,
-                )?.nickname
-              : undefined,
-          beginEdit,
-          endEdit,
-          registerEditor,
-          document: findOpen ? { ...document, collapsed: false } : document,
-          onSave: saveDocument,
-          onResize: resizeDocument,
-          onSource: focusSource,
-          onCopyTask: copyTask,
-          onReveal: revealDocument,
-          onDetails: () => setInspectorId(document.id),
-          onCollapse: () =>
-            void window.gameCanvas
-              .setDocumentCollapsed({
-                relativePath: document.relativePath,
-                collapsed: !document.collapsed,
-              })
-              .then(() => loadProject(false))
-              .catch(showError),
-          sourceTitles: Object.fromEntries([
-            ...documents.map((item) => [item.id, item.title]),
-            ...previews
-              .filter((item) => item.sourceId)
-              .map((item) => [
-                item.sourceId!,
-                item.title ?? previewLabel(item.relativePath),
-              ]),
-          ]),
-          reportEdit,
-        },
-      };
-    });
+                : nodeLocked && !locked
+                  ? () =>
+                      setBlockedMessage(
+                        'AI 작업 문서는 관리자만 수정할 수 있습니다.',
+                      )
+                  : onBlocked,
+            collaborative: collaboration.active,
+            draftKey: `game-canvas-draft:${collaboration.projectId ?? workspace.root}:${document.id}`,
+            editingBy:
+              collaboration.connected && !collaboration.pendingChanges
+                ? collaboration.locks.find(
+                    (lock) => lock.relativePath === document.relativePath,
+                  )?.nickname
+                : undefined,
+            beginEdit,
+            endEdit,
+            registerEditor,
+            document: findOpen ? { ...document, collapsed: false } : document,
+            onSave: saveDocument,
+            onResize: resizeDocument,
+            onSource: focusSource,
+            onCopyTask: copyTask,
+            onReveal: revealDocument,
+            onDetails: () => setInspectorId(document.id),
+            onCollapse: () =>
+              void window.gameCanvas
+                .setDocumentCollapsed({
+                  relativePath: document.relativePath,
+                  collapsed: !document.collapsed,
+                })
+                .then(() => loadProject(false))
+                .catch(showError),
+            sourceTitles: Object.fromEntries([
+              ...documents.map((item) => [item.id, item.title]),
+              ...previews
+                .filter((item) => item.sourceId)
+                .map((item) => [
+                  item.sourceId!,
+                  item.title ?? previewLabel(item.relativePath),
+                ]),
+            ]),
+            reportEdit,
+          },
+        };
+      });
     const previewX =
       documents.length > 0
         ? Math.max(
@@ -2549,44 +2651,46 @@ function WorkspaceCanvas() {
       documents.length > 0
         ? Math.min(...documents.map((document) => document.y))
         : 120;
-    const previewNodes: PreviewCanvasNode[] = previews.map((preview, index) => {
-      const previewWindow = previewWindows[preview.relativePath] ?? {
-        x: previewX,
-        y: previewY + index * (520 + NEW_FILE_GAP),
-        width: 720,
-        height: 520,
-        collapsed: false,
-      };
-      return {
-        id: previewNodeId(preview.relativePath),
-        type: 'preview',
-        className: newFileNodes.has(previewNodeId(preview.relativePath))
-          ? 'new-file-node'
-          : undefined,
-        position: {
-          x: previewWindow.x,
-          y: previewWindow.y,
-        },
-        style: {
-          width: previewWindow.width,
-          height: previewWindow.collapsed ? 38 : previewWindow.height,
-        },
-        dragHandle: '.preview-drag-handle',
-        draggable: !pathLocked(preview.relativePath),
-        zIndex: 3,
-        data: {
-          kind: 'preview',
-          locked: pathLocked(preview.relativePath),
-          preview,
-          windowState: previewWindow,
-          busy: aiBusy && isAiFileLocked(aiFileLock, preview.relativePath),
-          onWindowChange: (state) =>
-            updatePreviewWindow(preview.relativePath, state),
-          onHistory: () => openHistory(preview.relativePath),
-          onCompare: () => setCompareFirst(preview.relativePath),
-        },
-      };
-    });
+    const previewNodes: PreviewCanvasNode[] = previews
+      .filter((preview) => canvasId(preview.canvasId) === activeCanvas)
+      .map((preview, index) => {
+        const previewWindow = previewWindows[preview.relativePath] ?? {
+          x: previewX,
+          y: previewY + index * (520 + NEW_FILE_GAP),
+          width: 720,
+          height: 520,
+          collapsed: false,
+        };
+        return {
+          id: previewNodeId(preview.relativePath),
+          type: 'preview',
+          className: newFileNodes.has(previewNodeId(preview.relativePath))
+            ? 'new-file-node'
+            : undefined,
+          position: {
+            x: previewWindow.x,
+            y: previewWindow.y,
+          },
+          style: {
+            width: previewWindow.width,
+            height: previewWindow.collapsed ? 38 : previewWindow.height,
+          },
+          dragHandle: '.preview-drag-handle',
+          draggable: !pathLocked(preview.relativePath),
+          zIndex: 3,
+          data: {
+            kind: 'preview',
+            locked: pathLocked(preview.relativePath),
+            preview,
+            windowState: previewWindow,
+            busy: aiBusy && isAiFileLocked(aiFileLock, preview.relativePath),
+            onWindowChange: (state) =>
+              updatePreviewWindow(preview.relativePath, state),
+            onHistory: () => openHistory(preview.relativePath),
+            onCompare: () => setCompareFirst(preview.relativePath),
+          },
+        };
+      });
     setNodes((currentNodes) => {
       const selectedNodeIds = new Set(
         currentNodes.filter((node) => node.selected).map((node) => node.id),
@@ -2608,6 +2712,7 @@ function WorkspaceCanvas() {
       ) as CanvasNode[];
     });
   }, [
+    activeCanvas,
     findOpen,
     locked,
     aiBusy,
@@ -2656,15 +2761,29 @@ function WorkspaceCanvas() {
     try {
       const [layout] = verticalLayouts(
         [{ width: 340, height: 300 }],
-        [...documents, ...sections, ...Object.values(previewWindows)].map(
-          (item) => ({
-            ...item,
-            height: 'collapsed' in item && item.collapsed ? 38 : item.height,
-          }),
-        ),
+        [
+          ...documents.filter((doc) => canvasId(doc.canvasId) === activeCanvas),
+          ...sections.filter(
+            (section) => canvasId(section.canvasId) === activeCanvas,
+          ),
+          ...previews
+            .filter((preview) => canvasId(preview.canvasId) === activeCanvas)
+            .flatMap((preview) =>
+              previewWindows[preview.relativePath]
+                ? [previewWindows[preview.relativePath]]
+                : [],
+            ),
+        ].map((item) => ({
+          ...item,
+          height: 'collapsed' in item && item.collapsed ? 38 : item.height,
+        })),
         { x, y },
       );
-      await window.gameCanvas.createIdea({ x: layout.x, y: layout.y });
+      await window.gameCanvas.createIdea({
+        x: layout.x,
+        y: layout.y,
+        canvasId: activeCanvasRef.current,
+      });
       await loadProject(false);
       setNotice('새 메모 파일을 만들었습니다. 카드를 클릭해 편집하세요.');
     } catch (error) {
@@ -2698,6 +2817,7 @@ function WorkspaceCanvas() {
     );
     try {
       const section = await window.gameCanvas.createSection({
+        canvasId: activeCanvasRef.current,
         title: sectionTitle.trim() || '새 섹션',
         x: minX - 48,
         y: minY - 72,
@@ -2752,6 +2872,7 @@ function WorkspaceCanvas() {
     try {
       const imported = await window.gameCanvas.importFiles({
         ...importTarget,
+        canvasId: activeCanvasRef.current,
         imagePurpose,
       });
       if (!imported.length) {
@@ -2875,7 +2996,13 @@ function WorkspaceCanvas() {
     const resultX = maxX + 100;
     const resultY = Math.max(
       minY,
-      ...Object.values(previewWindows)
+      ...previews
+        .filter((preview) => canvasId(preview.canvasId) === activeCanvas)
+        .flatMap((preview) =>
+          previewWindows[preview.relativePath]
+            ? [previewWindows[preview.relativePath]]
+            : [],
+        )
         .filter(
           (window) =>
             resultX < window.x + window.width + NEW_FILE_GAP &&
@@ -2887,6 +3014,7 @@ function WorkspaceCanvas() {
         ),
     );
     setAiRequest({
+      canvasId: activeCanvasRef.current,
       organize:
         sourceMode === 'html-compose'
           ? kind === 'organize'
@@ -3401,6 +3529,7 @@ function WorkspaceCanvas() {
     const offset = copied.pasteCount * 32;
     try {
       const created = await window.gameCanvas.duplicateDocuments({
+        canvasId: activeCanvasRef.current,
         documents: copied.documents,
         offsetX: offset,
         offsetY: offset,
@@ -3452,7 +3581,83 @@ function WorkspaceCanvas() {
       setEditBusy(false);
     }
   };
+  const storeViewport = (id: string) => {
+    if (!workspace.root || !flowRef.current) return;
+    try {
+      localStorage.setItem(
+        'game-canvas-sheet-view:' + workspace.root + ':' + id,
+        JSON.stringify(flowRef.current.getViewport()),
+      );
+    } catch {
+      /* Optional preference. */
+    }
+  };
+  const switchCanvasTo = async (id: string) => {
+    if (id === activeCanvasRef.current) return;
+    if (switchingCanvasRef.current)
+      throw new Error('캔버스를 전환하고 있습니다. 잠시 후 다시 시도해주세요.');
+    switchingCanvasRef.current = true;
+    try {
+      await flushEditors();
+      if (
+        !(await window.gameCanvas.getCanvasSheets()).canvases.some(
+          (sheet) => sheet.id === id,
+        )
+      )
+        throw new Error('캔버스가 삭제되었습니다. 다른 탭을 선택해주세요.');
+      if (document.fullscreenElement) await document.exitFullscreen();
+      document.exitPointerLock?.();
+      storeViewport(activeCanvasRef.current);
+      activeCanvasRef.current = id;
+      setActiveCanvas(id);
+      setSelectedIds([]);
+      setSelectedSectionIds([]);
+      setNodes([]);
+      setContextMenu(null);
+      setDocumentContextMenu(null);
+      setSectionContextMenu(null);
+      setPreviewContextMenu(null);
+      setInspectorId(null);
+      setGuides({});
+      try {
+        localStorage.setItem('game-canvas-active-sheet:' + workspace.root, id);
+      } catch {
+        /* Optional preference. */
+      }
+    } finally {
+      switchingCanvasRef.current = false;
+    }
+  };
+  const changeSheets = async (command: CanvasSheetCommand) => {
+    await flushEditors();
+    await window.gameCanvas.changeCanvasSheets(command);
+    await loadProject(false);
+  };
+  const beginCanvasMove = (paths: string[]) => {
+    setMovingCanvasItems({ paths, source: activeCanvasRef.current });
+    setMoveCanvasTarget(
+      canvasSheets.canvases.find(
+        (sheet) => sheet.id !== activeCanvasRef.current,
+      )?.id ?? '',
+    );
+    setDocumentContextMenu(null);
+    setSectionContextMenu(null);
+    setPreviewContextMenu(null);
+  };
   const jumpTo = (id: string) => {
+    const itemCanvas =
+      documents.find((item) => item.id === id)?.canvasId ??
+      sections.find((item) => sectionNodeId(item.id) === id)?.canvasId ??
+      previews.find((item) => previewNodeId(item.relativePath) === id)
+        ?.canvasId;
+    if (canvasId(itemCanvas) !== activeCanvasRef.current) {
+      pendingCanvasJump.current = id;
+      void switchCanvasTo(canvasId(itemCanvas)).catch((error) => {
+        pendingCanvasJump.current = null;
+        showError(error);
+      });
+      return;
+    }
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
     setTool('select');
@@ -3472,6 +3677,40 @@ function WorkspaceCanvas() {
       duration: 300,
     });
   };
+  navigateCanvasItem.current = jumpTo;
+  useEffect(() => {
+    if (firstCanvasView.current !== activeCanvas || !nodes.length) return;
+    firstCanvasView.current = null;
+    requestAnimationFrame(() => {
+      void flowRef.current?.fitView({ padding: 0.16, maxZoom: 1, duration: 0 });
+    });
+  }, [activeCanvas, nodes]);
+  useEffect(() => {
+    const id = pendingCanvasJump.current;
+    if (!id || !nodes.some((node) => node.id === id)) return;
+    pendingCanvasJump.current = null;
+    setSelectedIds(
+      nodes.find((node) => node.id === id)?.data.kind === 'document'
+        ? [id]
+        : [],
+    );
+    setSelectedSectionIds(
+      nodes.find((node) => node.id === id)?.data.kind === 'section'
+        ? [id.replace(/^section:/, '')]
+        : [],
+    );
+    setNodes((current) =>
+      current.map((node) => ({ ...node, selected: node.id === id })),
+    );
+    requestAnimationFrame(() => {
+      void flowRef.current?.fitView({
+        nodes: [{ id }],
+        padding: 0.6,
+        maxZoom: 1,
+        duration: 0,
+      });
+    });
+  }, [nodes, setNodes]);
   const duplicateSelection = async () => {
     if (locked) {
       onBlocked();
@@ -3880,6 +4119,10 @@ function WorkspaceCanvas() {
   const canvasItems: CanvasItem[] = [];
   const listed = new Set<string>();
   const toItem = (doc: CanvasDocument, parent?: string): CanvasItem => ({
+    canvasId: canvasId(doc.canvasId),
+    canvasName: canvasSheets.canvases.find(
+      (sheet) => sheet.id === canvasId(doc.canvasId),
+    )?.name,
     id: doc.id,
     title: doc.title,
     kind:
@@ -3901,6 +4144,10 @@ function WorkspaceCanvas() {
   });
   for (const section of sections) {
     canvasItems.push({
+      canvasId: canvasId(section.canvasId),
+      canvasName: canvasSheets.canvases.find(
+        (sheet) => sheet.id === canvasId(section.canvasId),
+      )?.name,
       id: sectionNodeId(section.id),
       title: section.title,
       kind: 'section',
@@ -3921,6 +4168,10 @@ function WorkspaceCanvas() {
     if (!listed.has(doc.id)) canvasItems.push(toItem(doc));
   for (const preview of previews)
     canvasItems.push({
+      canvasId: canvasId(preview.canvasId),
+      canvasName: canvasSheets.canvases.find(
+        (sheet) => sheet.id === canvasId(preview.canvasId),
+      )?.name,
       id: previewNodeId(preview.relativePath),
       title: `HTML ${preview.title ?? previewLabel(preview.relativePath)}`,
       kind: 'html',
@@ -4012,6 +4263,17 @@ function WorkspaceCanvas() {
   );
 
   const focusResultPath = (path: string) => {
+    const doc = documents.find((item) => item.relativePath === path),
+      preview = previews.find((item) => item.relativePath === path);
+    if (doc || preview) {
+      const targetId = doc?.id ?? previewNodeId(preview!.relativePath);
+      if (
+        canvasId(doc?.canvasId ?? preview?.canvasId) !== activeCanvasRef.current
+      ) {
+        jumpTo(targetId);
+        return;
+      }
+    }
     const node = nodes.find((node) =>
       node.data.kind === 'document'
         ? node.data.document.relativePath === path
@@ -4302,6 +4564,7 @@ function WorkspaceCanvas() {
       {navigatorOpen && (
         <CanvasNavigator
           items={canvasItems}
+          activeCanvas={activeCanvas}
           jump={jumpTo}
           close={() => setNavigatorOpen(false)}
         />
@@ -4751,11 +5014,52 @@ function WorkspaceCanvas() {
         }}
       >
         <ReactFlow<CanvasNode>
+          key={activeCanvas}
           nodes={nodes}
           edges={[]}
           nodeTypes={nodeTypes}
           onInit={(instance) => {
             flowRef.current = instance;
+            try {
+              const saved = JSON.parse(
+                localStorage.getItem(
+                  'game-canvas-sheet-view:' +
+                    workspace.root +
+                    ':' +
+                    activeCanvas,
+                ) ?? 'null',
+              );
+              if (
+                saved &&
+                ['x', 'y', 'zoom'].every(
+                  (key) =>
+                    typeof saved[key] === 'number' &&
+                    Number.isFinite(saved[key]),
+                ) &&
+                saved.zoom >= 0.1 &&
+                saved.zoom <= 2
+              ) {
+                firstCanvasView.current = null;
+                void instance.setViewport(saved);
+                setViewZoom(saved.zoom);
+                return;
+              }
+            } catch {
+              /* Invalid preferences use the default viewport. */
+            }
+            firstCanvasView.current = activeCanvas;
+            void instance.setViewport({ x: 0, y: 0, zoom: 1 });
+            setViewZoom(1);
+            if (nodes.length) {
+              firstCanvasView.current = null;
+              requestAnimationFrame(() => {
+                void instance.fitView({
+                  padding: 0.16,
+                  maxZoom: 1,
+                  duration: 0,
+                });
+              });
+            }
           }}
           onNodesChange={onNodesChange}
           onNodeClick={(event, node) => {
@@ -4926,7 +5230,14 @@ function WorkspaceCanvas() {
             setSectionContextMenu(null);
             setPreviewContextMenu(null);
           }}
-          onMove={(_event, viewport) => setViewZoom(viewport.zoom)}
+          onMove={(_event, viewport) => {
+            if (activeCanvasRef.current === activeCanvas)
+              setViewZoom(viewport.zoom);
+          }}
+          onMoveEnd={() => {
+            if (activeCanvasRef.current === activeCanvas)
+              storeViewport(activeCanvas);
+          }}
           selectionOnDrag={tool === 'select'}
           panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
           nodesDraggable={tool === 'select'}
@@ -5027,6 +5338,25 @@ function WorkspaceCanvas() {
           className="selection-context floating-surface"
           aria-label="선택 항목 도구"
         >
+          <button
+            title="선택 항목을 다른 캔버스로 이동"
+            disabled={selectionLocked || canvasSheets.canvases.length < 2}
+            onClick={() =>
+              beginCanvasMove(
+                nodes
+                  .filter((node) => node.selected)
+                  .map((node) =>
+                    node.data.kind === 'document'
+                      ? node.data.document.relativePath
+                      : node.data.kind === 'section'
+                        ? node.data.section.relativePath
+                        : node.data.preview.relativePath,
+                  ),
+              )
+            }
+          >
+            <ArrowRight size={14} />
+          </button>
           <span>
             {selectedSections.length
               ? `섹션 ${selectedSections.length}개 · 실제 문서 ${inputSelection.length}개`
@@ -5833,6 +6163,20 @@ function WorkspaceCanvas() {
           <button
             type="button"
             role="menuitem"
+            disabled={canvasSheets.canvases.length < 2 || locked}
+            onClick={() =>
+              beginCanvasMove([previewContextMenu.preview.relativePath])
+            }
+          >
+            <ArrowRight size={16} />
+            <span>
+              <strong>다른 캔버스로 이동</strong>
+              <small>파일 경로를 유지하며 이동</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             disabled={
               pathLocked(previewContextMenu.preview.relativePath) ||
               editBusy ||
@@ -5950,6 +6294,20 @@ function WorkspaceCanvas() {
           <div className="context-menu-title">
             {documentContextMenu.document.title}
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={canvasSheets.canvases.length < 2 || locked}
+            onClick={() =>
+              beginCanvasMove([documentContextMenu.document.relativePath])
+            }
+          >
+            <ArrowRight size={16} />
+            <span>
+              <strong>다른 캔버스로 이동</strong>
+              <small>파일 경로를 유지하며 이동</small>
+            </span>
+          </button>
           <div
             className="card-color-picker"
             role="group"
@@ -6056,6 +6414,20 @@ function WorkspaceCanvas() {
           <div className="context-menu-title">
             {sectionContextMenu.section.title}
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={canvasSheets.canvases.length < 2 || locked}
+            onClick={() =>
+              beginCanvasMove([sectionContextMenu.section.relativePath])
+            }
+          >
+            <ArrowRight size={16} />
+            <span>
+              <strong>다른 캔버스로 이동</strong>
+              <small>파일 경로를 유지하며 이동</small>
+            </span>
+          </button>
           <button
             type="button"
             role="menuitem"
@@ -6190,6 +6562,92 @@ function WorkspaceCanvas() {
         </div>
       )}
 
+      {!uiHidden && workspace.root && (
+        <CanvasTabs
+          sheets={canvasSheets}
+          active={activeCanvas}
+          unread={
+            new Set([
+              ...documents
+                .filter((doc) => newFileNodes.has(doc.id))
+                .map((doc) => canvasId(doc.canvasId)),
+              ...previews
+                .filter((preview) =>
+                  newFileNodes.has(previewNodeId(preview.relativePath)),
+                )
+                .map((preview) => canvasId(preview.canvasId)),
+            ])
+          }
+          readOnly={
+            collaboration.active &&
+            (collaboration.role === 'viewer' ||
+              !collaboration.connected ||
+              !collaboration.canvasSheets ||
+              !!collaboration.pendingChanges)
+          }
+          switchTo={switchCanvasTo}
+          change={changeSheets}
+        />
+      )}
+      {movingCanvasItems && (
+        <div className="dialog-backdrop">
+          <section
+            className="canvas-sheet-dialog floating-surface"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="move-canvas-title"
+          >
+            <h2 id="move-canvas-title">다른 캔버스로 이동</h2>
+            <p>섹션을 옮기면 내부 자료도 함께 이동합니다.</p>
+            <label>
+              대상 캔버스
+              <select
+                value={moveCanvasTarget}
+                onChange={(event) => setMoveCanvasTarget(event.target.value)}
+              >
+                {canvasSheets.canvases
+                  .filter((sheet) => sheet.id !== movingCanvasItems.source)
+                  .map((sheet) => (
+                    <option key={sheet.id} value={sheet.id}>
+                      {sheet.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="canvas-sheet-dialog__actions">
+              <button
+                disabled={canvasOperationBusy}
+                onClick={() => setMovingCanvasItems(null)}
+              >
+                취소
+              </button>
+              <button
+                className="button-primary"
+                disabled={canvasOperationBusy || !moveCanvasTarget}
+                onClick={() => {
+                  setCanvasOperationBusy(true);
+                  void changeSheets({
+                    action: 'move',
+                    id: movingCanvasItems.source,
+                    paths: movingCanvasItems.paths,
+                    targetId: moveCanvasTarget,
+                    expected: canvasSheets.raw ?? null,
+                  })
+                    .then(() => {
+                      setMovingCanvasItems(null);
+                      setSelectedIds([]);
+                      setSelectedSectionIds([]);
+                    })
+                    .catch(showError)
+                    .finally(() => setCanvasOperationBusy(false));
+                }}
+              >
+                이동
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {resultFolderPrompt && (
         <ResultFolderDialog
           key={
@@ -6528,6 +6986,70 @@ function WorkspaceCanvas() {
                   </span>
                 </label>
               </div>
+              <details className="canvas-material-picker">
+                <summary>
+                  프로젝트 전체에서 재료 선택 · 도착:{' '}
+                  {
+                    canvasSheets.canvases.find(
+                      (sheet) => sheet.id === canvasId(aiRequest.canvasId),
+                    )?.name
+                  }
+                </summary>
+                {canvasSheets.canvases.map((sheet) => (
+                  <fieldset key={sheet.id}>
+                    <legend>{sheet.name}</legend>
+                    {canvasItems
+                      .filter(
+                        (item) =>
+                          item.canvasId === sheet.id && item.kind !== 'task',
+                      )
+                      .map((item) => (
+                        <label key={item.id}>
+                          <input
+                            type="checkbox"
+                            checked={aiRequest.inputPaths.includes(item.path)}
+                            onChange={(event) =>
+                              setAiRequest((current) => {
+                                if (!current) return current;
+                                const paths = event.target.checked
+                                  ? [
+                                      ...new Set([
+                                        ...current.inputPaths,
+                                        item.path,
+                                        ...(item.kind === 'section'
+                                          ? (sections
+                                              .find(
+                                                (section) =>
+                                                  section.relativePath ===
+                                                  item.path,
+                                              )
+                                              ?.members.map(
+                                                (member) => member.path,
+                                              ) ?? [])
+                                          : []),
+                                      ]),
+                                    ]
+                                  : current.inputPaths.filter(
+                                      (path) => path !== item.path,
+                                    );
+                                const htmlCount =
+                                  paths.filter(isPreviewPath).length;
+                                return {
+                                  ...current,
+                                  inputPaths: paths,
+                                  sourceMode: htmlCount
+                                    ? 'html-compose'
+                                    : undefined,
+                                };
+                              })
+                            }
+                          />
+                          {item.title}
+                        </label>
+                      ))}
+                  </fieldset>
+                ))}
+              </details>
               <p className="gamejam-flow-summary" role="status">
                 {aiRequest.organize && aiRequest.implement
                   ? '1. 문서 정리 및 검증 → 2. 이번에 정리한 문서로 HTML 구현 → 전체 결과 반영'

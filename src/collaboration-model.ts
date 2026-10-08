@@ -1,3 +1,14 @@
+import {
+  CANVAS_SHEETS_PATH,
+  canvasId,
+  assertCanvas,
+  readCanvasSheets,
+} from './canvas-sheets.ts';
+import {
+  validateCanvasMembership,
+  changeCanvasSheets,
+} from './canvas-sheet-commands.ts';
+import type { CanvasSheetCommand } from './shared.ts';
 import { randomUUID } from 'node:crypto';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
@@ -43,6 +54,7 @@ export function collaborationPath(relative: unknown): string {
       isPreviewPath(relative) ||
       relative === 'output/README.md' ||
       relative === RESULT_CATALOG_PATH ||
+      relative === CANVAS_SHEETS_PATH ||
       isAssetPath(relative)
     ) ||
     relative
@@ -55,7 +67,10 @@ export function collaborationPath(relative: unknown): string {
           /[. ]$/.test(segment) ||
           (segment.startsWith('.') &&
             segment !== '.ai' &&
-            !(relative === RESULT_CATALOG_PATH && segment === '.canvas')) ||
+            !(
+              [RESULT_CATALOG_PATH, CANVAS_SHEETS_PATH].includes(relative) &&
+              segment === '.canvas'
+            )) ||
           /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment),
       )
   )
@@ -66,6 +81,7 @@ export function collaborationPath(relative: unknown): string {
 export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
+  validateCanvasMembership(files as Snapshot);
   const entries = Object.entries(files);
   if (entries.length > 500)
     throw new Error('최대 500개 파일을 공유할 수 있습니다.');
@@ -91,6 +107,10 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
     bytes += Buffer.byteLength(value);
+    if (key === CANVAS_SHEETS_PATH) {
+      readCanvasSheets(value);
+      continue;
+    }
     if (key === RESULT_CATALOG_PATH) {
       readResultCatalog(value);
       continue;
@@ -161,6 +181,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
       const number = (key: string, fallback: number) =>
         Number.isFinite(data[key]) ? (data[key] as number) : fallback;
       return {
+        canvasId: canvasId(data.canvas_id),
         id: typeof data.id === 'string' ? data.id : relativePath,
         title: typeof data.title === 'string' ? data.title : relativePath,
         type: [
@@ -211,6 +232,7 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
     .map(([relativePath, raw]) => {
       const { data } = matter(raw);
       return {
+        canvasId: canvasId(data.canvas_id),
         id: data.id ?? relativePath,
         title: typeof data.title === 'string' ? data.title : '섹션',
         relativePath,
@@ -225,6 +247,7 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
 }
 
 export const commandLabels: Record<string, string> = {
+  'canvases:change': '캔버스 구성 변경',
   'results:move': 'HTML 결과물 폴더 이동',
   'results:organize': '기존 HTML 결과물 폴더 정리',
   'documents:set-color': '카드 배경색 변경',
@@ -280,6 +303,23 @@ export function reduceCollaboration(
     throw new Error('허용되지 않은 공동 작업입니다.');
   const next = { ...files };
   const input = record(value);
+  if (channel === 'canvases:change') {
+    const changed = changeCanvasSheets(
+      files,
+      input as unknown as CanvasSheetCommand,
+    );
+    checkSnapshot(changed);
+    return { files: changed, result: undefined };
+  }
+  if (
+    [
+      'files:import-batch',
+      'documents:create-idea',
+      'sections:create',
+      'tasks:create',
+    ].includes(channel)
+  )
+    assertCanvas(files, input.canvasId);
   if (channel === 'results:move' || channel === 'results:organize') {
     const moves =
       channel === 'results:organize'
@@ -298,7 +338,11 @@ export function reduceCollaboration(
     const additions = layoutNewDocuments(
       files,
       buildFileImports(input as ImportBatchInput),
-      { x: Number(input.x), y: Number(input.y) },
+      {
+        x: Number(input.x),
+        y: Number(input.y),
+        canvasId: canvasId(input.canvasId),
+      },
       true,
     );
     if (Object.keys(additions).some((relative) => next[relative] !== undefined))
@@ -386,13 +430,14 @@ export function reduceCollaboration(
       relative = `ideas/${id}.md`;
     const [layout] = verticalLayouts(
       [{ width: 340, height: 300 }],
-      documentBounds(next),
+      documentBounds(next, canvasId(input.canvasId)),
       { x: number(input.x), y: number(input.y) },
     );
     write(
       relative,
       {
         id,
+        canvas_id: canvasId(input.canvasId),
         title: '새 아이디어',
         type: 'idea',
         status: 'draft',
@@ -464,6 +509,10 @@ export function reduceCollaboration(
         relative,
         {
           ...parsed.data,
+          canvas_id:
+            input.canvasId !== undefined
+              ? assertCanvas(files, input.canvasId)
+              : canvasId(parsed.data.canvas_id),
           id: `copy-${suffix}`,
           title: `${parsed.data.title ?? '문서'} 복사본`,
           x: number(parsed.data.x ?? 120) + number(input.offsetX),
@@ -509,6 +558,14 @@ export function reduceCollaboration(
       new Set(members.map((member) => member.path)).size !== members.length
     )
       throw new Error('섹션 구성원을 확인해주세요.');
+    if (
+      members.some(
+        (member) =>
+          canvasId(read(member.path).data.canvas_id) !==
+          canvasId(input.canvasId),
+      )
+    )
+      throw new Error('같은 캔버스의 자료로 섹션을 만들어주세요.');
     removeMembers(new Set(members.map((member) => member.path)));
     const id = `section-${randomUUID().slice(0, 8)}`,
       relative = `sections/${id}.md`,
@@ -518,6 +575,7 @@ export function reduceCollaboration(
       {
         id,
         title,
+        canvas_id: canvasId(input.canvasId),
         type: 'section',
         status: 'active',
         x: number(input.x),
@@ -564,6 +622,13 @@ export function reduceCollaboration(
       !snapshotSections(next).some((section) => section.id === target)
     )
       throw new Error('대상 섹션을 찾을 수 없습니다.');
+    if (target) {
+      const section = snapshotSections(next).find(
+        (item) => item.id === target,
+      )!;
+      if (canvasId(section.canvasId) !== canvasId(doc.data.canvas_id))
+        throw new Error('다른 캔버스의 섹션으로 이동할 수 없습니다.');
+    }
     removeMembers(new Set([doc.relative]), target as string | undefined);
     layout({ ...input, kind: 'document', relativePath: doc.relative });
   } else if (channel === 'tasks:create') {
@@ -582,6 +647,7 @@ export function reduceCollaboration(
     const additions = createTaskFiles(
       {
         kind,
+        canvasId: canvasId(input.canvasId),
         sourceMode: input.sourceMode as CreateTaskInput['sourceMode'],
         inputPaths: paths,
         x: number(input.x),

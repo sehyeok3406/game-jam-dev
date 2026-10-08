@@ -14,6 +14,8 @@ import { previewLabel } from '../preview-output';
 import type { PreviewResult } from '../shared';
 
 export type CanvasItem = {
+  canvasId?: string;
+  canvasName?: string;
   id: string;
   title: string;
   kind:
@@ -100,18 +102,26 @@ function useModalFocus() {
 }
 
 export function CanvasNavigator({
+  activeCanvas,
   items,
   jump,
   close,
 }: {
+  activeCanvas?: string;
   items: CanvasItem[];
   jump: (id: string) => void;
   close: () => void;
 }) {
   const [query, setQuery] = useState(''),
     [filter, setFilter] = useState('all');
+  const [projectScope, setProjectScope] = useState(false);
   const visible = items.filter(
-    (item) => (filter === 'all' || item.kind === filter) && match(item, query),
+    (item) =>
+      (projectScope ||
+        !activeCanvas ||
+        (item.canvasId ?? 'default') === activeCanvas) &&
+      (filter === 'all' || item.kind === filter) &&
+      match(item, query),
   );
   return (
     <aside className="canvas-navigator floating-surface" aria-label="문서 탐색">
@@ -129,6 +139,14 @@ export function CanvasNavigator({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
+      </label>
+      <label className="canvas-search-scope">
+        <input
+          type="checkbox"
+          checked={projectScope}
+          onChange={(event) => setProjectScope(event.target.checked)}
+        />
+        프로젝트 전체 검색
       </label>
       <div className="ux-filter-tabs">
         {[
@@ -168,7 +186,12 @@ export function CanvasNavigator({
               <small>
                 {item.editingBy
                   ? `${item.editingBy}님 편집 중`
-                  : (item.parent ?? ITEM_LABELS[item.kind])}
+                  : [
+                      projectScope ? item.canvasName : undefined,
+                      item.parent ?? ITEM_LABELS[item.kind],
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
               </small>
             </span>
           </button>

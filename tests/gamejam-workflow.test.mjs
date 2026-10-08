@@ -321,7 +321,13 @@ test('workflow server gates old executors, enforces admins and one lease, and pu
           entry.status === 'completed' &&
           entry.kind === 'ai' &&
           entry.actorName === '관리자' &&
-          entry.files.length === outputs.length + 1,
+          outputs.every((path) =>
+            entry.files.some((file) => file.relativePath === path),
+          ) &&
+          entry.files.some((file) => file.relativePath === next.relativePath) &&
+          entry.files.some((file) =>
+            file.relativePath.startsWith('docs/html-sources/'),
+          ),
       ),
     );
   } finally {

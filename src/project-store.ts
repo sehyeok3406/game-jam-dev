@@ -1,3 +1,4 @@
+import { CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -78,6 +79,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       relative.endsWith('.md') ||
       isPreviewPath(relative) ||
       relative === RESULT_CATALOG_PATH ||
+      relative === CANVAS_SHEETS_PATH ||
       isAssetPath(relative)
     ) {
       snapshot[relative] = await readSnapshotFile(absolute, relative);
@@ -90,6 +92,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     'sections',
     '.ai/tasks',
     RESULT_CATALOG_PATH,
+    CANVAS_SHEETS_PATH,
     'output',
     'assets/images',
   ])

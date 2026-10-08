@@ -1,3 +1,6 @@
+import { canvasId, assertCanvas } from './canvas-sheets.ts';
+import { isPreviewPath } from './preview-output.ts';
+import { htmlSourcePath, sourceMetadata } from './html-source.ts';
 import matter from './markdown.ts';
 import { verticalLayouts, type CanvasRect } from './canvas-placement.ts';
 import type { Snapshot } from './project-store.ts';
@@ -14,10 +17,15 @@ const visible = (path: string, data: Record<string, unknown>) =>
   data.type !== 'ai-task' &&
   !data.html_source;
 
-export function documentBounds(files: Snapshot): CanvasRect[] {
+export function documentBounds(
+  files: Snapshot,
+  selectedCanvas?: string,
+): CanvasRect[] {
   return Object.entries(files).flatMap(([path, raw]) => {
     if (!path.endsWith('.md')) return [];
     const { data } = matter(raw);
+    if (selectedCanvas && canvasId(data.canvas_id) !== selectedCanvas)
+      return [];
     if (!visible(path, data) && !data.html_source) return [];
     return [
       {
@@ -34,11 +42,31 @@ export function documentBounds(files: Snapshot): CanvasRect[] {
 export function layoutNewDocuments(
   before: Snapshot,
   changes: Snapshot,
-  origin: { x: number; y: number },
+  origin: { x: number; y: number; canvasId?: string },
   includeHtmlRecords = false,
 ): Snapshot {
+  const selectedCanvas = assertCanvas(before, origin.canvasId);
   const result = { ...changes };
-  const added = Object.entries(changes).flatMap(([path, raw]) => {
+  for (const path of Object.keys(changes).filter(isPreviewPath)) {
+    const source = htmlSourcePath(path);
+    if (!before[source] && !result[source])
+      result[source] = sourceMetadata(path, changes[path], {
+        x: origin.x,
+        y: origin.y,
+      });
+  }
+  for (const [path, raw] of Object.entries(result)) {
+    if (!path.endsWith('.md') || path.startsWith('output/')) continue;
+    const parsed = matter(raw);
+    const previous = before[path] ? matter(before[path]).data : undefined;
+    if (previous?.canvas_id !== undefined || selectedCanvas !== 'default')
+      parsed.data.canvas_id = previous
+        ? canvasId(previous.canvas_id)
+        : selectedCanvas;
+    else delete parsed.data.canvas_id;
+    result[path] = matter.stringify(parsed.content, parsed.data);
+  }
+  const added = Object.entries(result).flatMap(([path, raw]) => {
     if (!path.endsWith('.md')) return [];
     const parsed = matter(raw);
     if (
@@ -59,7 +87,7 @@ export function layoutNewDocuments(
   });
   const layouts = verticalLayouts(
     added.map(({ parsed }) => dimensions(parsed.data)),
-    documentBounds(before),
+    documentBounds(before, selectedCanvas),
     origin,
   );
   added.forEach(({ path, parsed }, index) => {

@@ -107,6 +107,8 @@ const api: GameCanvasApi = {
     ipcRenderer.invoke('history:restore', id, relativePath, version),
   getWorkspace: () => ipcRenderer.invoke('workspace:get'),
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
+  getCanvasSheets: () => ipcRenderer.invoke('canvases:list'),
+  changeCanvasSheets: (input) => ipcRenderer.invoke('canvases:change', input),
   listDocuments: () => ipcRenderer.invoke('documents:list'),
   listSections: () => ipcRenderer.invoke('sections:list'),
   createIdea: (input) => ipcRenderer.invoke('documents:create-idea', input),
