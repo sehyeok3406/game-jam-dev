@@ -4,7 +4,7 @@ import type { CreateTaskInput, HtmlResultChoice } from './shared.ts';
 import type { DocumentResultChoice } from './document-output.ts';
 
 export type GamejamRequest = {
-  sourceMode?: 'html';
+  sourceMode?: 'html' | 'html-compose';
   organize: boolean;
   implement: boolean;
   inputPaths: string[];
@@ -26,7 +26,10 @@ export function gamejamTaskInput(request: GamejamRequest): CreateTaskInput {
   const kind = request.organize ? 'organize' : 'implement';
   return {
     kind,
-    sourceMode: request.sourceMode,
+    sourceMode:
+      request.sourceMode === 'html' && kind === 'implement'
+        ? 'html-compose'
+        : request.sourceMode,
     inputPaths: request.inputPaths,
     x: request.x,
     y: request.y,

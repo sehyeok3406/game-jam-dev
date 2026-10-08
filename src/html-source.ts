@@ -8,6 +8,7 @@ import { resultPreviousPaths } from './result-structure.ts';
 import type { Snapshot } from './project-store.ts';
 import type { PreviewResult } from './shared.ts';
 import { cardColor } from './card-colors.ts';
+import { validateHtmlInputs } from './html-inputs.ts';
 
 export const MAX_HTML_BYTES = 8_000_000;
 
@@ -135,9 +136,37 @@ export function prepareHtmlSource(
   files: Snapshot,
   paths: string[],
   sourceMode?: string,
-) {
+): {
+  additions: Snapshot;
+  recordPath: string;
+  descriptor: { id: string; path: string; sha256: string };
+  recordPaths: string[];
+  descriptors: { id: string; path: string; sha256: string }[];
+} | null {
   const htmlPaths = paths.filter(isPreviewPath);
-  if (!htmlPaths.length && sourceMode !== 'html') return null;
+  if (
+    !htmlPaths.length &&
+    sourceMode !== 'html' &&
+    sourceMode !== 'html-compose'
+  )
+    return null;
+  if (sourceMode === 'html-compose') {
+    if (!htmlPaths.length)
+      throw new CanvasError('GC-AI-007', '재료로 사용할 HTML을 선택해주세요.');
+    const sources = [...new Set(htmlPaths)].map(
+      (path) => prepareHtmlSource(files, [path], 'html')!,
+    );
+    return {
+      additions: Object.assign(
+        {},
+        ...sources.map((source) => source.additions),
+      ) as Snapshot,
+      recordPaths: sources.map((source) => source.recordPath),
+      descriptors: sources.map((source) => source.descriptor),
+      recordPath: sources[0].recordPath,
+      descriptor: sources[0].descriptor,
+    };
+  }
   if (htmlPaths.length !== 1 || sourceMode !== 'html')
     throw new CanvasError(
       'GC-AI-007',
@@ -165,6 +194,8 @@ export function prepareHtmlSource(
     additions,
     recordPath,
     descriptor: { id, path, sha256: htmlHash(content) },
+    recordPaths: [recordPath],
+    descriptors: [{ id, path, sha256: htmlHash(content) }],
   };
 }
 
@@ -174,6 +205,7 @@ export function validateHtmlAnalysis(
   outputs?: string[],
 ) {
   const data = matter(task).data;
+  validateHtmlInputs(task, files, outputs);
   if (data.source_mode !== 'html') return;
   const source = data.html_analysis_source;
   if (

@@ -113,9 +113,10 @@ export function nextPreviewPath(
   reservedPaths: string[],
   name?: string,
   basePath?: string,
+  outputCategory?: ResultCategory,
 ) {
   const base = basePath ? resultLocation(basePath) : undefined;
-  const category = base?.category ?? 'inbox';
+  const category = outputCategory ?? base?.category ?? 'inbox';
   const feature = resultFileStem(name) || base?.feature || 'untitled';
   const highest = Math.max(
     0,
@@ -136,6 +137,11 @@ export function resolvePreviewOutput(
   choice: import('./shared').HtmlResultChoice = { mode: 'update' },
   name?: string,
 ) {
+  if (
+    choice.category !== undefined &&
+    !Object.hasOwn(RESULT_CATEGORIES, choice.category)
+  )
+    throw new Error('결과물 분류가 올바르지 않습니다.');
   const existing = existingPaths.filter(
     (relative) => isPreviewPath(relative) && !isImportedPreviewPath(relative),
   );
@@ -149,9 +155,13 @@ export function resolvePreviewOutput(
   return {
     path:
       choice.mode === 'new' || !base
-        ? nextPreviewPath(reservedPaths, name, base)
+        ? nextPreviewPath(reservedPaths, name, base, choice.category)
         : base,
-    choice: { mode: choice.mode, ...(base ? { basePath: base } : {}) },
+    choice: {
+      mode: choice.mode,
+      ...(base ? { basePath: base } : {}),
+      ...(choice.category ? { category: choice.category } : {}),
+    },
   };
 }
 

@@ -478,6 +478,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         taskResultNaming: true,
         gamejamWorkflow: true,
         htmlImportAnalysis: true,
+        htmlComposition: true,
         htmlResultFolders: true,
         editorAi: true,
         multiProviderAi: true,
@@ -511,6 +512,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         taskResultNaming: true,
         gamejamWorkflow: true,
         htmlImportAnalysis: true,
+        htmlComposition: true,
         htmlResultFolders: true,
         editorAi: true,
         multiProviderAi: true,
@@ -937,7 +939,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         title: thenImplement
           ? 'gamejam! · 문서 정리 → HTML 구현'
           : kind === 'organize'
-            ? sourceMode === 'html'
+            ? sourceMode
               ? 'HTML 게임 문서 추출 요청'
               : 'AI 문서 정리 요청'
             : 'HTML 구현 요청',

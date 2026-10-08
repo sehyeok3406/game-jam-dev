@@ -156,7 +156,7 @@ export type MoveDocumentSectionInput = {
 };
 
 export type CreateTaskInput = {
-  sourceMode?: 'html';
+  sourceMode?: 'html' | 'html-compose';
   kind: 'organize' | 'implement';
   inputPaths: string[];
   x: number;
@@ -176,6 +176,7 @@ export type CreateTaskInput = {
 export type HtmlResultChoice = {
   mode: 'update' | 'new';
   basePath?: string;
+  category?: import('./preview-output').ResultCategory;
 };
 
 export type PreviewResult = {
@@ -496,6 +497,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  htmlComposition?: boolean;
   scopedAiLocks?: boolean;
   projectCreatedAt?: number;
   projectModifiedAt?: number;

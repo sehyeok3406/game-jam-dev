@@ -288,6 +288,7 @@ export async function createCollaborationServer(options: Options) {
       htmlResultFolders: true,
       structuredResults: true,
       scopedAiLocks: true,
+      htmlComposition: true,
       editorAi: true,
       multiProviderAi: true,
       projectId: project.id,
@@ -499,6 +500,7 @@ export async function createCollaborationServer(options: Options) {
           htmlResultFolders: true,
           structuredResults: true,
           scopedAiLocks: true,
+          htmlComposition: true,
         });
         return;
       }
@@ -1110,6 +1112,15 @@ export async function createCollaborationServer(options: Options) {
               );
             }
             validateHtmlAnalysis(project.files[taskPath], project.files);
+            if (
+              matter(project.files[taskPath]).data.html_inputs_version !==
+                undefined &&
+              input.htmlInputVersion !== 1
+            )
+              throw new CanvasError(
+                'GC-AI-007',
+                'HTML 재료 통합 실행에는 앱 v0.10.9 이상이 필요합니다.',
+              );
             if (
               matter(project.files[taskPath]).data.source_mode === 'html' &&
               input.htmlAnalysisVersion !== 1

@@ -2834,35 +2834,43 @@ function WorkspaceCanvas() {
     const htmlInputs = nodes.filter(
       (node) => node.selected && node.data.kind === 'preview',
     );
-    if (htmlInputs.length > 1) {
-      setNotice('HTML 분석은 게임 한 개씩 진행해주세요.');
-      return;
-    }
-    const htmlInput =
-      htmlInputs[0]?.data.kind === 'preview'
-        ? htmlInputs[0].data.preview
-        : undefined;
-    const htmlLayout = htmlInput
-      ? previewWindows[htmlInput.relativePath]
-      : undefined;
-    if (selected.length === 0 && selectedSections.length === 0 && !htmlInput) {
+    const htmlPreviews = htmlInputs.flatMap((node) =>
+      node.data.kind === 'preview' ? [node.data.preview] : [],
+    );
+    const htmlInput = htmlPreviews.length === 1 ? htmlPreviews[0] : undefined;
+    const htmlLayouts = htmlPreviews.map(
+      (preview) =>
+        previewWindows[preview.relativePath] ??
+        preview.initialWindow ?? { x: 120, y: 120, width: 720, height: 520 },
+    );
+    const sourceMode =
+      htmlPreviews.length > 1 || (htmlPreviews.length && kind === 'implement')
+        ? ('html-compose' as const)
+        : htmlInput
+          ? ('html' as const)
+          : undefined;
+    if (
+      selected.length === 0 &&
+      selectedSections.length === 0 &&
+      !htmlPreviews.length
+    ) {
       setNotice('문서, 섹션 또는 HTML 게임을 하나 이상 선택하세요.');
       return;
     }
     const maxX = Math.max(
       ...selected.map((document) => document.x + document.width),
       ...selectedSections.map((section) => section.x + section.width),
-      ...(htmlLayout ? [htmlLayout.x + htmlLayout.width] : []),
+      ...htmlLayouts.map((layout) => layout.x + layout.width),
     );
     const minY = Math.min(
       ...selected.map((document) => document.y),
       ...selectedSections.map((section) => section.y),
-      ...(htmlLayout ? [htmlLayout.y] : []),
+      ...htmlLayouts.map((layout) => layout.y),
     );
     const inputPaths = [
       ...selectedSections.map((section) => section.relativePath),
       ...selected.map((document) => document.relativePath),
-      ...(htmlInput ? [htmlInput.relativePath] : []),
+      ...htmlPreviews.map((preview) => preview.relativePath),
     ];
     const resultX = maxX + 100;
     const resultY = Math.max(
@@ -2879,23 +2887,29 @@ function WorkspaceCanvas() {
         ),
     );
     setAiRequest({
-      organize: kind !== 'implement',
-      implement: htmlInput ? kind === 'implement' : kind !== 'organize',
-      sourceMode: htmlInput ? 'html' : undefined,
+      organize:
+        sourceMode === 'html-compose'
+          ? kind === 'organize'
+          : kind !== 'implement',
+      implement:
+        sourceMode === 'html-compose'
+          ? kind !== 'organize'
+          : htmlInput
+            ? kind === 'implement'
+            : kind !== 'organize',
+      sourceMode,
       inputPaths,
       x: resultX,
       y: resultY,
       htmlResult: htmlResult ?? {
         mode: 'new',
         ...(htmlInput ? { basePath: htmlInput.relativePath } : {}),
+        ...(htmlPreviews.length > 1 ? { category: 'prototypes' } : {}),
       },
       documentResult: { mode: 'new' },
       instructions: {
         ...DEFAULT_TASK_INSTRUCTIONS,
-        organize: defaultTaskInstructions(
-          'organize',
-          htmlInput ? 'html' : undefined,
-        ),
+        organize: defaultTaskInstructions('organize', sourceMode),
       },
       resultName: htmlInput?.title ?? '',
     });
@@ -2913,9 +2927,13 @@ function WorkspaceCanvas() {
         aiRequest.implement &&
         !collaboration.htmlResultFolders) ||
       (collaboration.active &&
+        (aiRequest.sourceMode === 'html-compose' ||
+          (aiRequest.sourceMode === 'html' && aiRequest.implement)) &&
+        !collaboration.htmlComposition) ||
+      (collaboration.active &&
         aiRequest.sourceMode === 'html' &&
         !collaboration.htmlImportAnalysis) ||
-      (aiRequest.sourceMode === 'html' &&
+      (aiRequest.sourceMode &&
         aiRequest.implement &&
         aiRequest.htmlResult?.mode === 'update' &&
         aiRequest.inputPaths.includes(
@@ -6459,7 +6477,7 @@ function WorkspaceCanvas() {
             <div className="ai-request-fields">
               <p>
                 선택 범위를 확인하고 실행하세요. 실행 전 편집 내용을 저장하며,
-                작업 중에는 문서 변경이 잠깁니다.
+                작업 중에는 관련 파일만 수정·삭제·이동을 제한합니다.
               </p>
               <h3 className="ai-step-heading">
                 <span>1</span> 무엇을 만들까요?
@@ -6485,7 +6503,7 @@ function WorkspaceCanvas() {
                   <span>
                     <strong>문서 정리</strong>
                     <small>
-                      {aiRequest.sourceMode === 'html'
+                      {aiRequest.sourceMode
                         ? '선택한 HTML 게임을 분석해 Markdown 추출'
                         : '선택 메모를 Markdown 문서로 정리'}
                     </small>
@@ -6514,11 +6532,11 @@ function WorkspaceCanvas() {
                 {aiRequest.organize && aiRequest.implement
                   ? '1. 문서 정리 및 검증 → 2. 이번에 정리한 문서로 HTML 구현 → 전체 결과 반영'
                   : aiRequest.organize
-                    ? aiRequest.sourceMode === 'html'
+                    ? aiRequest.sourceMode
                       ? 'HTML 코드 분석 → 게임 개요·핵심 플레이 흐름·확인 필요 사항 추출. 원본 HTML은 변경하지 않습니다.'
                       : '선택한 메모·파일을 문서로 정리합니다.'
                     : aiRequest.implement
-                      ? '선택한 문서를 기반으로 HTML을 구현합니다.'
+                      ? '선택한 메모·MD·HTML·이미지와 구현 지침으로 HTML을 만듭니다.'
                       : '실행할 작업을 하나 이상 선택해주세요.'}
               </p>
               {aiRequest.implement && (
@@ -6536,13 +6554,30 @@ function WorkspaceCanvas() {
                     업데이트하고 다시 시작해주세요.
                   </p>
                 )}
-              {aiRequest.sourceMode === 'html' && (
+              {aiRequest.sourceMode && (
                 <small>
                   코드에서 확인한 구현, AI의 추정, 확인 불가를 구분합니다. 자동
-                  플레이 분석은 하지 않습니다. 구현까지 선택하면 추출 문서를
-                  기반으로 새 결과를 만듭니다.
+                  플레이 분석은 하지 않습니다. 구현 단계에는 선택한 HTML 원본과
+                  관련 파일을 전달하며, 문서 정리도 실행하면 추출 문서를 함께
+                  사용합니다.
                 </small>
               )}
+              {aiRequest.sourceMode === 'html-compose' && (
+                <small>
+                  연결 규칙은 아래 HTML 구현 지침에 작성하세요. 별도 메모 없이
+                  HTML만 선택해도 실행할 수 있습니다. 원본은 유지하고 새 결과를
+                  만듭니다.
+                </small>
+              )}
+              {collaboration.active &&
+                (aiRequest.sourceMode === 'html-compose' ||
+                  (aiRequest.sourceMode === 'html' && aiRequest.implement)) &&
+                !collaboration.htmlComposition && (
+                  <p role="alert">
+                    HTML을 구현 재료로 사용하려면 앱과 협업 서버를 함께 v0.10.9
+                    이상으로 업데이트해주세요.
+                  </p>
+                )}
               {aiRequest.sourceMode === 'html' &&
                 collaboration.active &&
                 !collaboration.htmlImportAnalysis && (
@@ -6551,14 +6586,14 @@ function WorkspaceCanvas() {
                     업데이트해주세요.
                   </p>
                 )}
-              {aiRequest.sourceMode === 'html' &&
+              {aiRequest.sourceMode &&
                 aiRequest.implement &&
                 aiRequest.htmlResult?.mode === 'update' &&
                 aiRequest.inputPaths.includes(
                   aiRequest.htmlResult.basePath ?? 'output/index.html',
                 ) && (
                   <p role="alert">
-                    분석 대상 원본 HTML은 덮어쓸 수 없습니다. 새 버전을
+                    재료로 선택한 원본 HTML은 덮어쓸 수 없습니다. 새 버전을
                     선택하거나 다른 결과를 업데이트해주세요.
                   </p>
                 )}
@@ -6576,9 +6611,11 @@ function WorkspaceCanvas() {
                   입력 범위 · 문서{' '}
                   {
                     aiRequest.inputPaths.filter(
-                      (path) => !path.startsWith('sections/'),
+                      (path) =>
+                        !path.startsWith('sections/') && !isPreviewPath(path),
                     ).length
                   }
+                  개 · HTML {aiRequest.inputPaths.filter(isPreviewPath).length}
                   개 · 섹션{' '}
                   {
                     aiRequest.inputPaths.filter((path) =>
@@ -6750,6 +6787,7 @@ function WorkspaceCanvas() {
                         setAiRequest({
                           ...aiRequest,
                           htmlResult: {
+                            ...aiRequest.htmlResult,
                             mode: aiRequest.htmlResult?.mode ?? 'new',
                             basePath: event.target.value || undefined,
                           },
@@ -6758,7 +6796,7 @@ function WorkspaceCanvas() {
                     >
                       {aiRequest.htmlResult?.mode !== 'update' && (
                         <option value="">
-                          기준 없음 · 선택 문서로 새 게임 만들기
+                          기준 없음 · 선택 재료로 새 게임 만들기
                         </option>
                       )}
                       {previews.map((preview) => (
@@ -7026,9 +7064,14 @@ function WorkspaceCanvas() {
                     aiRequest.implement &&
                     !collaboration.htmlResultFolders) ||
                   (collaboration.active &&
+                    (aiRequest.sourceMode === 'html-compose' ||
+                      (aiRequest.sourceMode === 'html' &&
+                        aiRequest.implement)) &&
+                    !collaboration.htmlComposition) ||
+                  (collaboration.active &&
                     aiRequest.sourceMode === 'html' &&
                     !collaboration.htmlImportAnalysis) ||
-                  (aiRequest.sourceMode === 'html' &&
+                  (aiRequest.sourceMode &&
                     aiRequest.implement &&
                     aiRequest.htmlResult?.mode === 'update' &&
                     aiRequest.inputPaths.includes(

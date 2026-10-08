@@ -1209,6 +1209,75 @@ try {
   console.log(
     'PASS: imported HTML is analyzed before a second CLI implements fresh documents; provenance and original HTML survive atomic publication',
   );
+  const components = ['combat', 'growth', 'shop'].map(
+    (name) => `output/systems/compose-${name}/v001/index.html`,
+  );
+  const componentJs = 'output/systems/compose-combat/v001/combat.js';
+  for (const [index, relative] of components.entries()) {
+    await fs.mkdir(path.dirname(path.join(root, relative)), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(root, relative),
+      `<html><body><button>${index}</button>${index === 0 ? '<script src="combat.js"></script>' : ''}</body></html>`,
+    );
+  }
+  await fs.writeFile(path.join(root, componentJs), 'const gold = 0;');
+  for (const workflow of [false, true]) {
+    const composeTask = await call('tasks:create', {
+      kind: workflow ? 'organize' : 'implement',
+      sourceMode: 'html-compose',
+      inputPaths: components,
+      x: 1300,
+      y: 800,
+      resultName: '시스템 통합',
+      instructions: workflow
+        ? undefined
+        : 'INSTRUCTION-IPC-PROBE 전투 보상을 상점·성장에 연결한다.',
+      ...(workflow
+        ? {
+            documentResult: { mode: 'new' },
+            thenImplement: {
+              htmlResult: { mode: 'new' },
+              instructions:
+                'INSTRUCTION-IPC-PROBE 전투 보상을 상점·성장에 연결한다.',
+              resultName: '시스템 통합',
+            },
+          }
+        : {}),
+    });
+    const spec = matter(
+      await fs.readFile(path.join(root, composeTask.relativePath), 'utf8'),
+    ).data;
+    const run = await call('codex:start', {
+      taskPath: composeTask.relativePath,
+      providerId: workflow ? 'claude-cli' : 'codex-cli',
+      modelId: workflow
+        ? 'fixture-gamejam-html-compose'
+        : 'fixture-html-compose',
+    });
+    const end = await terminal(run.runId);
+    assert.equal(end.status, 'completed', end.message);
+    for (const output of spec.expected_outputs)
+      await fs.access(path.join(root, output));
+    const executions = executionSpecs.filter(
+      (item) =>
+        item.model ===
+        (workflow ? 'fixture-gamejam-html-compose' : 'fixture-html-compose'),
+    );
+    assert.equal(executions.length, workflow ? 2 : 1);
+    const implementation = executions.at(-1)!;
+    for (const path of [...components, componentJs])
+      assert.ok(implementation.inputs.includes(path));
+    assert.match(spec.expected_outputs.at(-1), /^output\/prototypes\//);
+  }
+  assert.equal(
+    await fs.readFile(path.join(root, componentJs), 'utf8'),
+    'const gold = 0;',
+  );
+  console.log(
+    'PASS: desktop HTML-only composition and Claude two-stage composition receive all three originals/support files, preserve sources and publish prototype versions',
+  );
   collaborationServer = await createCollaborationServer({
     dataDirectory: path.join(root, 'test-server'),
     port: 0,

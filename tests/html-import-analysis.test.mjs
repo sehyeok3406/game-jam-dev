@@ -232,7 +232,11 @@ test('local and shared HTML tasks use identical source scope, editable analysis 
     files,
   );
   const stages = workflowStages(combined);
-  assert.deepEqual(matter(stages[1]).data.inputs, spec.data.expected_outputs);
+  assert.deepEqual(matter(stages[1]).data.inputs, [
+    ...spec.data.expected_outputs,
+    html,
+    htmlSourcePath(html),
+  ]);
   assert.equal(matter(stages[1]).data.base_html, html);
   assert.throws(
     () =>

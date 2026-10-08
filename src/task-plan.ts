@@ -8,6 +8,7 @@ import { taskInstructions } from './task-instructions.ts';
 import type { CreateTaskInput } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
 import { prepareHtmlSource, htmlSourcePath } from './html-source.ts';
+import { describeHtmlInput } from './html-inputs.ts';
 
 /** Source records and tasks are committed together under the same user history. */
 export function createTaskFiles(
@@ -31,17 +32,37 @@ export function createTaskPlan(
   id: string,
   files: Snapshot,
 ) {
-  if (input.sourceMode !== undefined && input.sourceMode !== 'html')
+  if (
+    input.sourceMode !== undefined &&
+    !['html', 'html-compose'].includes(input.sourceMode)
+  )
     throw new CanvasError(
       'GC-AI-007',
       'HTML 분석 입력 모드가 올바르지 않습니다.',
     );
   const source = prepareHtmlSource(files, input.inputPaths, input.sourceMode);
+  const htmlInputs =
+    source &&
+    (input.sourceMode === 'html-compose' ||
+      input.thenImplement ||
+      input.kind === 'implement')
+      ? source.descriptors.map((descriptor) =>
+          describeHtmlInput(files, descriptor.path),
+        )
+      : undefined;
   if (source) {
     files = { ...files, ...source.additions };
     input = {
       ...input,
-      inputPaths: [...new Set([...input.inputPaths, source.recordPath])],
+      inputPaths: [
+        ...new Set([
+          ...input.inputPaths,
+          ...source.recordPaths,
+          ...(htmlInputs?.flatMap((source) =>
+            source.files.map((file) => file.path),
+          ) ?? []),
+        ]),
+      ],
     };
   }
   if (
@@ -69,7 +90,17 @@ export function createTaskPlan(
     ? resolveDocumentOutputs(reserved, docChoice, input.resultName)
     : [];
   const htmlInput = input.thenImplement ?? input;
-  const choice = htmlInput.htmlResult ?? { mode: 'update' };
+  const choice = {
+    ...(source && source.descriptors.length > 1
+      ? { category: 'prototypes' as const }
+      : {}),
+    ...(htmlInput.htmlResult ?? {
+      mode:
+        input.sourceMode === 'html-compose'
+          ? ('new' as const)
+          : ('update' as const),
+    }),
+  };
   if (!['new', 'update'].includes(choice.mode))
     throw new CanvasError('GC-AI-004', 'HTML 결과 방식이 올바르지 않습니다.');
   const base = choice.basePath;
@@ -102,7 +133,7 @@ export function createTaskPlan(
   if (
     source &&
     (input.thenImplement || input.kind === 'implement') &&
-    htmlTarget === source.descriptor.path
+    source.descriptors.some((source) => htmlTarget === source.path)
   )
     throw new CanvasError(
       'GC-AI-007',
@@ -118,7 +149,8 @@ export function createTaskPlan(
     documents ? input : { ...input, htmlResult: resolved.choice },
     id,
     outputs,
-    source?.descriptor,
+    input.sourceMode === 'html' ? source?.descriptor : undefined,
+    htmlInputs,
   );
   if (!input.thenImplement) return first;
   const imageInputs = input.inputPaths.filter(
@@ -127,7 +159,18 @@ export function createTaskPlan(
   const second = createTaskSpecification(
     {
       kind: 'implement',
-      inputPaths: [...docOutputs, ...imageInputs],
+      inputPaths: [
+        ...new Set([
+          ...docOutputs,
+          ...imageInputs,
+          ...(source?.descriptors.map((source) => source.path) ?? []),
+          ...(source?.recordPaths ?? []),
+          ...(htmlInputs?.flatMap((source) =>
+            source.files.map((file) => file.path),
+          ) ?? []),
+        ]),
+      ],
+      ...(htmlInputs ? { sourceMode: 'html-compose' as const } : {}),
       x: input.x,
       y: input.y,
       instructions: input.thenImplement.instructions,
@@ -136,11 +179,16 @@ export function createTaskPlan(
     },
     `${id}-implement`,
     [htmlTarget],
+    undefined,
+    htmlInputs,
   );
   const parsed = matter(first);
   const secondData = matter(second).data;
+  const provenance = htmlInputs
+    ? `\n## 입력 HTML 출처와 지원 파일 상태\n\n${JSON.stringify(htmlInputs, null, 2)}\n`
+    : '';
   return matter.stringify(
-    `# gamejam! · 문서 정리 → HTML 구현\n\n문서 정리를 먼저 실행·검증한 다음, 이번에 정리한 문서를 기반으로 HTML을 구현합니다.\n두 단계 전체가 성공해야 결과를 반영합니다. 실패·중지 시 기존 결과는 유지합니다.\n\n## 입력 문서\n\n${input.inputPaths.map((path) => `- \`${path}\``).join('\n')}\n\n## 1. 문서 정리 지시\n\n${taskInstructions('organize', input.instructions)}\n\n## 2. HTML 구현 지시\n\n${taskInstructions('implement', input.thenImplement.instructions)}\n\n## 출력\n\n${[...docOutputs, htmlTarget].map((path) => `- \`${path}\``).join('\n')}\n`,
+    `# gamejam! · 문서 정리 → HTML 구현\n\n문서 정리를 먼저 실행·검증한 다음, 이번에 정리한 문서를 기반으로 HTML을 구현합니다.\n두 단계 전체가 성공해야 결과를 반영합니다. 실패·중지 시 기존 결과는 유지합니다.\n\n## 입력 문서\n\n${input.inputPaths.map((path) => `- \`${path}\``).join('\n')}\n\n## 1. 문서 정리 지시\n\n${taskInstructions('organize', input.instructions)}\n\n## 2. HTML 구현 지시\n\n${taskInstructions('implement', input.thenImplement.instructions)}\n\n## 출력\n\n${[...docOutputs, htmlTarget].map((path) => `- \`${path}\``).join('\n')}\n${provenance}`,
     {
       ...parsed.data,
       title: `gamejam! · ${input.thenImplement.resultName || input.resultName || '문서 정리 → HTML 구현'}`,

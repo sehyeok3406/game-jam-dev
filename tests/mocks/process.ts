@@ -130,9 +130,26 @@ export function spawn(
           ) + '\n',
         );
         if (mode !== 'fixture-empty' && output) {
+          if (
+            mode === 'fixture-html-compose' ||
+            mode === 'fixture-gamejam-html-compose'
+          ) {
+            if (spec.html_input_sources?.length !== 3)
+              throw new Error('Expected three HTML materials');
+            for (const source of spec.html_input_sources) {
+              await fs.readFile(path.join(stage, source.path));
+              for (const file of source.files)
+                await fs.readFile(path.join(stage, file.path));
+            }
+          }
           if (mode.startsWith('fixture-gamejam')) {
             const docs: string[] = [];
             for (const relative of spec.inputs) {
+              if (
+                !relative.endsWith('.md') ||
+                relative.startsWith('docs/html-sources/')
+              )
+                continue;
               if (
                 matter(await fs.readFile(path.join(stage, relative), 'utf8'))
                   .data.type !== 'image'
@@ -146,6 +163,16 @@ export function spawn(
               throw new Error(
                 'HTML phase did not receive exactly the fresh organized documents',
               );
+            for (const source of spec.html_input_sources ?? []) {
+              if (!spec.inputs.includes(source.path))
+                throw new Error('Missing original HTML input');
+              await fs.readFile(path.join(stage, source.path));
+              for (const file of source.files) {
+                if (!spec.inputs.includes(file.path))
+                  throw new Error('Missing HTML dependency');
+                await fs.readFile(path.join(stage, file.path));
+              }
+            }
             for (const relative of docs) {
               const raw = await fs.readFile(path.join(stage, relative), 'utf8');
               if (!raw.includes(`organized ${mode}`))
@@ -219,6 +246,21 @@ export function spawn(
                 type: 'system',
                 status: 'draft',
                 sources,
+                ...(spec.source_mode === 'html-compose'
+                  ? {
+                      analyzed_htmls: spec.html_input_sources.map(
+                        ({
+                          id,
+                          path,
+                          sha256,
+                        }: {
+                          id: string;
+                          path: string;
+                          sha256: string;
+                        }) => ({ id, path, sha256 }),
+                      ),
+                    }
+                  : {}),
                 ...(spec.html_analysis_source &&
                 mode !== 'fixture-html-analysis-missing-source'
                   ? { analyzed_html: spec.html_analysis_source }

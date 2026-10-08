@@ -713,6 +713,18 @@ export class CollaborationClient {
           'GC-AI-007',
           'HTML 불러오기·분석에는 협업 서버 v0.7.10 이상이 필요합니다. 서버를 업데이트해주세요.',
         );
+      if (
+        channel === 'tasks:create' &&
+        !this.state.htmlComposition &&
+        ((input as CreateTaskInput)?.sourceMode === 'html-compose' ||
+          ((input as CreateTaskInput)?.sourceMode === 'html' &&
+            ((input as CreateTaskInput)?.thenImplement ||
+              (input as CreateTaskInput)?.kind === 'implement')))
+      )
+        throw new CanvasError(
+          'GC-AI-007',
+          'HTML을 구현 재료로 사용하려면 앱과 협업 서버를 함께 v0.10.9 이상으로 업데이트해주세요.',
+        );
       if (!this.state.connected)
         throw new Error(
           '서버에 연결되어 있지 않습니다. 초안을 보관하고 재연결을 기다려주세요.',
@@ -959,6 +971,7 @@ export class CollaborationClient {
         providerId,
         gamejamVersion: 1,
         htmlAnalysisVersion: 1,
+        htmlInputVersion: 1,
         revision: this.state.revision,
       })) as CollaborationEnvelope & { lease: string };
       this.lease = result.lease;
