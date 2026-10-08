@@ -343,7 +343,19 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     localStorage.setItem('game-canvas-demo-home', JSON.stringify(next));
     home = next;
   };
+  const drafts = new Map<string, import('./editor-drafts').EditorDraft>();
   const api: GameCanvasApi = {
+    getCanvasChanges: async () => null,
+    getDocument: async (relative) =>
+      structuredClone(
+        documents.find((doc) => doc.relativePath === relative) ?? null,
+      ),
+    getEditorDraft: async (key) => drafts.get(key) ?? null,
+    setEditorDraft: async (key, draft) => {
+      if (draft) drafts.set(key, draft);
+      else drafts.delete(key);
+    },
+    onDraftFlushRequested: () => () => {},
     getWebViewer: async () => ({
       configured: false,
       url: 'https://game-jam-web-viewer.vercel.app',

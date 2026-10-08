@@ -259,6 +259,7 @@ type DocumentNodeData = {
   registerEditor: (id: string, flush: (() => Promise<void>) | null) => void;
   document: CanvasDocument;
   collaborative: boolean;
+  layoutLocked: boolean;
   draftKey: string;
   editingBy?: string;
   beginEdit: (document: CanvasDocument) => Promise<void>;
@@ -408,10 +409,14 @@ function ProjectImage({
   );
 }
 
+const draftFlushers = new Map<string, () => Promise<void>>();
 function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   const { document } = data;
   const cardRef = useRef<HTMLElement>(null);
   const savingRef = useRef<Promise<void> | null>(null);
+  const composingRef = useRef(false);
+  const compositionWaiters = useRef<(() => void)[]>([]);
+  const draftSequence = useRef(Date.now() * 1000);
   const taskBusy = useRef(false);
   const [taskError, setTaskError] = useState('');
   const [editing, setEditing] = useState(false);
@@ -437,18 +442,45 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   } | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(data.draftKey);
-      const draft = raw ? JSON.parse(raw) : null;
-      setCachedDraft(
-        typeof draft?.title === 'string' && typeof draft?.body === 'string'
-          ? draft
-          : null,
-      );
-    } catch {
-      setCachedDraft(null);
-    }
+    let active = true;
+    const load = async () => {
+      try {
+        const raw = localStorage.getItem(data.draftKey);
+        const old = raw ? JSON.parse(raw) : null;
+        const draft =
+          (await window.gameCanvas.getEditorDraft(data.draftKey)) ?? old;
+        if (active)
+          setCachedDraft(
+            typeof draft?.title === 'string' && typeof draft?.body === 'string'
+              ? draft
+              : null,
+          );
+      } catch {
+        if (active) setCachedDraft(null);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
   }, [data.draftKey]);
+
+  const backupDraft = useCallback(async () => {
+    const current = latestRef.current;
+    if (!editorDraftMatches(current, savedRef.current)) {
+      await window.gameCanvas.setEditorDraft(
+        dataRef.current.draftKey,
+        { ...current, sequence: draftSequence.current },
+        draftSequence.current,
+      );
+    }
+  }, []);
+  useEffect(() => {
+    draftFlushers.set(data.draftKey, backupDraft);
+    return () => {
+      draftFlushers.delete(data.draftKey);
+    };
+  }, [data.draftKey, backupDraft]);
 
   useEffect(() => {
     if (!editing) {
@@ -460,6 +492,11 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
 
   const persist = useCallback(
     async (finish: boolean) => {
+      while (composingRef.current)
+        await new Promise<void>((resolve) =>
+          compositionWaiters.current.push(resolve),
+        );
+      await backupDraft();
       // Serialize the entire save, not just IPC. Finishing drains edits typed
       // during a pending write before releasing the collaboration lock.
       while (savingRef.current) await savingRef.current.catch(() => undefined);
@@ -475,11 +512,10 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
               // React may not have committed the last refresh yet. Read the
               // adapter's acknowledged revision, and never rebase silently onto
               // someone else's text (including externally edited local files).
-              const stored = (await window.gameCanvas.listDocuments()).find(
-                (item) =>
-                  item.relativePath === latestData.document.relativePath,
+              const stored = await window.gameCanvas.getDocument(
+                latestData.document.relativePath,
               );
-              if (!stored)
+              if (!stored || stored.id !== latestData.document.id)
                 throw new Error(
                   '문서를 찾을 수 없습니다. 초안을 보관한 뒤 프로젝트를 확인해주세요.',
                 );
@@ -491,16 +527,29 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                 throw new Error(
                   '문서가 다른 곳에서 변경되었습니다. 초안은 유지되며, 최신 내용을 확인한 뒤 다시 편집해주세요.',
                 );
-              await latestData.onSave(stored, current.title, current.body);
+              const sent = { ...current };
+              await latestData.onSave(stored, sent.title, sent.body);
               savedRef.current = current;
             },
             finish,
+            async () => {
+              while (composingRef.current)
+                await new Promise<void>((resolve) =>
+                  compositionWaiters.current.push(resolve),
+                );
+              await backupDraft();
+            },
           );
           if (
             latestRef.current.title === savedRef.current.title &&
             latestRef.current.body === savedRef.current.body
           ) {
             try {
+              await window.gameCanvas.setEditorDraft(
+                dataRef.current.draftKey,
+                null,
+                draftSequence.current,
+              );
               localStorage.removeItem(dataRef.current.draftKey);
             } catch {
               /* Optional draft cache. */
@@ -525,7 +574,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
         if (savingRef.current === operation) savingRef.current = null;
       }
     },
-    [data, document],
+    [backupDraft],
   );
   const save = useCallback(() => persist(true), [persist]);
   const dirty =
@@ -577,32 +626,48 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
     }
   };
   useEffect(() => {
-    if (
-      !editing ||
-      (title === savedRef.current.title && body === savedRef.current.body)
-    )
+    draftSequence.current++;
+    if (!editing || editorDraftMatches({ title, body }, savedRef.current))
       return;
-    try {
-      localStorage.setItem(data.draftKey, JSON.stringify({ title, body }));
-    } catch {
-      /* Browser storage quota must not prevent server autosave. */
-    }
-    if (data.locked || saveFailed) return;
     const timer = setTimeout(
-      () => void persist(false).catch(() => undefined),
-      800,
+      () => void backupDraft().catch(() => setSaveFailed(true)),
+      300,
     );
     return () => clearTimeout(timer);
-  }, [
-    editing,
-    title,
-    body,
-    data.draftKey,
-    data.collaborative,
-    data.locked,
-    saveFailed,
-    persist,
-  ]);
+  }, [editing, title, body, backupDraft]);
+  useEffect(() => {
+    if (
+      !editing ||
+      editorDraftMatches({ title, body }, savedRef.current) ||
+      data.locked ||
+      saveFailed
+    )
+      return;
+    const timer = setTimeout(() => {
+      if (!composingRef.current && !savingRef.current)
+        void persist(false).catch(() => undefined);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [editing, title, body, data.locked, saveFailed, persist]);
+  useEffect(() => {
+    if (!editing || data.locked || saveFailed) return;
+    const timer = setInterval(() => {
+      if (
+        !composingRef.current &&
+        !savingRef.current &&
+        !editorDraftMatches(latestRef.current, savedRef.current)
+      )
+        void persist(false).catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [editing, data.locked, saveFailed, persist]);
+  const setComposing = (value: boolean) => {
+    composingRef.current = value;
+    if (!value)
+      requestAnimationFrame(() => {
+        for (const resolve of compositionWaiters.current.splice(0)) resolve();
+      });
+  };
 
   const startEdit = async (focus: typeof editFocus = { title: false }) => {
     if (startingEdit || taskBusy.current) return;
@@ -672,7 +737,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
       {!document.collapsed && (
         <NodeResizer
           color="var(--selection)"
-          isVisible={selected && !data.locked}
+          isVisible={selected && !data.layoutLocked}
           lineClassName="window-resize-edge"
           handleClassName="window-resize-handle"
           minWidth={260}
@@ -710,7 +775,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
             <button
               className="icon-button"
               title={document.collapsed ? '메모 펼치기' : '메모 최소화'}
-              disabled={data.locked}
+              disabled={data.layoutLocked}
               onClick={data.onCollapse}
             >
               {document.collapsed ? (
@@ -762,6 +827,8 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
               >
                 <input
                   ref={titleRef}
+                  onCompositionStart={() => setComposing(true)}
+                  onCompositionEnd={() => setComposing(false)}
                   aria-label="문서 제목"
                   value={title}
                   readOnly={data.locked}
@@ -775,6 +842,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                 />
                 <MarkdownEditor
                   value={body}
+                  onCompositionChange={setComposing}
                   locked={data.locked}
                   owner={editorOwner}
                   title={title}
@@ -912,7 +980,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                         <ProjectImage
                           path={path}
                           title={alt ?? ''}
-                          cacheKey={`${data.draftKey}:${document.modifiedAt}`}
+                          cacheKey={`${data.draftKey}:${document.assetVersion ?? 0}`}
                         />
                       ) : (
                         <span className="project-image-placeholder">
@@ -1891,6 +1959,42 @@ function WorkspaceCanvas() {
     [],
   );
 
+  const canvasViewCache = useRef<{
+    root: string | null;
+    signatures: Record<string, string>;
+    documents: CanvasDocument[];
+    sections: CanvasSection[];
+    previews: PreviewResult[];
+  }>({ root: null, signatures: {}, documents: [], sections: [], previews: [] });
+  const previewWindowCache = useRef<{
+    root: string | null;
+    windows: Record<string, PreviewWindowState>;
+  }>({ root: null, windows: {} });
+  previewWindowCache.current = {
+    root: workspace.root,
+    windows: previewWindows,
+  };
+  const reconcile = <T extends { relativePath: string }>(
+    current: T[],
+    next: T[],
+  ) => {
+    const existing = new Map(current.map((item) => [item.relativePath, item]));
+    const result = next.map((item) => {
+      const old = existing.get(item.relativePath);
+      return old && JSON.stringify(old) === JSON.stringify(item) ? old : item;
+    });
+    return result.length === current.length &&
+      result.every((item, index) => item === current[index])
+      ? current
+      : result;
+  };
+  useEffect(
+    () =>
+      window.gameCanvas.onDraftFlushRequested?.(async () => {
+        await Promise.all([...draftFlushers.values()].map((flush) => flush()));
+      }),
+    [],
+  );
   const loadProject = useCallback(async (fit = false) => {
     const request = ++projectLoadRef.current;
     try {
@@ -1908,13 +2012,55 @@ function WorkspaceCanvas() {
         setLoading(false);
         return;
       }
-      const [nextDocuments, nextSections, nextPreviews, nextSheets] =
-        await Promise.all([
-          window.gameCanvas.listDocuments(),
-          window.gameCanvas.listSections(),
-          window.gameCanvas.listPreviews(),
-          window.gameCanvas.getCanvasSheets(),
-        ]);
+      const previousView =
+        canvasViewCache.current.root === state.root
+          ? canvasViewCache.current
+          : {
+              root: state.root,
+              signatures: {},
+              documents: [],
+              sections: [],
+              previews: [],
+            };
+      const changes = await window.gameCanvas.getCanvasChanges?.(
+        previousView.signatures,
+      );
+      if (request !== projectLoadRef.current) return;
+      const patch = <T extends { relativePath: string }>(
+        before: T[],
+        changed: T[],
+        removed: string[],
+      ) => {
+        const deleted = new Set(removed),
+          values = new Map(
+            before
+              .filter((item) => !deleted.has(item.relativePath))
+              .map((item) => [item.relativePath, item]),
+          );
+        for (const item of changed) values.set(item.relativePath, item);
+        return [...values.values()];
+      };
+      const [nextDocuments, nextSections, nextPreviews, nextSheets] = changes
+        ? ([
+            patch(previousView.documents, changes.documents, changes.removed),
+            patch(previousView.sections, changes.sections, changes.removed),
+            patch(previousView.previews, changes.previews, changes.removed),
+            changes.sheets,
+          ] as const)
+        : await Promise.all([
+            window.gameCanvas.listDocuments(),
+            window.gameCanvas.listSections(),
+            window.gameCanvas.listPreviews(),
+            window.gameCanvas.getCanvasSheets(),
+          ]);
+      if (changes)
+        canvasViewCache.current = {
+          root: state.root,
+          signatures: changes.signatures,
+          documents: nextDocuments,
+          sections: nextSections,
+          previews: nextPreviews,
+        };
       if (request !== projectLoadRef.current) return;
       const projectChanged = canvasProjectRef.current !== state.root;
       let selectedCanvas = activeCanvasRef.current;
@@ -1937,11 +2083,20 @@ function WorkspaceCanvas() {
         setNodes([]);
       }
       canvasProjectRef.current = state.root;
-      setCanvasSheets(nextSheets);
+      setCanvasSheets((current) =>
+        JSON.stringify(current) === JSON.stringify(nextSheets)
+          ? current
+          : nextSheets,
+      );
       const nextWindows: Record<string, PreviewWindowState> = {};
       const savedWindows = await Promise.all(
         nextPreviews.map((result) =>
-          window.gameCanvas.getPreviewWindow(result.relativePath),
+          previewWindowCache.current.root === state.root &&
+          previewWindowCache.current.windows[result.relativePath]
+            ? Promise.resolve(
+                previewWindowCache.current.windows[result.relativePath],
+              )
+            : window.gameCanvas.getPreviewWindow(result.relativePath),
         ),
       );
       const canvasDocuments = nextDocuments.filter(isCanvasDocument);
@@ -2042,16 +2197,28 @@ function WorkspaceCanvas() {
       );
       newFileIndicatorsRef.current = { root: state.root, value: indicators };
       saveNewFileIndicators(state.root, indicators);
-      setNewFileNodes(new Set(indicators.unread));
-      setDocuments(canvasDocuments);
-      setTaskDocuments(
-        nextDocuments.filter(
-          (doc) => doc.type === 'ai-task' || isAiTaskPath(doc.relativePath),
+      setNewFileNodes((current) =>
+        current.size === indicators.unread.length &&
+        indicators.unread.every((id) => current.has(id))
+          ? current
+          : new Set(indicators.unread),
+      );
+      setDocuments((current) => reconcile(current, canvasDocuments));
+      setTaskDocuments((current) =>
+        reconcile(
+          current,
+          nextDocuments.filter(
+            (doc) => doc.type === 'ai-task' || isAiTaskPath(doc.relativePath),
+          ),
         ),
       );
-      setSections(nextSections);
-      setPreviews(nextPreviews);
-      setPreviewWindows(nextWindows);
+      setSections((current) => reconcile(current, nextSections));
+      setPreviews((current) => reconcile(current, nextPreviews));
+      setPreviewWindows((current) =>
+        JSON.stringify(current) === JSON.stringify(nextWindows)
+          ? current
+          : nextWindows,
+      );
       setUndoState(await window.gameCanvas.getUndoState());
       if (knownPreviewsRef.current.root !== state.root) {
         setInspectorId(null);
@@ -2236,10 +2403,29 @@ function WorkspaceCanvas() {
         await window.gameCanvas.saveDocument({
           relativePath: document.relativePath,
           revision: document.revision,
+          objectId: document.id,
+          structureRevision: document.structureRevision,
+          contentRevision: document.contentRevision,
+          expectedTitle: document.title,
+          expectedBody: document.body,
           title,
           body,
         });
-        await loadProject(false);
+        const confirmed = await window.gameCanvas.getDocument(
+          document.relativePath,
+        );
+        if (confirmed) {
+          setDocuments((current) =>
+            current.map((item) =>
+              item.relativePath === confirmed.relativePath ? confirmed : item,
+            ),
+          );
+          setTaskDocuments((current) =>
+            current.map((item) =>
+              item.relativePath === confirmed.relativePath ? confirmed : item,
+            ),
+          );
+        }
       } catch (error) {
         showError(error);
         throw error;
@@ -2264,14 +2450,29 @@ function WorkspaceCanvas() {
               member.path === document.relativePath,
           ),
         );
-        await window.gameCanvas.updateDocumentLayout({
-          relativePath: document.relativePath,
-          revision: document.revision,
-          x: x + (parent?.x ?? 0),
-          y: y + (parent?.y ?? 0),
-          width,
-          height,
+        const sequence = ++geometrySequence.current;
+        pendingGeometry.current.set(document.id, {
+          sequence,
+          position: { x, y },
+          style: { width, height },
         });
+        try {
+          await window.gameCanvas.updateDocumentLayout({
+            relativePath: document.relativePath,
+            revision: document.revision,
+            objectId: document.id,
+            structureRevision: document.structureRevision,
+            x: x + (parent?.x ?? 0),
+            y: y + (parent?.y ?? 0),
+            width,
+            height,
+          });
+          await loadProject(false);
+        } finally {
+          if (pendingGeometry.current.get(document.id)?.sequence === sequence)
+            pendingGeometry.current.delete(document.id);
+          setGeometryEpoch((epoch) => epoch + 1);
+        }
       } catch (error) {
         showError(error);
       }
@@ -2291,6 +2492,8 @@ function WorkspaceCanvas() {
         await window.gameCanvas.updateSectionLayout({
           relativePath: section.relativePath,
           revision: section.revision,
+          objectId: section.id,
+          structureRevision: section.structureRevision,
           x,
           y,
           width,
@@ -2525,6 +2728,34 @@ function WorkspaceCanvas() {
     }
   };
 
+  const sourceTitles = useMemo(
+    () =>
+      Object.fromEntries([
+        ...documents.map((item) => [item.id, item.title]),
+        ...previews
+          .filter((item) => item.sourceId)
+          .map((item) => [
+            item.sourceId!,
+            item.title ?? previewLabel(item.relativePath),
+          ]),
+      ]),
+    [
+      documents.map((item) => `${item.id}:${item.title}`).join('|'),
+      previews.map((item) => `${item.sourceId}:${item.title}`).join('|'),
+    ],
+  );
+  const pendingGeometry = useRef(
+    new Map<
+      string,
+      {
+        sequence: number;
+        position: { x: number; y: number };
+        style: CanvasNode['style'];
+      }
+    >(),
+  );
+  const geometrySequence = useRef(0);
+  const [geometryEpoch, setGeometryEpoch] = useState(0);
   useEffect(() => {
     const sectionByMember = new Map<string, CanvasSection>();
     sections.forEach((section) => {
@@ -2558,14 +2789,16 @@ function WorkspaceCanvas() {
             lock.relativePath === document.relativePath &&
             lock.memberId !== collaboration.memberId,
         );
-        const nodeLocked =
+        const layoutLocked =
           pathLocked(document.relativePath) ||
-          (!!foreignLock &&
-            collaboration.connected &&
-            !collaboration.pendingChanges) ||
           (collaboration.active &&
             collaboration.role !== 'admin' &&
             document.type === 'ai-task');
+        const nodeLocked =
+          layoutLocked ||
+          (!!foreignLock &&
+            collaboration.connected &&
+            !collaboration.pendingChanges);
         const parent =
           sectionByMember.get(document.id) ??
           sectionByMember.get(document.relativePath);
@@ -2585,9 +2818,10 @@ function WorkspaceCanvas() {
           parentId: parent ? sectionNodeId(parent.id) : undefined,
           zIndex: 2,
           dragHandle: '.document-card__header',
-          draggable: !nodeLocked,
+          draggable: !layoutLocked,
           data: {
             kind: 'document',
+            layoutLocked,
             locked: nodeLocked,
             onBlocked: isAiFileLocked(aiFileLock, document.relativePath)
               ? () => setBlockedMessage(AI_FILE_LOCK_MESSAGE)
@@ -2628,15 +2862,7 @@ function WorkspaceCanvas() {
                 })
                 .then(() => loadProject(false))
                 .catch(showError),
-            sourceTitles: Object.fromEntries([
-              ...documents.map((item) => [item.id, item.title]),
-              ...previews
-                .filter((item) => item.sourceId)
-                .map((item) => [
-                  item.sourceId!,
-                  item.title ?? previewLabel(item.relativePath),
-                ]),
-            ]),
+            sourceTitles,
             reportEdit,
           },
         };
@@ -2692,26 +2918,45 @@ function WorkspaceCanvas() {
         };
       });
     setNodes((currentNodes) => {
-      const selectedNodeIds = new Set(
-        currentNodes.filter((node) => node.selected).map((node) => node.id),
+      const existing = new Map(currentNodes.map((node) => [node.id, node]));
+      const next = [...sectionNodes, ...documentNodes, ...previewNodes].map(
+        (node) => {
+          const old = existing.get(node.id),
+            pending = pendingGeometry.current.get(node.id);
+          const geometryLocked =
+            node.data.kind === 'document'
+              ? node.data.layoutLocked
+              : node.data.locked;
+          const result = {
+            ...node,
+            selected: old?.selected ?? false,
+            ...(old?.dragging && !geometryLocked
+              ? { position: old.position, dragging: true }
+              : pending
+                ? { position: pending.position, style: pending.style }
+                : {}),
+          } as CanvasNode;
+          if (
+            old &&
+            JSON.stringify(old, (_key, value) =>
+              typeof value === 'function' ? undefined : value,
+            ) ===
+              JSON.stringify(result, (_key, value) =>
+                typeof value === 'function' ? undefined : value,
+              )
+          )
+            return old;
+          return result;
+        },
       );
-      return [...sectionNodes, ...documentNodes, ...previewNodes].map(
-        (node) => ({
-          ...node,
-          selected: selectedNodeIds.has(node.id),
-          ...(currentNodes.find((existing) => existing.id === node.id)
-            ?.dragging && !node.data.locked
-            ? {
-                position: currentNodes.find(
-                  (existing) => existing.id === node.id,
-                )!.position,
-                dragging: true,
-              }
-            : {}),
-        }),
-      ) as CanvasNode[];
+      return next.length === currentNodes.length &&
+        next.every((node, index) => node === currentNodes[index])
+        ? currentNodes
+        : next;
     });
   }, [
+    geometryEpoch,
+    sourceTitles,
     activeCanvas,
     findOpen,
     locked,
@@ -3323,6 +3568,29 @@ function WorkspaceCanvas() {
   };
 
   const persistDraggedNodes = async (
+    primary: CanvasNode,
+    dragged: CanvasNode[],
+  ) => {
+    const moved = dragged.length ? dragged : [primary];
+    const sequence = ++geometrySequence.current;
+    for (const node of moved)
+      pendingGeometry.current.set(node.id, {
+        sequence,
+        position: node.position,
+        style: node.style,
+      });
+    requestAnimationFrame(() => setGeometryEpoch((epoch) => epoch + 1));
+    try {
+      await performPersistDraggedNodes(primary, dragged);
+      await loadProject(false);
+    } finally {
+      for (const node of moved)
+        if (pendingGeometry.current.get(node.id)?.sequence === sequence)
+          pendingGeometry.current.delete(node.id);
+      setGeometryEpoch((epoch) => epoch + 1);
+    }
+  };
+  const performPersistDraggedNodes = async (
     primaryNode: CanvasNode,
     draggedNodes: CanvasNode[],
   ) => {
@@ -3384,6 +3652,8 @@ function WorkspaceCanvas() {
           const section = sectionNode.data.section;
           updates.push({
             kind: 'section',
+            objectId: section.id,
+            structureRevision: section.structureRevision,
             relativePath: section.relativePath,
             revision: section.revision,
             x: sectionNode.position.x,
@@ -3404,6 +3674,9 @@ function WorkspaceCanvas() {
               documentNode.measured?.height ?? document.height;
             return {
               kind: 'document' as const,
+              objectId: document.id,
+              structureRevision: document.structureRevision,
+              size: false,
               relativePath: document.relativePath,
               revision: document.revision,
               x: documentNode.position.x + (renderedParent?.x ?? 0),
@@ -3431,6 +3704,8 @@ function WorkspaceCanvas() {
         await window.gameCanvas.updateSectionLayout({
           relativePath: section.relativePath,
           revision: section.revision,
+          objectId: section.id,
+          structureRevision: section.structureRevision,
           x: node.position.x,
           y: node.position.y,
           width: node.measured?.width ?? section.width,
@@ -3493,6 +3768,9 @@ function WorkspaceCanvas() {
       await window.gameCanvas.updateDocumentLayout({
         relativePath: document.relativePath,
         revision: document.revision,
+        objectId: document.id,
+        structureRevision: document.structureRevision,
+        size: false,
         x,
         y,
         width,

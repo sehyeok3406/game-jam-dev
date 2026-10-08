@@ -1,3 +1,10 @@
+import { SyncStore } from './sync-store.ts';
+import {
+  advanceProperties,
+  changedGroups,
+  objectId,
+  type PropertyVersions,
+} from './sync-properties.ts';
 import { canvasId, CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import {
@@ -74,6 +81,9 @@ type Job = {
   event: CodexRunEvent;
 };
 type Project = {
+  propertyVersions?: PropertyVersions;
+  propertySync?: boolean;
+  sequences?: Record<string, number>;
   id: string;
   name: string;
   createdAt?: number;
@@ -93,6 +103,13 @@ type Project = {
 };
 type Lock = { memberId: string; token: string; expiresAt: number };
 export type CollaborationCommand = {
+  propertySyncVersion?: number;
+  sessionId?: string;
+  sequence?: number;
+  objects?: Record<string, string>;
+  properties?: PropertyVersions;
+  knownRevision?: number;
+  deltaVersion?: number;
   canvasSheetsVersion?: number;
   id: string;
   channel: string;
@@ -105,6 +122,8 @@ export type CollaborationEnvelope = {
   files: Snapshot;
   revisions: Record<string, number>;
   authorship?: FileAuthorshipMap;
+  properties?: PropertyVersions;
+  delta?: { from: number; changes: Record<string, string | null> };
 };
 type Options = {
   dataDirectory: string;
@@ -121,6 +140,14 @@ class ApiError extends Error {
     this.status = status;
   }
 }
+const cloneProject = (project: Project): Project => ({
+  ...project,
+  revisions: { ...project.revisions },
+  members: project.members.map((member) => ({ ...member })),
+  history: [...project.history],
+  applied: [...project.applied],
+  job: project.job ? structuredClone(project.job) : null,
+});
 const digest = (value: string) =>
   createHash('sha256').update(value).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
@@ -156,7 +183,7 @@ const taskState = (files: Snapshot, relative: string, status: string) => {
   };
 };
 
-/** Small-group server. Durable commits use an immutable checkpoint plus an atomic head pointer. */
+/** Durable transactions are independent of recovery checkpoint export. */
 export async function createCollaborationServer(options: Options) {
   const host = options.host ?? '127.0.0.1';
   if (
@@ -168,6 +195,10 @@ export async function createCollaborationServer(options: Options) {
   const root = path.resolve(options.dataDirectory);
   await fs.mkdir(root, { recursive: true });
   const projects = new Map<string, Project>();
+  const store = new SyncStore<Project>(path.join(root, 'sync.sqlite'));
+  const streams = new Map<string, Set<ServerResponse>>();
+  const dirtyCheckpoints = new Set<string>();
+  const checkpointJobs = new Map<string, Promise<void>>();
   const queues = new Map<string, Promise<unknown>>();
   const locks = new Map<string, Map<string, Lock>>();
   const online = new Map<string, Map<string, number>>();
@@ -180,7 +211,7 @@ export async function createCollaborationServer(options: Options) {
     );
     return next;
   };
-  const persist = async (project: Project) => {
+  const checkpoint = async (project: Project) => {
     const folder = path.join(root, project.id),
       checkpoint = randomUUID();
     const target = path.join(folder, 'checkpoints', checkpoint);
@@ -197,10 +228,66 @@ export async function createCollaborationServer(options: Options) {
       mode: 0o600,
     });
     await fs.rename(temporary, path.join(folder, 'head.json'));
-    projects.set(project.id, project);
+    if (projects.get(project.id) === project)
+      dirtyCheckpoints.delete(project.id);
   };
+  const exportCheckpoint = (project: Project) => {
+    const pending = (checkpointJobs.get(project.id) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => checkpoint(project));
+    checkpointJobs.set(project.id, pending);
+    void pending
+      .finally(() => {
+        if (checkpointJobs.get(project.id) === pending)
+          checkpointJobs.delete(project.id);
+      })
+      .catch(() => undefined);
+    return pending;
+  };
+  const announce = (id: string) => {
+    for (const response of streams.get(id) ?? []) {
+      if (!response.writableNeedDrain)
+        response.write(
+          `data: ${JSON.stringify({ revision: projects.get(id)?.revision })}\n\n`,
+        );
+      else response.end();
+    }
+  };
+  const persist = async (project: Project) => {
+    store.save(project);
+    projects.set(project.id, project);
+    dirtyCheckpoints.add(project.id);
+    const folder = path.join(root, project.id);
+    await fs.mkdir(folder, { recursive: true });
+    const temporary = path.join(folder, 'runtime.tmp');
+    await fs.writeFile(
+      temporary,
+      JSON.stringify({
+        revision: project.revision,
+        job: project.job
+          ? { id: project.job.id, expiresAt: project.job.expiresAt }
+          : null,
+      }),
+      { mode: 0o600 },
+    );
+    await fs.rename(temporary, path.join(folder, 'runtime.json'));
+    if (!(await fs.stat(path.join(folder, 'head.json')).catch(() => null)))
+      await exportCheckpoint(project);
+    announce(project.id);
+  };
+  for (const project of store.load()) {
+    checkSnapshot(project.files);
+    project.authorship ??= rebuildAuthorship(project.history);
+    if (project.job) project.job.expiresAt = 0;
+    projects.set(project.id, project);
+  }
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^[a-f0-9-]{36}$/.test(entry.name)) continue;
+    if (
+      !entry.isDirectory() ||
+      !/^[a-f0-9-]{36}$/.test(entry.name) ||
+      projects.has(entry.name)
+    )
+      continue;
     try {
       const head = JSON.parse(
         await fs.readFile(path.join(root, entry.name, 'head.json'), 'utf8'),
@@ -231,8 +318,10 @@ export async function createCollaborationServer(options: Options) {
       if (project.job) {
         project.job.expiresAt = 0;
       }
+      store.save(project);
       projects.set(project.id, project);
     } catch (error) {
+      store.close();
       throw new Error(`협업 프로젝트 복구 실패: ${entry.name}`, {
         cause: error,
       });
@@ -276,11 +365,15 @@ export async function createCollaborationServer(options: Options) {
     member: Member,
   ): CollaborationEnvelope => ({
     files: project.files,
+    properties: project.propertyVersions ?? {},
     revisions: project.revisions,
     authorship: project.authorship,
     state: {
       active: true,
       connected: true,
+      propertySync: true,
+      deltaSync: true,
+      eventStream: true,
       offlineSync: true,
       projectRename: true,
       taskInstructionsEditable: true,
@@ -343,6 +436,12 @@ export async function createCollaborationServer(options: Options) {
       project.revisions[relative] = (project.revisions[relative] ?? 0) + 1;
     }
     project.revision++;
+    project.propertyVersions = advanceProperties(
+      project.propertyVersions ?? {},
+      project.files,
+      after,
+      project.revision,
+    );
     project.modifiedAt = Date.now();
     project.history.push({
       entry: withTaskHistory(
@@ -389,16 +488,60 @@ export async function createCollaborationServer(options: Options) {
     after: Snapshot,
     bases: Record<string, number>,
     member: Member,
+    command?: CollaborationCommand,
   ) => {
     for (const relative of Object.keys({ ...before, ...after }).filter(
       (relative) => before[relative] !== after[relative],
     )) {
-      if ((bases?.[relative] ?? 0) !== (project.revisions[relative] ?? 0))
+      const groups = changedGroups(relative, before[relative], after[relative]);
+      const scoped =
+        command?.propertySyncVersion === 1 &&
+        [
+          'documents:save',
+          'documents:set-color',
+          'documents:update-layout',
+          'sections:update-layout',
+          'layouts:update',
+        ].includes(command.channel) &&
+        before[relative] !== undefined &&
+        after[relative] !== undefined &&
+        !groups.includes('structure');
+      if (scoped) {
+        if (
+          (command.properties?.[relative]?.structure ?? 0) !==
+          (project.propertyVersions?.[relative]?.structure ?? 0)
+        )
+          throw new ApiError(
+            `객체 소속이나 생성 버전이 변경되었습니다: ${relative}`,
+          );
+        if (command.objects?.[relative] !== objectId(before[relative]))
+          throw new ApiError(`객체가 변경되었거나 삭제되었습니다: ${relative}`);
+        for (const group of groups) {
+          if (
+            group === 'content' &&
+            (command.properties?.[relative]?.content ?? 0) !==
+              (project.propertyVersions?.[relative]?.content ?? 0)
+          )
+            throw new ApiError(
+              `문서 내용이 변경되었습니다. 초안은 보관됩니다: ${relative}`,
+            );
+        }
+      }
+      if (
+        !scoped &&
+        (bases?.[relative] ?? 0) !== (project.revisions[relative] ?? 0)
+      )
         throw new ApiError(
           `다른 참여자가 변경했습니다. 최신 내용을 확인하고 다시 시도해주세요: ${relative}`,
         );
       const lock = projectLocks(project.id).get(relative);
-      if (lock && lock.memberId !== member.id)
+      const metadataOnly =
+        (project.propertySync || scoped) &&
+        !groups.includes('structure') &&
+        !groups.includes('content') &&
+        before[relative] !== undefined &&
+        after[relative] !== undefined;
+      if (lock && lock.memberId !== member.id && !metadataOnly)
         throw new ApiError(`다른 참여자가 편집 중입니다: ${relative}`);
       if (
         member.role !== 'admin' &&
@@ -410,7 +553,7 @@ export async function createCollaborationServer(options: Options) {
   };
   const expireJob = async (project: Project) => {
     if (!project.job || project.job.expiresAt > Date.now()) return project;
-    const next = structuredClone(project),
+    const next = cloneProject(project),
       job = next.job!;
     const member = next.members.find((member) => member.id === job.memberId)!;
     next.lastRun = {
@@ -505,6 +648,47 @@ export async function createCollaborationServer(options: Options) {
           scopedAiLocks: true,
           htmlComposition: true,
           canvasSheets: true,
+          propertySync: true,
+          deltaSync: true,
+          eventStream: true,
+          version: '0.12.0',
+        });
+        return;
+      }
+      const streamMatch = /^\/projects\/([a-f0-9-]{36})\/events$/.exec(
+        url.pathname,
+      );
+      if (request.method === 'GET' && streamMatch) {
+        const project = projects.get(streamMatch[1]);
+        if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+        const member = authenticate(
+          project,
+          String(request.headers.authorization ?? '').replace(/^Bearer /, ''),
+        );
+        limit(`${project.id}:${member.id}`, 'stream', 30);
+        const set = streams.get(project.id) ?? new Set<ServerResponse>();
+        if (set.size >= 80) throw new ApiError('연결 수가 너무 많습니다.', 429);
+        streams.set(project.id, set);
+        response.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-store',
+          'X-Accel-Buffering': 'no',
+        });
+        response.write('data: {}\n\n');
+        set.add(response);
+        const heartbeat = setInterval(() => {
+          const current = projects
+            .get(project.id)
+            ?.members.find((item) => item.id === member.id);
+          if (!current || current.removed) {
+            response.end();
+            return;
+          }
+          response.write(': heartbeat\n\n');
+        }, 10_000);
+        response.on('close', () => {
+          clearInterval(heartbeat);
+          set.delete(response);
         });
         return;
       }
@@ -665,6 +849,28 @@ export async function createCollaborationServer(options: Options) {
           String(request.headers.authorization ?? '').replace(/^Bearer /, ''),
         );
         project = await expireJob(project);
+        if (['rename', 'role', 'invite', 'restore'].includes(action))
+          admin(member);
+        if (
+          project.propertySync &&
+          ![
+            'state',
+            'leave',
+            'history',
+            'history-read',
+            'lock',
+            'unlock',
+            'ai-heartbeat',
+            'ai-event',
+            'ai-finish',
+            'ai-cancel',
+          ].includes(action) &&
+          input.propertySyncVersion !== 1 &&
+          input.syncClientVersion !== 1
+        )
+          throw new ApiError(
+            '속성별 동기화를 사용하는 프로젝트입니다. 앱을 v0.12.0 이상으로 업데이트해주세요.',
+          );
         if (action === 'state') {
           for (const item of Array.isArray(input.renewLocks)
             ? input.renewLocks
@@ -710,12 +916,14 @@ export async function createCollaborationServer(options: Options) {
             memberId: member.id,
             expiresAt: Date.now() + 30_000,
           });
+          announce(id);
           return { ...envelope(project, member), lockToken: token };
         }
         if (action === 'unlock') {
           const lock = projectLocks(id).get(String(input.relativePath));
           if (lock?.memberId === member.id && lock.token === input.token)
             projectLocks(id).delete(String(input.relativePath));
+          announce(id);
           return envelope(project, member);
         }
         if (action === 'offline-sync') {
@@ -778,7 +986,7 @@ export async function createCollaborationServer(options: Options) {
             input.revisions as Record<string, number>,
             member,
           );
-          const next = structuredClone(project);
+          const next = cloneProject(project);
           recordChanges(next, member, nextFiles, '오프라인 작업 동기화');
           next.applied.push({
             id: operationId,
@@ -835,6 +1043,14 @@ export async function createCollaborationServer(options: Options) {
             throw new ApiError(
               '캔버스가 있는 프로젝트를 편집하려면 앱을 v0.11.0 이상으로 업데이트해주세요.',
             );
+          if (
+            command.propertySyncVersion === 1 &&
+            (!command.sessionId ||
+              !/^[a-f0-9-]{36}$/.test(command.sessionId) ||
+              !Number.isSafeInteger(command.sequence) ||
+              command.sequence! < 1)
+          )
+            throw new ApiError('수정 순번이 올바르지 않습니다.', 400);
           const reduced = reduceCollaboration(
             project.files,
             command.channel,
@@ -855,8 +1071,38 @@ export async function createCollaborationServer(options: Options) {
             reduced.files,
             command.revisions,
             member,
+            command,
           );
-          const next = structuredClone(project);
+          const sequenceKeys =
+            command.propertySyncVersion === 1
+              ? Object.keys(reduced.files)
+                  .filter(
+                    (relative) =>
+                      project.files[relative] !== reduced.files[relative],
+                  )
+                  .flatMap((relative) =>
+                    changedGroups(
+                      relative,
+                      project.files[relative],
+                      reduced.files[relative],
+                    ).map(
+                      (group) =>
+                        `${member.id}:${command.sessionId}:${relative}:${group}`,
+                    ),
+                  )
+              : [];
+          for (const key of sequenceKeys)
+            if ((project.sequences?.[key] ?? 0) >= command.sequence!)
+              throw new ApiError(
+                '오래된 수정 요청입니다. 최신 변경을 유지합니다.',
+              );
+          const next = cloneProject(project);
+          if (command.propertySyncVersion === 1) {
+            next.propertySync = true;
+            next.sequences = { ...next.sequences };
+            for (const key of sequenceKeys)
+              next.sequences[key] = command.sequence!;
+          }
           recordChanges(
             next,
             member,
@@ -885,7 +1131,7 @@ export async function createCollaborationServer(options: Options) {
         }
         if (action === 'invite') {
           admin(member);
-          const next = structuredClone(project),
+          const next = cloneProject(project),
             code = invite();
           next.inviteHash = digest(code);
           next.inviteExpiresAt = Date.now() + 24 * 60 * 60_000;
@@ -914,7 +1160,7 @@ export async function createCollaborationServer(options: Options) {
               '프로젝트 이름이 바뀌었습니다. 목록을 새로고침하고 다시 확인해주세요.',
               409,
             );
-          const next = structuredClone(project);
+          const next = cloneProject(project);
           next.name = name;
           recordChanges(
             next,
@@ -927,7 +1173,7 @@ export async function createCollaborationServer(options: Options) {
         }
         if (action === 'role') {
           admin(member);
-          const next = structuredClone(project),
+          const next = cloneProject(project),
             target = next.members.find(
               (candidate) =>
                 candidate.id === input.memberId && !candidate.removed,
@@ -982,7 +1228,14 @@ export async function createCollaborationServer(options: Options) {
             throw new ApiError('본인의 편집 작업만 되돌릴 수 있습니다.', 403);
           for (const file of record.entry.files) {
             if (file.relativePath.startsWith('.ai/tasks/')) admin(member);
-            if (projectLocks(id).has(file.relativePath))
+            if (
+              projectLocks(id).has(file.relativePath) &&
+              changedGroups(
+                file.relativePath,
+                record.before[file.relativePath],
+                record.after[file.relativePath],
+              ).some((group) => group === 'content' || group === 'structure')
+            )
               throw new ApiError('해당 문서의 편집이 끝난 뒤 되돌려주세요.');
           }
           const files = invertEdit(
@@ -993,7 +1246,7 @@ export async function createCollaborationServer(options: Options) {
           );
           assertAiMutation(project.job?.fileLock, project.files, files);
           checkSnapshot(files);
-          const next = structuredClone(project);
+          const next = cloneProject(project);
           recordChanges(
             next,
             member,
@@ -1078,7 +1331,7 @@ export async function createCollaborationServer(options: Options) {
             throw new ApiError(
               '불러온 HTML과 관리 문서는 전체 기록으로 함께 복원해주세요.',
             );
-          const next = structuredClone(project),
+          const next = cloneProject(project),
             files = { ...next.files };
           const restoration: Record<string, string | null> = {};
           for (const file of record.entry.files.filter(
@@ -1097,6 +1350,7 @@ export async function createCollaborationServer(options: Options) {
           assertAiMutation(project.job?.fileLock, project.files, files);
           recordChanges(next, member, files, '이전 버전 복원', 'restore');
           await persist(next);
+          await exportCheckpoint(next);
           return envelope(next, member);
         }
         if (action.startsWith('ai-')) {
@@ -1167,7 +1421,7 @@ export async function createCollaborationServer(options: Options) {
               throw new ApiError(
                 '이미 생성된 새 버전입니다. 새 작업을 만들어주세요.',
               );
-            const next = structuredClone(project),
+            const next = cloneProject(project),
               runId = randomUUID();
             recordChanges(
               next,
@@ -1233,7 +1487,7 @@ export async function createCollaborationServer(options: Options) {
                 '본인이 실행한 작업만 중지할 수 있습니다. 다른 작업은 관리자에게 요청해주세요.',
                 403,
               );
-            const next = structuredClone(project);
+            const next = cloneProject(project);
             next.lastRun = {
               ...job.event,
               status: 'cancelled',
@@ -1278,7 +1532,7 @@ export async function createCollaborationServer(options: Options) {
             return envelope(project, member);
           }
           if (action === 'ai-finish') {
-            const next = structuredClone(project),
+            const next = cloneProject(project),
               success = input.status === 'completed';
             if (
               job.baselineHash !==
@@ -1392,7 +1646,50 @@ export async function createCollaborationServer(options: Options) {
         }
         throw new ApiError('지원하지 않는 작업입니다.', 404);
       });
-      reply(response, 200, result);
+      let output: unknown = result;
+      const current = projects.get(id);
+      if (
+        current &&
+        input.metadataOnly !== true &&
+        input.deltaVersion === 1 &&
+        Number.isSafeInteger(input.knownRevision) &&
+        (result as CollaborationEnvelope)?.state &&
+        Number(input.knownRevision) <= current.revision
+      ) {
+        const from = Number(input.knownRevision);
+        const records = current.history.filter(
+          (entry) => (entry.entry.revision ?? 0) > from,
+        );
+        if (
+          from === current.revision ||
+          (records.length && records[0].entry.revision === from + 1)
+        ) {
+          const changes: Record<string, string | null> = {};
+          for (const record of records)
+            for (const file of record.entry.files)
+              changes[file.relativePath] =
+                current.files[file.relativePath] ?? null;
+          const relatives = Object.keys(changes);
+          output = {
+            ...(result as object),
+            files: undefined,
+            revisions: Object.fromEntries(
+              relatives.map((key) => [key, current.revisions[key]]),
+            ),
+            properties: Object.fromEntries(
+              relatives.map((key) => [
+                key,
+                current.propertyVersions?.[key] ?? {},
+              ]),
+            ),
+            authorship: Object.fromEntries(
+              relatives.map((key) => [key, current.authorship[key] ?? null]),
+            ),
+            delta: { from, changes },
+          };
+        }
+      }
+      reply(response, 200, output);
     } catch (error) {
       const failure = failureInfo(error, 'GC-COLLAB-001');
       reply(response, error instanceof ApiError ? error.status : 400, {
@@ -1401,6 +1698,15 @@ export async function createCollaborationServer(options: Options) {
       });
     }
   });
+  const checkpointTimer = setInterval(() => {
+    // Export an immutable committed reference without holding the mutation or lease queue.
+    for (const id of dirtyCheckpoints) {
+      const project = projects.get(id);
+      if (project && !checkpointJobs.has(id))
+        void exportCheckpoint(project).catch(() => undefined);
+    }
+  }, 30_000);
+  checkpointTimer.unref();
   server.requestTimeout = 15_000;
   server.headersTimeout = 10_000;
   await new Promise<void>((resolve, reject) => {
@@ -1411,11 +1717,17 @@ export async function createCollaborationServer(options: Options) {
   return {
     server,
     port: typeof address === 'object' && address ? address.port : 4317,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
+    close: async () => {
+      clearInterval(checkpointTimer);
+      await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections();
-      }),
+      });
+      await Promise.all(queues.values());
+      await Promise.all(checkpointJobs.values());
+      for (const id of dirtyCheckpoints) await checkpoint(projects.get(id)!);
+      store.close();
+    },
   };
 }
 

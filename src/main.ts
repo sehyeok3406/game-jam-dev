@@ -1,3 +1,7 @@
+import { PropertyQueue } from './property-queue.ts';
+import { CanvasView } from './canvas-view.ts';
+import { writeClientCache, readClientCache } from './client-cache.ts';
+import { EditorDraftStore } from './editor-drafts.ts';
 import {
   CANVAS_SHEETS_PATH,
   readCanvasSheets,
@@ -442,15 +446,19 @@ const recordUserEdit = async (
   )
     journal().push({ id, label });
 };
+const canvasViews = new WeakMap<CollaborationClient, CanvasView>();
+let draftStore: EditorDraftStore;
 let lastSharedState = '';
 let sharedCacheQueue: Promise<unknown> = Promise.resolve();
 let lastQueuedCache = '';
 const cacheCollaboration = (client: CollaborationClient, cacheRoot: string) => {
-  const payload = JSON.stringify({
+  // Capture immutable references now; queued writes must never read a newer session.
+  const cache = {
     files: client.files,
     revisions: client.revisions,
+    properties: client.properties,
     authorship: client.authorship,
-    offline: client.offline,
+    offline: client.offline ? structuredClone(client.offline) : null,
     outgoing: client.outgoing,
     state: {
       ...client.state,
@@ -458,20 +466,13 @@ const cacheCollaboration = (client: CollaborationClient, cacheRoot: string) => {
       recoveryKey: undefined,
       conflicts: undefined,
     },
-  });
-  const key = `${cacheRoot}:${createHash('sha256').update(payload).digest('hex')}`;
+  };
+  const key = `${cacheRoot}:${client.state.revision}:${client.state.pendingChanges}:${client.outgoing?.command.id ?? ''}:${client.offline ? createHash('sha256').update(JSON.stringify(client.offline)).digest('hex') : ''}`;
   if (key === lastQueuedCache) return sharedCacheQueue;
   lastQueuedCache = key;
   const pending = sharedCacheQueue
     .catch(() => undefined)
-    .then(async () => {
-      const temporary = path.join(
-        cacheRoot,
-        `server-cache-${randomUUID()}.tmp`,
-      );
-      await fs.writeFile(temporary, payload, { mode: 0o600 });
-      await fs.rename(temporary, path.join(cacheRoot, 'server-cache.json'));
-    });
+    .then(() => writeClientCache(cacheRoot, cache));
   sharedCacheQueue = pending;
   void pending.catch(() => {
     if (lastQueuedCache === key) lastQueuedCache = '';
@@ -544,9 +545,7 @@ const attachCollaboration = async (credentials: CollaborationCredentials) => {
   collaboration = client;
   try {
     client.seedCache(
-      JSON.parse(
-        await fs.readFile(path.join(cache, 'server-cache.json'), 'utf8'),
-      ),
+      await readClientCache(path.join(cache, 'server-cache.json')),
     );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -1991,6 +1990,7 @@ const guardedChannels = new Set([
   'sections:rename',
   'documents:delete-many',
 ]);
+const propertyQueue = new PropertyQueue();
 const handle = (
   channel: string,
   listener: Parameters<typeof ipcMain.handle>[1],
@@ -2063,6 +2063,40 @@ const handle = (
             ...readCanvasSheets(client.files[CANVAS_SHEETS_PATH]),
             raw: client.files[CANVAS_SHEETS_PATH] ?? null,
           };
+        if (channel === 'canvas:changes') {
+          let view = canvasViews.get(client);
+          if (!view) {
+            view = new CanvasView();
+            canvasViews.set(client, view);
+          }
+          return view.read(
+            client.files,
+            client.revisions,
+            client.properties,
+            personalCollapsed,
+            args[0] as Record<string, string>,
+          );
+        }
+        if (channel === 'documents:get') {
+          const relative = collaborationPath(args[0]);
+          if (!client.files[relative]) return null;
+          const document = snapshotDocuments({
+            [relative]: client.files[relative],
+          })[0];
+          return document
+            ? {
+                ...document,
+                assetVersion: document.asset
+                  ? client.revisions[document.asset.path]
+                  : undefined,
+                collapsed:
+                  personalCollapsed.get(relative) ?? document.collapsed,
+                revision: client.revisions[relative],
+                contentRevision: client.properties[relative]?.content ?? 0,
+                structureRevision: client.properties[relative]?.structure ?? 0,
+              }
+            : null;
+        }
         if (channel === 'documents:list')
           return snapshotDocuments(client.files).map((document) => ({
             ...document,
@@ -2070,6 +2104,10 @@ const handle = (
               ? client.revisions[document.asset.path]
               : undefined,
             revision: client.revisions[document.relativePath],
+            contentRevision:
+              client.properties[document.relativePath]?.content ?? 0,
+            structureRevision:
+              client.properties[document.relativePath]?.structure ?? 0,
             collapsed:
               personalCollapsed.get(document.relativePath) ??
               document.collapsed,
@@ -2078,6 +2116,8 @@ const handle = (
           return snapshotSections(client.files).map((section) => ({
             ...section,
             revision: client.revisions[section.relativePath],
+            structureRevision:
+              client.properties[section.relativePath]?.structure ?? 0,
           }));
         if (channel === 'workspace:get')
           return {
@@ -2253,10 +2293,28 @@ const handle = (
           return listener(event, ...args);
         const root = requireWorkspace();
         const label = mutationLabels[channel];
-        const before = label ? await captureProject(root) : null;
+        const scopedPath = [
+          'documents:save',
+          'documents:update-layout',
+          'documents:set-collapsed',
+          'documents:set-color',
+          'sections:rename',
+        ].includes(channel)
+          ? (args[0] as { relativePath?: string })?.relativePath
+          : undefined;
+        const capture = async () =>
+          scopedPath && scopedPath.endsWith('.md')
+            ? {
+                [scopedPath]: await fs.readFile(
+                  await safePath(scopedPath),
+                  'utf8',
+                ),
+              }
+            : captureProject(root);
+        const before = label ? await capture() : null;
         const result = await listener(event, ...args);
         if (before) {
-          const after = await captureProject(root);
+          const after = await capture();
           if (
             Object.keys({ ...before, ...after }).some(
               (relative) => before[relative] !== after[relative],
@@ -2268,7 +2326,28 @@ const handle = (
         return result;
       });
     };
-    return dispatch()
+    const layoutInput = args[0] as {
+      relativePath?: string;
+      position?: boolean;
+      size?: boolean;
+    };
+    const compact =
+      [
+        'documents:update-layout',
+        'sections:update-layout',
+        'documents:set-color',
+      ].includes(channel) && layoutInput?.relativePath;
+    const operation = compact
+      ? propertyQueue.submit(
+          `${workspaceRoot}:${channel}:${layoutInput.relativePath}:${layoutInput.position}:${layoutInput.size}`,
+          dispatch,
+        )
+      : guardedChannels.has(channel) ||
+          commandLabels[channel] ||
+          channel.startsWith('projects:')
+        ? propertyQueue.flush().then(dispatch)
+        : dispatch();
+    return operation
       .catch((error) => {
         const failure = failureInfo(
           error,
@@ -2289,6 +2368,27 @@ const handle = (
 };
 
 const registerIpc = () => {
+  draftStore = new EditorDraftStore(
+    path.join(app.getPath('userData'), 'editor-drafts'),
+  );
+  handle('drafts:get', (_event, key: string) => draftStore.get(key));
+  handle(
+    'drafts:set',
+    (
+      _event,
+      key: string,
+      draft: import('./editor-drafts.ts').EditorDraft | null,
+      sequence: number,
+    ) => draftStore.set(key, draft, sequence),
+  );
+  handle('canvas:changes', () => null);
+  handle('documents:get', async (_event, relative: string) => {
+    const absolute = await safePath(relative);
+    return parseDocument(absolute).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+  });
   handle('canvases:list', async () => {
     const files = await captureProject(requireWorkspace());
     return {
@@ -2620,15 +2720,12 @@ const registerIpc = () => {
       entries.map(async (entry) => {
         if (entry.kind === 'shared') {
           try {
-            const cached = JSON.parse(
-              await fs.readFile(
-                path.join(
-                  app.getPath('userData'),
-                  'shared-workspaces',
-                  entry.projectId!,
-                  'server-cache.json',
-                ),
-                'utf8',
+            const cached = await readClientCache(
+              path.join(
+                app.getPath('userData'),
+                'shared-workspaces',
+                entry.projectId!,
+                'server-cache.json',
               ),
             );
             entry.pendingChanges = cached.offline
@@ -2637,7 +2734,7 @@ const registerIpc = () => {
                   ...cached.offline.local,
                 }).filter(
                   (key) =>
-                    cached.offline.base[key] !== cached.offline.local[key],
+                    cached.offline!.base[key] !== cached.offline!.local[key],
                 ).length
               : cached.outgoing
                 ? 1
@@ -2745,7 +2842,7 @@ const registerIpc = () => {
           entry.projectId!,
           'server-cache.json',
         );
-        const cached = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+        const cached = await readClientCache(cachePath);
         if (cached.offline || cached.outgoing)
           throw new Error(
             '공동 프로젝트를 열어 미동기화 작업을 반영한 뒤 이름을 변경해주세요.',
@@ -3203,10 +3300,16 @@ const registerIpc = () => {
   handle('documents:save', async (_event, input: SaveDocumentInput) => {
     const absolute = await safePath(input.relativePath);
     const parsed = matter(await fs.readFile(absolute, 'utf8'));
+    if (
+      input.expectedBody !== undefined &&
+      (parsed.content.trim() !== input.expectedBody ||
+        parsed.data.title !== input.expectedTitle)
+    )
+      throw new Error('문서가 외부에서 변경되었습니다. 초안은 보관됩니다.');
     parsed.data.title = input.title.trim() || '제목 없음';
     await fs.writeFile(
       absolute,
-      matter.stringify(`\n${input.body.trim()}\n`, parsed.data),
+      matter.stringify(`\n${input.body}\n`, parsed.data),
       'utf8',
     );
   });
@@ -3358,10 +3461,12 @@ const registerIpc = () => {
     const absolute = await safePath(input.relativePath);
     const parsed = matter(await fs.readFile(absolute, 'utf8'));
     Object.assign(parsed.data, {
-      x: Math.round(input.x),
-      y: Math.round(input.y),
-      width: Math.round(input.width),
-      height: Math.round(input.height),
+      ...(input.position === false
+        ? {}
+        : { x: Math.round(input.x), y: Math.round(input.y) }),
+      ...(input.size === false
+        ? {}
+        : { width: Math.round(input.width), height: Math.round(input.height) }),
     });
     await fs.writeFile(
       absolute,
@@ -3544,6 +3649,51 @@ const createWindow = async () => {
     },
   });
 
+  const closingWindow = mainWindow;
+  let draftsFlushed = false,
+    closing = false,
+    draftFlushReady = false;
+  ipcMain.on('drafts:ready', (event) => {
+    if (
+      event.sender === closingWindow.webContents &&
+      event.senderFrame === closingWindow.webContents.mainFrame
+    )
+      draftFlushReady = true;
+  });
+  closingWindow.on('close', (event) => {
+    if (
+      draftsFlushed ||
+      !draftFlushReady ||
+      closingWindow.webContents.isDestroyed()
+    )
+      return;
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    const flushed = async (ipcEvent: Electron.IpcMainEvent) => {
+      if (
+        ipcEvent.sender !== closingWindow.webContents ||
+        ipcEvent.senderFrame !== closingWindow.webContents.mainFrame
+      )
+        return;
+      ipcMain.removeListener('drafts:flushed', flushed);
+      try {
+        await draftStore.flush();
+        await sharedCacheQueue;
+        draftsFlushed = true;
+        closingWindow.close();
+      } catch {
+        closing = false;
+      }
+    };
+    ipcMain.on('drafts:flushed', flushed);
+    ipcMain.once('drafts:flush-failed', () => {
+      closing = false;
+      ipcMain.removeListener('drafts:flushed', flushed);
+    });
+    closingWindow.webContents.send('drafts:flush-request');
+  });
+
   // Remove the native menu, rather than auto-hiding it (Alt would reveal it).
   // Keep the standard title bar and Windows window controls intact.
   if (process.platform !== 'darwin') mainWindow.setMenu(null);
@@ -3648,15 +3798,12 @@ app.whenReady().then(async () => {
           let name = '공동 프로젝트';
           let role: CollaborationRole | undefined;
           try {
-            const cached = JSON.parse(
-              await fs.readFile(
-                path.join(
-                  app.getPath('userData'),
-                  'shared-workspaces',
-                  saved.credentials.projectId,
-                  'server-cache.json',
-                ),
-                'utf8',
+            const cached = await readClientCache(
+              path.join(
+                app.getPath('userData'),
+                'shared-workspaces',
+                saved.credentials.projectId,
+                'server-cache.json',
               ),
             );
             name = cached.state.projectName ?? name;

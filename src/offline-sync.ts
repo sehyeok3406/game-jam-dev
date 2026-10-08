@@ -1,3 +1,4 @@
+import { mergeProperties, changedGroups } from './sync-properties.ts';
 import { createHash } from 'node:crypto';
 import matter from './markdown.ts';
 import {
@@ -31,6 +32,13 @@ function mergeFile(
     server === undefined
   )
     return { conflict: true, value: local };
+  if (!changedGroups(path, base, local).includes('structure')) {
+    try {
+      return { value: mergeProperties(path, base, local, server) };
+    } catch {
+      return { conflict: true, value: local };
+    }
+  }
   const b = matter(base),
     l = matter(local),
     s = matter(server);

@@ -259,9 +259,8 @@ test('member undo preserves unrelated edits, is author-scoped, lock-safe and con
   const other = editor.files['ideas/b.md'];
   await assert.rejects(editor.changeHistory(id, 'undo'), /본인/);
   await editor.lock('ideas/a.md');
-  await assert.rejects(owner.changeHistory(id, 'undo'), /편집/);
-  await editor.unlock('ideas/a.md');
   await owner.changeHistory(id, 'undo');
+  await editor.unlock('ideas/a.md');
   assert.equal(matter(owner.files['ideas/a.md']).data.x, 80);
   assert.equal(owner.files['ideas/b.md'], other);
   await owner.changeHistory(id, 'redo');
@@ -668,22 +667,17 @@ test('exclusive locks, stale revisions and multi-object transactions prevent los
   await owner.refresh();
   assert.match(owner.files['ideas/a.md'], /A 수정/);
   assert.match(owner.files['ideas/b.md'], /B 수정/);
-  await assert.rejects(
-    owner.command('layouts:update', {
-      updates: ['ideas/a.md', 'ideas/b.md', 'ideas/c.md'].map(
-        (relativePath) => ({
-          kind: 'document',
-          relativePath,
-          x: 500,
-          y: 500,
-          width: 340,
-          height: 300,
-        }),
-      ),
-    }),
-    /편집 중/,
-  );
-  assert.equal(matter(owner.files['ideas/b.md']).data.x, 80);
+  await owner.command('layouts:update', {
+    updates: ['ideas/a.md', 'ideas/b.md', 'ideas/c.md'].map((relativePath) => ({
+      kind: 'document',
+      relativePath,
+      x: 500,
+      y: 500,
+      width: 340,
+      height: 300,
+    })),
+  });
+  assert.equal(matter(owner.files['ideas/b.md']).data.x, 500);
   await editor.unlock('ideas/a.md');
   await owner.unlock('ideas/b.md');
   const stale = { ...owner.revisions };
@@ -731,8 +725,9 @@ test('exclusive locks, stale revisions and multi-object transactions prevent los
   const result = await owner.request('command', operation);
   const replay = await owner.request('command', operation);
   assert.equal(result.state.revision, replay.state.revision);
+  owner.accept(result);
   for (const relative of ['ideas/a.md', 'ideas/b.md', 'ideas/c.md'])
-    assert.equal(matter(result.files[relative]).data.x, 600);
+    assert.equal(matter(owner.files[relative]).data.x, 600);
   assert.equal((await owner.history())[0].files.length, 3);
 });
 
@@ -955,7 +950,6 @@ test('unsafe routes, executable frontmatter, public HTTP and browser origins are
 
 test('public tunnel mode requires a strong creation key even on loopback', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'game-canvas-public-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
   for (const creationKey of [undefined, '', 'short']) {
     await assert.rejects(
       createCollaborationServer({
@@ -973,7 +967,10 @@ test('public tunnel mode requires a strong creation key even on loopback', async
     publicAccess: true,
     creationKey: 'a'.repeat(43),
   });
-  t.after(() => running.close());
+  t.after(async () => {
+    await running.close();
+    await fs.rm(root, { recursive: true, force: true });
+  });
   const response = await fetch(`http://127.0.0.1:${running.port}/projects`, {
     method: 'POST',
     body: '{invalid-json',

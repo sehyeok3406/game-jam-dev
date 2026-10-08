@@ -63,8 +63,10 @@ export async function drainEditorDraft(
   saved: () => EditorDraft,
   write: (draft: EditorDraft) => Promise<void>,
   finish: boolean,
+  beforeRead?: () => Promise<void>,
 ) {
   do {
+    await beforeRead?.();
     const current = { ...read() },
       previous = saved();
     if (current.title === previous.title && current.body === previous.body)

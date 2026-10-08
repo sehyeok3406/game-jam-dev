@@ -373,17 +373,19 @@ export function reduceCollaboration(
     return { relative, ...matter(next[relative]) };
   };
   const write = (relative: string, data: Input, content: string) => {
-    next[relative] = matter.stringify(`\n${content.trim()}\n`, {
+    next[relative] = matter.stringify(content, {
       ...data,
       updated_at: Date.now(),
     });
   };
   const layout = (entry: Input) => {
     const parsed = read(entry.relativePath);
-    const x = number(entry.x),
-      y = number(entry.y);
-    const width = number(entry.width),
-      height = number(entry.height);
+    const x = number(entry.position === false ? parsed.data.x : entry.x),
+      y = number(entry.position === false ? parsed.data.y : entry.y);
+    const width = number(
+        entry.size === false ? parsed.data.width : entry.width,
+      ),
+      height = number(entry.size === false ? parsed.data.height : entry.height);
     if (width < 120 || height < 38) throw new Error('창 크기가 너무 작습니다.');
     if (entry.kind === 'section' && entry.moveMembers !== false) {
       for (const member of parsed.data.members ?? []) {

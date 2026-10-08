@@ -34,6 +34,7 @@ type Props = {
   onTitle: (title: string) => void;
   status: string;
   onFinish: () => void;
+  onCompositionChange?: (value: boolean) => void;
   initialFocus?: { title: boolean; point?: { x: number; y: number } };
 };
 export function MarkdownEditor({
@@ -45,6 +46,7 @@ export function MarkdownEditor({
   onTitle,
   status,
   onFinish,
+  onCompositionChange,
   initialFocus,
 }: Props) {
   const [source, setSource] = useState(false),
@@ -735,10 +737,12 @@ export function MarkdownEditor({
       onKeyDown={dismissMenus}
       onCompositionStart={() => {
         composing.current = true;
+        onCompositionChange?.(true);
         setSlash(null);
       }}
       onCompositionEnd={() => {
         composing.current = false;
+        onCompositionChange?.(false);
         requestAnimationFrame(updateSlash);
       }}
     >

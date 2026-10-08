@@ -1,3 +1,4 @@
+import { readSyncFiles } from './sync-store.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { CollaborationClient } from './collaboration-client.ts';
@@ -20,6 +21,16 @@ async function hostedSnapshot(
 ): Promise<WebSharedSnapshot | null> {
   if (!directory || !/^[a-f0-9-]{36}$/.test(projectId)) return null;
   try {
+    const database = path.join(directory, 'projects', 'sync.sqlite');
+    if (await fs.stat(database).catch(() => null)) {
+      const saved = readSyncFiles(database, projectId);
+      if (!saved) return null;
+      checkSnapshot(saved.files);
+      return {
+        files: saved.files,
+        state: { projectId, projectName: saved.name, revision: saved.revision },
+      };
+    }
     const root = path.join(directory, 'projects', projectId);
     const head = JSON.parse(
       await fs.readFile(path.join(root, 'head.json'), 'utf8'),

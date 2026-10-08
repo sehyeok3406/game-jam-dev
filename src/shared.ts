@@ -47,6 +47,8 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  structureRevision?: number;
+  contentRevision?: number;
   canvasId?: string;
   backgroundColor?: import('./card-colors').CardColor;
   /** Hidden source record for an HTML execution window. */
@@ -75,6 +77,7 @@ export type SectionMember = {
 };
 
 export type CanvasSection = {
+  structureRevision?: number;
   canvasId?: string;
   revision?: number;
   id: string;
@@ -94,6 +97,10 @@ export type WorkspaceState = {
 };
 
 export type LayoutUpdate = {
+  structureRevision?: number;
+  objectId?: string;
+  position?: boolean;
+  size?: boolean;
   revision?: number;
   relativePath: string;
   x: number;
@@ -103,6 +110,11 @@ export type LayoutUpdate = {
 };
 
 export type SaveDocumentInput = {
+  structureRevision?: number;
+  objectId?: string;
+  contentRevision?: number;
+  expectedTitle?: string;
+  expectedBody?: string;
   revision?: number;
   relativePath: string;
   title: string;
@@ -156,6 +168,8 @@ export type CreateSectionInput = {
 };
 
 export type SectionLayoutUpdate = {
+  structureRevision?: number;
+  objectId?: string;
   revision?: number;
   relativePath: string;
   x: number;
@@ -287,6 +301,19 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  getCanvasChanges: (
+    known: Record<string, string>,
+  ) => Promise<import('./canvas-view').CanvasViewChanges | null>;
+  getDocument: (relativePath: string) => Promise<CanvasDocument | null>;
+  getEditorDraft: (
+    key: string,
+  ) => Promise<import('./editor-drafts').EditorDraft | null>;
+  setEditorDraft: (
+    key: string,
+    draft: import('./editor-drafts').EditorDraft | null,
+    sequence: number,
+  ) => Promise<void>;
+  onDraftFlushRequested: (listener: () => Promise<void>) => () => void;
   getCanvasSheets: () => Promise<CanvasSheets>;
   changeCanvasSheets: (input: CanvasSheetCommand) => Promise<void>;
   getWebViewer: () => Promise<{
@@ -324,6 +351,8 @@ export type GameCanvasApi = {
     choice: 'local' | 'server',
   ) => Promise<void>;
   setDocumentColor: (input: {
+    objectId?: string;
+    structureRevision?: number;
     relativePath: string;
     color: string;
     revision?: number;
@@ -523,6 +552,9 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  propertySync?: boolean;
+  deltaSync?: boolean;
+  eventStream?: boolean;
   canvasSheets?: boolean;
   htmlComposition?: boolean;
   scopedAiLocks?: boolean;

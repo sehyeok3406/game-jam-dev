@@ -1,4 +1,4 @@
-param(
+﻿param(
   [ValidateSet('Start', 'Stop', 'Status', 'CopyKey', 'RestartServer')]
   [string]$Action = 'Status',
   [string]$CloudflaredPath = '',
@@ -126,9 +126,14 @@ if ($Action -eq 'RestartServer') {
     foreach ($folder in Get-ChildItem -LiteralPath $projectsPath -Directory) {
       if ($folder.Name -notmatch '^[a-f0-9-]{36}$') { throw 'Unexpected project directory; no process was changed.' }
       try {
-        $head = Get-Content -LiteralPath (Join-Path $folder.FullName 'head.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $runtimeStatePath = Join-Path $folder.FullName 'runtime.json'
+        if (Test-Path -LiteralPath $runtimeStatePath) {
+          $checkpoint = Get-Content -LiteralPath $runtimeStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        } else {
+          $head = Get-Content -LiteralPath (Join-Path $folder.FullName 'head.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($head.checkpoint -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid checkpoint identifier.' }
         $checkpoint = Get-Content -LiteralPath (Join-Path $folder.FullName "checkpoints/$($head.checkpoint)/state.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+        }
       } catch {
         # PowerShell parser errors can include the complete private JSON value.
         throw 'Cannot inspect a current project checkpoint. No process was changed; private checkpoint contents were withheld.'

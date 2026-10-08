@@ -1,3 +1,4 @@
+import { mergeProperties } from './sync-properties.ts';
 import type { Snapshot } from './project-store.ts';
 
 export type EditRecord = { id: string; label: string };
@@ -48,15 +49,16 @@ export function invertEdit(
     (relative) => before[relative] !== after[relative],
   );
   if (!touched.length) throw new Error('되돌릴 파일 변경이 없습니다.');
-  for (const relative of touched)
-    if (current[relative] !== expected[relative])
-      throw new Error(
-        `이후 변경과 충돌하여 덮어쓰기를 중단했습니다: ${relative}`,
-      );
   const next = { ...current };
   for (const relative of touched) {
-    if (desired[relative] === undefined) delete next[relative];
-    else next[relative] = desired[relative];
+    const value = mergeProperties(
+      relative,
+      expected[relative],
+      desired[relative],
+      current[relative],
+    );
+    if (value === undefined) delete next[relative];
+    else next[relative] = value;
   }
   return next;
 }

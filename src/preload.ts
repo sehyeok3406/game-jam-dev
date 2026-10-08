@@ -2,6 +2,24 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
 
 const api: GameCanvasApi = {
+  getCanvasChanges: (known) => ipcRenderer.invoke('canvas:changes', known),
+  getDocument: (relative) => ipcRenderer.invoke('documents:get', relative),
+  getEditorDraft: (key) => ipcRenderer.invoke('drafts:get', key),
+  setEditorDraft: (key, draft, sequence) =>
+    ipcRenderer.invoke('drafts:set', key, draft, sequence),
+  onDraftFlushRequested: (listener) => {
+    const wrapped = async () => {
+      try {
+        await listener();
+        ipcRenderer.send('drafts:flushed');
+      } catch {
+        ipcRenderer.send('drafts:flush-failed');
+      }
+    };
+    ipcRenderer.on('drafts:flush-request', wrapped);
+    ipcRenderer.send('drafts:ready');
+    return () => ipcRenderer.removeListener('drafts:flush-request', wrapped);
+  },
   getWebViewer: () => ipcRenderer.invoke('web-viewer:get'),
   publishWebViewer: (input) => ipcRenderer.invoke('web-viewer:publish', input),
   openWebViewer: () => ipcRenderer.invoke('web-viewer:open'),

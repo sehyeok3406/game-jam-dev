@@ -1,3 +1,4 @@
+import { objectId, type PropertyVersions } from './sync-properties.ts';
 import { randomUUID } from 'node:crypto';
 import type {
   CollaborationState,
@@ -52,7 +53,8 @@ const retryableTransport = (error: unknown) =>
   error instanceof TypeError ||
   (error as { name?: string })?.name === 'TimeoutError' ||
   (error instanceof CanvasError &&
-    ['GC-NET-001', 'GC-NET-002'].includes(error.code));
+    (['GC-NET-001', 'GC-NET-002'].includes(error.code) ||
+      (error.code === 'GC-NET-003' && Number(error.details.status) >= 500)));
 
 export function serverAddress(value: string) {
   const url = new URL(value.trim());
@@ -80,6 +82,14 @@ export class CollaborationClient {
   lastCommandHistoryId: string | null = null;
   files: Snapshot = {};
   revisions: Record<string, number> = {};
+  properties: PropertyVersions = {};
+  private sessionId = randomUUID();
+  private sequence = 0;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatBusy = false;
+  private stream: AbortController | null = null;
+  private streamConnected = false;
+  private streamRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   authorship: FileAuthorshipMap = {};
   state = noCollaboration();
   readonly heldLocks = new Map<string, string>();
@@ -282,12 +292,31 @@ export class CollaborationClient {
     )
       return;
     const changed = result.state.revision !== this.state.revision;
+    if (result.delta) {
+      if (result.delta.from > (this.state.revision ?? 0)) {
+        this.nextPollAt = 0;
+        return;
+      }
+      const files = { ...this.files };
+      for (const [relative, value] of Object.entries(result.delta.changes)) {
+        if (value === null) delete files[relative];
+        else files[relative] = value;
+      }
+      checkSnapshot(files);
+      this.files = this.offline?.local ?? files;
+      this.revisions = { ...this.revisions, ...result.revisions };
+      this.properties = { ...this.properties, ...result.properties };
+      this.authorship = { ...this.authorship, ...result.authorship };
+      for (const relative of Object.keys(result.delta.changes))
+        if (!this.authorship[relative]) delete this.authorship[relative];
+    }
     if (result.files) {
       checkSnapshot(result.files);
       this.files = this.offline?.local ?? result.files;
     }
-    if (result.revisions) this.revisions = result.revisions;
-    if (result.authorship) this.authorship = result.authorship;
+    if (result.revisions && !result.delta) this.revisions = result.revisions;
+    if (result.properties && !result.delta) this.properties = result.properties;
+    if (result.authorship && !result.delta) this.authorship = result.authorship;
     else if (result.files) this.authorship = {};
     this.state = {
       ...result.state,
@@ -468,9 +497,18 @@ export class CollaborationClient {
     return CollaborationClient.fetch(
       this.credentials.serverUrl,
       `/projects/${this.credentials.projectId}/${action}`,
-      action === 'offline-sync'
-        ? { ...(input as object), canvasSheetsVersion: 1 }
-        : input,
+      {
+        ...(input as object),
+        syncClientVersion: 1,
+        ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
+        ...(this.state.deltaSync &&
+        action !== 'ai-start' &&
+        !this.offline &&
+        !this.outgoing
+          ? { deltaVersion: 1, knownRevision: this.state.revision }
+          : {}),
+        ...(input as object),
+      },
       this.credentials.token,
     );
   }
@@ -493,12 +531,30 @@ export class CollaborationClient {
           })),
         })) as CollaborationEnvelope;
         if (this.outgoing) {
+          const serverState = result;
           const attempted = this.outgoing;
           try {
             result = (await this.request(
               'command',
               this.outgoing.command,
             )) as CollaborationEnvelope;
+            if (this.offline && result.delta && serverState.files) {
+              const files = { ...serverState.files };
+              for (const [relative, raw] of Object.entries(
+                result.delta.changes,
+              )) {
+                if (raw === null) delete files[relative];
+                else files[relative] = raw;
+              }
+              result = {
+                ...result,
+                delta: undefined,
+                files,
+                revisions: { ...serverState.revisions, ...result.revisions },
+                properties: { ...serverState.properties, ...result.properties },
+                authorship: { ...serverState.authorship, ...result.authorship },
+              };
+            }
             if (this.offline && this.outgoing.local)
               this.offline.base = this.outgoing.local;
             this.outgoing = null;
@@ -520,6 +576,7 @@ export class CollaborationClient {
         this.nextPollAt = 0;
       } catch (error) {
         if (this.stopped) return;
+        if ((error as { status?: number }).status === 403) this.stream?.abort();
         this.failures++;
         this.nextPollAt =
           Date.now() + Math.min(15_000, 900 * 2 ** Math.min(this.failures, 5));
@@ -551,12 +608,89 @@ export class CollaborationClient {
         .catch(() => undefined)
         .finally(() => {
           this.polling = false;
+          if (this.streamConnected && !this.offline && !this.outgoing)
+            this.nextPollAt = Date.now() + 10_000;
         });
-    }, 900);
+    }, 3000);
     this.timer.unref?.();
+    this.heartbeatTimer = setInterval(() => void this.heartbeat(), 5000);
+    this.heartbeatTimer.unref?.();
+    if (this.state.eventStream) void this.connectStream();
+  }
+  private async heartbeat() {
+    if (this.stopped || this.heartbeatBusy) return;
+    this.heartbeatBusy = true;
+    try {
+      const result = (await this.request('state', {
+        metadataOnly: true,
+        renewLocks: [...this.heldLocks].map(([relativePath, token]) => ({
+          relativePath,
+          token,
+        })),
+      })) as CollaborationEnvelope;
+      // Metadata never advances the file cursor while a save is in flight.
+      this.accept({
+        ...result,
+        state: { ...result.state, revision: this.state.revision },
+      });
+      if (this.lease) await this.request('ai-heartbeat', { lease: this.lease });
+    } catch {
+      /* Refresh handles connection loss and rights revocation. */
+    } finally {
+      this.heartbeatBusy = false;
+    }
+  }
+  private async connectStream() {
+    if (this.stopped || this.stream || !this.state.eventStream) return;
+    const controller = new AbortController();
+    this.stream = controller;
+    try {
+      const response = await fetch(
+        `${this.credentials.serverUrl}/projects/${this.credentials.projectId}/events`,
+        {
+          headers: { Authorization: `Bearer ${this.credentials.token}` },
+          redirect: 'error',
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok || !response.body) throw new Error('stream unavailable');
+      this.streamConnected = true;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (!this.stopped) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let end: number;
+        while ((end = buffer.indexOf('\n\n')) >= 0) {
+          const event = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          if (event.startsWith('data:') && !this.streamRefreshTimer) {
+            this.streamRefreshTimer = setTimeout(() => {
+              this.streamRefreshTimer = null;
+              if (!this.stopped) void this.refresh().catch(() => undefined);
+            }, 100);
+          }
+        }
+      }
+    } catch {
+      /* Polling remains available if proxies close the stream. */
+    } finally {
+      this.streamConnected = false;
+      this.stream = null;
+      if (!this.stopped && !this.state.accessDenied) {
+        const retry = setTimeout(() => void this.connectStream(), 5000);
+        retry.unref?.();
+      }
+    }
   }
   stop() {
     this.stopped = true;
+    this.stream?.abort();
+    if (this.streamRefreshTimer) clearTimeout(this.streamRefreshTimer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
@@ -576,6 +710,7 @@ export class CollaborationClient {
       this.files = result.offline.local;
     }
     this.revisions = result.revisions;
+    this.properties = result.properties ?? {};
     this.authorship = result.authorship ?? {};
     this.state = {
       ...result.state,
@@ -767,6 +902,21 @@ export class CollaborationClient {
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {
         id: randomUUID(),
+        ...(this.state.propertySync
+          ? {
+              propertySyncVersion: 1,
+              sessionId: this.sessionId,
+              sequence: ++this.sequence,
+              objects: Object.fromEntries(
+                Object.entries(this.files)
+                  .filter(([key]) => key.endsWith('.md'))
+                  .map(([key, raw]) => [key, objectId(raw)!]),
+              ),
+              properties: structuredClone(this.properties),
+              deltaVersion: 1,
+              knownRevision: this.state.revision,
+            }
+          : {}),
         canvasSheetsVersion: 1,
         channel,
         input,
@@ -775,20 +925,56 @@ export class CollaborationClient {
       };
       const source = input as {
         relativePath?: string;
+        objectId?: string;
+        structureRevision?: number;
         documentPath?: string;
         revision?: number;
-        updates?: { relativePath: string; revision?: number }[];
-        documents?: { relativePath: string; revision?: number }[];
+        updates?: {
+          relativePath: string;
+          revision?: number;
+          objectId?: string;
+          structureRevision?: number;
+        }[];
+        documents?: {
+          relativePath: string;
+          revision?: number;
+          objectId?: string;
+          structureRevision?: number;
+        }[];
       };
       const sourcePath = source.relativePath ?? source.documentPath;
+      if (channel === 'documents:save' && sourcePath && command.properties) {
+        const contentRevision = (input as { contentRevision?: number })
+          .contentRevision;
+        if (contentRevision !== undefined)
+          command.properties[sourcePath] = {
+            ...command.properties[sourcePath],
+            content: contentRevision,
+          };
+      }
+      const setIdentity = (
+        relative: string,
+        item: { objectId?: string; structureRevision?: number },
+      ) => {
+        if (item.objectId !== undefined && command.objects)
+          command.objects[relative] = item.objectId;
+        if (item.structureRevision !== undefined && command.properties)
+          command.properties[relative] = {
+            ...command.properties[relative],
+            structure: item.structureRevision,
+          };
+      };
+      if (sourcePath) setIdentity(sourcePath, source);
       if (sourcePath && source.revision !== undefined)
         command.revisions[sourcePath] = source.revision;
       for (const item of [
         ...(source.updates ?? []),
         ...(source.documents ?? []),
-      ])
+      ]) {
+        setIdentity(item.relativePath, item);
         if (item.revision !== undefined)
           command.revisions[item.relativePath] = item.revision;
+      }
       let result: CollaborationEnvelope & {
         result: unknown;
         historyId?: string;
