@@ -75,13 +75,16 @@ async function run() {
       );
     }
     const bodyElement = `document.querySelector('[aria-label="문서 내용"]')`;
+    await wait('window.qa.starts===window.qa.acknowledgements');
     await js(
       `{const e=${bodyElement};e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(false);const s=window.getSelection();s.removeAllRanges();s.addRange(r);}`,
     );
     const bodyStarts = await js('window.qa.starts');
-    await win.webContents.insertText(' 본문 저장 사본');
+    await js(`document.execCommand('insertText',false,' 본문 저장 사본')`);
+    await wait(`${bodyElement}.textContent.includes('본문 저장 사본')`);
     await wait(`window.qa.starts>${bodyStarts}`);
-    await win.webContents.insertText(' 계속 작성한 본문');
+    await js(`document.execCommand('insertText',false,' 계속 작성한 본문')`);
+    await wait(`${bodyElement}.textContent.includes('계속 작성한 본문')`);
     const caret = await js(
       '({offset:window.getSelection().anchorOffset,text:window.getSelection().anchorNode.textContent})',
     );
@@ -224,6 +227,18 @@ async function run() {
       timings[Math.ceil(timings.length * 0.95) - 1].toFixed(1),
       'ms',
     );
+  } catch (error) {
+    console.error(
+      await js(
+        `({qa:window.qa,active:document.activeElement?.outerHTML,body:document.querySelector('[aria-label="문서 내용"]')?.outerHTML,selection:window.getSelection()?.toString()})`,
+      ),
+    );
+    await fs.mkdir('out/sync-ui', { recursive: true });
+    await fs.writeFile(
+      'out/sync-ui/failure.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    throw error;
   } finally {
     win.destroy();
   }

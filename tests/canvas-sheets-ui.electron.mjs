@@ -91,6 +91,10 @@ async function run() {
     await wait(
       'document.querySelectorAll(".react-flow__node-document").length===1',
     );
+    // Let the newly mounted React Flow store attach its node event handlers.
+    await js(
+      '(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)})()',
+    );
     await js(
       'document.querySelector(".react-flow__node-document").dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:500,clientY:300}))',
     );
