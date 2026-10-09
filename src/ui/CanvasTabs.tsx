@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, MoreHorizontal, ArrowLeft, ArrowRight, X } from 'lucide-react';
 import type { CanvasSheets, CanvasSheetCommand } from '../shared';
 import { previewState } from './debug/uiDebugPreviewState';
@@ -8,6 +8,7 @@ export function CanvasTabs({
   active,
   unread,
   readOnly,
+  hidden = false,
   switchTo,
   change,
 }: {
@@ -15,9 +16,23 @@ export function CanvasTabs({
   active: string;
   unread: Set<string>;
   readOnly: boolean;
+  hidden?: boolean;
   switchTo: (id: string) => Promise<void>;
   change: (command: CanvasSheetCommand) => Promise<void>;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (hidden) return;
+    const list = listRef.current;
+    const activeTab = list?.querySelector('[aria-selected="true"]');
+    if (!list || !activeTab) return;
+    const visible = list.getBoundingClientRect();
+    const tab = activeTab.getBoundingClientRect();
+    // Scroll only the tab list, even while its footer is entering the viewport.
+    if (tab.left < visible.left) list.scrollLeft += tab.left - visible.left;
+    else if (tab.right > visible.right)
+      list.scrollLeft += tab.right - visible.right;
+  }, [active, hidden]);
   const [dialog, setDialog] = useState<{
     action: 'add' | 'manage';
     id: string;
@@ -81,10 +96,13 @@ export function CanvasTabs({
   return (
     <>
       <nav
-        className="canvas-tabs floating-surface"
+        className={`canvas-tabs${hidden ? ' canvas-tabs--hidden' : ''}`}
         aria-label="프로젝트 캔버스"
+        aria-hidden={hidden}
+        inert={hidden}
       >
         <div
+          ref={listRef}
           className="canvas-tabs__list"
           role="tablist"
           aria-label="캔버스 목록"
@@ -121,6 +139,7 @@ export function CanvasTabs({
           ))}
         </div>
         <button
+          className="canvas-tabs__add"
           aria-label="캔버스 추가"
           title="캔버스 추가"
           disabled={readOnly || sheets.canvases.length >= 100}

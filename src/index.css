@@ -4835,9 +4835,6 @@ kbd {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
-.app-shell .status-toast {
-  bottom: 130px;
-}
 @media (max-width: 850px) {
   .home-sidebar {
     width: 185px;
@@ -4945,27 +4942,72 @@ kbd {
 
 .canvas-tabs {
   position: fixed;
-  left: 22px;
-  bottom: 16px;
+  inset: auto 0 0;
   z-index: 30;
   display: flex;
+  align-items: center;
   gap: 4px;
-  max-width: calc(100vw - 330px);
-  padding: 5px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  height: var(--canvas-footer-height);
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-solid);
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform var(--canvas-dock-duration) var(--canvas-dock-easing),
+    opacity var(--canvas-dock-duration) var(--canvas-dock-easing);
+}
+.canvas-tabs--hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
 }
 .canvas-tabs__list {
   display: flex;
   overflow-x: auto;
   gap: 3px;
+  min-width: 0;
+  max-width: calc(100% - 38px);
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.canvas-tabs__add {
+  flex: 0 0 31px;
+  justify-content: center;
+}
+.app-shell {
+  --canvas-footer-height: 40px;
+  --canvas-tool-gap: 12px;
+  --canvas-dock-shift: 0px;
+  --canvas-dock-duration: 220ms;
+  --canvas-dock-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --canvas-tools-bottom: calc(
+    var(--canvas-footer-height) + var(--canvas-tool-gap)
+  );
+  --canvas-toolbar-lift: 0px;
+}
+.app-shell--tabs-hidden {
+  --canvas-dock-shift: var(--canvas-footer-height);
 }
 .app-shell .bottom-toolbar,
-.app-shell .canvas-utility {
-  bottom: 72px;
+.app-shell .canvas-utility,
+.app-shell .react-flow__controls,
+.app-shell .react-flow__minimap,
+.app-shell .selection-context,
+.app-shell .status-toast {
+  transform: translateY(var(--canvas-dock-shift));
+  transition: transform var(--canvas-dock-duration) var(--canvas-dock-easing);
+}
+.app-shell .canvas-utility,
+.app-shell .react-flow__controls,
+.app-shell .react-flow__minimap {
+  bottom: var(--canvas-tools-bottom);
+}
+.app-shell .bottom-toolbar {
+  bottom: calc(var(--canvas-tools-bottom) + var(--canvas-toolbar-lift));
+  transform: translate(-50%, var(--canvas-dock-shift));
 }
 .app-shell .react-flow__controls {
-  bottom: 72px;
   left: 16px;
   margin: 0;
   display: flex;
@@ -4980,6 +5022,18 @@ kbd {
 }
 .app-shell .canvas-utility {
   left: 120px;
+}
+.app-shell .react-flow__minimap {
+  right: 16px;
+  margin: 0;
+}
+.app-shell .status-toast {
+  bottom: calc(var(--canvas-tools-bottom) + 58px);
+  max-width: max(200px, calc(50vw - 192px));
+}
+.app-shell .selection-context {
+  bottom: calc(var(--canvas-tools-bottom) + var(--canvas-toolbar-lift) + 90px);
+  transform: translate(-50%, var(--canvas-dock-shift));
 }
 .bottom-toolbar kbd {
   color: var(--text-muted);
@@ -5016,18 +5070,19 @@ kbd {
   stroke: var(--selection);
 }
 @media (max-width: 850px) {
-  .app-shell .canvas-utility {
-    left: 120px;
-  }
-  .app-shell .bottom-toolbar {
-    bottom: 124px;
+  .app-shell {
+    --canvas-toolbar-lift: 64px;
   }
   .app-shell .status-toast {
-    bottom: 194px;
+    bottom: calc(
+      var(--canvas-tools-bottom) + var(--canvas-toolbar-lift) + 90px
+    );
   }
 }
-.app-shell .selection-context {
-  bottom: 141px;
+@media (prefers-reduced-motion: reduce) {
+  .app-shell {
+    --canvas-dock-duration: 0ms;
+  }
 }
 .canvas-tabs__item {
   display: flex;
@@ -5155,10 +5210,4 @@ kbd {
 }
 .canvas-material-picker input {
   width: auto;
-}
-@media (max-width: 700px) {
-  .canvas-tabs {
-    max-width: calc(100vw - 40px);
-    bottom: 60px;
-  }
 }

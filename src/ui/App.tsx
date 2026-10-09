@@ -5093,7 +5093,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
   return (
     <main
-      className={`app-shell app-shell--tool-${tool}${findOpen ? ' app-shell--has-find' : ''}${codexRun ? ' app-shell--has-run' : ''}${completion && codexRunCollapsed ? ' app-shell--has-completion' : ''}`}
+      className={`app-shell app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${codexRun ? ' app-shell--has-run' : ''}${completion && codexRunCollapsed ? ' app-shell--has-completion' : ''}`}
     >
       {uiDebug}
       <UpdatePanel
@@ -5433,7 +5433,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         onClick={() => setUiHidden((value) => !value)}
         aria-pressed={!uiHidden}
         title={
-          uiHidden ? '상단 메뉴 보이기 (Ctrl+\\)' : '상단 메뉴 숨기기 (Ctrl+\\)'
+          uiHidden
+            ? '상단 메뉴·캔버스 탭 보이기 (Ctrl+\\)'
+            : '상단 메뉴·캔버스 탭 숨기기 (Ctrl+\\)'
         }
       >
         {uiHidden ? <Eye size={16} /> : <EyeOff size={16} />}
@@ -7187,8 +7189,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </div>
       )}
 
-      {!uiHidden && workspace.root && (
+      {workspace.root && (
         <CanvasTabs
+          hidden={uiHidden}
           sheets={canvasSheets}
           active={activeCanvas}
           unread={

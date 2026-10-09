@@ -90,10 +90,138 @@ async function run() {
     assert.deepEqual(await bounds('.ui-tools-toggle'), toggleBefore);
     await js('document.querySelector(".ui-tools-toggle").click()');
     await wait('!!document.querySelector(".floating-header")');
-    for (const width of [1280, 980]) {
-      win.setSize(width, 900);
-      await sleep(150);
+    await sleep(260);
+    const dockSelectors = [
+      '.react-flow__controls',
+      '.canvas-utility',
+      '.bottom-toolbar',
+      '.react-flow__minimap',
+      '.status-toast',
+    ];
+    const sampleDock = () =>
+      js(
+        `(()=>Object.fromEntries(${JSON.stringify(dockSelectors)}.map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return [selector,{top:r.top,bottom:r.bottom,left:r.left,right:r.right}];})))()`,
+      );
+    const originalDock = await sampleDock();
+    const originalViewport = await js(
+      "getComputedStyle(document.querySelector('.react-flow__viewport')).transform",
+    );
+    const footer = await bounds('.canvas-tabs');
+    assert.equal(footer.left, 0);
+    assert.equal(footer.right, await js('innerWidth'));
+    assert.equal(footer.bottom, await js('innerHeight'));
+    assert.equal(footer.height, 40);
+    const motion = await js(
+      `new Promise(resolve=>{const before=document.querySelector('.bottom-toolbar').getBoundingClientRect().bottom;document.querySelector('.ui-tools-toggle').click();requestAnimationFrame(()=>{const started=performance.now();const samples=[];function frame(now){samples.push(document.querySelector('.bottom-toolbar').getBoundingClientRect().bottom-before);if(now-started<270)requestAnimationFrame(frame);else resolve(samples);}requestAnimationFrame(frame);});})`,
+    );
+    assert(
+      motion.some((offset) => offset > 1 && offset < 39),
+      'Dock should pass through intermediate positions',
+    );
+    assert(Math.abs(motion.at(-1) - 40) < 1);
+    const hiddenDock = await sampleDock();
+    for (const selector of dockSelectors) {
+      assert(
+        Math.abs(
+          hiddenDock[selector].bottom - originalDock[selector].bottom - 40,
+        ) < 1,
+        selector + ' follows footer',
+      );
+      assert.equal(hiddenDock[selector].left, originalDock[selector].left);
+    }
+    assert.equal(
+      (await js('innerHeight')) - hiddenDock['.bottom-toolbar'].bottom,
+      12,
+    );
+    assert.equal(
+      await js('document.querySelector(".canvas-tabs").inert'),
+      true,
+    );
+    assert.equal(
+      await js(
+        'document.querySelector(".canvas-tabs").getAttribute("aria-hidden")',
+      ),
+      'true',
+    );
+    assert.equal(
+      await js(
+        "getComputedStyle(document.querySelector('.react-flow__viewport')).transform",
+      ),
+      originalViewport,
+    );
+    await fs.writeFile(
+      'out/ui-review/footer-hidden.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js('document.querySelector(".ui-tools-toggle").click()');
+    await sleep(260);
+    assert.deepEqual(await sampleDock(), originalDock);
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-tabs")).opacity',
+      ),
+      '1',
+    );
+    assert.equal(await js('document.querySelector(".app-shell").scrollTop'), 0);
+    await js("document.querySelector('.canvas-tabs__manage').click()");
+    await wait('!!document.querySelector(".canvas-sheet-dialog input")');
+    await js(
+      `{const input=document.querySelector('.canvas-sheet-dialog input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'보존할 이름');input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.ui-tools-toggle').click();}`,
+    );
+    await sleep(260);
+    assert.equal(
+      await js('document.querySelector(".canvas-sheet-dialog input").value'),
+      '보존할 이름',
+    );
+    assert.equal(
+      await js('document.querySelector(".canvas-tabs").inert'),
+      true,
+    );
+    await js('document.querySelector(".ui-tools-toggle").click()');
+    await sleep(260);
+    assert.equal(
+      await js('document.querySelector(".canvas-sheet-dialog input").value'),
+      '보존할 이름',
+    );
+    await js(
+      'document.querySelector(".canvas-sheet-dialog [aria-label=닫기]").click()',
+    );
+    // Reverse an in-progress movement; there must be no immediate position jump.
+    const reversed = await js(
+      `new Promise(resolve=>{document.querySelector('.ui-tools-toggle').click();setTimeout(()=>{const before=document.querySelector('.bottom-toolbar').getBoundingClientRect().bottom;const observer=new MutationObserver(()=>{observer.disconnect();const after=document.querySelector('.bottom-toolbar').getBoundingClientRect().bottom;setTimeout(()=>resolve({before,after,final:document.querySelector('.bottom-toolbar').getBoundingClientRect().bottom}),270);});observer.observe(document.querySelector('.app-shell'),{attributes:true,attributeFilter:['class']});document.querySelector('.ui-tools-toggle').click();},75);})`,
+    );
+    assert(
+      Math.abs(reversed.after - reversed.before) < 4,
+      'Rapid toggle must reverse without snapping',
+    );
+    assert(
+      Math.abs(reversed.final - originalDock['.bottom-toolbar'].bottom) < 1,
+    );
+    await win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+    });
+    const reduced = await js(
+      `new Promise(resolve=>{document.querySelector('.ui-tools-toggle').click();requestAnimationFrame(()=>requestAnimationFrame(()=>resolve({duration:getComputedStyle(document.querySelector('.bottom-toolbar')).transitionDuration,bottom:document.querySelector('.bottom-toolbar').getBoundingClientRect().bottom})));})`,
+    );
+    assert.equal(reduced.duration, '0s');
+    assert.equal(reduced.bottom, hiddenDock['.bottom-toolbar'].bottom);
+    await js('document.querySelector(".ui-tools-toggle").click()');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+      features: [],
+    });
+    win.webContents.debugger.detach();
+    await sleep(260);
+    for (const [width, height] of [
+      [1280, 900],
+      [980, 640],
+      [640, 640],
+    ]) {
+      win.setSize(width, height);
+      await sleep(260);
       const tabs = await bounds('.canvas-tabs');
+      assert.equal(tabs.width, width);
+      assert.equal(tabs.bottom, height);
       for (const selector of [
         '.react-flow__controls',
         '.canvas-utility',
@@ -107,9 +235,61 @@ async function run() {
           'Tabs overlap ' + selector + ' at ' + width,
         );
       }
+      const panels = [
+        '.react-flow__controls',
+        '.canvas-utility',
+        '.bottom-toolbar',
+      ];
+      for (let i = 0; i < panels.length; i++)
+        for (let j = i + 1; j < panels.length; j++) {
+          const a = await bounds(panels[i]),
+            b = await bounds(panels[j]);
+          assert(
+            a.right <= b.left ||
+              b.right <= a.left ||
+              a.bottom <= b.top ||
+              b.bottom <= a.top,
+            'Panels overlap at ' + width,
+          );
+        }
     }
     win.setSize(1280, 900);
-    await sleep(100);
+    await sleep(260);
+    await fs.writeFile(
+      'out/ui-review/footer-visible.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js(
+      `(async()=>{for(let i=0;i<25;i++){const sheets=await gameCanvas.getCanvasSheets();await gameCanvas.changeCanvasSheets({action:'add',id:'overflow-'+i,name:'길게 표시하는 캔버스 '+i,expected:sheets.raw??null});}})()`,
+    );
+    await wait(
+      'document.querySelectorAll(".canvas-tabs [role=tab]").length>=26',
+    );
+    assert(
+      await js(
+        'document.querySelector(".canvas-tabs__list").scrollWidth>document.querySelector(".canvas-tabs__list").clientWidth',
+      ),
+    );
+    await js(
+      'document.querySelector(".canvas-tabs [role=tab]:first-child").focus();document.querySelectorAll(".canvas-tabs [role=tab]")[25].focus()',
+    );
+    const lastTab = await bounds('.canvas-tabs__item:last-child [role=tab]');
+    const tabList = await bounds('.canvas-tabs__list');
+    assert(
+      lastTab.left >= tabList.left - 1 && lastTab.right <= tabList.right + 1,
+      'Keyboard can reach overflowing tabs',
+    );
+    assert(
+      lastTab.top >= footer.top && lastTab.bottom <= footer.bottom,
+      'Overflow must remain in one footer row',
+    );
+    const add = await bounds('.canvas-tabs__add');
+    assert(add.right <= 1280 && add.bottom <= 900);
+    await fs.writeFile(
+      'out/ui-review/footer-overflow.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js('document.activeElement.blur()');
     const count = () =>
       js('window.gameCanvas.listDocuments().then(d=>d.length)');
     const drag = async (start, end, legacy = false) => {
@@ -259,7 +439,7 @@ async function run() {
       (await win.webContents.capturePage()).toPNG(),
     );
     console.log(
-      'PASS: toolbar shortcuts/order, fixed hide/restore position, tabs/zoom separation, drawn note dimensions across zoom/reverse/legacy, click creation, Escape cancellation, colored minimap, circular swatches and dismissed completion persistence across home/reload/new tasks.',
+      'PASS: full-width footer, visible/hidden dock spacing, intermediate animation, rapid reversal, reduced motion, retained management input, overflow keyboard access, minimum window layout, toolbar shortcuts/order, native pointer note drawing, colored minimap and completion persistence.',
     );
   } catch (error) {
     exitCode = 1;
