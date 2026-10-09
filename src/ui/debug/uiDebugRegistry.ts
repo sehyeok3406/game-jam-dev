@@ -447,7 +447,17 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
     'AI',
     project,
     '.ai-request-dialog',
-    ['organize', 'implement', 'both', 'html', 'busy', 'error'],
+    [
+      'organize',
+      'implement',
+      'both',
+      'html',
+      'busy',
+      'error',
+      'empty-instructions',
+      'no-steps',
+      'invalid-model',
+    ],
   ),
   entry(
     'ai-status',

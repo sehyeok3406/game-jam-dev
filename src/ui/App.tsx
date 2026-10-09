@@ -124,8 +124,19 @@ import {
 } from '../preview-output';
 import { PREVIEW_SANDBOX } from '../preview-permissions';
 import { gamejamTaskInput, type GamejamRequest } from '../gamejam-request';
+import {
+  gamejamIssues,
+  gamejamFieldId,
+  gamejamErrorId,
+  type GamejamField,
+  type GamejamIssue,
+} from '../gamejam-validation';
+import {
+  GamejamFieldErrors,
+  GamejamValidationSummary,
+} from './GamejamValidation';
 import { documentSets } from '../document-output';
-import { resultName, MAX_RESULT_NAME } from '../result-name';
+import { MAX_RESULT_NAME } from '../result-name';
 import { CollaborationPanel, ROLE_NAMES } from './CollaborationPanel';
 import {
   CanvasNavigator,
@@ -1528,6 +1539,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const panPrevious = useRef<CanvasTool | null>(null);
   const snapLatest = useRef<{ id: string; x: number; y: number } | null>(null);
   const [aiRequest, setAiRequest] = useState<GamejamRequest | null>(null);
+  const [aiRequestSubmitError, setAiRequestSubmitError] = useState('');
+  const aiRequestDialogRef = useRef<HTMLElement>(null);
   const [aiResultPaths, setAiResultPaths] = useState<string[]>([]);
   const [sectionRename, setSectionRename] = useState<{
     section: CanvasSection;
@@ -1733,13 +1746,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     );
   }, [noticeProject]);
   const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
-  let resultNameError = '';
-  try {
-    resultName(aiRequest?.resultName);
-  } catch (error) {
-    resultNameError =
-      error instanceof Error ? error.message : '결과 이름을 확인해주세요.';
-  }
   const runFailure = codexRun?.events.findLast(
     (event) => event.failure,
   )?.failure;
@@ -1880,6 +1886,52 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       ? collaboration.aiRun?.fileLock
       : codexRun?.fileLock
     : undefined;
+  const aiRequestIssues = aiRequest
+    ? gamejamIssues(aiRequest, {
+        collaboration,
+        provider: selectedAiProvider,
+        model: selectedAiModel,
+        connection: codexStatus,
+        checkingConnection: checkingCodex,
+        aiBusy,
+        locked,
+        updateRestarting,
+      })
+    : [];
+  const aiFieldProps = (field: GamejamField) => ({
+    'aria-invalid':
+      aiRequestIssues.some((issue) => issue.field === field) || undefined,
+    'aria-describedby': aiRequestIssues.some((issue) => issue.field === field)
+      ? gamejamErrorId(field)
+      : undefined,
+  });
+  const focusAiIssue = (issue: GamejamIssue) => {
+    const target =
+      aiRequestDialogRef.current?.querySelector<HTMLElement>(
+        `#${gamejamFieldId(issue.field)}`,
+      ) ??
+      aiRequestDialogRef.current?.querySelector<HTMLElement>(
+        '#ai-request-status',
+      );
+    if (!target) return;
+    for (
+      let ancestor: HTMLElement | null = target;
+      ancestor && ancestor !== aiRequestDialogRef.current;
+      ancestor = ancestor.parentElement
+    ) {
+      if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+    }
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({
+      block: 'center',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    });
+  };
+  useEffect(() => {
+    setAiRequestSubmitError('');
+  }, [aiRequest, selectedAiProvider, selectedAiModel]);
   const pathLocked = useCallback(
     (path: string) => locked || isAiFileLocked(aiFileLock, path),
     [locked, aiFileLock],
@@ -3446,42 +3498,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   };
 
   const submitAiRequest = async () => {
-    if (
-      !aiRequest ||
-      creatingTaskRef.current ||
-      aiBusy ||
-      locked ||
-      !canRunAi ||
-      (!aiRequest.organize && !aiRequest.implement) ||
-      (collaboration.active &&
-        aiRequest.implement &&
-        !collaboration.htmlResultFolders) ||
-      (collaboration.active &&
-        (aiRequest.sourceMode === 'html-compose' ||
-          (aiRequest.sourceMode === 'html' && aiRequest.implement)) &&
-        !collaboration.htmlComposition) ||
-      (collaboration.active &&
-        aiRequest.sourceMode === 'html' &&
-        !collaboration.htmlImportAnalysis) ||
-      (aiRequest.sourceMode &&
-        aiRequest.implement &&
-        aiRequest.htmlResult?.mode === 'update' &&
-        aiRequest.inputPaths.includes(
-          aiRequest.htmlResult.basePath ?? 'output/index.html',
-        )) ||
-      (aiRequest.organize && !aiRequest.instructions.organize.trim()) ||
-      (aiRequest.implement && !aiRequest.instructions.implement.trim()) ||
-      (collaboration.active &&
-        aiRequest.organize &&
-        aiRequest.implement &&
-        !collaboration.gamejamWorkflow) ||
-      !!resultNameError ||
-      (collaboration.active && !collaboration.taskInstructionsEditable) ||
-      (collaboration.active &&
-        !!aiRequest.resultName.trim() &&
-        !collaboration.taskResultNaming)
-    )
+    if (!aiRequest || creatingTaskRef.current) return;
+    if (aiRequestIssues.length) {
+      focusAiIssue(aiRequestIssues[0]);
       return;
+    }
+    setAiRequestSubmitError('');
     creatingTaskRef.current = true;
     setCreatingTask(true);
     try {
@@ -3511,6 +3533,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setAiRequest(null);
       await runTaskWithCodex(task);
     } catch (error) {
+      setAiRequestSubmitError(
+        error instanceof Error
+          ? error.message
+          : '실행 준비에 실패했습니다. 연결 상태와 입력을 확인한 뒤 다시 시도해주세요.',
+      );
       showError(error);
     } finally {
       creatingTaskRef.current = false;
@@ -5050,8 +5077,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     }
     if (id === 'ai-request') {
       setAiRequest({
-        organize: state !== 'implement' && state !== 'html',
-        implement: state !== 'organize',
+        organize:
+          state !== 'implement' && state !== 'html' && state !== 'no-steps',
+        implement: state !== 'organize' && state !== 'no-steps',
         inputPaths:
           state === 'html' ? [result.relativePath] : [doc.relativePath],
         x: 0,
@@ -5059,10 +5087,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         sourceMode: state === 'html' ? 'html' : undefined,
         resultName: state === 'error' ? '../invalid' : '전투 시제품',
         instructions: {
-          organize: DEFAULT_TASK_INSTRUCTIONS.organize,
+          organize:
+            state === 'empty-instructions'
+              ? ''
+              : DEFAULT_TASK_INSTRUCTIONS.organize,
           implement: DEFAULT_TASK_INSTRUCTIONS.implement,
         },
       });
+      if (state === 'invalid-model') setSelectedAiModel('invalid model');
       setCreatingTask(state === 'busy');
     }
     const point = { screenX: 400, screenY: 180 };
@@ -7600,6 +7632,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           }}
         >
           <section
+            ref={aiRequestDialogRef}
             className={`ai-request-dialog floating-surface${aiRequest.organize && aiRequest.implement ? ' ai-request-dialog--combined' : ''}`}
             role="dialog"
             aria-modal="true"
@@ -7626,14 +7659,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               </button>
             </header>
             <div className="ai-request-fields">
-              <p>
+              <p
+                id="ai-request-status"
+                tabIndex={-1}
+                {...aiFieldProps('status')}
+              >
                 선택 범위를 확인하고 실행하세요. 실행 전 편집 내용을 저장하며,
                 작업 중에는 관련 파일만 수정·삭제·이동을 제한합니다.
               </p>
+              <GamejamFieldErrors field="status" issues={aiRequestIssues} />
               <h3 className="ai-step-heading">
                 <span>1</span> 무엇을 만들까요?
               </h3>
               <div
+                id="ai-request-steps"
+                tabIndex={-1}
+                {...aiFieldProps('steps')}
                 className="gamejam-steps"
                 role="group"
                 aria-label="실행할 작업 선택"
@@ -7679,6 +7720,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   </span>
                 </label>
               </div>
+              <GamejamFieldErrors field="steps" issues={aiRequestIssues} />
               <details className="canvas-material-picker">
                 <summary>
                   프로젝트 전체에서 재료 선택 · 도착:{' '}
@@ -7761,14 +7803,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   유지합니다.
                 </small>
               )}
-              {aiRequest.implement &&
-                collaboration.active &&
-                !collaboration.htmlResultFolders && (
-                  <p role="alert">
-                    HTML 결과 폴더를 사용하려면 협업 서버를 v0.8.1 이상으로
-                    업데이트하고 다시 시작해주세요.
-                  </p>
-                )}
               {aiRequest.sourceMode && (
                 <small>
                   코드에서 확인한 구현, AI의 추정, 확인 불가를 구분합니다. 자동
@@ -7784,43 +7818,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   만듭니다.
                 </small>
               )}
-              {collaboration.active &&
-                (aiRequest.sourceMode === 'html-compose' ||
-                  (aiRequest.sourceMode === 'html' && aiRequest.implement)) &&
-                !collaboration.htmlComposition && (
-                  <p role="alert">
-                    HTML을 구현 재료로 사용하려면 앱과 협업 서버를 함께 v0.10.9
-                    이상으로 업데이트해주세요.
-                  </p>
-                )}
-              {aiRequest.sourceMode === 'html' &&
-                collaboration.active &&
-                !collaboration.htmlImportAnalysis && (
-                  <p role="alert">
-                    HTML 분석에는 협업 서버 v0.7.10 이상이 필요합니다. 서버를
-                    업데이트해주세요.
-                  </p>
-                )}
-              {aiRequest.sourceMode &&
-                aiRequest.implement &&
-                aiRequest.htmlResult?.mode === 'update' &&
-                aiRequest.inputPaths.includes(
-                  aiRequest.htmlResult.basePath ?? 'output/index.html',
-                ) && (
-                  <p role="alert">
-                    재료로 선택한 원본 HTML은 덮어쓸 수 없습니다. 새 버전을
-                    선택하거나 다른 결과를 업데이트해주세요.
-                  </p>
-                )}
-              {collaboration.active &&
-                aiRequest.organize &&
-                aiRequest.implement &&
-                !collaboration.gamejamWorkflow && (
-                  <p role="alert">
-                    연속 실행은 협업 서버 v0.7.9 이상이 필요합니다. 서버를
-                    업데이트하거나 한 단계만 선택해주세요.
-                  </p>
-                )}
               <details open className="ai-input-scope">
                 <summary>
                   입력 범위 · 문서{' '}
@@ -7995,6 +7992,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       ? '업데이트할 결과'
                       : '새 버전을 만들 원본 HTML'}
                     <select
+                      id="ai-html-result"
+                      {...aiFieldProps('html-result')}
                       aria-label="기준 HTML 결과"
                       value={aiRequest.htmlResult?.basePath ?? ''}
                       disabled={creatingTask}
@@ -8033,6 +8032,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       </small>
                     )}
                   </label>
+                  <GamejamFieldErrors
+                    field="html-result"
+                    issues={aiRequestIssues}
+                  />
                 </>
               )}
               <section className="ai-instructions-field">
@@ -8045,6 +8048,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 </label>
                 <input
                   id="ai-result-name"
+                  {...aiFieldProps('name')}
                   value={aiRequest.resultName}
                   maxLength={MAX_RESULT_NAME}
                   disabled={creatingTask}
@@ -8067,22 +8071,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   {aiRequest.organize &&
                     ' 문서 정리는 게임 개요·핵심 루프·미결정 사항 3개 파일을 생성합니다.'}
                 </small>
-                {resultNameError && <p role="alert">{resultNameError}</p>}
-                {collaboration.active &&
-                  !!aiRequest.resultName.trim() &&
-                  !collaboration.taskResultNaming && (
-                    <p role="alert">
-                      결과 이름을 사용하려면 협업 서버를 v0.7.7 이상으로
-                      업데이트해주세요.
-                    </p>
-                  )}
-                {collaboration.active &&
-                  !collaboration.taskInstructionsEditable && (
-                    <p role="alert">
-                      작업 지시를 사용하려면 협업 서버를 v0.7.5 이상으로
-                      업데이트해야 합니다.
-                    </p>
-                  )}
+                <GamejamFieldErrors field="name" issues={aiRequestIssues} />
                 <h3 className="ai-step-heading">
                   <span>3</span> 작업 지침
                 </h3>
@@ -8125,7 +8114,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       </div>
                       <textarea
                         id={`ai-task-instructions-${kind}`}
-                        aria-describedby={`ai-instructions-help-${kind}`}
+                        {...aiFieldProps(kind)}
+                        aria-describedby={[
+                          `ai-instructions-help-${kind}`,
+                          aiFieldProps(kind)['aria-describedby'],
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        required
                         value={aiRequest.instructions[kind]}
                         disabled={creatingTask}
                         maxLength={MAX_TASK_INSTRUCTIONS}
@@ -8152,11 +8148,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                           / {MAX_TASK_INSTRUCTIONS.toLocaleString()}자
                         </small>
                       </div>
-                      {!aiRequest.instructions[kind].trim() && (
-                        <p role="alert">
-                          작업 지시를 입력하거나 기본값으로 복원해주세요.
-                        </p>
-                      )}
+                      <GamejamFieldErrors
+                        field={kind}
+                        issues={aiRequestIssues}
+                      />
                     </div>
                   ))}
                 <p className="ai-instructions-protection">
@@ -8164,7 +8159,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   권한은 지시를 수정해도 유지됩니다.
                 </p>
               </section>
-              <details className="ai-advanced-settings">
+              <details
+                id="ai-request-connection"
+                tabIndex={-1}
+                className="ai-advanced-settings"
+                {...aiFieldProps('connection')}
+              >
                 <summary>
                   AI 설정 · {getAiProvider(selectedAiProvider).label} ·{' '}
                   {getAiModelLabel(selectedAiProvider, selectedAiModel || null)}
@@ -8174,6 +8174,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       : '연결 확인 필요'}
                   </small>
                 </summary>
+                <GamejamFieldErrors
+                  field="connection"
+                  issues={aiRequestIssues}
+                />
                 <div className="ai-model-fields">
                   <label>
                     AI 제공자
@@ -8225,6 +8229,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 <label className="ai-model-custom">
                   모델 ID 직접 입력 (선택)
                   <input
+                    id="ai-model-custom"
+                    {...aiFieldProps('model')}
                     aria-label="모델 ID 직접 입력"
                     value={selectedAiModel}
                     disabled={creatingTask}
@@ -8233,13 +8239,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     onChange={(event) => setSelectedAiModel(event.target.value)}
                   />
                 </label>
+                <GamejamFieldErrors field="model" issues={aiRequestIssues} />
                 <p>
                   {getAiProvider(selectedAiProvider).description} 설치·로그인은
-                  ‘AI 연결 설정’에서 확인하세요.{' '}
-                  {collaboration.active &&
-                    selectedAiProvider !== 'codex-cli' &&
-                    !collaboration.multiProviderAi &&
-                    '서버 v0.8.0 이상으로 업데이트해야 합니다.'}
+                  ‘AI 연결 설정’에서 확인하세요.
                 </p>
                 <div className="ai-connection-summary">
                   <span
@@ -8268,6 +8271,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               </details>
             </div>
             <footer>
+              <GamejamValidationSummary
+                issues={aiRequestIssues}
+                submitError={aiRequestSubmitError}
+                focusIssue={focusAiIssue}
+              />
               <button
                 disabled={creatingTask}
                 onClick={() => setAiRequest(null)}
@@ -8276,48 +8284,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               </button>
               <button
                 className="button-primary"
-                disabled={
-                  creatingTask ||
-                  !canRunAi ||
-                  locked ||
-                  aiBusy ||
-                  (!aiRequest.organize && !aiRequest.implement) ||
-                  (collaboration.active &&
-                    aiRequest.implement &&
-                    !collaboration.htmlResultFolders) ||
-                  (collaboration.active &&
-                    (aiRequest.sourceMode === 'html-compose' ||
-                      (aiRequest.sourceMode === 'html' &&
-                        aiRequest.implement)) &&
-                    !collaboration.htmlComposition) ||
-                  (collaboration.active &&
-                    aiRequest.sourceMode === 'html' &&
-                    !collaboration.htmlImportAnalysis) ||
-                  (aiRequest.sourceMode &&
-                    aiRequest.implement &&
-                    aiRequest.htmlResult?.mode === 'update' &&
-                    aiRequest.inputPaths.includes(
-                      aiRequest.htmlResult.basePath ?? 'output/index.html',
-                    )) ||
-                  (aiRequest.organize &&
-                    !aiRequest.instructions.organize.trim()) ||
-                  (aiRequest.implement &&
-                    !aiRequest.instructions.implement.trim()) ||
-                  (collaboration.active &&
-                    aiRequest.organize &&
-                    aiRequest.implement &&
-                    !collaboration.gamejamWorkflow) ||
-                  !!resultNameError ||
-                  (collaboration.active &&
-                    !!aiRequest.resultName.trim() &&
-                    !collaboration.taskResultNaming) ||
-                  (collaboration.active &&
-                    !collaboration.taskInstructionsEditable) ||
-                  !codexStatus?.available ||
-                  !codexStatus.authenticated ||
-                  (collaboration.active &&
-                    selectedAiProvider !== 'codex-cli' &&
-                    !collaboration.multiProviderAi)
+                disabled={creatingTask}
+                aria-disabled={creatingTask || aiRequestIssues.length > 0}
+                aria-describedby={
+                  aiRequestIssues.length || aiRequestSubmitError
+                    ? 'ai-request-validation'
+                    : undefined
                 }
                 onClick={() => void submitAiRequest()}
               >

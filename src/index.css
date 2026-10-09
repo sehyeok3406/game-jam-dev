@@ -3553,6 +3553,71 @@ kbd {
   overflow: auto;
   padding-right: 4px;
 }
+.ai-request-dialog {
+  --ai-validation-color: #ff98a3;
+}
+:root[data-theme='light'] .ai-request-dialog {
+  --ai-validation-color: #ac3444;
+}
+.ai-request-dialog [aria-invalid='true'] {
+  border-color: var(--ai-validation-color);
+  outline: 1px solid var(--ai-validation-color);
+  outline-offset: 2px;
+}
+.ai-request-dialog .ai-validation-errors p {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--ai-validation-color);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.ai-validation-errors {
+  display: grid;
+  gap: 5px;
+}
+.ai-validation-errors svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.ai-validation-summary {
+  flex: 0 0 100%;
+  min-width: 0;
+  max-height: 116px;
+  overflow: auto;
+  padding: 9px 12px;
+  border: 1px solid var(--ai-validation-color);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  color: var(--ai-validation-color);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-validation-summary ul {
+  margin: 4px 0 0;
+  padding-left: 17px;
+}
+.ai-validation-summary button {
+  display: inline;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ai-request-dialog .ai-validation-summary p {
+  margin: 4px 0 0;
+  color: inherit;
+}
+.ai-request-dialog > footer > .button-primary[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .ai-instructions-field {
   display: grid;
   gap: 8px;

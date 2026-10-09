@@ -1,7 +1,7 @@
 {
   "name": "game-canvas",
   "productName": "Game Jam!",
-  "version": "0.12.4",
+  "version": "0.12.5",
   "private": true,
   "description": "A local-first Markdown canvas for turning game ideas into HTML prototypes.",
   "keywords": [],
@@ -21,6 +21,7 @@
     "test:ui-debug:native": "node tests/run-ui-debug.mjs --native",
     "test:ui-review": "node tests/run-ui-review.mjs",
     "test:ai-dismissal": "node tests/run-ai-run-dismissal.mjs",
+    "test:gamejam-validation": "node tests/run-gamejam-validation.mjs",
     "test": "node --test tests/*.test.mjs",
     "start": "electron-forge start",
     "package": "electron-forge package",
