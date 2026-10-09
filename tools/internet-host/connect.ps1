@@ -4,7 +4,9 @@
   [switch]$Json,
   [int]$Port = 4318,
   [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'GameCanvas-InternetHost'),
-  [string]$CloudflaredPath = ''
+  [string]$CloudflaredPath = '',
+  [string]$NodePath = '',
+  [string]$ServerEntry = ''
 )
 $ErrorActionPreference = 'Stop'
 # A launcher invoked via Node/PowerShell 7 can inherit that runtime's module
@@ -21,7 +23,8 @@ $facts = [pscustomobject]@{ publicUrl = ''; port = $Port; listenerPids = @() }
 try {
   $StateDirectory = [IO.Path]::GetFullPath($StateDirectory)
   $reportPath = Join-Path $StateDirectory 'connection-report.json'
-  $serverEntry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../out/collaboration-server/server.mjs'))
+  if (-not $ServerEntry) { $ServerEntry = Join-Path $PSScriptRoot '../../out/collaboration-server/server.mjs' }
+  $serverEntry = [IO.Path]::GetFullPath($ServerEntry)
   # Serialize double-clicks without changing or adopting an existing process.
   $hasher = [Security.Cryptography.SHA256]::Create()
   try { $stateHash = [BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($StateDirectory.ToLowerInvariant()))).Replace('-', '') }
@@ -31,7 +34,7 @@ try {
   if (-not $locked) { $code = 'GC-HOST-014'; throw 'Busy' }
   if ($Port -lt 1 -or $Port -gt 65535) { $code = 'GC-HOST-005'; throw 'Invalid port' }
   if (-not $Json) { Write-Host "`nGame Canvas · 인터넷 협업`n[1/3] 기존 서버 · 포트 · 필수 프로그램 검사 중..." }
-  $facts = Get-HostFacts $StateDirectory $Port $serverEntry $CloudflaredPath
+  $facts = Get-HostFacts $StateDirectory $Port $serverEntry $CloudflaredPath $NodePath
   $decision = Get-HostDecision $facts
   if ($decision.action -eq 'blocked') { $code = $decision.code; throw 'Preflight blocked' }
   if ($decision.action -eq 'start' -and -not $CheckOnly) {
@@ -39,8 +42,20 @@ try {
     $failurePath = Join-Path $StateDirectory "logs/startup-failure-$([guid]::NewGuid().ToString('N')).json"
     $runner = Join-Path $PSScriptRoot 'host.ps1'
     # Run separately: legacy actions use exit. Only structured, sanitized errors are displayed.
-    $null = & "$PSHOME/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $runner -Action Start -Port $facts.port -StateDirectory $StateDirectory -CloudflaredPath $facts.cloudflaredPath -FailureReport $failurePath 2>&1
-    $startExit = $LASTEXITCODE
+    $startArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner, '-Action', 'Start', '-Port', [string]$facts.port, '-StateDirectory', $StateDirectory, '-CloudflaredPath', $facts.cloudflaredPath, '-ServerEntry', $serverEntry, '-FailureReport', $failurePath)
+    if ($NodePath) { $startArguments += @('-NodePath', $NodePath) }
+    # Native pipeline capture keeps inherited Windows pipe handles open in the
+    # long-lived helpers. Wait for the launcher itself, with file-backed IO.
+    $runnerStamp = [guid]::NewGuid().ToString('N')
+    $runnerLogs = Join-Path $StateDirectory 'logs'
+    New-Item -ItemType Directory -Path $runnerLogs -Force | Out-Null
+    $runnerInput = Join-Path $runnerLogs "launcher-$runnerStamp.in"
+    [IO.File]::WriteAllText($runnerInput, '')
+    $quotedArguments = @($startArguments | ForEach-Object { '"' + [regex]::Replace([regex]::Replace([string]$_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"' })
+    $launcher = Start-Process -FilePath "$PSHOME/powershell.exe" -ArgumentList $quotedArguments -WindowStyle Hidden -PassThru -RedirectStandardInput $runnerInput -RedirectStandardOutput (Join-Path $runnerLogs "launcher-$runnerStamp.out.log") -RedirectStandardError (Join-Path $runnerLogs "launcher-$runnerStamp.err.log")
+    $null = $launcher.Handle
+    if (-not $launcher.WaitForExit(300000)) { throw 'Launcher timeout' }
+    $startExit = $launcher.ExitCode
     if ($startExit -ne 0) {
       $code = 'GC-HOST-099'
       try {
@@ -48,10 +63,10 @@ try {
         $code = (Get-HostHelp ([string]$failure.code)).code
       } catch { }
       # Refresh only safe process/health diagnostics, never read private logs.
-      $facts = Get-HostFacts $StateDirectory $facts.port $serverEntry $facts.cloudflaredPath
+      $facts = Get-HostFacts $StateDirectory $facts.port $serverEntry $facts.cloudflaredPath $NodePath
       throw 'Startup failed'
     }
-    $facts = Get-HostFacts $StateDirectory $facts.port $serverEntry $facts.cloudflaredPath
+    $facts = Get-HostFacts $StateDirectory $facts.port $serverEntry $facts.cloudflaredPath $NodePath
     $decision = Get-HostDecision $facts
     if ($decision.action -ne 'reuse') { $code = $decision.code; if (-not $code) { $code = 'GC-HOST-099' }; throw 'Postflight failed' }
     $status = 'started'

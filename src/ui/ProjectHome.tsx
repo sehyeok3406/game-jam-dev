@@ -21,6 +21,8 @@ import {
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
   Globe2,
+  Server,
+  ClipboardPaste,
 } from 'lucide-react';
 import type { ProjectEntry, ProjectFolder } from '../shared';
 import { ROLE_NAMES } from './CollaborationPanel';
@@ -41,12 +43,15 @@ import {
 import { WebViewerDialog } from './WebViewerDialog';
 import { previewState } from './debug/uiDebugPreviewState';
 import { SAMPLE_PROJECTS } from './debug/uiDebugFixtures';
+import { ConnectionInfoDialog } from './ConnectionInfoDialog';
+import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
 
 export function ProjectHome({
   opened,
   join,
   recover,
   updates,
+  openSelfHost,
   toggleTheme,
   theme,
 }: {
@@ -54,10 +59,12 @@ export function ProjectHome({
   join: () => void;
   recover: () => void;
   updates: () => void;
+  openSelfHost?: () => void;
   toggleTheme: () => void;
   theme: 'dark' | 'light';
 }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [connectionDialog, setConnectionDialog] = useState(false);
   const [webViewer, setWebViewer] = useState(!!previewState('web-viewer'));
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -190,6 +197,9 @@ export function ProjectHome({
   };
   useEffect(() => {
     void refresh();
+    return window.gameCanvas.selfHost?.onSelfHostChanged((state) => {
+      if (state.stage === 'ready' || state.stage === 'off') void refresh();
+    });
   }, []);
   const action = async (operation: () => Promise<void>) => {
     if (busy) return;
@@ -340,6 +350,12 @@ export function ProjectHome({
           close={() => setWebViewer(false)}
         />
       )}
+      {connectionDialog && (
+        <ConnectionInfoDialog
+          close={() => setConnectionDialog(false)}
+          changed={() => refresh()}
+        />
+      )}
       <section className="home-content">
         <header className="home-topbar">
           <span>워크스페이스</span>
@@ -372,6 +388,16 @@ export function ProjectHome({
           </button>
         </div>
         <div className="home-entry-actions">
+          {SELF_HOST_ENABLED && window.gameCanvas.selfHost && openSelfHost && (
+            <button disabled={busy} onClick={openSelfHost}>
+              <Server size={19} />
+              <span>
+                <strong>협업 서버 열기</strong>
+                <small>이 PC에서 서버 설정 · 실행 · 관리</small>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+          )}
           <button
             disabled={busy}
             onClick={() =>
@@ -397,6 +423,14 @@ export function ProjectHome({
             <ArrowRight size={16} />
           </button>
         </div>
+        <button
+          className="subtle-button home-connection-import"
+          disabled={busy}
+          onClick={() => setConnectionDialog(true)}
+        >
+          <ClipboardPaste size={15} /> 연결 정보 붙여넣기 · 기존 프로젝트 주소
+          갱신
+        </button>
         <div className="home-list-toolbar">
           <h2>
             {selectedFolder

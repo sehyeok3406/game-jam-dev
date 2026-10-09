@@ -1,7 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
+import { SELF_HOST_ENABLED } from './features/self-host/enabled';
+import { selfHostPreload } from './features/self-host/preload';
 
 const api: GameCanvasApi = {
+  ...(SELF_HOST_ENABLED ? { selfHost: selfHostPreload() } : {}),
+  inspectConnectionInfo: (text) =>
+    ipcRenderer.invoke('projects:connection-inspect', text),
+  applyConnectionInfo: (text) =>
+    ipcRenderer.invoke('projects:connection-apply', text),
   onUiDebugToggle: (listener) => {
     const wrapped = () => listener();
     ipcRenderer.on('ui-debug:toggle', wrapped);

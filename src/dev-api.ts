@@ -421,6 +421,12 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
     goHome: async () => {},
     updateProjectServer: async () => {},
+    inspectConnectionInfo: async () => {
+      throw new Error('연결 정보 적용은 데스크톱 앱에서 사용해주세요.');
+    },
+    applyConnectionInfo: async () => {
+      throw new Error('연결 정보 적용은 데스크톱 앱에서 사용해주세요.');
+    },
     resolveOfflineConflict: async () => {},
     setDocumentColor: async ({ relativePath, color }) => {
       const doc = documents.find((item) => item.relativePath === relativePath);

@@ -1,6 +1,7 @@
 // Capture IPC handlers, but never hide windows: visibility is part of the test.
 // All Electron storage, lifecycle,
 // encryption and the application's collaboration code remain real.
+export { Menu, Tray } from 'electron/main';
 import {
   app,
   BrowserWindow as NativeWindow,

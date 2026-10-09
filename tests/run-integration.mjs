@@ -9,6 +9,7 @@ async function compile(entry, file, alias = {}) {
     logLevel: 'error',
     resolve: { alias },
     define: {
+      __SELF_HOST_ENABLED__: 'false',
       __dirname: JSON.stringify(path.resolve('out/test-validation')),
       MAIN_WINDOW_VITE_DEV_SERVER_URL: JSON.stringify('http://localhost:5173/'),
       MAIN_WINDOW_VITE_NAME: JSON.stringify('main_window'),
@@ -78,6 +79,7 @@ await build({
     alias: { electron: path.resolve('tests/multi-user-electron.ts') },
   },
   define: {
+    __SELF_HOST_ENABLED__: 'false',
     __dirname: JSON.stringify(path.resolve('out/test-validation')),
     MAIN_WINDOW_VITE_DEV_SERVER_URL: JSON.stringify('http://localhost:5173/'),
     MAIN_WINDOW_VITE_NAME: JSON.stringify('main_window'),

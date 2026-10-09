@@ -49,7 +49,7 @@ function Test-HostHealth([string]$Address) {
   } catch { return $false }
 }
 
-function Get-HostFacts([string]$StateDirectory, [int]$Port, [string]$ServerEntry, [string]$CloudflaredPath) {
+function Get-HostFacts([string]$StateDirectory, [int]$Port, [string]$ServerEntry, [string]$CloudflaredPath, [string]$NodePath = '') {
   $facts = [ordered]@{
     runtimeValid = $true; server = 'absent'; tunnel = 'absent'; localHealthy = $false; publicHealthy = $false
     publicUrl = ''; port = $Port; listenerPids = @(); serverPid = $null; tunnelPid = $null
@@ -86,7 +86,8 @@ function Get-HostFacts([string]$StateDirectory, [int]$Port, [string]$ServerEntry
     $facts.nodeReady = $false
     $facts.cloudflaredReady = $false
     try {
-      $node = (Get-Command node.exe -ErrorAction Stop).Source
+      $node = $NodePath
+      if (-not $node) { $node = (Get-Command node.exe -ErrorAction Stop).Source }
       $version = [string](& $node --version 2>$null)
       if ($LASTEXITCODE -eq 0 -and $version -match '^v([0-9]+)\.[0-9]+\.[0-9]+$') {
         $facts.nodeVersion = $version

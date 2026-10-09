@@ -11,10 +11,19 @@ import updateConfig from './update-config.json';
 import { releaseRepository } from './src/app-update';
 import { WINDOWS_EXECUTABLE_NAME } from './src/app-branding';
 import path from 'node:path';
+import { buildSelfHostRuntime } from './scripts/build-self-host-runtime.mjs';
 
 const repository = releaseRepository(updateConfig);
 
 const config: ForgeConfig = {
+  hooks: {
+    preStart: async () => {
+      await buildSelfHostRuntime();
+    },
+    generateAssets: async () => {
+      await buildSelfHostRuntime();
+    },
+  },
   packagerConfig: {
     asar: true,
     icon: path.resolve('assets/icon'),
@@ -23,6 +32,10 @@ const config: ForgeConfig = {
       path.resolve('assets/icon.png'),
       path.resolve('assets/icon.ico'),
       path.resolve('tools/repair-windows-branding.ps1'),
+      ...(process.env.GAME_CANVAS_SELF_HOST !== '0' &&
+      process.platform === 'win32'
+        ? [path.resolve('out/self-host-runtime')]
+        : []),
     ],
   },
   rebuildConfig: {},

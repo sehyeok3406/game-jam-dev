@@ -1,4 +1,6 @@
 import { ArrowRight } from 'lucide-react';
+import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
+import { SelfHostDialog } from '../features/self-host/SelfHostDialog';
 import { UiDebugConsole } from './debug/UiDebugConsole';
 import { uiPreview, previewState } from './debug/uiDebugPreviewState';
 import type { UiDebugSelection } from './debug/uiDebugRegistry';
@@ -1443,6 +1445,16 @@ const nodeTypes: NodeTypes = {
 
 function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [home, setHome] = useState(preview ? preview.scope === 'home' : true);
+  const [selfHostOpen, setSelfHostOpen] = useState(false);
+  useEffect(
+    () =>
+      SELF_HOST_ENABLED
+        ? window.gameCanvas.selfHost?.onSelfHostOpen(() =>
+            setSelfHostOpen(true),
+          )
+        : undefined,
+    [],
+  );
   const [findOpen, setFindOpen] = useState(false);
   const [collaborationTab, setCollaborationTab] = useState<
     'create' | 'join' | 'recover'
@@ -5161,10 +5173,24 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       theme={theme}
     />
   );
+  const selfHostDialog =
+    SELF_HOST_ENABLED && selfHostOpen ? (
+      <SelfHostDialog
+        close={() => setSelfHostOpen(false)}
+        share={async (id) => {
+          await flushEditors();
+          await window.gameCanvas.openProject(id);
+          await enterProject();
+          setCollaborationTab('create');
+          setCollaborationOpen(true);
+        }}
+      />
+    ) : null;
   if (home || (!workspace.root && !loading)) {
     return (
       <>
         <ProjectHome
+          openSelfHost={() => setSelfHostOpen(true)}
           opened={enterProject}
           join={() => {
             setCollaborationTab('join');
@@ -5184,6 +5210,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           show={() => setUpdateOpen(true)}
         />
         {collaborationDialog}
+        {selfHostDialog}
         {uiDebug}
       </>
     );
@@ -5194,6 +5221,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       className={`app-shell app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
     >
       {uiDebug}
+      {selfHostDialog}
       <UpdatePanel
         open={updateOpen}
         close={() => setUpdateOpen(false)}

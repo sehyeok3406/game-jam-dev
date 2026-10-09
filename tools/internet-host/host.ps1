@@ -4,7 +4,9 @@
   [string]$CloudflaredPath = '',
   [int]$Port = 4318,
   [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'GameCanvas-InternetHost'),
-  [string]$FailureReport = ''
+  [string]$FailureReport = '',
+  [string]$NodePath = '',
+  [string]$ServerEntry = ''
 )
 $ErrorActionPreference = 'Stop'
 $env:PSModulePath = (Join-Path $PSHOME 'Modules') + ';' + $env:PSModulePath
@@ -27,7 +29,8 @@ trap {
 $StateDirectory = [IO.Path]::GetFullPath($StateDirectory)
 $runtimeFile = Join-Path $StateDirectory 'runtime.json'
 $keyFile = Join-Path $StateDirectory 'creation-key.clixml'
-$serverEntry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../out/collaboration-server/server.mjs'))
+if (-not $ServerEntry) { $ServerEntry = Join-Path $PSScriptRoot '../../out/collaboration-server/server.mjs' }
+$serverEntry = [IO.Path]::GetFullPath($ServerEntry)
 
 function Read-Runtime {
   if (Test-Path -LiteralPath $runtimeFile) {
@@ -196,7 +199,8 @@ if (-not (Test-Path -LiteralPath $serverEntry -PathType Leaf)) {
   throw 'Build the server first: npm run collaboration:build'
 }
 $script:HostFailureCode = 'GC-HOST-003'
-$nodePath = (Get-Command node.exe -ErrorAction Stop).Source
+$nodePath = $NodePath
+if (-not $nodePath) { $nodePath = (Get-Command node.exe -ErrorAction Stop).Source }
 $nodeVersion = & $nodePath --version
 if ([int]($nodeVersion.TrimStart('v').Split('.')[0]) -lt 24) { throw 'Node.js 24 or later is required.' }
 $script:HostFailureCode = 'GC-HOST-004'

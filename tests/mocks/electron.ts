@@ -47,9 +47,20 @@ export const dialog = {
   }),
 };
 export const nativeImage = {
+  createFromPath: () => ({ isEmpty: () => false }),
   createFromBuffer: () => ({ isEmpty: () => false }),
 };
 export const clipboard = { writeText: () => {} };
+export const Menu = { buildFromTemplate: (template: unknown) => template };
+export class Tray extends EventEmitter {
+  constructor(_image: unknown) {
+    super();
+  }
+  setToolTip(_text: string) {}
+  setContextMenu(_menu: unknown) {}
+  displayBalloon(_options: unknown) {}
+  destroy() {}
+}
 export const safeStorage = {
   isEncryptionAvailable: () => true,
   encryptString: (text: string) => Buffer.from(text),

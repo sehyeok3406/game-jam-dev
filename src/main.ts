@@ -59,6 +59,8 @@ import { WebViewerService } from './web-viewer-service';
 import { startWebViewerSync } from './web-viewer-sync';
 import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
+import { parseConnectionInfo } from './connection-info';
+import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import {
   initializeProjectDocument,
   localProjectName,
@@ -380,6 +382,11 @@ const SECTION_FOLDER = 'sections';
 const SETTINGS_FILE = 'settings.json';
 let workspaceRoot: string | null = null;
 let projectLibrary: ProjectLibrary;
+let selfHost: import('./features/self-host/service').SelfHostService | null =
+  null;
+let selfHostLifecycle:
+  | import('./features/self-host/lifecycle').SelfHostLifecycle
+  | null = null;
 let workspaceWatcher: FSWatcher | null = null;
 let mainWindow: BrowserWindow | null = null;
 let collaboration: CollaborationClient | null = null;
@@ -2827,7 +2834,10 @@ const registerIpc = () => {
       return service.publish(true);
     },
   );
-  handle('projects:home', suspendProject);
+  handle('projects:home', async () => {
+    await suspendProject();
+    if (selfHost?.state.stage === 'ready') await selfHost.run('check');
+  });
   handle('projects:folders', () => projectLibrary.listFolders());
   handle(
     'projects:rename',
@@ -2980,6 +2990,36 @@ const registerIpc = () => {
       throw new Error('홈으로 돌아온 뒤 서버 주소를 변경해주세요.');
     await projectLibrary.updateServer(id, serverAddress(serverUrl));
   });
+  const inspectConnection = (text: string) => {
+    const info = parseConnectionInfo(text);
+    const entry = projectLibrary.get(`shared:${info.projectId}`);
+    if (!entry.credentials)
+      throw new Error(
+        '이 프로젝트의 참여 세션이 없습니다. 초대 코드로 참여해주세요.',
+      );
+    return {
+      id: entry.id,
+      name: entry.name,
+      serverUrl: info.serverUrl,
+      previousUrl: entry.serverUrl,
+    };
+  };
+  handle('projects:connection-inspect', (event, text: string) => {
+    if (!isUpdateSender(event))
+      throw new Error('앱의 홈 화면에서 실행해주세요.');
+    return inspectConnection(text);
+  });
+  handle('projects:connection-apply', async (event, text: string) => {
+    if (!isUpdateSender(event))
+      throw new Error('앱의 홈 화면에서 실행해주세요.');
+    const entry = inspectConnection(text);
+    if (
+      collaboration?.credentials.projectId ===
+      projectLibrary.get(entry.id).projectId
+    )
+      throw new Error('홈으로 돌아온 뒤 연결 정보를 적용해주세요.');
+    await projectLibrary.updateServer(entry.id, entry.serverUrl);
+  });
   handle('projects:create', async (_event, name: string) => {
     if (
       typeof name !== 'string' ||
@@ -3070,7 +3110,9 @@ const registerIpc = () => {
         localCollaborationServer &&
         input.serverUrl === `http://127.0.0.1:${localCollaborationServer.port}`
           ? localCollaborationKey
-          : input.serverKey;
+          : selfHost && selfHost.state.publicUrl === input.serverUrl
+            ? ((await selfHost.creationKey(input.serverUrl)) ?? input.serverKey)
+            : input.serverKey;
       const created = await CollaborationClient.create(
         input.serverUrl,
         key,
@@ -3694,6 +3736,14 @@ const createWindow = async () => {
     });
     closingWindow.webContents.send('drafts:flush-request');
   });
+  selfHostLifecycle?.attach(closingWindow, () => {
+    draftsFlushed = false;
+    closing = false;
+  });
+  closingWindow.on('show', () => {
+    draftsFlushed = false;
+    closing = false;
+  });
 
   // Remove the native menu, rather than auto-hiding it (Alt would reveal it).
   // Keep the standard title bar and Windows window controls intact.
@@ -3749,6 +3799,24 @@ app.whenReady().then(async () => {
     new WebViewerService(app.getPath('userData'), safeStorage),
   );
   await projectLibrary.load();
+  if (
+    SELF_HOST_ENABLED &&
+    !testProfile &&
+    process.platform === 'win32' &&
+    typeof app.getAppPath === 'function'
+  ) {
+    const { registerSelfHost } = await import('./features/self-host/register');
+    const feature = await registerSelfHost({
+      developmentRoot: path.resolve(__dirname, '../..'),
+      library: projectLibrary,
+      activeProject: () => collaboration?.credentials.projectId,
+      window: () => mainWindow,
+      updatePrepared: () => updateRestartPrepared,
+      register: handle,
+    });
+    selfHost = feature.service;
+    selfHostLifecycle = feature.lifecycle;
+  }
   registerIpc();
   await loadSettings();
   if (workspaceRoot) {
@@ -3883,6 +3951,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  selfHostLifecycle?.dispose();
   stopWebViewerSync();
   appUpdates?.dispose();
   collaboration?.stop();

@@ -25,6 +25,26 @@ export function CollaborationPanel({
     state.serverUrl ?? 'http://127.0.0.1:4317',
   );
   const [serverKey, setServerKey] = useState('');
+  const [hostServerUrl, setHostServerUrl] = useState('');
+  useEffect(() => {
+    if (tab !== 'create' || state.active || !window.gameCanvas.selfHost) return;
+    let disposed = false;
+    void window.gameCanvas.selfHost
+      .getSelfHost()
+      .then((host) => {
+        if (disposed || host.stage !== 'ready') return;
+        setHostServerUrl(host.publicUrl);
+        setServerUrl((current) =>
+          current === 'http://127.0.0.1:4317' ? host.publicUrl : current,
+        );
+      })
+      .catch(() => {
+        /* Manual server connections remain available. */
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [tab, state.active]);
   const [name, setName] = useState(
     () => localStorage.getItem('game-canvas-nickname') ?? '',
   );
@@ -561,26 +581,33 @@ export function CollaborationPanel({
             </label>
             {tab === 'create' ? (
               <>
-                <label>
-                  서버 생성 키
-                  <input
-                    aria-label="서버 생성 키"
-                    aria-describedby="server-creation-key-help"
-                    type="password"
-                    value={serverKey}
-                    onChange={(event) => setServerKey(event.target.value)}
-                    placeholder="외부 서버에서 프로젝트 생성 시 필요"
-                  />
-                  <small
-                    id="server-creation-key-help"
-                    className="collaboration-help"
-                  >
-                    서버 관리자가 제공하는 키로, 이 서버에 새 공동 프로젝트를
-                    만들 때만 필요합니다. 초대 코드나 관리자 복구 키와 다릅니다.
-                    프로젝트에 참여할 때는 필요하지 않으며, 이 PC의 내장 테스트
-                    서버를 사용하면 비워두세요.
-                  </small>
-                </label>
+                {serverUrl === hostServerUrl ? (
+                  <p className="collaboration-help">
+                    이 PC의 인터넷 서버를 사용합니다. 서버 생성 키는 앱이
+                    안전하게 전달합니다.
+                  </p>
+                ) : (
+                  <label>
+                    서버 생성 키
+                    <input
+                      aria-label="서버 생성 키"
+                      aria-describedby="server-creation-key-help"
+                      type="password"
+                      value={serverKey}
+                      onChange={(event) => setServerKey(event.target.value)}
+                      placeholder="외부 서버에서 프로젝트 생성 시 필요"
+                    />
+                    <small
+                      id="server-creation-key-help"
+                      className="collaboration-help"
+                    >
+                      서버 관리자가 제공하는 키로, 이 서버에 새 공동 프로젝트를
+                      만들 때만 필요합니다. 초대 코드나 관리자 복구 키와
+                      다릅니다. 프로젝트에 참여할 때는 필요하지 않으며, 이 PC의
+                      내장 테스트 서버를 사용하면 비워두세요.
+                    </small>
+                  </label>
+                )}
                 <p className="collaboration-help">
                   현재 로컬 문서를 서버에 복사합니다. 원본 로컬 폴더는 그대로
                   남으며, 이후 공동 편집은 서버 사본에 저장됩니다.

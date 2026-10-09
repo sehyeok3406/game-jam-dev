@@ -1,7 +1,7 @@
 {
   "name": "game-canvas",
   "productName": "Game Jam!",
-  "version": "0.12.5",
+  "version": "0.13.0",
   "private": true,
   "description": "A local-first Markdown canvas for turning game ideas into HTML prototypes.",
   "keywords": [],

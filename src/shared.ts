@@ -304,6 +304,14 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  selfHost?: import('./features/self-host/types').SelfHostApi;
+  inspectConnectionInfo: (text: string) => Promise<{
+    id: string;
+    name: string;
+    serverUrl: string;
+    previousUrl?: string;
+  }>;
+  applyConnectionInfo: (text: string) => Promise<void>;
   /** Desktop F12 route; browser previews use their own key handler. */
   onUiDebugToggle?: (listener: () => void) => () => void;
   getCanvasChanges: (
