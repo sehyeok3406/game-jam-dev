@@ -153,6 +153,12 @@ async function run() {
       'out/canvas-sheets-ui/materials.png',
       (await win.webContents.capturePage()).toPNG(),
     );
+    for (let step = 1; step < 5; step++) {
+      await js('document.querySelector("#ai-request-next").click()');
+      await wait(
+        `!!document.querySelector('[data-gamejam-page="${step + 1}"]:not([hidden])')`,
+      );
+    }
     await click('gamejam! 실행');
     await wait('!!window.qaLastRequest');
     const request = await js('window.qaLastRequest');

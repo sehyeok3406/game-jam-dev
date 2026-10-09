@@ -457,6 +457,10 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
       'empty-instructions',
       'no-steps',
       'invalid-model',
+      'result',
+      'instructions',
+      'library',
+      'review',
     ],
   ),
   entry(

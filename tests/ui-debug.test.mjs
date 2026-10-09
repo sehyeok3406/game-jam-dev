@@ -72,6 +72,11 @@ test('preview API blocks mutations and unknown methods without changing fixture 
     (method) => blocked.push(method),
   );
   const before = await api.listDocuments();
+  assert.equal(
+    api.selfHost,
+    undefined,
+    'optional namespaces must not become callable fallback functions',
+  );
   for (const [method, args] of [
     ['saveDocument', [{ ...SAMPLE_DOCUMENT, body: 'changed' }]],
     [

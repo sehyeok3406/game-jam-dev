@@ -126,6 +126,9 @@ import {
 } from '../preview-output';
 import { PREVIEW_SANDBOX } from '../preview-permissions';
 import { gamejamTaskInput, type GamejamRequest } from '../gamejam-request';
+import { gamejamFieldPage, type GamejamPage } from '../gamejam-wizard';
+import { GamejamProgress, GamejamReview } from './GamejamWizard';
+import { GameFeatureLibrary } from './GameFeatureLibrary';
 import {
   gamejamIssues,
   gamejamFieldId,
@@ -1551,6 +1554,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const panPrevious = useRef<CanvasTool | null>(null);
   const snapLatest = useRef<{ id: string; x: number; y: number } | null>(null);
   const [aiRequest, setAiRequest] = useState<GamejamRequest | null>(null);
+  const [aiRequestPage, setAiRequestPage] = useState<GamejamPage>(1);
+  const [aiRequestVisited, setAiRequestVisited] = useState(1);
+  const [aiInstructionPage, setAiInstructionPage] = useState<
+    'organize' | 'implement'
+  >('organize');
   const [aiRequestSubmitError, setAiRequestSubmitError] = useState('');
   const aiRequestDialogRef = useRef<HTMLElement>(null);
   const [aiResultPaths, setAiResultPaths] = useState<string[]>([]);
@@ -1917,7 +1925,46 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       ? gamejamErrorId(field)
       : undefined,
   });
+  const activeAiInstruction =
+    aiRequest?.organize && aiRequest?.implement
+      ? aiInstructionPage
+      : aiRequest?.organize
+        ? 'organize'
+        : 'implement';
+  const aiPageIssues = aiRequestIssues.filter(
+    (issue) =>
+      gamejamFieldPage(issue.field) === aiRequestPage &&
+      (aiRequestPage !== 3 || issue.field === activeAiInstruction),
+  );
+  const navigateAiPage = (
+    page: GamejamPage,
+    instruction?: 'organize' | 'implement',
+  ) => {
+    flushSync(() => {
+      setAiRequestPage(page);
+      setAiRequestVisited((visited) => Math.max(visited, page));
+      if (page === 3)
+        setAiInstructionPage(
+          instruction ?? (aiRequest?.organize ? 'organize' : 'implement'),
+        );
+    });
+    const fields =
+      aiRequestDialogRef.current?.querySelector('.ai-request-fields');
+    if (fields) fields.scrollTop = 0;
+    aiRequestDialogRef.current
+      ?.querySelector<HTMLElement>(
+        `[data-gamejam-page="${page}"] .ai-step-heading`,
+      )
+      ?.focus({ preventScroll: true });
+  };
   const focusAiIssue = (issue: GamejamIssue) => {
+    flushSync(() => {
+      const page = gamejamFieldPage(issue.field);
+      setAiRequestPage(page);
+      setAiRequestVisited((visited) => Math.max(visited, page));
+      if (issue.field === 'organize' || issue.field === 'implement')
+        setAiInstructionPage(issue.field);
+    });
     const target =
       aiRequestDialogRef.current?.querySelector<HTMLElement>(
         `#${gamejamFieldId(issue.field)}`,
@@ -1936,10 +1983,39 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     target.focus({ preventScroll: true });
     target.scrollIntoView({
       block: 'center',
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'auto'
-        : 'smooth',
+      behavior: 'instant',
     });
+  };
+  const nextAiPage = () => {
+    if (aiPageIssues.length) {
+      focusAiIssue(aiPageIssues[0]);
+      return;
+    }
+    if (
+      aiRequestPage === 3 &&
+      aiRequest?.organize &&
+      aiRequest.implement &&
+      activeAiInstruction === 'organize'
+    ) {
+      navigateAiPage(3, 'implement');
+    } else if (aiRequestPage < 5) {
+      navigateAiPage((aiRequestPage + 1) as GamejamPage);
+    }
+  };
+  const previousAiPage = () => {
+    if (
+      aiRequestPage === 3 &&
+      aiRequest?.organize &&
+      aiRequest.implement &&
+      activeAiInstruction === 'implement'
+    ) {
+      navigateAiPage(3, 'organize');
+    } else if (aiRequestPage > 1) {
+      navigateAiPage(
+        (aiRequestPage - 1) as GamejamPage,
+        aiRequest?.implement ? 'implement' : 'organize',
+      );
+    }
   };
   useEffect(() => {
     setAiRequestSubmitError('');
@@ -3479,6 +3555,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             window.y + (window.collapsed ? 38 : window.height) + NEW_FILE_GAP,
         ),
     );
+    setAiRequestPage(1);
+    setAiRequestVisited(1);
+    setAiInstructionPage('organize');
     setAiRequest({
       canvasId: activeCanvasRef.current,
       organize:
@@ -3510,7 +3589,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   };
 
   const submitAiRequest = async () => {
-    if (!aiRequest || creatingTaskRef.current) return;
+    if (!aiRequest || aiRequestPage !== 5 || creatingTaskRef.current) return;
     if (aiRequestIssues.length) {
       focusAiIssue(aiRequestIssues[0]);
       return;
@@ -5088,6 +5167,21 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setCodexRunCollapsed(id === 'completion' || state === 'collapsed');
     }
     if (id === 'ai-request') {
+      const page: GamejamPage =
+        state === 'error' || state === 'result'
+          ? 2
+          : state === 'empty-instructions' || state === 'instructions'
+            ? 3
+            : state === 'library'
+              ? 4
+              : state === 'busy' ||
+                  state === 'invalid-model' ||
+                  state === 'review'
+                ? 5
+                : 1;
+      setAiRequestPage(page);
+      setAiRequestVisited(page);
+      setAiInstructionPage('organize');
       setAiRequest({
         organize:
           state !== 'implement' && state !== 'html' && state !== 'no-steps',
@@ -7686,427 +7780,481 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 <X size={18} />
               </button>
             </header>
+            <GamejamProgress
+              page={aiRequestPage}
+              visited={aiRequestVisited}
+              busy={creatingTask}
+              navigate={navigateAiPage}
+            />
             <div className="ai-request-fields">
-              <p
-                id="ai-request-status"
-                tabIndex={-1}
-                {...aiFieldProps('status')}
+              <section
+                className="gamejam-page"
+                data-gamejam-page="1"
+                hidden={aiRequestPage !== 1}
               >
-                선택 범위를 확인하고 실행하세요. 실행 전 편집 내용을 저장하며,
-                작업 중에는 관련 파일만 수정·삭제·이동을 제한합니다.
-              </p>
-              <GamejamFieldErrors field="status" issues={aiRequestIssues} />
-              <h3 className="ai-step-heading">
-                <span>1</span> 무엇을 만들까요?
-              </h3>
-              <div
-                id="ai-request-steps"
-                tabIndex={-1}
-                {...aiFieldProps('steps')}
-                className="gamejam-steps"
-                role="group"
-                aria-label="실행할 작업 선택"
-              >
-                <label className={aiRequest.organize ? 'selected' : ''}>
-                  <input
-                    type="checkbox"
-                    checked={aiRequest.organize}
-                    disabled={creatingTask}
-                    onChange={(event) =>
-                      setAiRequest({
-                        ...aiRequest,
-                        organize: event.target.checked,
-                      })
-                    }
-                  />
-                  <Sparkles size={18} />
-                  <span>
-                    <strong>문서 정리</strong>
-                    <small>
-                      {aiRequest.sourceMode
-                        ? '선택한 HTML 게임을 분석해 Markdown 추출'
-                        : '선택 메모를 Markdown 문서로 정리'}
-                    </small>
-                  </span>
-                </label>
-                <label className={aiRequest.implement ? 'selected' : ''}>
-                  <input
-                    type="checkbox"
-                    checked={aiRequest.implement}
-                    disabled={creatingTask}
-                    onChange={(event) =>
-                      setAiRequest({
-                        ...aiRequest,
-                        implement: event.target.checked,
-                      })
-                    }
-                  />
-                  <Code2 size={18} />
-                  <span>
-                    <strong>HTML 구현</strong>
-                    <small>실행 가능한 게임 프로토타입 생성</small>
-                  </span>
-                </label>
-              </div>
-              <GamejamFieldErrors field="steps" issues={aiRequestIssues} />
-              <details className="canvas-material-picker">
-                <summary>
-                  프로젝트 전체에서 재료 선택 · 도착:{' '}
-                  {
-                    canvasSheets.canvases.find(
-                      (sheet) => sheet.id === canvasId(aiRequest.canvasId),
-                    )?.name
-                  }
-                </summary>
-                {canvasSheets.canvases.map((sheet) => (
-                  <fieldset key={sheet.id}>
-                    <legend>{sheet.name}</legend>
-                    {canvasItems
-                      .filter(
-                        (item) =>
-                          item.canvasId === sheet.id && item.kind !== 'task',
-                      )
-                      .map((item) => (
-                        <label key={item.id}>
-                          <input
-                            type="checkbox"
-                            checked={aiRequest.inputPaths.includes(item.path)}
-                            onChange={(event) =>
-                              setAiRequest((current) => {
-                                if (!current) return current;
-                                const paths = event.target.checked
-                                  ? [
-                                      ...new Set([
-                                        ...current.inputPaths,
-                                        item.path,
-                                        ...(item.kind === 'section'
-                                          ? (sections
-                                              .find(
-                                                (section) =>
-                                                  section.relativePath ===
-                                                  item.path,
-                                              )
-                                              ?.members.map(
-                                                (member) => member.path,
-                                              ) ?? [])
-                                          : []),
-                                      ]),
-                                    ]
-                                  : current.inputPaths.filter(
-                                      (path) => path !== item.path,
-                                    );
-                                const htmlCount =
-                                  paths.filter(isPreviewPath).length;
-                                return {
-                                  ...current,
-                                  inputPaths: paths,
-                                  sourceMode: htmlCount
-                                    ? 'html-compose'
-                                    : undefined,
-                                };
-                              })
-                            }
-                          />
-                          {item.title}
-                        </label>
-                      ))}
-                  </fieldset>
-                ))}
-              </details>
-              <p className="gamejam-flow-summary" role="status">
-                {aiRequest.organize && aiRequest.implement
-                  ? '1. 문서 정리 및 검증 → 2. 이번에 정리한 문서로 HTML 구현 → 전체 결과 반영'
-                  : aiRequest.organize
-                    ? aiRequest.sourceMode
-                      ? 'HTML 코드 분석 → 게임 개요·핵심 플레이 흐름·확인 필요 사항 추출. 원본 HTML은 변경하지 않습니다.'
-                      : '선택한 메모·파일을 문서로 정리합니다.'
-                    : aiRequest.implement
-                      ? '선택한 메모·MD·HTML·이미지와 구현 지침으로 HTML을 만듭니다.'
-                      : '실행할 작업을 하나 이상 선택해주세요.'}
-              </p>
-              {aiRequest.implement && (
-                <small>
-                  새 HTML은 게임 이름·버전별 전용 폴더에 저장합니다. 결과 폴더만
-                  복사해도 실행할 수 있습니다. 기존 결과 업데이트는 원래 위치를
-                  유지합니다.
-                </small>
-              )}
-              {aiRequest.sourceMode && (
-                <small>
-                  코드에서 확인한 구현, AI의 추정, 확인 불가를 구분합니다. 자동
-                  플레이 분석은 하지 않습니다. 구현 단계에는 선택한 HTML 원본과
-                  관련 파일을 전달하며, 문서 정리도 실행하면 추출 문서를 함께
-                  사용합니다.
-                </small>
-              )}
-              {aiRequest.sourceMode === 'html-compose' && (
-                <small>
-                  연결 규칙은 아래 HTML 구현 지침에 작성하세요. 별도 메모 없이
-                  HTML만 선택해도 실행할 수 있습니다. 원본은 유지하고 새 결과를
-                  만듭니다.
-                </small>
-              )}
-              <details open className="ai-input-scope">
-                <summary>
-                  입력 범위 · 문서{' '}
-                  {
-                    aiRequest.inputPaths.filter(
-                      (path) =>
-                        !path.startsWith('sections/') && !isPreviewPath(path),
-                    ).length
-                  }
-                  개 · HTML {aiRequest.inputPaths.filter(isPreviewPath).length}
-                  개 · 섹션{' '}
-                  {
-                    aiRequest.inputPaths.filter((path) =>
-                      path.startsWith('sections/'),
-                    ).length
-                  }
-                  개
-                </summary>
-                <div>
-                  {aiRequest.inputPaths.map((path) => (
-                    <button
-                      key={path}
-                      type="button"
-                      onClick={() => {
-                        const item = canvasItems.find(
-                          (item) => item.path === path,
-                        );
-                        if (item) jumpTo(item.id);
-                      }}
-                    >
-                      <FileText size={14} />
-                      <span>
-                        {documents.find((doc) => doc.relativePath === path)
-                          ?.title ??
-                          previews.find(
-                            (preview) => preview.relativePath === path,
-                          )?.title ??
-                          sections.find(
-                            (section) => section.relativePath === path,
-                          )?.title ??
-                          path}
-                      </span>
-                      <small>
-                        {path.startsWith('sections/')
-                          ? '섹션'
-                          : path.endsWith('.html')
-                            ? 'HTML 게임'
-                            : '문서'}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-              </details>
-              <h3 className="ai-step-heading">
-                <span>2</span> 결과물 설정
-              </h3>
-              {aiRequest.organize && (
-                <>
-                  <div
-                    className="ai-output-choices"
-                    role="group"
-                    aria-label="정리 문서 생성 방식"
-                  >
-                    <button
-                      aria-pressed={aiRequest.documentResult?.mode === 'new'}
-                      disabled={creatingTask}
-                      onClick={() =>
-                        setAiRequest({
-                          ...aiRequest,
-                          documentResult: { mode: 'new' },
-                        })
-                      }
-                    >
-                      <Plus size={17} />
-                      <strong>새 문서 버전 만들기</strong>
-                      <small>기존 문서 유지 · 새 Markdown 묶음</small>
-                    </button>
-                    <button
-                      aria-pressed={aiRequest.documentResult?.mode === 'update'}
-                      disabled={creatingTask || !organizedSets.length}
-                      onClick={() =>
-                        setAiRequest({
-                          ...aiRequest,
-                          documentResult: {
-                            mode: 'update',
-                            baseDir: organizedSets.at(-1)?.baseDir,
-                          },
-                        })
-                      }
-                    >
-                      <RefreshCw size={17} />
-                      <strong>기존 문서 업데이트</strong>
-                      <small>선택 묶음 갱신 · 이전 내용은 히스토리</small>
-                    </button>
-                  </div>
-                  {aiRequest.documentResult?.mode === 'update' ? (
-                    <label>
-                      업데이트할 문서 묶음
-                      <select
-                        aria-label="업데이트할 문서 묶음"
-                        value={aiRequest.documentResult.baseDir}
-                        disabled={creatingTask}
-                        onChange={(event) =>
-                          setAiRequest({
-                            ...aiRequest,
-                            documentResult: {
-                              mode: 'update',
-                              baseDir: event.target.value,
-                            },
-                          })
-                        }
-                      >
-                        {organizedSets.map((set) => (
-                          <option key={set.baseDir} value={set.baseDir}>
-                            {set.label} · {set.baseDir}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <p className="ai-output-hint">
-                      새 .md 파일 3개를 생성합니다. 기존 정리 문서를 덮어쓰지
-                      않습니다.
-                    </p>
-                  )}
-                </>
-              )}
-              {aiRequest.implement && previews.length > 0 && (
-                <>
-                  <div
-                    className="ai-output-choices"
-                    role="group"
-                    aria-label="HTML 결과 생성 방식"
-                  >
-                    <button
-                      aria-pressed={aiRequest.htmlResult?.mode === 'new'}
-                      disabled={creatingTask}
-                      onClick={() =>
-                        setAiRequest({
-                          ...aiRequest,
-                          htmlResult: { ...aiRequest.htmlResult, mode: 'new' },
-                        })
-                      }
-                    >
-                      <Plus size={17} />
-                      <strong>새 버전 만들기</strong>
-                      <small>기존 결과 유지 · 새 파일과 창</small>
-                    </button>
-                    <button
-                      aria-pressed={aiRequest.htmlResult?.mode === 'update'}
-                      disabled={creatingTask}
-                      onClick={() =>
-                        setAiRequest({
-                          ...aiRequest,
-                          htmlResult: {
-                            ...aiRequest.htmlResult,
-                            mode: 'update',
-                            basePath:
-                              aiRequest.htmlResult?.basePath ??
-                              previews.at(-1)!.relativePath,
-                          },
-                        })
-                      }
-                    >
-                      <RefreshCw size={17} />
-                      <strong>기존 결과 업데이트</strong>
-                      <small>선택 결과 갱신 · 이전 내용은 히스토리</small>
-                    </button>
-                  </div>
-                  <label>
-                    {aiRequest.htmlResult?.mode === 'update'
-                      ? '업데이트할 결과'
-                      : '새 버전을 만들 원본 HTML'}
-                    <select
-                      id="ai-html-result"
-                      {...aiFieldProps('html-result')}
-                      aria-label="기준 HTML 결과"
-                      value={aiRequest.htmlResult?.basePath ?? ''}
+                <h3 className="ai-step-heading" tabIndex={-1}>
+                  <span>1</span> 무엇을 만들까요?
+                </h3>
+                <div
+                  id="ai-request-steps"
+                  tabIndex={-1}
+                  {...aiFieldProps('steps')}
+                  className="gamejam-steps"
+                  role="group"
+                  aria-label="실행할 작업 선택"
+                >
+                  <label className={aiRequest.organize ? 'selected' : ''}>
+                    <input
+                      type="checkbox"
+                      checked={aiRequest.organize}
                       disabled={creatingTask}
                       onChange={(event) =>
                         setAiRequest({
                           ...aiRequest,
-                          htmlResult: {
-                            ...aiRequest.htmlResult,
-                            mode: aiRequest.htmlResult?.mode ?? 'new',
-                            basePath: event.target.value || undefined,
-                          },
+                          organize: event.target.checked,
                         })
                       }
-                    >
-                      {aiRequest.htmlResult?.mode !== 'update' && (
-                        <option value="">
-                          기준 없음 · 선택 재료로 새 게임 만들기
-                        </option>
-                      )}
-                      {previews.map((preview) => (
-                        <option
-                          value={preview.relativePath}
-                          key={preview.relativePath}
-                        >
-                          {preview.title ? `${preview.title} · ` : ''}
-                          {previewLabel(preview.relativePath)} ·{' '}
-                          {preview.relativePath}
-                        </option>
-                      ))}
-                    </select>
-                    {aiRequest.htmlResult?.mode !== 'update' && (
-                      <small className="ai-request-help">
-                        선택한 HTML을 바탕으로 수정본을 새 파일로 만듭니다.
-                        원본은 그대로 유지하며, 선택하지 않으면 재료를 사용해 새
-                        HTML을 만듭니다.
+                    />
+                    <Sparkles size={18} />
+                    <span>
+                      <strong>문서 정리</strong>
+                      <small>
+                        {aiRequest.sourceMode
+                          ? '선택한 HTML 게임을 분석해 Markdown 추출'
+                          : '선택 메모를 Markdown 문서로 정리'}
                       </small>
-                    )}
+                    </span>
                   </label>
-                  <GamejamFieldErrors
-                    field="html-result"
-                    issues={aiRequestIssues}
+                  <label className={aiRequest.implement ? 'selected' : ''}>
+                    <input
+                      type="checkbox"
+                      checked={aiRequest.implement}
+                      disabled={creatingTask}
+                      onChange={(event) =>
+                        setAiRequest({
+                          ...aiRequest,
+                          implement: event.target.checked,
+                        })
+                      }
+                    />
+                    <Code2 size={18} />
+                    <span>
+                      <strong>HTML 구현</strong>
+                      <small>실행 가능한 게임 프로토타입 생성</small>
+                    </span>
+                  </label>
+                </div>
+                <GamejamFieldErrors field="steps" issues={aiRequestIssues} />
+                <details className="canvas-material-picker">
+                  <summary>
+                    프로젝트 전체에서 재료 선택 · 도착:{' '}
+                    {
+                      canvasSheets.canvases.find(
+                        (sheet) => sheet.id === canvasId(aiRequest.canvasId),
+                      )?.name
+                    }
+                  </summary>
+                  {canvasSheets.canvases.map((sheet) => (
+                    <fieldset key={sheet.id}>
+                      <legend>{sheet.name}</legend>
+                      {canvasItems
+                        .filter(
+                          (item) =>
+                            item.canvasId === sheet.id && item.kind !== 'task',
+                        )
+                        .map((item) => (
+                          <label key={item.id}>
+                            <input
+                              type="checkbox"
+                              checked={aiRequest.inputPaths.includes(item.path)}
+                              onChange={(event) =>
+                                setAiRequest((current) => {
+                                  if (!current) return current;
+                                  const paths = event.target.checked
+                                    ? [
+                                        ...new Set([
+                                          ...current.inputPaths,
+                                          item.path,
+                                          ...(item.kind === 'section'
+                                            ? (sections
+                                                .find(
+                                                  (section) =>
+                                                    section.relativePath ===
+                                                    item.path,
+                                                )
+                                                ?.members.map(
+                                                  (member) => member.path,
+                                                ) ?? [])
+                                            : []),
+                                        ]),
+                                      ]
+                                    : current.inputPaths.filter(
+                                        (path) => path !== item.path,
+                                      );
+                                  const htmlCount =
+                                    paths.filter(isPreviewPath).length;
+                                  return {
+                                    ...current,
+                                    inputPaths: paths,
+                                    sourceMode: htmlCount
+                                      ? 'html-compose'
+                                      : undefined,
+                                  };
+                                })
+                              }
+                            />
+                            {item.title}
+                          </label>
+                        ))}
+                    </fieldset>
+                  ))}
+                </details>
+                <p className="gamejam-flow-summary" role="status">
+                  {aiRequest.organize && aiRequest.implement
+                    ? '1. 문서 정리 및 검증 → 2. 이번에 정리한 문서로 HTML 구현 → 전체 결과 반영'
+                    : aiRequest.organize
+                      ? aiRequest.sourceMode
+                        ? 'HTML 코드 분석 → 게임 개요·핵심 플레이 흐름·확인 필요 사항 추출. 원본 HTML은 변경하지 않습니다.'
+                        : '선택한 메모·파일을 문서로 정리합니다.'
+                      : aiRequest.implement
+                        ? '선택한 메모·MD·HTML·이미지와 구현 지침으로 HTML을 만듭니다.'
+                        : '실행할 작업을 하나 이상 선택해주세요.'}
+                </p>
+                {aiRequest.implement && (
+                  <small>
+                    새 HTML은 게임 이름·버전별 전용 폴더에 저장합니다. 결과
+                    폴더만 복사해도 실행할 수 있습니다. 기존 결과 업데이트는
+                    원래 위치를 유지합니다.
+                  </small>
+                )}
+                {aiRequest.sourceMode && (
+                  <small>
+                    코드에서 확인한 구현, AI의 추정, 확인 불가를 구분합니다.
+                    자동 플레이 분석은 하지 않습니다. 구현 단계에는 선택한 HTML
+                    원본과 관련 파일을 전달하며, 문서 정리도 실행하면 추출
+                    문서를 함께 사용합니다.
+                  </small>
+                )}
+                {aiRequest.sourceMode === 'html-compose' && (
+                  <small>
+                    연결 규칙은 3단계 HTML 구현 지침에 작성하세요. 별도 메모
+                    없이 HTML만 선택해도 실행할 수 있습니다. 원본은 유지하고 새
+                    결과를 만듭니다.
+                  </small>
+                )}
+                <details open className="ai-input-scope">
+                  <summary>
+                    입력 범위 · 문서{' '}
+                    {
+                      aiRequest.inputPaths.filter(
+                        (path) =>
+                          !path.startsWith('sections/') && !isPreviewPath(path),
+                      ).length
+                    }
+                    개 · HTML{' '}
+                    {aiRequest.inputPaths.filter(isPreviewPath).length}개 · 섹션{' '}
+                    {
+                      aiRequest.inputPaths.filter((path) =>
+                        path.startsWith('sections/'),
+                      ).length
+                    }
+                    개
+                  </summary>
+                  <div>
+                    {aiRequest.inputPaths.map((path) => (
+                      <button
+                        key={path}
+                        type="button"
+                        onClick={() => {
+                          const item = canvasItems.find(
+                            (item) => item.path === path,
+                          );
+                          if (item) jumpTo(item.id);
+                        }}
+                      >
+                        <FileText size={14} />
+                        <span>
+                          {documents.find((doc) => doc.relativePath === path)
+                            ?.title ??
+                            previews.find(
+                              (preview) => preview.relativePath === path,
+                            )?.title ??
+                            sections.find(
+                              (section) => section.relativePath === path,
+                            )?.title ??
+                            path}
+                        </span>
+                        <small>
+                          {path.startsWith('sections/')
+                            ? '섹션'
+                            : path.endsWith('.html')
+                              ? 'HTML 게임'
+                              : '문서'}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              </section>
+              <section
+                className="gamejam-page"
+                data-gamejam-page="2"
+                hidden={aiRequestPage !== 2}
+              >
+                <h3 className="ai-step-heading" tabIndex={-1}>
+                  <span>2</span> 결과물 설정
+                </h3>
+                {aiRequest.organize && (
+                  <>
+                    <div
+                      className="ai-output-choices"
+                      role="group"
+                      aria-label="정리 문서 생성 방식"
+                    >
+                      <button
+                        aria-pressed={aiRequest.documentResult?.mode === 'new'}
+                        disabled={creatingTask}
+                        onClick={() =>
+                          setAiRequest({
+                            ...aiRequest,
+                            documentResult: { mode: 'new' },
+                          })
+                        }
+                      >
+                        <Plus size={17} />
+                        <strong>새 문서 버전 만들기</strong>
+                        <small>기존 문서 유지 · 새 Markdown 묶음</small>
+                      </button>
+                      <button
+                        aria-pressed={
+                          aiRequest.documentResult?.mode === 'update'
+                        }
+                        disabled={creatingTask || !organizedSets.length}
+                        onClick={() =>
+                          setAiRequest({
+                            ...aiRequest,
+                            documentResult: {
+                              mode: 'update',
+                              baseDir: organizedSets.at(-1)?.baseDir,
+                            },
+                          })
+                        }
+                      >
+                        <RefreshCw size={17} />
+                        <strong>기존 문서 업데이트</strong>
+                        <small>선택 묶음 갱신 · 이전 내용은 히스토리</small>
+                      </button>
+                    </div>
+                    {aiRequest.documentResult?.mode === 'update' ? (
+                      <label>
+                        업데이트할 문서 묶음
+                        <select
+                          aria-label="업데이트할 문서 묶음"
+                          value={aiRequest.documentResult.baseDir}
+                          disabled={creatingTask}
+                          onChange={(event) =>
+                            setAiRequest({
+                              ...aiRequest,
+                              documentResult: {
+                                mode: 'update',
+                                baseDir: event.target.value,
+                              },
+                            })
+                          }
+                        >
+                          {organizedSets.map((set) => (
+                            <option key={set.baseDir} value={set.baseDir}>
+                              {set.label} · {set.baseDir}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <p className="ai-output-hint">
+                        새 .md 파일 3개를 생성합니다. 기존 정리 문서를 덮어쓰지
+                        않습니다.
+                      </p>
+                    )}
+                  </>
+                )}
+                {aiRequest.implement && previews.length > 0 && (
+                  <>
+                    <div
+                      className="ai-output-choices"
+                      role="group"
+                      aria-label="HTML 결과 생성 방식"
+                    >
+                      <button
+                        aria-pressed={aiRequest.htmlResult?.mode === 'new'}
+                        disabled={creatingTask}
+                        onClick={() =>
+                          setAiRequest({
+                            ...aiRequest,
+                            htmlResult: {
+                              ...aiRequest.htmlResult,
+                              mode: 'new',
+                            },
+                          })
+                        }
+                      >
+                        <Plus size={17} />
+                        <strong>새 버전 만들기</strong>
+                        <small>기존 결과 유지 · 새 파일과 창</small>
+                      </button>
+                      <button
+                        aria-pressed={aiRequest.htmlResult?.mode === 'update'}
+                        disabled={creatingTask}
+                        onClick={() =>
+                          setAiRequest({
+                            ...aiRequest,
+                            htmlResult: {
+                              ...aiRequest.htmlResult,
+                              mode: 'update',
+                              basePath:
+                                aiRequest.htmlResult?.basePath ??
+                                previews.at(-1)!.relativePath,
+                            },
+                          })
+                        }
+                      >
+                        <RefreshCw size={17} />
+                        <strong>기존 결과 업데이트</strong>
+                        <small>선택 결과 갱신 · 이전 내용은 히스토리</small>
+                      </button>
+                    </div>
+                    <label>
+                      {aiRequest.htmlResult?.mode === 'update'
+                        ? '업데이트할 결과'
+                        : '새 버전을 만들 원본 HTML'}
+                      <select
+                        id="ai-html-result"
+                        {...aiFieldProps('html-result')}
+                        aria-label="기준 HTML 결과"
+                        value={aiRequest.htmlResult?.basePath ?? ''}
+                        disabled={creatingTask}
+                        onChange={(event) =>
+                          setAiRequest({
+                            ...aiRequest,
+                            htmlResult: {
+                              ...aiRequest.htmlResult,
+                              mode: aiRequest.htmlResult?.mode ?? 'new',
+                              basePath: event.target.value || undefined,
+                            },
+                          })
+                        }
+                      >
+                        {aiRequest.htmlResult?.mode !== 'update' && (
+                          <option value="">
+                            기준 없음 · 선택 재료로 새 게임 만들기
+                          </option>
+                        )}
+                        {previews.map((preview) => (
+                          <option
+                            value={preview.relativePath}
+                            key={preview.relativePath}
+                          >
+                            {preview.title ? `${preview.title} · ` : ''}
+                            {previewLabel(preview.relativePath)} ·{' '}
+                            {preview.relativePath}
+                          </option>
+                        ))}
+                      </select>
+                      {aiRequest.htmlResult?.mode !== 'update' && (
+                        <small className="ai-request-help">
+                          선택한 HTML을 바탕으로 수정본을 새 파일로 만듭니다.
+                          원본은 그대로 유지하며, 선택하지 않으면 재료를 사용해
+                          새 HTML을 만듭니다.
+                        </small>
+                      )}
+                    </label>
+                    <GamejamFieldErrors
+                      field="html-result"
+                      issues={aiRequestIssues}
+                    />
+                  </>
+                )}
+                <section className="ai-instructions-field">
+                  <label htmlFor="ai-result-name">
+                    {aiRequest.implement
+                      ? aiRequest.organize
+                        ? '프로토타입 이름 · 문서에도 적용'
+                        : '게임 이름'
+                      : '문서 묶음 이름'}
+                  </label>
+                  <input
+                    id="ai-result-name"
+                    {...aiFieldProps('name')}
+                    value={aiRequest.resultName}
+                    maxLength={MAX_RESULT_NAME}
+                    disabled={creatingTask}
+                    placeholder={
+                      aiRequest.implement
+                        ? '예: 한밤의 카페'
+                        : '예: 플레이어 시스템'
+                    }
+                    onChange={(event) =>
+                      setAiRequest({
+                        ...aiRequest,
+                        resultName: event.target.value,
+                      })
+                    }
                   />
-                </>
-              )}
-              <section className="ai-instructions-field">
-                <label htmlFor="ai-result-name">
-                  {aiRequest.implement
-                    ? aiRequest.organize
-                      ? '프로토타입 이름 · 문서에도 적용'
-                      : '게임 이름'
-                    : '문서 묶음 이름'}
-                </label>
-                <input
-                  id="ai-result-name"
-                  {...aiFieldProps('name')}
-                  value={aiRequest.resultName}
-                  maxLength={MAX_RESULT_NAME}
-                  disabled={creatingTask}
-                  placeholder={
-                    aiRequest.implement
-                      ? '예: 한밤의 카페'
-                      : '예: 플레이어 시스템'
-                  }
-                  onChange={(event) =>
-                    setAiRequest({
-                      ...aiRequest,
-                      resultName: event.target.value,
-                    })
-                  }
-                />
-                <small>
-                  새 버전은 이름을 실제 파일명에 반영합니다(공백은 하이픈으로
-                  변환). 기존 파일 업데이트는 경로를 유지하고 제목에 반영합니다.
-                  비워두면 기존 기본 이름을 사용합니다.
-                  {aiRequest.organize &&
-                    ' 문서 정리는 게임 개요·핵심 루프·미결정 사항 3개 파일을 생성합니다.'}
-                </small>
-                <GamejamFieldErrors field="name" issues={aiRequestIssues} />
-                <h3 className="ai-step-heading">
+                  <small>
+                    새 버전은 이름을 실제 파일명에 반영합니다(공백은 하이픈으로
+                    변환). 기존 파일 업데이트는 경로를 유지하고 제목에
+                    반영합니다. 비워두면 기존 기본 이름을 사용합니다.
+                    {aiRequest.organize &&
+                      ' 문서 정리는 게임 개요·핵심 루프·미결정 사항 3개 파일을 생성합니다.'}
+                  </small>
+                  <GamejamFieldErrors field="name" issues={aiRequestIssues} />
+                </section>
+              </section>
+              <section
+                className="gamejam-page ai-instructions-field"
+                data-gamejam-page="3"
+                hidden={aiRequestPage !== 3}
+              >
+                <h3 className="ai-step-heading" tabIndex={-1}>
                   <span>3</span> 작업 지침
                 </h3>
+                {aiRequest.organize && aiRequest.implement && (
+                  <div
+                    className="gamejam-instruction-progress"
+                    role="group"
+                    aria-label="작업 지침 페이지"
+                  >
+                    <button
+                      type="button"
+                      disabled={creatingTask}
+                      aria-pressed={activeAiInstruction === 'organize'}
+                      onClick={() => navigateAiPage(3, 'organize')}
+                    >
+                      1. 문서 정리 지침
+                    </button>
+                    <button
+                      type="button"
+                      disabled={creatingTask}
+                      aria-pressed={activeAiInstruction === 'implement'}
+                      onClick={() => {
+                        const issue = aiRequestIssues.find(
+                          (issue) => issue.field === 'organize',
+                        );
+                        if (issue) focusAiIssue(issue);
+                        else navigateAiPage(3, 'implement');
+                      }}
+                    >
+                      2. HTML 구현 지침
+                    </button>
+                  </div>
+                )}
                 {(['organize', 'implement'] as const)
                   .filter((kind) => aiRequest[kind])
                   .map((kind) => (
-                    <div className="gamejam-instructions" key={kind}>
+                    <div
+                      className="gamejam-instructions"
+                      key={kind}
+                      hidden={kind !== activeAiInstruction}
+                    >
                       <div className="ai-instructions-heading">
                         <label htmlFor={`ai-task-instructions-${kind}`}>
                           {kind === 'organize'
@@ -8187,121 +8335,165 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   권한은 지시를 수정해도 유지됩니다.
                 </p>
               </section>
-              <details
-                id="ai-request-connection"
-                tabIndex={-1}
-                className="ai-advanced-settings"
-                {...aiFieldProps('connection')}
+              <section
+                className="gamejam-page"
+                data-gamejam-page="4"
+                hidden={aiRequestPage !== 4}
               >
-                <summary>
-                  AI 설정 · {getAiProvider(selectedAiProvider).label} ·{' '}
-                  {getAiModelLabel(selectedAiProvider, selectedAiModel || null)}
-                  <small>
-                    {codexStatus?.available && codexStatus.authenticated
-                      ? '연결 확인됨'
-                      : '연결 확인 필요'}
-                  </small>
-                </summary>
-                <GamejamFieldErrors
-                  field="connection"
-                  issues={aiRequestIssues}
+                <h3 className="ai-step-heading" tabIndex={-1}>
+                  <span>4</span> 게임 기능 라이브러리{' '}
+                  <small className="gamejam-preview-badge">미리보기</small>
+                </h3>
+                <GameFeatureLibrary />
+              </section>
+              <section
+                className="gamejam-page"
+                data-gamejam-page="5"
+                hidden={aiRequestPage !== 5}
+              >
+                <h3 className="ai-step-heading" tabIndex={-1}>
+                  <span>5</span> 최종 확인·실행
+                </h3>
+                <GamejamReview
+                  request={aiRequest}
+                  busy={creatingTask}
+                  navigate={navigateAiPage}
                 />
-                <div className="ai-model-fields">
-                  <label>
-                    AI 제공자
-                    <select
-                      aria-label="AI 제공자"
-                      value={selectedAiProvider}
-                      disabled={creatingTask}
-                      onChange={(event) => {
-                        setSelectedAiProvider(
-                          event.target.value as AiProviderId,
-                        );
-                        setCodexStatus(null);
-                        setSelectedAiModel('');
-                      }}
-                    >
-                      {AI_PROVIDERS.map((provider) => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    모델 버전
-                    <select
-                      aria-label="모델 버전"
+                <p
+                  id="ai-request-status"
+                  tabIndex={-1}
+                  {...aiFieldProps('status')}
+                >
+                  실행 전 편집 내용을 저장하며, 작업 중에는 관련 파일만
+                  수정·삭제·이동을 제한합니다.
+                </p>
+                <GamejamFieldErrors field="status" issues={aiRequestIssues} />
+                <details
+                  id="ai-request-connection"
+                  tabIndex={-1}
+                  className="ai-advanced-settings"
+                  {...aiFieldProps('connection')}
+                >
+                  <summary>
+                    AI 설정 · {getAiProvider(selectedAiProvider).label} ·{' '}
+                    {getAiModelLabel(
+                      selectedAiProvider,
+                      selectedAiModel || null,
+                    )}
+                    <small>
+                      {codexStatus?.available && codexStatus.authenticated
+                        ? '연결 확인됨'
+                        : '연결 확인 필요'}
+                    </small>
+                  </summary>
+                  <GamejamFieldErrors
+                    field="connection"
+                    issues={aiRequestIssues}
+                  />
+                  <div className="ai-model-fields">
+                    <label>
+                      AI 제공자
+                      <select
+                        aria-label="AI 제공자"
+                        value={selectedAiProvider}
+                        disabled={creatingTask}
+                        onChange={(event) => {
+                          setSelectedAiProvider(
+                            event.target.value as AiProviderId,
+                          );
+                          setCodexStatus(null);
+                          setSelectedAiModel('');
+                        }}
+                      >
+                        {AI_PROVIDERS.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      모델 버전
+                      <select
+                        aria-label="모델 버전"
+                        value={selectedAiModel}
+                        disabled={creatingTask}
+                        onChange={(event) =>
+                          setSelectedAiModel(event.target.value)
+                        }
+                      >
+                        {getAiProvider(selectedAiProvider).models.map(
+                          (model) => (
+                            <option
+                              key={model.id || 'default'}
+                              value={model.id}
+                            >
+                              {model.label}
+                            </option>
+                          ),
+                        )}
+                        {selectedAiModel &&
+                          !getAiProvider(selectedAiProvider).models.some(
+                            (model) => model.id === selectedAiModel,
+                          ) && (
+                            <option value={selectedAiModel}>
+                              직접 입력 · {selectedAiModel}
+                            </option>
+                          )}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="ai-model-custom">
+                    모델 ID 직접 입력 (선택)
+                    <input
+                      id="ai-model-custom"
+                      {...aiFieldProps('model')}
+                      aria-label="모델 ID 직접 입력"
                       value={selectedAiModel}
                       disabled={creatingTask}
+                      maxLength={128}
+                      placeholder="비우면 CLI 기본 모델 사용"
                       onChange={(event) =>
                         setSelectedAiModel(event.target.value)
                       }
-                    >
-                      {getAiProvider(selectedAiProvider).models.map((model) => (
-                        <option key={model.id || 'default'} value={model.id}>
-                          {model.label}
-                        </option>
-                      ))}
-                      {selectedAiModel &&
-                        !getAiProvider(selectedAiProvider).models.some(
-                          (model) => model.id === selectedAiModel,
-                        ) && (
-                          <option value={selectedAiModel}>
-                            직접 입력 · {selectedAiModel}
-                          </option>
-                        )}
-                    </select>
+                    />
                   </label>
-                </div>
-                <label className="ai-model-custom">
-                  모델 ID 직접 입력 (선택)
-                  <input
-                    id="ai-model-custom"
-                    {...aiFieldProps('model')}
-                    aria-label="모델 ID 직접 입력"
-                    value={selectedAiModel}
-                    disabled={creatingTask}
-                    maxLength={128}
-                    placeholder="비우면 CLI 기본 모델 사용"
-                    onChange={(event) => setSelectedAiModel(event.target.value)}
-                  />
-                </label>
-                <GamejamFieldErrors field="model" issues={aiRequestIssues} />
-                <p>
-                  {getAiProvider(selectedAiProvider).description} 설치·로그인은
-                  ‘AI 연결 설정’에서 확인하세요.
-                </p>
-                <div className="ai-connection-summary">
-                  <span
-                    className={
-                      codexStatus?.available && codexStatus.authenticated
-                        ? 'connection-ok'
-                        : 'connection-error'
-                    }
-                  >
-                    {codexStatus?.available && codexStatus.authenticated
-                      ? `● ${getAiProvider(selectedAiProvider).label} 인증 정보 확인`
-                      : `● ${getAiProvider(selectedAiProvider).label} 연결 필요`}
-                  </span>
-                  <button
-                    disabled={creatingTask || checkingCodex}
-                    onClick={() => void refreshCodexStatus()}
-                  >
-                    {checkingCodex ? '확인 중…' : '연결 확인'}
-                  </button>
-                  <small>
-                    지시서는 내부에 보관하고 히스토리의 AI 작업 기록에서
-                    확인합니다. 검증에 성공한 결과만 적용하며, 실패·중지 시 기존
-                    결과를 유지합니다.
-                  </small>
-                </div>
-              </details>
+                  <GamejamFieldErrors field="model" issues={aiRequestIssues} />
+                  <p>
+                    {getAiProvider(selectedAiProvider).description}{' '}
+                    설치·로그인은 ‘AI 연결 설정’에서 확인하세요.
+                  </p>
+                  <div className="ai-connection-summary">
+                    <span
+                      className={
+                        codexStatus?.available && codexStatus.authenticated
+                          ? 'connection-ok'
+                          : 'connection-error'
+                      }
+                    >
+                      {codexStatus?.available && codexStatus.authenticated
+                        ? `● ${getAiProvider(selectedAiProvider).label} 인증 정보 확인`
+                        : `● ${getAiProvider(selectedAiProvider).label} 연결 필요`}
+                    </span>
+                    <button
+                      disabled={creatingTask || checkingCodex}
+                      onClick={() => void refreshCodexStatus()}
+                    >
+                      {checkingCodex ? '확인 중…' : '연결 확인'}
+                    </button>
+                    <small>
+                      지시서는 내부에 보관하고 히스토리의 AI 작업 기록에서
+                      확인합니다. 검증에 성공한 결과만 적용하며, 실패·중지 시
+                      기존 결과를 유지합니다.
+                    </small>
+                  </div>
+                </details>
+              </section>
             </div>
             <footer>
               <GamejamValidationSummary
-                issues={aiRequestIssues}
-                submitError={aiRequestSubmitError}
+                issues={aiRequestPage === 5 ? aiRequestIssues : aiPageIssues}
+                submitError={aiRequestPage === 5 ? aiRequestSubmitError : ''}
                 focusIssue={focusAiIssue}
               />
               <button
@@ -8310,24 +8502,60 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               >
                 취소
               </button>
-              <button
-                className="button-primary"
-                disabled={creatingTask}
-                aria-disabled={creatingTask || aiRequestIssues.length > 0}
-                aria-describedby={
-                  aiRequestIssues.length || aiRequestSubmitError
-                    ? 'ai-request-validation'
-                    : undefined
-                }
-                onClick={() => void submitAiRequest()}
-              >
-                {creatingTask ? (
-                  <LoaderCircle size={15} className="spin" />
-                ) : (
-                  <Play size={15} />
-                )}{' '}
-                {creatingTask ? '준비 중…' : 'gamejam! 실행'}
-              </button>
+              <span className="gamejam-page-count">{aiRequestPage} / 5</span>
+              {(aiRequestPage > 1 ||
+                (aiRequestPage === 3 &&
+                  activeAiInstruction === 'implement' &&
+                  aiRequest.organize)) && (
+                <button
+                  type="button"
+                  id="ai-request-previous"
+                  disabled={creatingTask}
+                  onClick={previousAiPage}
+                >
+                  이전
+                </button>
+              )}
+              {aiRequestPage < 5 ? (
+                <button
+                  type="button"
+                  id="ai-request-next"
+                  className="button-primary"
+                  disabled={creatingTask}
+                  aria-disabled={aiPageIssues.length > 0}
+                  aria-describedby={
+                    aiPageIssues.length ? 'ai-request-validation' : undefined
+                  }
+                  onClick={nextAiPage}
+                >
+                  {aiRequestPage === 3 &&
+                  aiRequest.organize &&
+                  aiRequest.implement &&
+                  activeAiInstruction === 'organize'
+                    ? 'HTML 구현 지침'
+                    : '다음'}{' '}
+                  <ArrowRight size={15} />
+                </button>
+              ) : (
+                <button
+                  className="button-primary"
+                  disabled={creatingTask}
+                  aria-disabled={creatingTask || aiRequestIssues.length > 0}
+                  aria-describedby={
+                    aiRequestIssues.length || aiRequestSubmitError
+                      ? 'ai-request-validation'
+                      : undefined
+                  }
+                  onClick={() => void submitAiRequest()}
+                >
+                  {creatingTask ? (
+                    <LoaderCircle size={15} className="spin" />
+                  ) : (
+                    <Play size={15} />
+                  )}{' '}
+                  {creatingTask ? '준비 중…' : 'gamejam! 실행'}
+                </button>
+              )}
             </footer>
           </section>
         </div>

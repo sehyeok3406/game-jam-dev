@@ -317,6 +317,9 @@ export function createUiPreviewApi(
   };
   const subscribe = () => () => {};
   const reads = {
+    // Optional API namespaces must be absent, rather than resolved by the
+    // function fallback. The isolated preview never connects a real host.
+    selfHost: undefined,
     getWorkspace: async () => ({
       root: 'ui-preview',
       name: '전투 시스템 연구',

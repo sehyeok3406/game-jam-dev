@@ -3554,6 +3554,386 @@ kbd {
   padding-right: 4px;
 }
 .ai-request-dialog {
+  width: min(860px, calc(100vw - 32px));
+  height: min(760px, calc(100dvh - 48px));
+}
+.ai-request-fields {
+  flex: 1;
+  align-content: start;
+}
+.ai-request-dialog [hidden] {
+  display: none !important;
+}
+.gamejam-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.gamejam-page .ai-step-heading {
+  margin: 0;
+  flex-wrap: wrap;
+}
+.gamejam-page .ai-step-heading:focus-visible {
+  outline: 2px solid var(--selection);
+  outline-offset: 4px;
+}
+.gamejam-progress {
+  flex-shrink: 0;
+}
+.gamejam-progress ol {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  padding: 0;
+  margin: 0;
+}
+.gamejam-progress li {
+  min-width: 0;
+}
+.gamejam-progress button {
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 5px;
+  gap: 5px;
+  font-size: 11px;
+  border-color: transparent;
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  white-space: normal;
+}
+.gamejam-progress button[aria-current='step'] {
+  border-color: var(--selection);
+  color: var(--text);
+  background: var(--selection-soft);
+}
+.gamejam-progress-number {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.gamejam-page-count {
+  margin-right: auto;
+  align-self: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.gamejam-instruction-progress,
+.game-feature-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+.gamejam-instruction-progress button,
+.game-feature-views button {
+  font-size: 11px;
+}
+.gamejam-instruction-progress button[aria-pressed='true'],
+.game-feature-views button[aria-pressed='true'] {
+  border-color: var(--selection);
+  background: var(--selection-soft);
+}
+.gamejam-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+}
+.ai-request-dialog .gamejam-preview-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 13px;
+  background: var(--selection-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+}
+.gamejam-preview-notice svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.game-feature-library {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.game-feature-views small {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.ai-request-dialog .game-feature-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+.game-feature-search > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.game-feature-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.game-feature-search:focus-within {
+  outline: 2px solid var(--selection);
+  outline-offset: 2px;
+}
+.game-feature-search input:focus {
+  outline: none;
+}
+.game-feature-search button {
+  padding: 3px;
+  border: 0;
+  background: transparent;
+}
+.game-feature-browser {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.game-feature-tree {
+  max-height: 330px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+}
+.game-feature-category {
+  padding: 3px 9px;
+  border-bottom: 1px solid var(--border);
+}
+.game-feature-category:last-child {
+  border-bottom: 0;
+}
+.game-feature-category > summary,
+.game-feature-group > summary {
+  padding: 8px 2px;
+  font-size: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.game-feature-category > summary svg {
+  vertical-align: middle;
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+.game-feature-category summary small {
+  margin-left: 7px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.game-feature-group {
+  margin-left: 17px;
+}
+.game-feature-group > summary {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.game-feature-group ul {
+  list-style: none;
+  margin: 0 0 7px;
+  padding: 0 0 0 12px;
+}
+.game-feature-group button {
+  width: 100%;
+  padding: 6px 7px;
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 11px;
+  white-space: normal;
+  border-color: transparent;
+  background: transparent;
+}
+.game-feature-group button svg {
+  flex-shrink: 0;
+}
+.game-feature-group button[aria-pressed='true'] {
+  border-color: var(--selection);
+  background: var(--selection-soft);
+}
+.game-feature-detail {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+  overflow-wrap: anywhere;
+}
+.game-feature-path {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.game-feature-detail h4,
+.game-feature-presets h4 {
+  margin: 0;
+  font-size: 14px;
+}
+.game-feature-detail strong {
+  font-size: 11px;
+}
+.game-feature-detail ul {
+  margin: 0;
+  padding-left: 17px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+.game-feature-detail button {
+  margin-top: 4px;
+  font-size: 11px;
+  white-space: normal;
+}
+.game-feature-empty {
+  padding: 18px;
+  display: grid;
+  gap: 9px;
+  font-size: 12px;
+}
+.game-feature-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.game-feature-presets > p {
+  grid-column: 1 / -1;
+}
+.game-feature-presets section {
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+  min-width: 0;
+}
+.game-feature-presets section > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+.game-feature-presets button {
+  padding: 4px 7px;
+  font-size: 10px;
+  white-space: normal;
+  text-align: left;
+}
+.gamejam-review {
+  display: grid;
+  gap: 12px;
+}
+.gamejam-review > section {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+  min-width: 0;
+}
+.gamejam-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.gamejam-review-heading button {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+.gamejam-review-inputs {
+  max-height: 90px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+.gamejam-review dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.gamejam-review dt {
+  color: var(--text-muted);
+}
+.gamejam-review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.gamejam-review summary {
+  font-size: 12px;
+  cursor: pointer;
+}
+.gamejam-review pre {
+  max-height: 160px;
+  overflow: auto;
+  margin-bottom: 0;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+@media (max-width: 620px) {
+  .ai-request-dialog {
+    padding: 16px;
+    gap: 12px;
+  }
+  .gamejam-progress button {
+    flex-direction: column;
+    font-size: 9px;
+  }
+  .gamejam-progress button > svg {
+    display: none;
+  }
+  .game-feature-browser,
+  .game-feature-presets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .game-feature-tree {
+    max-height: 230px;
+  }
+  .game-feature-views small {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+.ai-request-dialog {
   --ai-validation-color: #ff98a3;
 }
 :root[data-theme='light'] .ai-request-dialog {

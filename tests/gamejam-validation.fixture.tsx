@@ -16,6 +16,7 @@ const listeners = new Set<(state: CollaborationState) => void>();
 const qa = {
   creates: 0,
   runs: 0,
+  requests: [] as unknown[],
   connection(available: boolean, authenticated: boolean) {
     connection = {
       ...connection,
@@ -54,8 +55,9 @@ api.getTestUsers = async () => ({
   windows: [],
 });
 api.getAiStatus = async () => connection;
-api.createTask = async () => {
+api.createTask = async (input) => {
   qa.creates++;
+  qa.requests.push(input);
   throw Error('테스트 서버에서 작업 요청을 거절했습니다. 입력은 유지됩니다.');
 };
 api.startCodexRun = async () => {
