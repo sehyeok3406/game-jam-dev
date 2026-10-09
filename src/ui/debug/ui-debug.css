@@ -1,0 +1,226 @@
+.ui-debug-console {
+  position: fixed;
+  inset: 20px;
+  width: calc(100vw - 40px);
+  height: calc(100vh - 40px);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border, #414852);
+  border-radius: 14px;
+  color: var(--text, #edf1f7);
+  background: var(--surface, #20242c);
+  box-shadow: 0 20px 80px #0008;
+  overflow: visible;
+  font:
+    13px/1.45 system-ui,
+    sans-serif;
+}
+.ui-debug-console[open] {
+  display: flex;
+  flex-direction: column;
+}
+.ui-debug-console::backdrop {
+  background: #0b1025b3;
+}
+.ui-debug-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #8893a633;
+}
+.ui-debug-heading strong {
+  font-size: 18px;
+}
+.ui-debug-heading small {
+  display: block;
+  opacity: 0.65;
+  margin-top: 3px;
+}
+.ui-debug-console button,
+.ui-debug-console input,
+.ui-debug-console select {
+  font: inherit;
+  color: inherit;
+  background: var(--surface-subtle, #303641);
+  border: 1px solid #8893a644;
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+.ui-debug-console button {
+  cursor: pointer;
+}
+.ui-debug-console button:hover {
+  border-color: #a2ca78;
+}
+.ui-debug-console :focus-visible {
+  outline: 2px solid #a2ca78;
+  outline-offset: 2px;
+}
+.ui-debug-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.ui-debug-list {
+  width: 290px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  border-right: 1px solid #8893a633;
+}
+.ui-debug-count {
+  opacity: 0.65;
+  margin: 0;
+}
+.ui-debug-items {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.ui-debug-items article {
+  padding: 12px;
+  margin: 0 0 8px;
+  border: 1px solid #8893a633;
+  border-radius: 9px;
+}
+.ui-debug-items article.is-selected {
+  border-color: #a2ca78;
+  background: #a2ca7810;
+}
+.ui-debug-items code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 4px 0 10px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.ui-debug-items article div {
+  display: flex;
+  gap: 8px;
+}
+.ui-debug-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.ui-debug-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 18px;
+}
+.ui-debug-metadata strong {
+  font-size: 16px;
+}
+.ui-debug-metadata small {
+  opacity: 0.65;
+}
+.ui-debug-options {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 18px 14px;
+}
+.ui-debug-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ui-debug-stage {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  background: #121722;
+  position: relative;
+}
+.ui-debug-frame-space {
+  margin: 0 auto;
+}
+.ui-debug-stage iframe {
+  display: block;
+  border: 0;
+  transform-origin: top left;
+  background: #171b22;
+}
+.ui-debug-loading {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  padding: 10px 16px;
+  background: #202633;
+  color: white;
+  border-radius: 8px;
+}
+.ui-debug-message {
+  padding: 10px 18px;
+  border-top: 1px solid #8893a633;
+  overflow-wrap: anywhere;
+  min-height: 38px;
+}
+.ui-debug-console--highlight {
+  inset: 16px auto 16px 16px;
+  width: 310px;
+  height: calc(100vh - 32px);
+}
+.ui-debug-console--highlight::backdrop {
+  background: #10142522;
+}
+.ui-debug-console--highlight .ui-debug-heading {
+  padding: 12px;
+  gap: 8px;
+}
+.ui-debug-console--highlight .ui-debug-heading strong {
+  font-size: 15px;
+}
+.ui-debug-console--highlight .ui-debug-list {
+  width: 100%;
+  border: 0;
+}
+.ui-debug-highlight {
+  position: fixed;
+  pointer-events: none;
+  border: 3px solid #b8ff63;
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 2px #162010,
+    0 0 18px #b8ff6344;
+  z-index: 1;
+}
+.ui-debug-highlight span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #b8ff63;
+  color: #142007;
+  font: 11px/1.4 monospace;
+  max-width: min(380px, 80vw);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .ui-debug-console {
+    inset: 8px;
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+  }
+  .ui-debug-list {
+    width: 220px;
+    min-width: 190px;
+  }
+  .ui-debug-options {
+    gap: 5px;
+  }
+  .ui-debug-console--highlight {
+    width: 290px;
+  }
+}

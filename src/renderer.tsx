@@ -6,6 +6,15 @@ import { App } from './ui/App';
 import type { GameCanvasApi } from './shared';
 
 async function bootstrap() {
+  const preview = new URLSearchParams(window.location.search).get(
+    'uiDebugPreview',
+  );
+  if (preview !== null) {
+    const { bootstrapUiDebugPreview } =
+      await import('./ui/debug/uiDebugPreview');
+    await bootstrapUiDebugPreview(preview);
+    return;
+  }
   const browserWindow = window as typeof window & {
     gameCanvas?: GameCanvasApi;
   };

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { previewState } from './debug/uiDebugPreviewState';
 import {
   Code2,
   FileText,
@@ -215,7 +216,9 @@ export function CommandPalette({
   close: () => void;
 }) {
   const ref = useModalFocus(),
-    [query, setQuery] = useState(''),
+    [query, setQuery] = useState(
+      previewState('command') === 'empty' ? '존재하지 않는 명령 미리보기' : '',
+    ),
     [index, setIndex] = useState(0);
   const results = useMemo(
     () =>

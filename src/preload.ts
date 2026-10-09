@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
 
 const api: GameCanvasApi = {
+  onUiDebugToggle: (listener) => {
+    const wrapped = () => listener();
+    ipcRenderer.on('ui-debug:toggle', wrapped);
+    return () => ipcRenderer.removeListener('ui-debug:toggle', wrapped);
+  },
   getCanvasChanges: (known) => ipcRenderer.invoke('canvas:changes', known),
   getDocument: (relative) => ipcRenderer.invoke('documents:get', relative),
   getEditorDraft: (key) => ipcRenderer.invoke('drafts:get', key),

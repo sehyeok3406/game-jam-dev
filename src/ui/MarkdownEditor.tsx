@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { previewState } from './debug/uiDebugPreviewState';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import {
   Bold,
@@ -49,10 +50,18 @@ export function MarkdownEditor({
   onCompositionChange,
   initialFocus,
 }: Props) {
-  const [source, setSource] = useState(false),
-    [warning, setWarning] = useState('');
-  const [menu, setMenu] = useState<string | null>(null),
-    [focused, setFocused] = useState(false);
+  const [source, setSource] = useState(previewState('editor') === 'source'),
+    [warning, setWarning] = useState(
+      previewState('editor') === 'warning'
+        ? '샘플 경고: 원문에서 내용을 확인해주세요.'
+        : '',
+    );
+  const [menu, setMenu] = useState<string | null>(
+      ['text', 'insert', 'more'].includes(previewState('editor') ?? '')
+        ? previewState('editor')!
+        : null,
+    ),
+    [focused, setFocused] = useState(previewState('editor') === 'focus');
   const [slash, setSlash] = useState<{
     query: string;
     from: number;
@@ -125,7 +134,11 @@ export function MarkdownEditor({
       setSource(true);
       return false;
     }
-    setWarning('');
+    setWarning(
+      previewState('editor') === 'warning'
+        ? '샘플 경고: 원문에서 내용을 확인해주세요.'
+        : '',
+    );
     return true;
   };
   const updateSlash = () => {
@@ -165,6 +178,12 @@ export function MarkdownEditor({
   }, [editor, value]);
   useEffect(() => {
     if (editor) loadVisual(callbacks.current.value);
+  }, [editor]);
+  useEffect(() => {
+    if (!editor || previewState('editor') !== 'slash') return;
+    editor.commands.setContent('<p>/</p>');
+    editor.commands.focus('end');
+    setSlash({ query: '', from: 1, to: 2 });
   }, [editor]);
   useEffect(() => {
     if (!editor) return;

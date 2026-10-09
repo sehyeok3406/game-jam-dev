@@ -301,6 +301,8 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  /** Desktop F12 route; browser previews use their own key handler. */
+  onUiDebugToggle?: (listener: () => void) => () => void;
   getCanvasChanges: (
     known: Record<string, string>,
   ) => Promise<import('./canvas-view').CanvasViewChanges | null>;

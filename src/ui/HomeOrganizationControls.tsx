@@ -74,6 +74,7 @@ export function HomeOrganizationDialog({
     <div className="modal-backdrop">
       <form
         ref={ref}
+        data-ui-id="home-organize"
         className="modal-card home-create-dialog"
         role="dialog"
         aria-modal="true"

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, MoreHorizontal, ArrowLeft, ArrowRight, X } from 'lucide-react';
 import type { CanvasSheets, CanvasSheetCommand } from '../shared';
+import { previewState } from './debug/uiDebugPreviewState';
 
 export function CanvasTabs({
   sheets,
@@ -21,11 +22,24 @@ export function CanvasTabs({
     action: 'add' | 'manage';
     id: string;
     expected: string | null;
-  } | null>(null);
-  const [name, setName] = useState('');
-  const [target, setTarget] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  } | null>(() => {
+    const state = previewState('tabs');
+    return state && state !== 'default'
+      ? {
+          action: state === 'add' ? 'add' : 'manage',
+          id: state === 'add' ? 'ui-new-canvas' : 'default',
+          expected: sheets.raw ?? null,
+        }
+      : null;
+  });
+  const [name, setName] = useState(previewState('tabs') ? '전투 기획' : '');
+  const [target, setTarget] = useState(previewState('tabs') ? 'combat' : '');
+  const [busy, setBusy] = useState(previewState('tabs') === 'busy');
+  const [error, setError] = useState(
+    previewState('tabs') === 'error'
+      ? '샘플 오류: 캔버스를 변경하지 못했습니다.'
+      : '',
+  );
   const open = (id?: string) => {
     setDialog({
       action: id ? 'manage' : 'add',

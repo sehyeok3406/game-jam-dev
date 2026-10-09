@@ -38,6 +38,8 @@ import {
   type HomeDialog,
 } from './HomeOrganizationControls';
 import { WebViewerDialog } from './WebViewerDialog';
+import { previewState } from './debug/uiDebugPreviewState';
+import { SAMPLE_PROJECTS } from './debug/uiDebugFixtures';
 
 export function ProjectHome({
   opened,
@@ -55,18 +57,43 @@ export function ProjectHome({
   theme: 'dark' | 'light';
 }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
-  const [webViewer, setWebViewer] = useState(false);
+  const [webViewer, setWebViewer] = useState(!!previewState('web-viewer'));
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [organizationDialog, setOrganizationDialog] =
-    useState<HomeDialog | null>(null);
+    useState<HomeDialog | null>(() => {
+      const state = previewState('home-organize');
+      if (!state) return null;
+      if (state === 'create-folder') return { type: state };
+      if (state === 'rename-folder' || state === 'remove-folder')
+        return {
+          type: state,
+          folder: { id: 'ui-folder', name: '게임잼 기획' },
+        };
+      return {
+        type: state === 'move-project' ? state : 'rename-project',
+        project: SAMPLE_PROJECTS[0],
+      };
+    });
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
     origin: HTMLElement;
     project?: ProjectEntry;
     folder?: ProjectFolder;
-  } | null>(null);
+  } | null>(() => {
+    const state = previewState('home-menu');
+    return state
+      ? {
+          x: 360,
+          y: 220,
+          origin: document.body,
+          ...(state === 'folder'
+            ? { folder: { id: 'ui-folder', name: '게임잼 기획' } }
+            : { project: SAMPLE_PROJECTS[0] }),
+        }
+      : null;
+  });
   const [viewSettings, setViewSettings] = useState<HomeView>(() => {
     try {
       return readHomeView(localStorage.getItem(HOME_VIEW_KEY));
@@ -78,13 +105,29 @@ export function ProjectHome({
   const setFilter = (value: HomeView['filter']) =>
     setViewSettings((previous) => ({ ...previous, filter: value }));
   const [query, setQuery] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(
+    previewState('home-organize') === 'busy' ||
+      previewState('home-create') === 'busy',
+  );
+  const [error, setError] = useState(
+    previewState('home-organize') === 'error' ||
+      previewState('home-create') === 'error'
+      ? '샘플 오류: 변경 내용을 저장하지 못했습니다.'
+      : '',
+  );
   const [loading, setLoading] = useState(true);
-  const [create, setCreate] = useState(false);
-  const [name, setName] = useState('');
-  const [server, setServer] = useState<ProjectEntry | null>(null);
-  const [address, setAddress] = useState('');
+  const [create, setCreate] = useState(
+    !!previewState('home-create') && previewState('home-create') !== 'server',
+  );
+  const [name, setName] = useState(
+    previewState('home-create') ? '새 게임 기획' : '',
+  );
+  const [server, setServer] = useState<ProjectEntry | null>(
+    previewState('home-create') === 'server' ? SAMPLE_PROJECTS[1] : null,
+  );
+  const [address, setAddress] = useState(
+    previewState('home-create') === 'server' ? 'https://preview.invalid' : '',
+  );
   const dialogRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     try {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, LoaderCircle, Users, X } from 'lucide-react';
 import type { CollaborationState, TestUsersState } from '../shared';
+import { previewState, uiPreview } from './debug/uiDebugPreviewState';
 
 export const ROLE_NAMES = { admin: '관리자', editor: '편집자', viewer: '뷰어' };
 
@@ -30,11 +31,21 @@ export function CollaborationPanel({
   const [code, setCode] = useState('');
   const [projectId, setProjectId] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [showRecovery, setShowRecovery] = useState(false);
-  const [removeId, setRemoveId] = useState<string | null>(null);
-  const [leaveConfirm, setLeaveConfirm] = useState(false);
+  const [busy, setBusy] = useState(previewState('collaboration') === 'busy');
+  const [error, setError] = useState(
+    previewState('collaboration') === 'error'
+      ? '샘플 오류: 서버에 연결하지 못했습니다.'
+      : '',
+  );
+  const [showRecovery, setShowRecovery] = useState(
+    previewState('collaboration') === 'recovery',
+  );
+  const [removeId, setRemoveId] = useState<string | null>(
+    previewState('collaboration') === 'remove' ? 'ui-other' : null,
+  );
+  const [leaveConfirm, setLeaveConfirm] = useState(
+    previewState('collaboration') === 'leave',
+  );
   const [testUsers, setTestUsers] = useState<TestUsersState | null>(null);
   const [testCount, setTestCount] = useState(3);
   const [testPrefix, setTestPrefix] = useState('테스트 사용자');
@@ -50,6 +61,10 @@ export function CollaborationPanel({
       }
     };
     void refresh();
+    if (uiPreview())
+      return () => {
+        disposed = true;
+      };
     const timer = setInterval(() => void refresh(), 2000);
     return () => {
       disposed = true;

@@ -1344,6 +1344,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
   return new Proxy(api, {
     get(target, property: keyof GameCanvasApi) {
       const method = target[property];
+      if (typeof method !== 'function') return method;
       if (!mutating.has(property)) return method;
       return async (...args: unknown[]) => {
         if (

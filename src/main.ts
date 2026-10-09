@@ -1,4 +1,5 @@
 import { PropertyQueue } from './property-queue.ts';
+import { installUiDebugShortcut } from './ui-debug-shortcut';
 import { CanvasView } from './canvas-view.ts';
 import { writeClientCache, readClientCache } from './client-cache.ts';
 import { EditorDraftStore } from './editor-drafts.ts';
@@ -3697,6 +3698,7 @@ const createWindow = async () => {
   // Remove the native menu, rather than auto-hiding it (Alt would reveal it).
   // Keep the standard title bar and Windows window controls intact.
   if (process.platform !== 'darwin') mainWindow.setMenu(null);
+  installUiDebugShortcut(mainWindow.webContents);
   installPreviewPermissions(mainWindow);
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

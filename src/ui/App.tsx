@@ -1,4 +1,15 @@
 import { ArrowRight } from 'lucide-react';
+import { UiDebugConsole } from './debug/UiDebugConsole';
+import { uiPreview, previewState } from './debug/uiDebugPreviewState';
+import type { UiDebugSelection } from './debug/uiDebugRegistry';
+import {
+  SAMPLE_DOCUMENT,
+  SAMPLE_SECTION,
+  SAMPLE_PREVIEW,
+  SAMPLE_HISTORY,
+  SAMPLE_TIME,
+  sampleRun,
+} from './debug/uiDebugFixtures';
 import { CanvasTabs } from './CanvasTabs';
 import { canvasId, readCanvasSheets } from '../canvas-sheets';
 import type { CanvasSheets, CanvasSheetCommand } from '../shared';
@@ -419,7 +430,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   const draftSequence = useRef(Date.now() * 1000);
   const taskBusy = useRef(false);
   const [taskError, setTaskError] = useState('');
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(!!previewState('editor'));
   const [title, setTitle] = useState(document.title);
   const [body, setBody] = useState(document.body);
   const [saving, setSaving] = useState(false);
@@ -699,6 +710,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   useEffect(() => {
     if (!editing) return;
     const finishEditingOutside = (event: PointerEvent) => {
+      if (window.document.querySelector('.ui-debug-console[open]')) return;
       const target = event.target;
       if (
         target instanceof Element &&
@@ -1409,8 +1421,8 @@ const nodeTypes: NodeTypes = {
   section: SectionCard,
 };
 
-function WorkspaceCanvas() {
-  const [home, setHome] = useState(true);
+function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
+  const [home, setHome] = useState(preview ? preview.scope === 'home' : true);
   const [findOpen, setFindOpen] = useState(false);
   const [collaborationTab, setCollaborationTab] = useState<
     'create' | 'join' | 'recover'
@@ -1437,6 +1449,7 @@ function WorkspaceCanvas() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const updatePrompted = useRef(false);
   useEffect(() => {
+    if (preview) return;
     let mounted = true,
       eventReceived = false;
     const prompt = (
@@ -1685,7 +1698,7 @@ function WorkspaceCanvas() {
         status: codexRun.status,
         taskPath: codexRun.taskPath,
       });
-      setCodexRunCollapsed(true);
+      if (uiPreview()?.id !== 'ai-run') setCodexRunCollapsed(true);
     }
   }, [codexRun]);
   const [cancellingCodexRun, setCancellingCodexRun] = useState(false);
@@ -4131,6 +4144,7 @@ function WorkspaceCanvas() {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (document.querySelector('.ui-debug-console[open]')) return;
       const target = event.target as HTMLElement | null;
       if (document.fullscreenElement?.classList.contains('preview-card'))
         return;
@@ -4779,6 +4793,187 @@ function WorkspaceCanvas() {
     });
   };
 
+  const previewSeeded = useRef(false);
+  useEffect(() => {
+    if (!preview || loading || previewSeeded.current) return;
+    previewSeeded.current = true;
+    const { id, state } = preview;
+    if (id === 'guides') setGuides({ x: 600, y: 400 });
+    const doc = documents[0] ?? SAMPLE_DOCUMENT;
+    const section = sections[0] ?? SAMPLE_SECTION;
+    const result = previews[0] ?? SAMPLE_PREVIEW;
+    const entry = {
+      ...SAMPLE_HISTORY,
+      ...(state === 'failed' || state === 'error'
+        ? {
+            status: 'failed' as const,
+            error: '샘플 오류: 결과 검증에 실패했습니다.',
+          }
+        : {}),
+    };
+    if (id === 'collaboration') {
+      setCollaborationOpen(true);
+      setCollaborationTab(
+        state === 'join' || state === 'recover' ? state : 'create',
+      );
+    }
+    if (id === 'update') setUpdateOpen(true);
+    if (id === 'update-restarting') setUpdateRestarting(true);
+    if (id === 'navigator') setNavigatorOpen(true);
+    if (id === 'find') setFindOpen(true);
+    if (id === 'command') setCommandOpen(true);
+    if (id === 'shortcuts') setShortcutsOpen(true);
+    if (id === 'compare') setCompareFirst('');
+    if (id === 'settings') setSettingsOpen(true);
+    if (id === 'ui-hidden') setUiHidden(true);
+    if (id === 'inspector')
+      setInspectorId(
+        state === 'section'
+          ? sectionNodeId(section.id)
+          : state === 'html'
+            ? previewNodeId(result.relativePath)
+            : doc.id,
+      );
+    if (id === 'selection' || (id === 'section' && state === 'selected')) {
+      const ids =
+        id === 'section'
+          ? [sectionNodeId(section.id)]
+          : state === 'single'
+            ? [doc.id]
+            : documents.map((item) => item.id);
+      setSelectedIds(id === 'section' ? [] : ids);
+      setSelectedSectionIds(id === 'section' ? [section.id] : []);
+      setNodes((current) =>
+        current.map((node) => ({ ...node, selected: ids.includes(node.id) })),
+      );
+    }
+    if (id === 'document' && state === 'new')
+      setNewFileNodes(new Set([doc.id]));
+    if (id === 'history' || id === 'history-confirm' || id === 'ai-details') {
+      setHistoryOpen(true);
+      setHistoryEntries(state === 'empty' ? [] : [entry]);
+      if (state === 'detail')
+        setHistorySelection({
+          entry,
+          path: doc.relativePath,
+          version: 'after',
+          content: doc.body,
+        });
+      if (id === 'ai-details' || state === 'ai')
+        setAiHistorySelection(
+          state === 'missing'
+            ? { ...entry, taskPath: undefined, aiTask: undefined }
+            : entry,
+        );
+      if (id === 'history-confirm') {
+        setHistoryConfirm({ entry });
+        setRestoring(state === 'busy');
+      }
+    }
+    if (id === 'ai-status') {
+      setCodexStatusOpen(true);
+      setCheckingCodex(state === 'busy');
+    }
+    if (id === 'ai-run' || id === 'completion') {
+      const event = sampleRun(state);
+      setCodexRun({
+        runId: event.runId,
+        taskPath: event.taskPath,
+        status: event.status,
+        providerId: 'codex-cli',
+        modelId: null,
+        events: [
+          event,
+          {
+            ...event,
+            timestamp: SAMPLE_TIME + 1000,
+            message: '샘플 로그: 화면과 진행 상태를 확인하세요.',
+          },
+        ],
+      });
+      setCodexRunCollapsed(id === 'completion' || state === 'collapsed');
+    }
+    if (id === 'ai-request') {
+      setAiRequest({
+        organize: state !== 'implement' && state !== 'html',
+        implement: state !== 'organize',
+        inputPaths:
+          state === 'html' ? [result.relativePath] : [doc.relativePath],
+        x: 0,
+        y: 0,
+        sourceMode: state === 'html' ? 'html' : undefined,
+        resultName: state === 'error' ? '../invalid' : '전투 시제품',
+        instructions: {
+          organize: DEFAULT_TASK_INSTRUCTIONS.organize,
+          implement: DEFAULT_TASK_INSTRUCTIONS.implement,
+        },
+      });
+      setCreatingTask(state === 'busy');
+    }
+    const point = { screenX: 400, screenY: 180 };
+    if (id === 'canvas-menu') setContextMenu({ ...point, flowX: 0, flowY: 0 });
+    if (id === 'document-menu')
+      setDocumentContextMenu({ ...point, document: doc });
+    if (id === 'section-menu') setSectionContextMenu({ ...point, section });
+    if (id === 'preview-menu')
+      setPreviewContextMenu({ ...point, preview: result });
+    if (id === 'result-folder') {
+      setResultFolderPrompt(state === 'legacy' ? 'legacy' : result);
+      setMovingResults(state === 'busy');
+    }
+    if (id === 'import') {
+      setImportTarget({ x: 0, y: 0 });
+      setImportingFiles(state === 'busy');
+      setImportError(
+        state === 'error' ? '샘플 오류: 파일을 불러오지 못했습니다.' : '',
+      );
+    }
+    if (id === 'canvas-move') {
+      setMovingCanvasItems({ paths: [doc.relativePath], source: 'default' });
+      setMoveCanvasTarget('combat');
+      setCanvasOperationBusy(state === 'busy');
+    }
+    if (id === 'section-create') setSectionDialogOpen(true);
+    if (id === 'section-rename')
+      setSectionRename({ section, title: section.title });
+    if (id === 'membership')
+      setMembershipPrompt({
+        document: doc,
+        fromSection: state === 'add' ? null : section,
+        toSection:
+          state === 'remove'
+            ? null
+            : state === 'move'
+              ? { ...section, id: 'ui-other-section', title: '성장 시스템' }
+              : section,
+        x: doc.x,
+        y: doc.y,
+        width: doc.width,
+        height: doc.height,
+      });
+    if (id === 'section-action')
+      setSectionActionPrompt({ section, deleteMembers: state === 'delete' });
+    if (id === 'delete')
+      setDeletePrompt(state === 'html' ? previewDeletionItem(result) : doc);
+    if (id === 'delete-many') setDeleteManyPrompt(documents);
+    if (id === 'blocked')
+      setBlockedMessage(
+        '이 파일은 다른 사용자가 편집 중입니다. 잠시 후 다시 시도해주세요.',
+      );
+    if (id === 'notice')
+      setNotice(
+        state === 'error'
+          ? '샘플 오류: 서버에 연결할 수 없습니다.'
+          : 'UI 미리보기 · 샘플 프로젝트입니다.',
+      );
+  }, [preview, loading, documents, sections, previews, setNodes]);
+
+  const uiDebug = (
+    <UiDebugConsole
+      scope={home || (!workspace.root && !loading) ? 'home' : 'project'}
+      theme={theme}
+    />
+  );
   if (home || (!workspace.root && !loading)) {
     return (
       <>
@@ -4802,6 +4997,7 @@ function WorkspaceCanvas() {
           show={() => setUpdateOpen(true)}
         />
         {collaborationDialog}
+        {uiDebug}
       </>
     );
   }
@@ -4810,6 +5006,7 @@ function WorkspaceCanvas() {
     <main
       className={`app-shell app-shell--tool-${tool}${findOpen ? ' app-shell--has-find' : ''}${codexRun ? ' app-shell--has-run' : ''}${completion && codexRunCollapsed ? ' app-shell--has-completion' : ''}`}
     >
+      {uiDebug}
       <UpdatePanel
         open={updateOpen}
         close={() => setUpdateOpen(false)}
@@ -5503,6 +5700,7 @@ function WorkspaceCanvas() {
             openCanvasMenu(event.clientX, event.clientY);
           }}
           onMoveStart={() => {
+            if (preview) return;
             setContextMenu(null);
             setDocumentContextMenu(null);
             setSectionContextMenu(null);
@@ -6150,7 +6348,11 @@ function WorkspaceCanvas() {
           </section>
         )}
       {blockedMessage && (
-        <div className="dialog-backdrop" role="presentation">
+        <div
+          data-ui-id="blocked"
+          className="dialog-backdrop"
+          role="presentation"
+        >
           <section
             className="section-dialog floating-surface"
             role="alertdialog"
@@ -6394,7 +6596,7 @@ function WorkspaceCanvas() {
         </aside>
       )}
       {historyConfirm && (
-        <div className="dialog-backdrop">
+        <div data-ui-id="history-confirm" className="dialog-backdrop">
           <section
             className="section-dialog floating-surface"
             role="dialog"
@@ -6430,6 +6632,7 @@ function WorkspaceCanvas() {
 
       {previewContextMenu && (
         <div
+          data-ui-id="preview-menu"
           className="canvas-context-menu document-context-menu floating-surface"
           style={{
             left: previewContextMenu.screenX,
@@ -6562,6 +6765,7 @@ function WorkspaceCanvas() {
 
       {documentContextMenu && (
         <div
+          data-ui-id="document-menu"
           className="canvas-context-menu document-context-menu floating-surface"
           style={{
             left: documentContextMenu.screenX,
@@ -6682,6 +6886,7 @@ function WorkspaceCanvas() {
 
       {sectionContextMenu && (
         <div
+          data-ui-id="section-menu"
           className="canvas-context-menu document-context-menu floating-surface"
           style={{
             left: sectionContextMenu.screenX,
@@ -6753,6 +6958,7 @@ function WorkspaceCanvas() {
 
       {contextMenu && (
         <div
+          data-ui-id="canvas-menu"
           className="canvas-context-menu floating-surface"
           style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
           role="menu"
@@ -6868,7 +7074,7 @@ function WorkspaceCanvas() {
         />
       )}
       {movingCanvasItems && (
-        <div className="dialog-backdrop">
+        <div data-ui-id="canvas-move" className="dialog-backdrop">
           <section
             className="canvas-sheet-dialog floating-surface"
             role="dialog"
@@ -6979,6 +7185,7 @@ function WorkspaceCanvas() {
       )}
       {importTarget && (
         <div
+          data-ui-id="import"
           className="dialog-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !importingFiles)
@@ -7912,7 +8119,7 @@ function WorkspaceCanvas() {
       )}
 
       {sectionRename && (
-        <div className="dialog-backdrop">
+        <div data-ui-id="section-rename" className="dialog-backdrop">
           <section
             role="dialog"
             aria-modal="true"
@@ -7966,7 +8173,7 @@ function WorkspaceCanvas() {
       )}
 
       {deleteManyPrompt && (
-        <div className="dialog-backdrop">
+        <div data-ui-id="delete-many" className="dialog-backdrop">
           <section
             role="alertdialog"
             aria-modal="true"
@@ -8040,6 +8247,7 @@ function WorkspaceCanvas() {
 
       {sectionDialogOpen && (
         <div
+          data-ui-id="section-create"
           className="dialog-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget)
@@ -8099,6 +8307,7 @@ function WorkspaceCanvas() {
 
       {membershipPrompt && (
         <div
+          data-ui-id="membership"
           className="dialog-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget)
@@ -8173,6 +8382,7 @@ function WorkspaceCanvas() {
 
       {sectionActionPrompt && (
         <div
+          data-ui-id="section-action"
           className="dialog-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget)
@@ -8256,6 +8466,7 @@ function WorkspaceCanvas() {
 
       {deletePrompt && (
         <div
+          data-ui-id="delete"
           className="dialog-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setDeletePrompt(null);
@@ -8335,10 +8546,10 @@ function WorkspaceCanvas() {
   );
 }
 
-export function App() {
+export function App({ preview }: { preview?: UiDebugSelection } = {}) {
   return (
     <ReactFlowProvider>
-      <WorkspaceCanvas />
+      <WorkspaceCanvas preview={preview} />
     </ReactFlowProvider>
   );
 }
