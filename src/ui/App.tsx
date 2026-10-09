@@ -3121,8 +3121,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       await loadProject(false);
       setNotice('새 메모 파일을 만들었습니다. 카드를 클릭해 편집하세요.');
     } catch (error) {
-      showError(error);
       await loadProject(false);
+      showError(error);
     } finally {
       creatingNote.current = false;
     }
