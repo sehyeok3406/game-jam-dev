@@ -1,4 +1,14 @@
-# 앱 업데이트·GitHub Releases 연결 (v0.10.5)
+# 앱 업데이트·GitHub Releases 연결 (v0.13.0)
+
+## v0.13.0 PC 협업 서버 설정·관리
+
+2026-10-10 [v0.13.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.0) 게시 완료. [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.0/Game.Jam-0.13.0.Setup.exe), `game_canvas-0.13.0-full.nupkg`, `RELEASES`를 함께 배포했습니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 홈의 **협업 서버 열기**에서 안내·연결 도구 준비·실행·관리와 AI 요청문 복사를 사용하세요. [PC 협업 안내](INTERNET_COLLABORATION.md)
+
+태그는 검증한 소스 커밋 `6d0751402e63439571364513334e0fdb24ab64d9`를 가리킵니다. 개인 운영 도구와 데이터를 제외한 별도 작업 공간에서 빌드했습니다. 배포 소스 자동 테스트 250개·타입/코드 검사·전체 IPC/Electron 공동 편집 통합 검사·업데이트 UI·실제 Windows 실행 파일의 관리 화면/설정 저장/번들 Node 런타임 검증을 통과했습니다. 임시 데이터·별도 포트에서 실제 Cloudflare 공개 주소를 통한 참여·편집·재시작·동일 세션 재연결·AI 종료 보호와 기능 제외 빌드를 확인했습니다. 창 표시 직후의 상태 반영 지연도 처리했습니다.
+
+공개 파일 3개의 다운로드(200)·크기·SHA-256과 업데이트 패키지 SHA-1을 확인했습니다. v0.12.5 → v0.13.0 피드(200)와 v0.13.0 최신 버전 응답(204)을 확인했습니다. 실제로 다른 PC/네트워크에서 참여하는 검증과 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상입니다. 전체 포맷 검사에는 기존 파일 3개의 서식 문제가 남아 있으며, 작업 공간의 기존 비추적 복구 키 테스트는 빈 클립보드 복원 오류로 실패했습니다. 해당 도구와 테스트는 수정하거나 배포에 포함하지 않았습니다.
+
+PC 호스트 모듈은 추후 빌드에서 제외할 수 있습니다. [구조·제거 안내](src/features/self-host/README.md)를 참고하세요. 서버 주소 변경만으로 중앙 운영 서버에 데이터가 이전되지는 않습니다.
 
 ## v0.12.1 F12 UI 디버깅 콘솔
 
@@ -69,8 +79,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.10.5 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.10.5)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.10.5/Game.Jam-0.10.5.Setup.exe)
+- [v0.13.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.0)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.0/Game.Jam-0.13.0.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
