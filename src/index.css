@@ -198,6 +198,18 @@ button:disabled {
 .app-shell--tool-note .react-flow__pane {
   cursor: crosshair;
 }
+.app-shell--tool-note .react-flow__node,
+.app-shell--tool-note .react-flow__node * {
+  pointer-events: none;
+}
+.note-drawing-preview {
+  position: fixed;
+  z-index: 20;
+  border: 2px solid var(--selection);
+  background: var(--selection-soft);
+  border-radius: 12px;
+  pointer-events: none;
+}
 
 .floating-header {
   position: absolute;
@@ -278,7 +290,7 @@ button:disabled {
 
 .header-actions {
   gap: 4px;
-  padding: 6px;
+  padding: 6px 46px 6px 6px;
 }
 
 .header-actions button {
@@ -328,11 +340,15 @@ button:disabled {
   background: var(--border);
 }
 
-.ui-reveal-button {
+.ui-tools-toggle {
   position: absolute;
   z-index: 40;
-  top: 14px;
-  left: 14px;
+  top: 19px;
+  right: 19px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   border-radius: 10px;
 }
 
@@ -4804,9 +4820,23 @@ kbd {
   background: var(--swatch);
   border: 1px solid var(--border-strong);
 }
+.canvas-context-menu .card-color-picker button {
+  flex: 0 0 20px;
+  width: 20px;
+  min-width: 20px;
+  max-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
+  padding: 0;
+  border-radius: 50%;
+}
 .card-color-picker button[aria-pressed='true'] {
   outline: 2px solid var(--text);
   outline-offset: 2px;
+}
+.app-shell .status-toast {
+  bottom: 130px;
 }
 @media (max-width: 850px) {
   .home-sidebar {
@@ -4934,8 +4964,67 @@ kbd {
 .app-shell .canvas-utility {
   bottom: 72px;
 }
-.app-shell .status-toast {
-  bottom: 130px;
+.app-shell .react-flow__controls {
+  bottom: 72px;
+  left: 16px;
+  margin: 0;
+  display: flex;
+  flex-direction: row;
+}
+.app-shell .react-flow__controls button {
+  border-bottom: 0;
+  border-right: 1px solid var(--border);
+}
+.app-shell .react-flow__controls button:last-child {
+  border-right: 0;
+}
+.app-shell .canvas-utility {
+  left: 120px;
+}
+.bottom-toolbar kbd {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1;
+}
+.ai-request-help {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.bottom-toolbar .active kbd {
+  color: inherit;
+  opacity: 0.7;
+}
+.canvas-minimap-node {
+  fill: var(--card-background);
+  stroke: var(--swatch);
+}
+.canvas-minimap-node[data-card-color='default'] {
+  fill: var(--card);
+  stroke: var(--text-muted);
+}
+.canvas-minimap-node--section {
+  fill: color-mix(in srgb, var(--selection) 10%, var(--surface-solid));
+  stroke: var(--selection);
+}
+.canvas-minimap-node--section[data-card-color='default'] {
+  fill: color-mix(in srgb, var(--selection) 10%, var(--surface-solid));
+  stroke: var(--selection);
+}
+.canvas-minimap-node.is-selected {
+  stroke: var(--selection);
+}
+@media (max-width: 850px) {
+  .app-shell .canvas-utility {
+    left: 120px;
+  }
+  .app-shell .bottom-toolbar {
+    bottom: 124px;
+  }
+  .app-shell .status-toast {
+    bottom: 194px;
+  }
 }
 .app-shell .selection-context {
   bottom: 141px;

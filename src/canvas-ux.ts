@@ -86,7 +86,8 @@ export function canvasShortcut(
 export const SHORTCUTS = [
   ['Markdown · 이미지 불러오기', 'Ctrl + I'],
   ['선택 추가 / 선택 해제', 'Shift 또는 Ctrl + 클릭'],
-  ['선택 / 이동 / 메모', 'V / H / N'],
+  ['선택 / 이동 / 새 메모', 'V / H / N'],
+  ['새 메모 크기 지정', 'N → 캔버스 드래그'],
   ['잠시 캔버스 이동', 'Space 누른 채 드래그'],
   ['검색 · 명령', 'Ctrl + K 또는 F'],
   ['문서 목록', 'L'],

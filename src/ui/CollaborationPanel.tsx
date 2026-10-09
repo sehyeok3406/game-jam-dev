@@ -565,11 +565,21 @@ export function CollaborationPanel({
                   서버 생성 키
                   <input
                     aria-label="서버 생성 키"
+                    aria-describedby="server-creation-key-help"
                     type="password"
                     value={serverKey}
                     onChange={(event) => setServerKey(event.target.value)}
                     placeholder="외부 서버에서 프로젝트 생성 시 필요"
                   />
+                  <small
+                    id="server-creation-key-help"
+                    className="collaboration-help"
+                  >
+                    서버 관리자가 제공하는 키로, 이 서버에 새 공동 프로젝트를
+                    만들 때만 필요합니다. 초대 코드나 관리자 복구 키와 다릅니다.
+                    프로젝트에 참여할 때는 필요하지 않으며, 이 PC의 내장 테스트
+                    서버를 사용하면 비워두세요.
+                  </small>
                 </label>
                 <p className="collaboration-help">
                   현재 로컬 문서를 서버에 복사합니다. 원본 로컬 폴더는 그대로
@@ -615,8 +625,9 @@ export function CollaborationPanel({
                   />
                 </label>
                 <p className="collaboration-help">
-                  복구하면 이전 관리자 세션과 복구 키가 무효화됩니다. 새 복구
-                  정보를 다시 보관하세요.
+                  관리자 복구 키는 해당 프로젝트의 관리자 권한을 복구하는 키로,
+                  서버 생성 키와 다릅니다. 복구하면 이전 관리자 세션과 복구 키가
+                  무효화됩니다. 새 복구 정보를 다시 보관하세요.
                 </p>
               </>
             ) : (
@@ -628,6 +639,10 @@ export function CollaborationPanel({
                   onChange={(event) => setCode(event.target.value)}
                   placeholder="관리자에게 받은 코드"
                 />
+                <small className="collaboration-help">
+                  참여에는 초대 코드만 사용합니다. 서버 생성 키는 필요하지
+                  않습니다.
+                </small>
               </label>
             )}
             <button

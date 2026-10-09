@@ -11,6 +11,12 @@ import {
   sampleRun,
 } from './debug/uiDebugFixtures';
 import { CanvasTabs } from './CanvasTabs';
+import { CanvasMiniMapNode } from './CanvasMiniMapNode';
+import { noteDragBounds, type NoteBounds } from '../note-placement';
+import {
+  completionDismissed,
+  dismissCompletion,
+} from '../ai-completion-notices';
 import { canvasId, readCanvasSheets } from '../canvas-sheets';
 import type { CanvasSheets, CanvasSheetCommand } from '../shared';
 import {
@@ -1631,6 +1637,28 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [importError, setImportError] = useState('');
   const [loading, setLoading] = useState(true);
   const [tool, setTool] = useState<CanvasTool>('select');
+  const [noteDraft, setNoteDraft] = useState<{
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+  } | null>(null);
+  const noteGesture = useRef<{
+    pointerId: number;
+    sheet: string;
+    root: string;
+    start: { x: number; y: number };
+    flowStart: { x: number; y: number };
+  } | null>(null);
+  const creatingNote = useRef(false);
+  const cancelNoteDrawing = () => {
+    noteGesture.current = null;
+    setNoteDraft(null);
+  };
+  useEffect(() => {
+    if (tool !== 'note' || home) cancelNoteDrawing();
+  }, [tool, home]);
+  useEffect(() => {
+    cancelNoteDrawing();
+  }, [activeCanvas, workspace.root]);
   const [uiHidden, setUiHidden] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [documentContextMenu, setDocumentContextMenu] =
@@ -1660,6 +1688,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     taskPath: string;
   } | null>(null);
   const notifiedRuns = useRef(new Set<string>());
+  const noticeProject = collaboration.projectId ?? workspace.root;
+  const closeCompletion = () => {
+    if (completion && noticeProject) {
+      dismissCompletion(localStorage, noticeProject, completion.runId);
+      notifiedRuns.current.add(`${noticeProject}:${completion.runId}`);
+    }
+    setCompletion(null);
+  };
   const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
   let resultNameError = '';
   try {
@@ -1683,16 +1719,17 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       )
     : aiResultPaths;
   useEffect(() => {
-    if (!codexRun) return;
+    if (!codexRun || !noticeProject || home) return;
     if (['starting', 'running', 'validating'].includes(codexRun.status)) {
       setCompletion(null);
       return;
     }
     if (
       (codexRun.status === 'completed' || codexRun.status === 'failed') &&
-      !notifiedRuns.current.has(codexRun.runId)
+      !notifiedRuns.current.has(`${noticeProject}:${codexRun.runId}`) &&
+      !completionDismissed(localStorage, noticeProject, codexRun.runId)
     ) {
-      notifiedRuns.current.add(codexRun.runId);
+      notifiedRuns.current.add(`${noticeProject}:${codexRun.runId}`);
       setCompletion({
         runId: codexRun.runId,
         status: codexRun.status,
@@ -1700,7 +1737,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       });
       if (uiPreview()?.id !== 'ai-run') setCodexRunCollapsed(true);
     }
-  }, [codexRun]);
+  }, [codexRun, noticeProject, home]);
   const [cancellingCodexRun, setCancellingCodexRun] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] =
     useState<AiProviderId>('codex-cli');
@@ -3014,38 +3051,80 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     }
   };
 
-  const addIdeaAt = async (x: number, y: number) => {
+  const addIdeaAt = async (x: number, y: number, bounds?: NoteBounds) => {
     if (!workspace.root) return openWorkspace();
+    if (locked || creatingNote.current) return;
+    creatingNote.current = true;
     try {
-      const [layout] = verticalLayouts(
-        [{ width: 340, height: 300 }],
-        [
-          ...documents.filter((doc) => canvasId(doc.canvasId) === activeCanvas),
-          ...sections.filter(
-            (section) => canvasId(section.canvasId) === activeCanvas,
-          ),
-          ...previews
-            .filter((preview) => canvasId(preview.canvasId) === activeCanvas)
-            .flatMap((preview) =>
-              previewWindows[preview.relativePath]
-                ? [previewWindows[preview.relativePath]]
-                : [],
-            ),
-        ].map((item) => ({
-          ...item,
-          height: 'collapsed' in item && item.collapsed ? 38 : item.height,
-        })),
-        { x, y },
-      );
-      await window.gameCanvas.createIdea({
+      const [automatic] = bounds
+        ? []
+        : verticalLayouts(
+            [{ width: 340, height: 300 }],
+            [
+              ...documents.filter(
+                (doc) => canvasId(doc.canvasId) === activeCanvas,
+              ),
+              ...sections.filter(
+                (section) => canvasId(section.canvasId) === activeCanvas,
+              ),
+              ...previews
+                .filter(
+                  (preview) => canvasId(preview.canvasId) === activeCanvas,
+                )
+                .flatMap((preview) =>
+                  previewWindows[preview.relativePath]
+                    ? [previewWindows[preview.relativePath]]
+                    : [],
+                ),
+            ].map((item) => ({
+              ...item,
+              height: 'collapsed' in item && item.collapsed ? 38 : item.height,
+            })),
+            { x, y },
+          );
+      const layout = bounds ?? automatic;
+      const created = await window.gameCanvas.createIdea({
         x: layout.x,
         y: layout.y,
+        ...(bounds ? { width: bounds.width, height: bounds.height } : {}),
         canvasId: activeCanvasRef.current,
       });
+      // Older collaboration servers accept the creation command but omit its
+      // optional dimensions. Apply the drawn bounds with their existing layout API.
+      if (
+        bounds &&
+        (created.width !== bounds.width ||
+          created.height !== bounds.height ||
+          created.x !== bounds.x ||
+          created.y !== bounds.y)
+      ) {
+        if (bounds.width < 120 || bounds.height < 38) {
+          await window.gameCanvas.deleteDocument({
+            documentId: created.id,
+            relativePath: created.relativePath,
+            revision: created.revision,
+          });
+          throw new Error(
+            '이 크기로 메모를 만들려면 협업 서버를 v0.12.2 이상으로 업데이트해주세요. 메모는 추가하지 않았습니다.',
+          );
+        }
+        await window.gameCanvas.updateDocumentLayout({
+          relativePath: created.relativePath,
+          objectId: created.id,
+          revision: created.revision,
+          structureRevision: created.structureRevision,
+          position: true,
+          size: true,
+          ...bounds,
+        });
+      }
       await loadProject(false);
       setNotice('새 메모 파일을 만들었습니다. 카드를 클릭해 편집하세요.');
     } catch (error) {
       showError(error);
+      await loadProject(false);
+    } finally {
+      creatingNote.current = false;
     }
   };
 
@@ -4242,6 +4321,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         !dialog &&
         !target?.closest('input,textarea,select,[contenteditable="true"]')
       ) {
+        cancelNoteDrawing();
+        setTool('select');
         setInspectorId(null);
         setSettingsOpen(false);
         setContextMenu(null);
@@ -4264,16 +4345,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         panPrevious.current = null;
       }
     };
+    const blur = () => {
+      releasePan();
+      cancelNoteDrawing();
+    };
     const keyup = (event: KeyboardEvent) => {
       if (event.key === ' ') releasePan();
     };
     window.addEventListener('keydown', handleShortcut);
     window.addEventListener('keyup', keyup);
-    window.addEventListener('blur', releasePan);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', handleShortcut);
       window.removeEventListener('keyup', keyup);
-      window.removeEventListener('blur', releasePan);
+      window.removeEventListener('blur', blur);
     };
   });
 
@@ -4798,6 +4883,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (!preview || loading || previewSeeded.current) return;
     previewSeeded.current = true;
     const { id, state } = preview;
+    if (id === 'note-drawing') {
+      setTool('note');
+      setNoteDraft({ start: { x: 440, y: 220 }, end: { x: 800, y: 470 } });
+    }
     if (id === 'guides') setGuides({ x: 600, y: 400 });
     const doc = documents[0] ?? SAMPLE_DOCUMENT;
     const section = sections[0] ?? SAMPLE_SECTION;
@@ -5338,16 +5427,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             </aside>
           );
         })()}
-      {uiHidden ? (
-        <button
-          type="button"
-          className="ui-reveal-button floating-surface icon-button"
-          onClick={() => setUiHidden(false)}
-          title="상단 메뉴 보이기"
-        >
-          <Eye size={17} />
-        </button>
-      ) : (
+      <button
+        type="button"
+        className={`ui-tools-toggle floating-surface icon-button${uiHidden ? ' ui-reveal-button' : ''}`}
+        onClick={() => setUiHidden((value) => !value)}
+        aria-pressed={!uiHidden}
+        title={
+          uiHidden ? '상단 메뉴 보이기 (Ctrl+\\)' : '상단 메뉴 숨기기 (Ctrl+\\)'
+        }
+      >
+        {uiHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+      </button>
+      {!uiHidden && (
         <header className="floating-header">
           <div className="header-project floating-surface">
             <img className="brand-mark" src={appIcon} alt="" />
@@ -5457,14 +5548,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             >
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setUiHidden(true)}
-              title="상단 메뉴 숨기기"
-            >
-              <EyeOff size={16} />
-            </button>
           </div>
         </header>
       )}
@@ -5477,11 +5560,70 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             ?.getAttribute('data-id');
           if (id) acknowledgeNewFile(id);
         }}
-        onPointerDownCapture={() => {
+        onPointerDownCapture={(event) => {
+          if (
+            tool === 'note' &&
+            event.button === 0 &&
+            (event.target as Element).closest('.react-flow__pane') &&
+            flowRef.current &&
+            workspace.root &&
+            !locked &&
+            !creatingNote.current
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            const start = { x: event.clientX, y: event.clientY };
+            noteGesture.current = {
+              pointerId: event.pointerId,
+              start,
+              flowStart: flowRef.current.screenToFlowPosition(start),
+              sheet: activeCanvasRef.current,
+              root: workspace.root,
+            };
+            setNoteDraft({ start, end: start });
+            event.currentTarget.setPointerCapture(event.pointerId);
+            return;
+          }
           selectionBeforeClick.current = new Set(
             nodes.filter((node) => node.selected).map((node) => node.id),
           );
         }}
+        onPointerMoveCapture={(event) => {
+          const gesture = noteGesture.current;
+          if (!gesture || gesture.pointerId !== event.pointerId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setNoteDraft({
+            start: gesture.start,
+            end: { x: event.clientX, y: event.clientY },
+          });
+        }}
+        onPointerUpCapture={(event) => {
+          const gesture = noteGesture.current;
+          if (!gesture || gesture.pointerId !== event.pointerId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          cancelNoteDrawing();
+          if (event.currentTarget.hasPointerCapture(event.pointerId))
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          if (
+            locked ||
+            gesture.root !== workspace.root ||
+            gesture.sheet !== activeCanvasRef.current
+          )
+            return;
+          const end = { x: event.clientX, y: event.clientY };
+          const flowEnd = flowRef.current?.screenToFlowPosition(end);
+          const dragged =
+            Math.hypot(end.x - gesture.start.x, end.y - gesture.start.y) > 5;
+          if (dragged && flowEnd) {
+            const bounds = noteDragBounds(gesture.flowStart, flowEnd);
+            void addIdeaAt(bounds.x, bounds.y, bounds);
+          } else void addIdeaAt(gesture.flowStart.x, gesture.flowStart.y);
+          setTool('select');
+        }}
+        onPointerCancel={cancelNoteDrawing}
+        onLostPointerCapture={cancelNoteDrawing}
         onContextMenu={(event) => {
           if ((event.target as Element).closest('.react-flow__node')) return;
           event.preventDefault();
@@ -5682,18 +5824,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               sameIds(currentIds, nextSectionIds) ? currentIds : nextSectionIds,
             );
           }}
-          onPaneClick={(event) => {
+          onPaneClick={() => {
             setContextMenu(null);
             setDocumentContextMenu(null);
             setSectionContextMenu(null);
             setPreviewContextMenu(null);
-            if (tool !== 'note') return;
-            const point = flowRef.current?.screenToFlowPosition({
-              x: event.clientX,
-              y: event.clientY,
-            });
-            if (point) void addIdeaAt(point.x, point.y);
-            setTool('select');
           }}
           onPaneContextMenu={(event) => {
             event.preventDefault();
@@ -5720,6 +5855,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           elementsSelectable={tool === 'select'}
           multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
           fitView
+          zoomOnScroll={!noteDraft}
+          zoomOnPinch={!noteDraft}
+          zoomOnDoubleClick={tool !== 'note'}
           minZoom={0.15}
           maxZoom={2}
           deleteKeyCode={null}
@@ -5731,16 +5869,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           />
           <Controls position="bottom-left" showInteractive={false} />
           <MiniMap
+            ariaLabel="캔버스 미니맵"
             position="bottom-right"
             pannable
             zoomable
-            nodeColor={(node) =>
-              node.type === 'preview'
-                ? '#20c997'
-                : theme === 'dark'
-                  ? '#747b87'
-                  : '#ffffff'
-            }
+            nodeComponent={CanvasMiniMapNode}
             maskColor={
               theme === 'dark'
                 ? 'rgba(13, 15, 19, 0.72)'
@@ -5748,6 +5881,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             }
           />
         </ReactFlow>
+        {noteDraft && (
+          <div
+            className="note-drawing-preview"
+            aria-label="새 메모 생성 영역"
+            style={{
+              left: Math.min(noteDraft.start.x, noteDraft.end.x),
+              top: Math.min(noteDraft.start.y, noteDraft.end.y),
+              width: Math.abs(noteDraft.end.x - noteDraft.start.x),
+              height: Math.abs(noteDraft.end.y - noteDraft.start.y),
+            }}
+          />
+        )}
       </div>
       {guides.x !== undefined && (
         <div
@@ -5972,6 +6117,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         >
           <MousePointer2 size={19} />
           <span>선택</span>
+          <kbd>V</kbd>
         </button>
         <button
           type="button"
@@ -5982,6 +6128,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         >
           <Hand size={19} />
           <span>이동</span>
+          <kbd>H</kbd>
         </button>
         <button
           type="button"
@@ -5989,20 +6136,25 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           aria-pressed={tool === 'note'}
           disabled={locked}
           onClick={() => setTool('note')}
-          title="메모 도구 (N) — 선택 후 빈 곳 클릭"
+          title="새 메모 (N) — 빈 곳 클릭 또는 원하는 크기로 드래그"
         >
           <StickyNote size={19} />
-          <span>메모 배치</span>
+          <span>새 메모</span>
+          <kbd>N</kbd>
         </button>
         <span className="toolbar-divider toolbar-divider--vertical" />
         <button
           type="button"
-          onClick={() => void addIdeaNearCenter()}
-          disabled={locked}
-          title="화면 중앙에 새 메모 만들기"
+          disabled={selectedDocuments.length === 0 || selectionLocked}
+          onClick={() => {
+            setSectionTitle('새 섹션');
+            setSectionDialogOpen(true);
+          }}
+          title="선택한 파일을 하나의 섹션으로 묶기 (Shift+S / Ctrl+G)"
         >
-          <Plus size={19} />
-          <span>새 메모</span>
+          <Frame size={19} />
+          <span>섹션</span>
+          <kbd>⇧S</kbd>
         </button>
         <button
           type="button"
@@ -6012,18 +6164,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         >
           <Upload size={19} />
           <span>불러오기</span>
-        </button>
-        <button
-          type="button"
-          disabled={selectedDocuments.length === 0 || selectionLocked}
-          onClick={() => {
-            setSectionTitle('새 섹션');
-            setSectionDialogOpen(true);
-          }}
-          title="선택한 파일을 하나의 섹션으로 묶기"
-        >
-          <Frame size={19} />
-          <span>섹션</span>
+          <kbd>Ctrl I</kbd>
         </button>
       </nav>
 
@@ -6282,7 +6423,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             <button
               className="icon-button ai-completion-toast__close"
               title="완료 알림 닫기"
-              onClick={() => setCompletion(null)}
+              onClick={closeCompletion}
             >
               <X size={14} />
             </button>
@@ -7785,7 +7926,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   <label>
                     {aiRequest.htmlResult?.mode === 'update'
                       ? '업데이트할 결과'
-                      : '새 버전의 기준 결과'}
+                      : '새 버전을 만들 원본 HTML'}
                     <select
                       aria-label="기준 HTML 결과"
                       value={aiRequest.htmlResult?.basePath ?? ''}
@@ -7817,6 +7958,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         </option>
                       ))}
                     </select>
+                    {aiRequest.htmlResult?.mode !== 'update' && (
+                      <small className="ai-request-help">
+                        선택한 HTML을 바탕으로 수정본을 새 파일로 만듭니다.
+                        원본은 그대로 유지하며, 선택하지 않으면 재료를 사용해 새
+                        HTML을 만듭니다.
+                      </small>
+                    )}
                   </label>
                 </>
               )}

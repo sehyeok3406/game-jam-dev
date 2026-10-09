@@ -430,11 +430,25 @@ export function reduceCollaboration(
   if (channel === 'documents:create-idea') {
     const id = `idea-${randomUUID().slice(0, 8)}`,
       relative = `ideas/${id}.md`;
-    const [layout] = verticalLayouts(
-      [{ width: 340, height: 300 }],
-      documentBounds(next, canvasId(input.canvasId)),
-      { x: number(input.x), y: number(input.y) },
-    );
+    const explicit = input.width !== undefined || input.height !== undefined;
+    const bounds = explicit
+      ? {
+          x: number(input.x),
+          y: number(input.y),
+          width: number(input.width),
+          height: number(input.height),
+        }
+      : null;
+    if (bounds && (bounds.width <= 0 || bounds.height <= 0))
+      throw new Error('메모 크기는 0보다 커야 합니다.');
+    const [automatic] = bounds
+      ? []
+      : verticalLayouts(
+          [{ width: 340, height: 300 }],
+          documentBounds(next, canvasId(input.canvasId)),
+          { x: number(input.x), y: number(input.y) },
+        );
+    const layout = bounds ?? automatic;
     write(
       relative,
       {

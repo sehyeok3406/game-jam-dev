@@ -193,6 +193,15 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
     '.canvas-utility',
   ),
   entry(
+    'note-drawing',
+    '새 메모 드래그 영역',
+    'WorkspaceCanvas / noteDraft',
+    'App',
+    '도구',
+    project,
+    '.note-drawing-preview',
+  ),
+  entry(
     'selection',
     '선택·정렬 도구',
     'WorkspaceCanvas / .selection-context',

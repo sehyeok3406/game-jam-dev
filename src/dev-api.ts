@@ -763,15 +763,19 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
     listDocuments: async () => structuredClone(documents),
     listSections: async () => structuredClone(sections),
-    createIdea: async ({ x, y, canvasId: selectedCanvas }) => {
+    createIdea: async ({ x, y, width, height, canvasId: selectedCanvas }) => {
       const id = `idea-${documents.length + 1}`;
-      const [layout] = verticalLayouts(
-        [{ width: 340, height: 300 }],
-        documents.filter(
-          (item) => canvasId(item.canvasId) === canvasId(selectedCanvas),
-        ),
-        { x, y },
-      );
+      const explicit = width !== undefined && height !== undefined;
+      const [automatic] = explicit
+        ? []
+        : verticalLayouts(
+            [{ width: 340, height: 300 }],
+            documents.filter(
+              (item) => canvasId(item.canvasId) === canvasId(selectedCanvas),
+            ),
+            { x, y },
+          );
+      const layout = explicit ? { x, y, width, height } : automatic;
       const document: CanvasDocument = {
         canvasId: canvasId(selectedCanvas),
         id,

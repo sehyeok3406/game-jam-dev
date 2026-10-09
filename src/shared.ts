@@ -155,6 +155,9 @@ export type CreateIdeaInput = {
   canvasId?: string;
   x: number;
   y: number;
+  /** Explicit drawing bounds; omitted dimensions retain automatic placement. */
+  width?: number;
+  height?: number;
 };
 
 export type CreateSectionInput = {

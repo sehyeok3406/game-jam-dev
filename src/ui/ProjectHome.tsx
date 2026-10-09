@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { APP_NAME } from '../app-branding';
+import { version } from '../../package.json';
 import appIcon from '../../assets/icon.png';
 import {
   FolderOpen,
@@ -328,9 +329,8 @@ export function ProjectHome({
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             {theme === 'dark' ? '라이트 모드' : '다크 모드'}
           </button>
-          <p>
-            아이디어 → 문서 → 게임
-            <br />이 PC에서 시작하는 프로토타입
+          <p className="home-app-version" aria-label="현재 프로그램 버전">
+            v{version}
           </p>
         </div>
       </aside>
