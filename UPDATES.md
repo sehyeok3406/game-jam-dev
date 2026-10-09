@@ -6,6 +6,8 @@
 
 Windows x64 설치 파일 `Game.Jam-0.13.1.Setup.exe`, 업데이트 패키지 `game_canvas-0.13.1-full.nupkg`, `RELEASES`를 같은 [v0.13.1 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.1)에 제공합니다. 기존 v0.13.0 협업 서버와 호환되며, 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다.
 
+2026-10-10 정식 게시 완료. 태그 `v0.13.1`은 소스 커밋 `ae1de7dab9dc7a90bd1539c358fb18fedb564d44`를 가리킵니다. 자동 테스트 253개·타입/코드 검사·전체 Electron 통합 검사·업데이트 화면·실제 Windows 패키지와 패키지 내부 설정 화면 검증을 통과했습니다. GitHub 파일 3개의 크기·SHA-256이 로컬 빌드와 일치하며 인증 없는 공개 다운로드(200)도 확인했습니다. v0.13.0 피드가 v0.13.1 설치판을 안내하고, Windows RELEASES 피드의 전체 패키지 URL·SHA-1·크기가 일치합니다. v0.13.1 피드는 최신 버전 응답(204)을 반환합니다. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상입니다.
+
 ## v0.13.0 PC 협업 서버 설정·관리
 
 2026-10-10 [v0.13.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.0) 게시 완료. [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.0/Game.Jam-0.13.0.Setup.exe), `game_canvas-0.13.0-full.nupkg`, `RELEASES`를 함께 배포했습니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 홈의 **협업 서버 열기**에서 안내·연결 도구 준비·실행·관리와 AI 요청문 복사를 사용하세요. [PC 협업 안내](INTERNET_COLLABORATION.md)
