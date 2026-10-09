@@ -17,6 +17,13 @@ export async function presentWindow(
     if (window.isDestroyed()) throw new Error('화면 준비 중 창이 닫혔습니다.');
     window.setSkipTaskbar(false);
     window.show();
+    // Windows can deliver the show event before native visibility is updated.
+    for (
+      let attempt = 0;
+      attempt < 20 && !window.isDestroyed() && !window.isVisible();
+      attempt++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 50));
     if (window.isDestroyed() || !window.isVisible())
       throw new Error(
         '앱 프로세스는 시작했지만 창이 화면에 표시되지 않았습니다.',

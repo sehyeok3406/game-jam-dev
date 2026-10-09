@@ -65,3 +65,37 @@ test('a window closed during startup cannot succeed or be shown again', async ()
   );
   assert.deepEqual(window.events, []);
 });
+
+test('delayed native visibility succeeds without showing the window again', async () => {
+  const window = windowFixture(false);
+  let visible = false;
+  window.isVisible = () => visible;
+  const timer = setTimeout(() => {
+    visible = true;
+  }, 20);
+  try {
+    await presentWindow(window, async () => {});
+    assert.equal(visible, true);
+    assert.deepEqual(window.events, [['taskbar', false], 'show']);
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+test('closing during the native visibility delay never reports startup success', async () => {
+  const window = windowFixture(false);
+  let destroyed = false;
+  window.isDestroyed = () => destroyed;
+  const timer = setTimeout(() => {
+    destroyed = true;
+  }, 20);
+  try {
+    await assert.rejects(
+      presentWindow(window, async () => {}),
+      (error) => error.code === 'GC-TEST-002',
+    );
+    assert.deepEqual(window.events, [['taskbar', false], 'show']);
+  } finally {
+    clearTimeout(timer);
+  }
+});
