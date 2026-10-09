@@ -651,7 +651,7 @@ export async function createCollaborationServer(options: Options) {
           propertySync: true,
           deltaSync: true,
           eventStream: true,
-          version: '0.12.0',
+          version: '0.12.2',
         });
         return;
       }
