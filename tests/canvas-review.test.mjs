@@ -5,6 +5,8 @@ import { noteDragBounds } from '../src/note-placement.ts';
 import {
   completionDismissed,
   dismissCompletion,
+  dismissRunPanel,
+  runPanelDismissed,
 } from '../src/ai-completion-notices.ts';
 import { reduceCollaboration } from '../src/collaboration-model.ts';
 
@@ -108,4 +110,29 @@ test('dismissed AI completions survive rereads, remain scoped to their project a
   assert(!completionDismissed(storage, 'project-a', 'run-1'));
   values.set('game-canvas-dismissed-ai:project-b', '{bad json');
   assert(!completionDismissed(storage, 'project-b', 'run-1'));
+});
+
+test('closing an AI run panel also dismisses its completion, while completion-only close preserves the panel', () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  dismissCompletion(storage, 'project-a', 'run-1');
+  assert(!runPanelDismissed(storage, 'project-a', 'run-1'));
+  dismissRunPanel(storage, 'project-a', 'run-1');
+  assert(runPanelDismissed(storage, 'project-a', 'run-1'));
+  assert(completionDismissed(storage, 'project-a', 'run-1'));
+  assert(!runPanelDismissed(storage, 'project-a', 'run-2'));
+  assert(!runPanelDismissed(storage, 'project-b', 'run-1'));
+  const unavailable = {
+    getItem() {
+      throw Error('unavailable');
+    },
+    setItem() {
+      throw Error('unavailable');
+    },
+  };
+  assert.doesNotThrow(() => dismissRunPanel(unavailable, 'project-a', 'run-1'));
+  assert(!runPanelDismissed(unavailable, 'project-a', 'run-1'));
 });

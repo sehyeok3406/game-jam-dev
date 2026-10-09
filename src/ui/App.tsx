@@ -16,6 +16,8 @@ import { noteDragBounds, type NoteBounds } from '../note-placement';
 import {
   completionDismissed,
   dismissCompletion,
+  runPanelDismissed,
+  dismissRunPanel,
 } from '../ai-completion-notices';
 import { canvasId, readCanvasSheets } from '../canvas-sheets';
 import type { CanvasSheets, CanvasSheetCommand } from '../shared';
@@ -241,6 +243,7 @@ type ArrangementItem = {
 };
 
 type CodexRunView = {
+  project: string;
   fileLock?: CodexRunEvent['fileLock'];
   runId: string;
   taskPath: string;
@@ -1683,19 +1686,52 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [codexRun, setCodexRun] = useState<CodexRunView | null>(null);
   const [codexRunCollapsed, setCodexRunCollapsed] = useState(true);
   const [completion, setCompletion] = useState<{
+    project: string;
     runId: string;
     status: 'completed' | 'failed';
     taskPath: string;
   } | null>(null);
   const notifiedRuns = useRef(new Set<string>());
   const noticeProject = collaboration.projectId ?? workspace.root;
+  const runScopeRef = useRef({ project: noticeProject, home });
+  runScopeRef.current = { project: noticeProject, home };
+  const [dismissedPanels, setDismissedPanels] = useState(new Set<string>());
+  const runPanelVisible =
+    !!codexRun &&
+    codexRun.project === noticeProject &&
+    !dismissedPanels.has(JSON.stringify([codexRun.project, codexRun.runId])) &&
+    !runPanelDismissed(localStorage, codexRun.project, codexRun.runId);
+  const completionVisible =
+    runPanelVisible &&
+    !!completion &&
+    completion.project === codexRun?.project &&
+    completion.runId === codexRun?.runId &&
+    codexRunCollapsed;
   const closeCompletion = () => {
-    if (completion && noticeProject) {
-      dismissCompletion(localStorage, noticeProject, completion.runId);
-      notifiedRuns.current.add(`${noticeProject}:${completion.runId}`);
+    if (completion) {
+      dismissCompletion(localStorage, completion.project, completion.runId);
+      notifiedRuns.current.add(
+        JSON.stringify([completion.project, completion.runId]),
+      );
     }
     setCompletion(null);
   };
+  const closeRunPanel = () => {
+    if (!codexRun) return;
+    dismissRunPanel(localStorage, codexRun.project, codexRun.runId);
+    const key = JSON.stringify([codexRun.project, codexRun.runId]);
+    setDismissedPanels((current) => new Set(current).add(key));
+    notifiedRuns.current.add(key);
+    setCompletion(null);
+  };
+  useEffect(() => {
+    setCodexRun((current) =>
+      current?.project === noticeProject ? current : null,
+    );
+    setCompletion((current) =>
+      current?.project === noticeProject ? current : null,
+    );
+  }, [noticeProject]);
   const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
   let resultNameError = '';
   try {
@@ -1719,25 +1755,30 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       )
     : aiResultPaths;
   useEffect(() => {
-    if (!codexRun || !noticeProject || home) return;
+    if (!codexRun || !runPanelVisible || home) return;
     if (['starting', 'running', 'validating'].includes(codexRun.status)) {
       setCompletion(null);
       return;
     }
     if (
       (codexRun.status === 'completed' || codexRun.status === 'failed') &&
-      !notifiedRuns.current.has(`${noticeProject}:${codexRun.runId}`) &&
-      !completionDismissed(localStorage, noticeProject, codexRun.runId)
+      !notifiedRuns.current.has(
+        JSON.stringify([codexRun.project, codexRun.runId]),
+      ) &&
+      !completionDismissed(localStorage, codexRun.project, codexRun.runId)
     ) {
-      notifiedRuns.current.add(`${noticeProject}:${codexRun.runId}`);
+      notifiedRuns.current.add(
+        JSON.stringify([codexRun.project, codexRun.runId]),
+      );
       setCompletion({
+        project: codexRun.project,
         runId: codexRun.runId,
         status: codexRun.status,
         taskPath: codexRun.taskPath,
       });
       if (uiPreview()?.id !== 'ai-run') setCodexRunCollapsed(true);
     }
-  }, [codexRun, noticeProject, home]);
+  }, [codexRun, runPanelVisible, home]);
   const [cancellingCodexRun, setCancellingCodexRun] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] =
     useState<AiProviderId>('codex-cli');
@@ -1877,10 +1918,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   }, []);
   useEffect(() => {
     const event = collaboration.aiRun;
+    const project = collaboration.projectId ?? workspace.root;
     if (!collaboration.connected) return;
-    if (!event) return;
+    if (!event || !project || home) return;
     setCodexRun((current) =>
-      current?.runId === event.runId
+      current?.runId === event.runId && current.project === project
         ? {
             ...current,
             status: event.status,
@@ -1891,6 +1933,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 : [...current.events, event].slice(-300),
           }
         : {
+            project,
             runId: event.runId,
             taskPath: event.taskPath,
             status: event.status,
@@ -1900,7 +1943,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             modelId: event.modelId ?? null,
           },
     );
-  }, [collaboration.aiRun]);
+  }, [
+    collaboration.aiRun,
+    collaboration.connected,
+    collaboration.projectId,
+    workspace.root,
+    home,
+  ]);
   const beginEdit = useCallback(async (document: CanvasDocument) => {
     try {
       await window.gameCanvas.acquireDocumentLock(document.relativePath);
@@ -2383,13 +2432,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
   useEffect(() => {
     void refreshCodexStatus();
+    if (!noticeProject || home) return;
+    let active = true;
     void window.gameCanvas
       .getActiveRun()
       .then((event) => {
-        if (event)
+        if (event && active)
           setCodexRun(
             (current) =>
               current ?? {
+                project: noticeProject,
                 runId: event.runId,
                 taskPath: event.taskPath,
                 status: event.status,
@@ -2401,26 +2453,34 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           );
       })
       .catch(showError);
-  }, [refreshCodexStatus]);
+    return () => {
+      active = false;
+    };
+  }, [refreshCodexStatus, noticeProject, home]);
 
   useEffect(
     () =>
       window.gameCanvas.onCodexRunEvent((event) => {
-        setCodexRun((current) => {
-          const sameRun = current?.runId === event.runId;
-          const events = sameRun ? current.events : ([] as CodexRunEvent[]);
-          return {
-            runId: event.runId,
-            taskPath: event.taskPath,
-            status: event.status,
-            fileLock:
-              event.fileLock ?? (sameRun ? current.fileLock : undefined),
-            events: [...events, event].slice(-300),
-            providerId:
-              event.providerId ?? (sameRun ? current.providerId : 'codex-cli'),
-            modelId: event.modelId ?? (sameRun ? current.modelId : null),
-          };
-        });
+        const { project, home: atHome } = runScopeRef.current;
+        if (project && !atHome)
+          setCodexRun((current) => {
+            const sameRun =
+              current?.runId === event.runId && current.project === project;
+            const events = sameRun ? current.events : ([] as CodexRunEvent[]);
+            return {
+              project,
+              runId: event.runId,
+              taskPath: event.taskPath,
+              status: event.status,
+              fileLock:
+                event.fileLock ?? (sameRun ? current.fileLock : undefined),
+              events: [...events, event].slice(-300),
+              providerId:
+                event.providerId ??
+                (sameRun ? current.providerId : 'codex-cli'),
+              modelId: event.modelId ?? (sameRun ? current.modelId : null),
+            };
+          });
         if (event.status === 'completed') {
           setCancellingCodexRun(false);
           setNotice('AI 작업이 완료되어 결과 파일을 불러왔습니다.');
@@ -2626,11 +2686,15 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         throw new Error(
           status?.message ?? '선택한 AI CLI 연결을 확인할 수 없습니다.',
         );
+      const project = noticeProject;
+      if (!project) throw new Error('프로젝트를 먼저 열어주세요.');
       const result = await window.gameCanvas.startCodexRun({
         taskPath: task.relativePath,
         providerId: selectedAiProvider,
         modelId: selectedAiModel || null,
       });
+      if (runScopeRef.current.project !== project || runScopeRef.current.home)
+        return;
       setCodexRun((current) =>
         current?.runId === result.runId
           ? {
@@ -2639,6 +2703,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               modelId: result.modelId,
             }
           : {
+              project,
               runId: result.runId,
               taskPath: result.taskPath,
               status: result.status,
@@ -4966,6 +5031,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (id === 'ai-run' || id === 'completion') {
       const event = sampleRun(state);
       setCodexRun({
+        project: noticeProject ?? 'ui-debug-preview',
         runId: event.runId,
         taskPath: event.taskPath,
         status: event.status,
@@ -5093,7 +5159,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
   return (
     <main
-      className={`app-shell app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${codexRun ? ' app-shell--has-run' : ''}${completion && codexRunCollapsed ? ' app-shell--has-completion' : ''}`}
+      className={`app-shell app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
     >
       {uiDebug}
       <UpdatePanel
@@ -6170,7 +6236,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </button>
       </nav>
 
-      {codexRun && (
+      {runPanelVisible && codexRun && (
         <aside
           className={`codex-run-panel floating-surface${codexRunCollapsed ? ' codex-run-panel--collapsed' : ''}`}
           aria-live="polite"
@@ -6273,7 +6339,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   <button
                     type="button"
                     className="icon-button"
-                    onClick={() => setCodexRun(null)}
+                    onClick={closeRunPanel}
                     title="실행 패널 닫기"
                   >
                     <X size={14} />
@@ -6413,83 +6479,81 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </aside>
       )}
 
-      {completion &&
-        codexRun?.runId === completion.runId &&
-        codexRunCollapsed && (
-          <section
-            className={`ai-completion-toast floating-surface${completion.status === 'failed' ? ' ai-completion-toast--failed' : ''}`}
-            role="status"
-            aria-live="polite"
-            aria-label="AI 작업 완료 알림"
+      {completionVisible && completion && (
+        <section
+          className={`ai-completion-toast floating-surface${completion.status === 'failed' ? ' ai-completion-toast--failed' : ''}`}
+          role="status"
+          aria-live="polite"
+          aria-label="AI 작업 완료 알림"
+        >
+          <button
+            className="icon-button ai-completion-toast__close"
+            title="완료 알림 닫기"
+            onClick={closeCompletion}
           >
+            <X size={14} />
+          </button>
+          <strong>
+            {completion.status === 'completed' ? (
+              <>
+                <CheckCircle2 size={18} /> 완료!
+              </>
+            ) : (
+              <>
+                <AlertCircle size={18} /> 작업 실패 ·{' '}
+                {runFailure?.code ?? '진단 확인'}
+              </>
+            )}
+          </strong>
+          <p>
+            {completion.status === 'completed'
+              ? `${completion.taskPath.includes('/gamejam-') ? '문서 정리 + HTML 구현' : completion.taskPath.includes('/organize-') ? '문서 정리' : 'HTML 구현'} 결과를 검증하고 저장했습니다.`
+              : '기존 결과는 유지했습니다. 오류 진단을 확인해주세요.'}
+          </p>
+          <div>
             <button
-              className="icon-button ai-completion-toast__close"
-              title="완료 알림 닫기"
-              onClick={closeCompletion}
+              onClick={() => {
+                setCodexRunCollapsed(false);
+                setInspectorId(null);
+                setHistoryOpen(false);
+                setSettingsOpen(false);
+              }}
             >
-              <X size={14} />
-            </button>
-            <strong>
-              {completion.status === 'completed' ? (
-                <>
-                  <CheckCircle2 size={18} /> 완료!
-                </>
-              ) : (
-                <>
-                  <AlertCircle size={18} /> 작업 실패 ·{' '}
-                  {runFailure?.code ?? '진단 확인'}
-                </>
-              )}
-            </strong>
-            <p>
               {completion.status === 'completed'
-                ? `${completion.taskPath.includes('/gamejam-') ? '문서 정리 + HTML 구현' : completion.taskPath.includes('/organize-') ? '문서 정리' : 'HTML 구현'} 결과를 검증하고 저장했습니다.`
-                : '기존 결과는 유지했습니다. 오류 진단을 확인해주세요.'}
-            </p>
-            <div>
+                ? '작업 내용 보기'
+                : '오류 진단 보기'}
+            </button>
+            {completion.status === 'completed' && (
               <button
                 onClick={() => {
-                  setCodexRunCollapsed(false);
-                  setInspectorId(null);
-                  setHistoryOpen(false);
-                  setSettingsOpen(false);
+                  const ids = nodes
+                    .filter((node) =>
+                      node.data.kind === 'document'
+                        ? runOutputPaths.includes(
+                            node.data.document.relativePath,
+                          )
+                        : node.data.kind === 'preview'
+                          ? runOutputPaths.includes(
+                              node.data.preview.relativePath,
+                            )
+                          : false,
+                    )
+                    .map((node) => ({ id: node.id }));
+                  if (ids.length)
+                    void flowRef.current?.fitView({
+                      nodes: ids,
+                      padding: 0.2,
+                      duration: 300,
+                    });
+                  else setNavigatorOpen(true);
                 }}
               >
-                {completion.status === 'completed'
-                  ? '작업 내용 보기'
-                  : '오류 진단 보기'}
+                결과로 이동
               </button>
-              {completion.status === 'completed' && (
-                <button
-                  onClick={() => {
-                    const ids = nodes
-                      .filter((node) =>
-                        node.data.kind === 'document'
-                          ? runOutputPaths.includes(
-                              node.data.document.relativePath,
-                            )
-                          : node.data.kind === 'preview'
-                            ? runOutputPaths.includes(
-                                node.data.preview.relativePath,
-                              )
-                            : false,
-                      )
-                      .map((node) => ({ id: node.id }));
-                    if (ids.length)
-                      void flowRef.current?.fitView({
-                        nodes: ids,
-                        padding: 0.2,
-                        duration: 300,
-                      });
-                    else setNavigatorOpen(true);
-                  }}
-                >
-                  결과로 이동
-                </button>
-              )}
-            </div>
-          </section>
-        )}
+            )}
+          </div>
+        </section>
+      )}
       {blockedMessage && (
         <div
           data-ui-id="blocked"
