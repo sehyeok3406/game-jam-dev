@@ -4,6 +4,11 @@ import { CanvasView } from './canvas-view.ts';
 import { writeClientCache, readClientCache } from './client-cache.ts';
 import { EditorDraftStore } from './editor-drafts.ts';
 import {
+  DocumentSaveQueue,
+  type DocumentSaveRequest,
+} from './document-save-queue.ts';
+import { DocumentSaveStore } from './document-save-store.ts';
+import {
   CANVAS_SHEETS_PATH,
   readCanvasSheets,
   canvasId,
@@ -281,6 +286,7 @@ const registerUpdates = async () => {
           ),
         pendingWrites:
           pendingAppOperations > 0 ||
+          !!documentSaveQueue?.hasPending() ||
           !!collaboration?.offline ||
           !!collaboration?.outgoing,
         disconnected: !!collaboration && !collaboration.state.connected,
@@ -456,6 +462,13 @@ const recordUserEdit = async (
 };
 const canvasViews = new WeakMap<CollaborationClient, CanvasView>();
 let draftStore: EditorDraftStore;
+let documentSaveQueue: DocumentSaveQueue;
+const documentSaveScope = () =>
+  collaboration
+    ? `shared:${collaboration.credentials.projectId}:${collaboration.state.memberId}`
+    : workspaceRoot
+      ? `local:${workspaceRoot}`
+      : '';
 let lastSharedState = '';
 let sharedCacheQueue: Promise<unknown> = Promise.resolve();
 let lastQueuedCache = '';
@@ -495,6 +508,7 @@ const collaborationChanged = (state: CollaborationState, changed: boolean) => {
     mainWindow?.webContents.send('collaboration:changed', state);
   }
   if (changed) notifyWorkspaceChanged();
+  documentSaveQueue?.wake();
   if (changed && collaboration && workspaceRoot) {
     void cacheCollaboration(collaboration, workspaceRoot).catch((error) =>
       console.error('공동 프로젝트 캐시 저장 실패', error),
@@ -657,6 +671,11 @@ const assertEditable = () => {
     );
 };
 const assertMutationAllowed = async (channel: string, args: unknown[]) => {
+  if (channel === 'documents:save') {
+    const scope = (args[0] as SaveDocumentInput)?.queueScope;
+    if (scope && scope !== documentSaveScope())
+      throw new Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+  }
   if (!aiIsActive()) return;
   if (
     channel === 'tasks:create' ||
@@ -2003,7 +2022,7 @@ const handle = (
   channel: string,
   listener: Parameters<typeof ipcMain.handle>[1],
 ) => {
-  ipcMain.handle(channel, (event, ...args) => {
+  const invoke: Parameters<typeof ipcMain.handle>[1] = (event, ...args) => {
     if (updateRestartPrepared)
       throw new Error('[GC-UPD-004] 업데이트 재시작을 준비하고 있습니다.');
     pendingAppOperations += 1;
@@ -2055,6 +2074,22 @@ const handle = (
                 label: commandLabels[channel],
               });
             notifyWorkspaceChanged();
+            if (channel === 'documents:save') {
+              const relative = (args[0] as SaveDocumentInput).relativePath;
+              const doc = snapshotDocuments({
+                [relative]: client.files[relative],
+              })[0];
+              return {
+                ...doc,
+                revision: client.revisions[relative],
+                contentRevision: client.properties[relative]?.content ?? 0,
+                structureRevision: client.properties[relative]?.structure ?? 0,
+                assetVersion: doc.asset
+                  ? client.revisions[doc.asset.path]
+                  : undefined,
+                collapsed: personalCollapsed.get(relative) ?? doc.collapsed,
+              };
+            }
             return result;
           });
         if (channel === 'edit:undo' || channel === 'edit:redo')
@@ -2131,6 +2166,7 @@ const handle = (
           return {
             root: workspaceRoot,
             name: client.state.projectName ?? '공동 프로젝트',
+            saveScope: documentSaveScope(),
           };
         if (channel === 'documents:set-collapsed') {
           const input = args[0] as SetDocumentCollapsedInput;
@@ -2372,7 +2408,9 @@ const handle = (
       .finally(() => {
         pendingAppOperations -= 1;
       });
-  });
+  };
+  ipcMain.handle(channel, invoke);
+  return invoke;
 };
 
 const registerIpc = () => {
@@ -2390,13 +2428,16 @@ const registerIpc = () => {
     ) => draftStore.set(key, draft, sequence),
   );
   handle('canvas:changes', () => null);
-  handle('documents:get', async (_event, relative: string) => {
-    const absolute = await safePath(relative);
-    return parseDocument(absolute).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw error;
-    });
-  });
+  const readQueuedDocument = handle(
+    'documents:get',
+    async (_event, relative: string) => {
+      const absolute = await safePath(relative);
+      return parseDocument(absolute).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+      });
+    },
+  );
   handle('canvases:list', async () => {
     const files = await captureProject(requireWorkspace());
     return {
@@ -3286,7 +3327,10 @@ const registerIpc = () => {
       }
     },
   );
-  handle('workspace:get', () => workspaceState());
+  handle('workspace:get', async () => ({
+    ...(await workspaceState()),
+    saveScope: documentSaveScope(),
+  }));
   handle('workspace:select', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
@@ -3340,22 +3384,105 @@ const registerIpc = () => {
     );
     return reduced.result;
   });
-  handle('documents:save', async (_event, input: SaveDocumentInput) => {
-    const absolute = await safePath(input.relativePath);
-    const parsed = matter(await fs.readFile(absolute, 'utf8'));
+  const writeQueuedDocument = handle(
+    'documents:save',
+    async (_event, input: SaveDocumentInput) => {
+      const absolute = await safePath(input.relativePath);
+      const parsed = matter(await fs.readFile(absolute, 'utf8'));
+      if (
+        input.objectId &&
+        input.objectId !==
+          (typeof parsed.data.id === 'string'
+            ? parsed.data.id
+            : input.relativePath)
+      )
+        throw new Error('문서 식별자가 변경되었습니다. 초안은 보관됩니다.');
+      if (
+        input.expectedBody !== undefined &&
+        (parsed.content.trim() !== input.expectedBody ||
+          parsed.data.title !== input.expectedTitle)
+      )
+        throw new Error('문서가 외부에서 변경되었습니다. 초안은 보관됩니다.');
+      parsed.data.title = input.title.trim() || '제목 없음';
+      const temporary = path.join(
+        path.dirname(absolute),
+        `.document-${randomUUID()}.tmp`,
+      );
+      try {
+        await fs.writeFile(
+          temporary,
+          matter.stringify(`\n${input.body}\n`, parsed.data),
+          { encoding: 'utf8', flush: true },
+        );
+        await fs.rename(temporary, absolute);
+      } finally {
+        await fs.rm(temporary, { force: true });
+      }
+      return parseDocument(absolute);
+    },
+  );
+  documentSaveQueue = new DocumentSaveQueue(
+    new DocumentSaveStore(
+      path.join(app.getPath('userData'), 'document-save-queue'),
+    ),
+    (state) => {
+      if (mainWindow && !mainWindow.webContents.isDestroyed())
+        mainWindow.webContents.send('document-saves:changed', state);
+    },
+  );
+  let saveQueueContext:
+    | { scope: string; root: string | null; client: typeof collaboration }
+    | undefined;
+  const activateDocumentSaves = async (event: Electron.IpcMainInvokeEvent) => {
+    const scope = documentSaveScope(),
+      root = workspaceRoot,
+      client = collaboration;
     if (
-      input.expectedBody !== undefined &&
-      (parsed.content.trim() !== input.expectedBody ||
-        parsed.data.title !== input.expectedTitle)
+      saveQueueContext?.scope === scope &&
+      saveQueueContext.root === root &&
+      saveQueueContext.client === client
     )
-      throw new Error('문서가 외부에서 변경되었습니다. 초안은 보관됩니다.');
-    parsed.data.title = input.title.trim() || '제목 없음';
-    await fs.writeFile(
-      absolute,
-      matter.stringify(`\n${input.body}\n`, parsed.data),
-      'utf8',
-    );
-  });
+      return documentSaveQueue.list(scope);
+    saveQueueContext = { scope, root, client };
+    return documentSaveQueue.activate({
+      scope,
+      isCurrent: () =>
+        workspaceRoot === root &&
+        collaboration === client &&
+        documentSaveScope() === scope,
+      canSend: () =>
+        !client ||
+        (client.state.connected && !client.offline && !client.outgoing),
+      read: (relative) =>
+        readQueuedDocument(event, relative) as Promise<CanvasDocument | null>,
+      write: (input) =>
+        writeQueuedDocument(event, {
+          ...input,
+          queueScope: scope,
+        }) as Promise<CanvasDocument>,
+    });
+  };
+  handle('document-saves:list', (event) => activateDocumentSaves(event));
+  handle(
+    'document-saves:enqueue',
+    async (event, request: DocumentSaveRequest) => {
+      if (request.scope !== documentSaveScope())
+        throw new Error('프로젝트가 변경되었습니다.');
+      await activateDocumentSaves(event);
+      return documentSaveQueue.enqueue(request);
+    },
+  );
+  handle('document-saves:flush', (_event, scope: string, key?: string) =>
+    documentSaveQueue.flush(scope, key),
+  );
+  handle(
+    'document-saves:discard',
+    (_event, scope: string, key: string, sequence: number) => {
+      if (scope !== documentSaveScope())
+        throw new Error('프로젝트가 변경되었습니다.');
+      return documentSaveQueue.discard(scope, key, sequence);
+    },
+  );
   handle(
     'documents:set-collapsed',
     async (_event, input: SetDocumentCollapsedInput) => {
@@ -3722,6 +3849,7 @@ const createWindow = async () => {
       ipcMain.removeListener('drafts:flushed', flushed);
       try {
         await draftStore.flush();
+        await documentSaveQueue.checkpoint();
         await sharedCacheQueue;
         draftsFlushed = true;
         closingWindow.close();
@@ -3951,6 +4079,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  documentSaveQueue?.dispose();
   selfHostLifecycle?.dispose();
   stopWebViewerSync();
   appUpdates?.dispose();

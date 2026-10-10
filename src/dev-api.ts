@@ -16,6 +16,11 @@ import type {
 } from './shared';
 import { normalizePreviewWindow } from './preview-window';
 import { EditJournal } from './edit-journal';
+import {
+  DocumentSaveQueue,
+  type DocumentSaveRecord,
+  type DocumentSaveState,
+} from './document-save-queue';
 import { resolveDocumentOutputs } from './document-output';
 import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
@@ -344,6 +349,35 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     home = next;
   };
   const drafts = new Map<string, import('./editor-drafts').EditorDraft>();
+  const saveRecords = new Map<string, DocumentSaveRecord>();
+  const saveListeners = new Set<(state: DocumentSaveState) => void>();
+  let publicApi: GameCanvasApi;
+  const saveScope = 'local:dev-workspace';
+  const saveQueue = new DocumentSaveQueue(
+    {
+      load: async () => [],
+      put: async (record) => {
+        saveRecords.set(record.request.key, structuredClone(record));
+      },
+      remove: async (_scope, key) => {
+        saveRecords.delete(key);
+      },
+      flush: async () => {},
+    },
+    (state) => saveListeners.forEach((listener) => listener(state)),
+  );
+  let activated = false;
+  const activateSaves = async () => {
+    if (activated) return saveQueue.list(saveScope);
+    activated = true;
+    return saveQueue.activate({
+      scope: saveScope,
+      isCurrent: () => true,
+      canSend: () => !collab.active || collab.connected,
+      read: (relative) => publicApi.getDocument(relative),
+      write: (input) => publicApi.saveDocument(input),
+    });
+  };
   const api: GameCanvasApi = {
     getCanvasChanges: async () => null,
     getDocument: async (relative) =>
@@ -356,6 +390,20 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       else drafts.delete(key);
     },
     onDraftFlushRequested: () => () => {},
+    enqueueDocumentSave: async (request) => {
+      await activateSaves();
+      return saveQueue.enqueue(request);
+    },
+    getDocumentSaveStates: activateSaves,
+    flushDocumentSaves: (scope, key) => saveQueue.flush(scope, key),
+    discardDocumentSave: (scope, key, sequence) =>
+      saveQueue.discard(scope, key, sequence),
+    onDocumentSaveChanged: (listener) => {
+      saveListeners.add(listener);
+      return () => {
+        saveListeners.delete(listener);
+      };
+    },
     getWebViewer: async () => ({
       configured: false,
       url: 'https://game-jam-web-viewer.vercel.app',
@@ -705,6 +753,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
     },
     getWorkspace: async () => ({
+      saveScope,
       root: '/demo/game-canvas',
       name: demoProjectName,
     }),
@@ -842,6 +891,11 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           : document,
       );
       notify();
+      const document = documents.find(
+        (document) => document.relativePath === relativePath,
+      );
+      if (!document) throw new Error('문서를 찾을 수 없습니다.');
+      return structuredClone(document);
     },
     setDocumentCollapsed: async ({ relativePath, collapsed }) => {
       documents = documents.map((document) =>
@@ -1351,7 +1405,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     'deleteDocuments',
   ]);
   const noHistory = new Set(['restoreHistory', 'selectWorkspace']);
-  return new Proxy(api, {
+  publicApi = new Proxy(api, {
     get(target, property: keyof GameCanvasApi) {
       const method = target[property];
       if (typeof method !== 'function') return method;
@@ -1425,4 +1479,5 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       };
     },
   });
+  return publicApi;
 }

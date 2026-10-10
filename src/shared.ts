@@ -94,6 +94,7 @@ export type CanvasSection = {
 export type WorkspaceState = {
   root: string | null;
   name: string | null;
+  saveScope?: string;
 };
 
 export type LayoutUpdate = {
@@ -110,6 +111,8 @@ export type LayoutUpdate = {
 };
 
 export type SaveDocumentInput = {
+  /** Internal queue guard, checked again inside the main-process mutation queue. */
+  queueScope?: string;
   structureRevision?: number;
   objectId?: string;
   contentRevision?: number;
@@ -327,6 +330,26 @@ export type GameCanvasApi = {
     sequence: number,
   ) => Promise<void>;
   onDraftFlushRequested: (listener: () => Promise<void>) => () => void;
+  enqueueDocumentSave: (
+    request: import('./document-save-queue').DocumentSaveRequest,
+  ) => Promise<import('./document-save-queue').DocumentSaveState>;
+  getDocumentSaveStates: () => Promise<
+    import('./document-save-queue').DocumentSaveState[]
+  >;
+  flushDocumentSaves: (
+    scope: string,
+    key?: string,
+  ) => Promise<import('./document-save-queue').DocumentSaveState[]>;
+  discardDocumentSave: (
+    scope: string,
+    key: string,
+    sequence: number,
+  ) => Promise<void>;
+  onDocumentSaveChanged: (
+    listener: (
+      state: import('./document-save-queue').DocumentSaveState,
+    ) => void,
+  ) => () => void;
   getCanvasSheets: () => Promise<CanvasSheets>;
   changeCanvasSheets: (input: CanvasSheetCommand) => Promise<void>;
   getWebViewer: () => Promise<{
@@ -454,7 +477,7 @@ export type GameCanvasApi = {
     title: string,
     revision?: number,
   ) => Promise<void>;
-  saveDocument: (input: SaveDocumentInput) => Promise<void>;
+  saveDocument: (input: SaveDocumentInput) => Promise<CanvasDocument>;
   setDocumentCollapsed: (input: SetDocumentCollapsedInput) => Promise<void>;
   deleteDocument: (input: DeleteDocumentInput) => Promise<void>;
   deleteDocuments: (documents: DeleteDocumentInput[]) => Promise<void>;

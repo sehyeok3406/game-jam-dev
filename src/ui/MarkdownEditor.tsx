@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { previewState } from './debug/uiDebugPreviewState';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
@@ -35,6 +35,7 @@ type Props = {
   onTitle: (title: string) => void;
   status: string;
   onFinish: () => void;
+  onSave: () => void;
   onCompositionChange?: (value: boolean) => void;
   initialFocus?: { title: boolean; point?: { x: number; y: number } };
 };
@@ -47,6 +48,7 @@ export function MarkdownEditor({
   onTitle,
   status,
   onFinish,
+  onSave,
   onCompositionChange,
   initialFocus,
 }: Props) {
@@ -84,20 +86,29 @@ export function MarkdownEditor({
   slashRef.current = slash;
   const keyHandler = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const sourceHistory = useRef(new SourceHistory());
-  const editor = useEditor({
-    extensions: markdownExtensions(),
-    content: value,
-    contentType: 'markdown',
-    editable: !locked,
-    editorProps: {
+  const extensions = useMemo(() => markdownExtensions(), []);
+  const editorProps = useMemo(
+    () => ({
       attributes: {
         class: 'markdown-body',
         role: 'textbox',
         'aria-label': '문서 내용',
         'aria-multiline': 'true',
       },
-      handleKeyDown: (_view, event) => keyHandler.current(event),
-    },
+      handleKeyDown: (
+        _view: import('@tiptap/pm/view').EditorView,
+        event: KeyboardEvent,
+      ) => keyHandler.current(event),
+    }),
+    [],
+  );
+  const editor = useEditor({
+    extensions,
+    shouldRerenderOnTransaction: false,
+    content: value,
+    contentType: 'markdown',
+    editable: !locked,
+    editorProps,
     onUpdate: ({ editor }) => {
       if (callbacks.current.locked) return;
       const next = editor.getMarkdown();
@@ -866,7 +877,8 @@ export function MarkdownEditor({
               ) {
                 event.preventDefault();
                 event.stopPropagation();
-                onFinish();
+                if (event.key === 'Enter') onFinish();
+                else onSave();
               }
             }}
           >
@@ -891,6 +903,14 @@ export function MarkdownEditor({
                 className="editor-focus-title"
                 aria-label="집중 편집 문서 제목"
                 value={title}
+                onCompositionStart={() => {
+                  composing.current = true;
+                  onCompositionChange?.(true);
+                }}
+                onCompositionEnd={() => {
+                  composing.current = false;
+                  onCompositionChange?.(false);
+                }}
                 readOnly={locked}
                 onChange={(e) => onTitle(e.target.value)}
               />

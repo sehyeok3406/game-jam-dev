@@ -201,6 +201,86 @@ async function run() {
       timings.push(time);
     }
     timings.sort((a, b) => a - b);
+    // Saving with Ctrl+S must leave the active editor in place.
+    win.webContents.focus();
+    await js(
+      `window.ctrlSaveEditor=${titleElement};window.ctrlSaveEditor.focus();window.ctrlSaveEditor.dispatchEvent(new KeyboardEvent('keydown',{key:'s',ctrlKey:true,bubbles:true}))`,
+    );
+    await wait('window.qa.starts===window.qa.acknowledgements');
+    assert.equal(
+      await js(
+        `document.querySelector('[aria-label="문서 제목"]')===window.ctrlSaveEditor && document.activeElement===window.ctrlSaveEditor`,
+      ),
+      true,
+    );
+    await js(
+      `${titleElement}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
+    );
+    await wait(`!${titleElement}`);
+    await js(
+      `window.qa.delay=0;window.gameCanvas.saveDocument({relativePath:${JSON.stringify(doc.relativePath)},title:'이미지 유지 검사',body:${JSON.stringify('- [ ] 유지할 항목\n\n![테스트](assets/images/save-test.png)')}})`,
+    );
+    const card = `document.querySelector(${JSON.stringify(nodeSelector)})`;
+    await wait(
+      `!!${card}.querySelector('img.project-image') && !!${card}.querySelector('input[type="checkbox"]')`,
+    );
+    await js(
+      `window.stableImage=${card}.querySelector('img.project-image');window.stableCheckbox=${card}.querySelector('input[type="checkbox"]')`,
+    );
+    const assetReads = await js('window.qa.assetReads');
+    for (const color of ['green', 'purple', 'blue']) {
+      await js(
+        `window.gameCanvas.setDocumentColor({relativePath:${JSON.stringify(doc.relativePath)},color:${JSON.stringify(color)}})`,
+      );
+      await sleep(450);
+      assert.equal(
+        await js(
+          `${card}.querySelector('img.project-image')===window.stableImage && ${card}.querySelector('input[type="checkbox"]')===window.stableCheckbox && window.stableImage.isConnected`,
+        ),
+        true,
+        'metadata refresh must preserve loaded image and checklist DOM',
+      );
+    }
+    assert.equal(
+      await js('window.qa.assetReads'),
+      assetReads,
+      'unchanged assets should not be loaded again',
+    );
+    await js(`${card}.querySelector('.document-card__content').click()`);
+    await wait(`!!${titleElement}`);
+    await type('충돌 초안');
+    await js(
+      `window.gameCanvas.saveDocument({relativePath:${JSON.stringify(doc.relativePath)},title:'외부 변경',body:'server text'})`,
+    );
+    const latestButton = `[...document.querySelectorAll('button')].find(e=>e.textContent==='최신 내용 불러오기')`;
+    const restoreButton = `[...document.querySelectorAll('button')].find(e=>e.textContent==='보관된 초안 불러오기')`;
+    await wait(`!!(${latestButton})`);
+    await js(`(${latestButton}).click()`);
+    await wait(`${titleElement}.value==='외부 변경'`);
+    await js(
+      `${titleElement}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
+    );
+    await wait(`!${titleElement}`);
+    await js(`${card}.querySelector('.document-card__content').click()`);
+    await wait(`!!${titleElement} && !!(${restoreButton})`);
+    await js(`(${restoreButton}).click()`);
+    await wait(`${titleElement}.value==='충돌 초안'`);
+    await js(
+      `${titleElement}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
+    );
+    await wait(`!${titleElement}`);
+    assert.equal(
+      await js(
+        `window.gameCanvas.getDocument(${JSON.stringify(doc.relativePath)}).then(doc=>doc.title)`,
+      ),
+      '충돌 초안',
+    );
+    console.log(
+      'PASS: conflict draft survives latest-content adoption and closing/reopening the editor',
+    );
+    console.log(
+      'PASS: Ctrl+S keeps editing; metadata refresh preserves loaded image and checklist DOM',
+    );
     await fs.mkdir('out/sync-ui', { recursive: true });
     await fs.writeFile(
       'out/sync-ui/measurements.json',

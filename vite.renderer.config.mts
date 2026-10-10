@@ -8,6 +8,7 @@ const selfHostEnabled =
 // https://vitejs.dev/config
 export default defineConfig({
   resolve: {
+    dedupe: ['react', 'react-dom', '@xyflow/react'],
     alias: selfHostEnabled
       ? {}
       : {
@@ -16,6 +17,9 @@ export default defineConfig({
           ),
         },
   },
+  // Release source snapshots under out/ may contain their own node_modules.
+  // Scan only this workspace's entry points to avoid mixing React installations.
+  optimizeDeps: { entries: ['index.html', 'tests/*.fixture.html'] },
   define: {
     __SELF_HOST_ENABLED__: JSON.stringify(selfHostEnabled),
   },

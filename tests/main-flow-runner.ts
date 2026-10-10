@@ -456,6 +456,47 @@ try {
     ),
   );
   const disposable = await call('documents:create-idea', { x: 200, y: 90 });
+  const queueScope = (await call('workspace:get')).saveScope;
+  assert.ok(queueScope.startsWith('local:'));
+  const queueBase = await call('documents:get', disposable.relativePath);
+  const queued = {
+    scope: queueScope,
+    key: `queue-test:${disposable.id}`,
+    documentId: disposable.id,
+    relativePath: disposable.relativePath,
+    title: queueBase.title,
+    body: '큐에서 저장한 본문',
+    sequence: 1,
+    base: { title: queueBase.title, body: queueBase.body },
+  };
+  await call('document-saves:enqueue', queued);
+  await call('document-saves:enqueue', {
+    ...queued,
+    body: '큐의 최신 본문',
+    sequence: 2,
+  });
+  const queueAcks = await call('document-saves:flush', queueScope, queued.key);
+  assert.equal(queueAcks[0].savedSequence, 2);
+  assert.equal(
+    (await call('documents:get', disposable.relativePath)).body,
+    '큐의 최신 본문',
+  );
+  await assert.rejects(
+    call('document-saves:enqueue', { ...queued, scope: 'local:wrong-project' }),
+    /프로젝트/,
+  );
+  await assert.rejects(
+    call('documents:save', {
+      relativePath: disposable.relativePath,
+      title: 'wrong',
+      body: 'wrong',
+      queueScope: 'local:wrong-project',
+    }),
+    /프로젝트/,
+  );
+  console.log(
+    'PASS: main IPC save queue persists the latest local document and rejects writes to a changed project',
+  );
   const section = await call('sections:create', {
     title: '테스트',
     members: [{ id: disposable.id, path: disposable.relativePath }],

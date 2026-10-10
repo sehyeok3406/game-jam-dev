@@ -19,6 +19,21 @@ const api: GameCanvasApi = {
   getEditorDraft: (key) => ipcRenderer.invoke('drafts:get', key),
   setEditorDraft: (key, draft, sequence) =>
     ipcRenderer.invoke('drafts:set', key, draft, sequence),
+  enqueueDocumentSave: (request) =>
+    ipcRenderer.invoke('document-saves:enqueue', request),
+  getDocumentSaveStates: () => ipcRenderer.invoke('document-saves:list'),
+  flushDocumentSaves: (scope, key) =>
+    ipcRenderer.invoke('document-saves:flush', scope, key),
+  discardDocumentSave: (scope, key, sequence) =>
+    ipcRenderer.invoke('document-saves:discard', scope, key, sequence),
+  onDocumentSaveChanged: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      state: Parameters<typeof listener>[0],
+    ) => listener(state);
+    ipcRenderer.on('document-saves:changed', wrapped);
+    return () => ipcRenderer.removeListener('document-saves:changed', wrapped);
+  },
   onDraftFlushRequested: (listener) => {
     const wrapped = async () => {
       try {

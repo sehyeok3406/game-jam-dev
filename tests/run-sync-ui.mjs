@@ -3,10 +3,12 @@ import { spawn } from 'node:child_process';
 import electron from 'electron';
 const server = await createServer({
   configFile: 'vite.renderer.config.mts',
+  cacheDir: 'out/sync-ui/vite-cache',
   server: {
     host: '127.0.0.1',
     port: 0,
-    watch: { ignored: ['**/out/**/profile/**'] },
+    hmr: false,
+    watch: null,
   },
 });
 await server.listen();

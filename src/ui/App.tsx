@@ -152,7 +152,8 @@ import {
   type CanvasCommand,
 } from './CanvasOverlays';
 import { canvasShortcut, snapPosition } from '../canvas-ux';
-import { drainEditorDraft, editorDraftMatches } from '../editor-ux';
+import { editorDraftMatches } from '../editor-ux';
+import type { DocumentSaveState } from '../document-save-queue';
 import { resolveAssetLink } from '../asset-links';
 import { authorLabel } from '../author-label';
 import {
@@ -292,11 +293,15 @@ type DocumentNodeData = {
   kind: 'document';
   locked: boolean;
   onBlocked: () => void;
-  registerEditor: (id: string, flush: (() => Promise<void>) | null) => void;
+  registerEditor: (
+    id: string,
+    flush: ((finish?: boolean) => Promise<void>) | null,
+  ) => void;
   document: CanvasDocument;
   collaborative: boolean;
   layoutLocked: boolean;
   draftKey: string;
+  saveScope: string;
   editingBy?: string;
   beginEdit: (document: CanvasDocument) => Promise<void>;
   endEdit: (document: CanvasDocument) => Promise<void>;
@@ -323,6 +328,13 @@ type DocumentNodeData = {
     state: { dirty: boolean; saving: boolean; failed: boolean },
   ) => void;
 };
+function pendingDocument(document: CanvasDocument, state?: DocumentSaveState) {
+  return state &&
+    state.savedSequence < state.sequence &&
+    ['queued', 'saving', 'offline'].includes(state.phase)
+    ? { ...document, title: state.latest.title, body: state.latest.body }
+    : document;
+}
 
 type PreviewNodeData = {
   kind: 'preview';
@@ -404,16 +416,19 @@ function ProjectImage({
   title: string;
   cacheKey: string;
 }) {
-  const [content, setContent] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<{
+    path: string;
+    content: string;
+  } | null>(null);
+  const content = loaded?.path === path ? loaded.content : null;
   const [error, setError] = useState('');
   useEffect(() => {
     let disposed = false;
-    setContent(null);
     setError('');
     window.gameCanvas
       .readAsset(path)
       .then((data) => {
-        if (!disposed) setContent(data);
+        if (!disposed) setLoaded({ path, content: data });
       })
       .catch(() => {
         if (!disposed)
@@ -438,7 +453,7 @@ function ProjectImage({
       alt={title}
       draggable={false}
       onError={() => {
-        setContent(null);
+        setLoaded(null);
         setError('이미지를 표시할 수 없습니다.');
       }}
     />
@@ -450,9 +465,12 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   const { document } = data;
   const cardRef = useRef<HTMLElement>(null);
   const savingRef = useRef<Promise<void> | null>(null);
+  const finishingRef = useRef(false);
+  const acknowledgedSequence = useRef(0);
   const composingRef = useRef(false);
   const compositionWaiters = useRef<(() => void)[]>([]);
   const draftSequence = useRef(Date.now() * 1000);
+  const editSession = useRef(crypto.randomUUID());
   const taskBusy = useRef(false);
   const [taskError, setTaskError] = useState('');
   const [editing, setEditing] = useState(!!previewState('editor'));
@@ -460,6 +478,8 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   const [body, setBody] = useState(document.body);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [queueState, setQueueState] = useState<DocumentSaveState | null>(null);
+  const lastSaveState = useRef<DocumentSaveState | null>(null);
   const [startingEdit, setStartingEdit] = useState(false);
   const [editFocus, setEditFocus] = useState<{
     title: boolean;
@@ -472,6 +492,17 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   const latestRef = useRef({ title, body });
   latestRef.current = { title, body };
   const savedRef = useRef({ title: document.title, body: document.body });
+  const archivedDraft = useRef<{ title: string; body: string } | null>(null);
+  const updateTitle = (next: string) => {
+    draftSequence.current++;
+    latestRef.current = { ...latestRef.current, title: next };
+    setTitle(next);
+  };
+  const updateBody = (next: string) => {
+    draftSequence.current++;
+    latestRef.current = { ...latestRef.current, body: next };
+    setBody(next);
+  };
   const [cachedDraft, setCachedDraft] = useState<{
     title: string;
     body: string;
@@ -485,12 +516,17 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
         const old = raw ? JSON.parse(raw) : null;
         const draft =
           (await window.gameCanvas.getEditorDraft(data.draftKey)) ?? old;
-        if (active)
+        const archive = await window.gameCanvas.getEditorDraft(
+          `${data.draftKey}:conflict`,
+        );
+        if (active) {
+          archivedDraft.current = archive;
           setCachedDraft(
             typeof draft?.title === 'string' && typeof draft?.body === 'string'
               ? draft
-              : null,
+              : archive,
           );
+        }
       } catch {
         if (active) setCachedDraft(null);
       }
@@ -503,14 +539,92 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
 
   const backupDraft = useCallback(async () => {
     const current = latestRef.current;
+    const sequence = draftSequence.current;
     if (!editorDraftMatches(current, savedRef.current)) {
       await window.gameCanvas.setEditorDraft(
         dataRef.current.draftKey,
-        { ...current, sequence: draftSequence.current },
-        draftSequence.current,
+        { ...current, sequence },
+        sequence,
       );
     }
   }, []);
+  const acceptSave = useCallback((state: DocumentSaveState) => {
+    const current = dataRef.current;
+    if (
+      state.scope !== current.saveScope ||
+      state.key !== current.draftKey ||
+      state.documentId !== current.document.id
+    )
+      return;
+    const previous = lastSaveState.current;
+    if (
+      previous &&
+      (previous.sequence > state.sequence ||
+        (previous.sequence === state.sequence &&
+          previous.savedSequence > state.savedSequence))
+    )
+      return;
+    lastSaveState.current = state;
+    if (state.phase === 'discarded') {
+      lastSaveState.current = null;
+      setQueueState(null);
+      setSaving(false);
+      setSaveFailed(false);
+      return;
+    }
+    setQueueState((previous) =>
+      previous &&
+      (previous.sequence > state.sequence ||
+        (previous.sequence === state.sequence &&
+          previous.savedSequence > state.savedSequence))
+        ? previous
+        : state,
+    );
+    setSaving(['queued', 'saving'].includes(state.phase));
+    setSaveFailed(['failed', 'conflict'].includes(state.phase));
+    if (
+      state.savedSequence > 0 &&
+      state.savedSequence >= acknowledgedSequence.current
+    ) {
+      acknowledgedSequence.current = state.savedSequence;
+      savedRef.current = state.saved;
+    }
+    if (
+      state.phase === 'saved' &&
+      state.savedSequence >= draftSequence.current &&
+      editorDraftMatches(latestRef.current, state.saved)
+    ) {
+      setCachedDraft(archivedDraft.current);
+      void window.gameCanvas
+        .setEditorDraft(current.draftKey, null, state.savedSequence)
+        .catch(() => undefined);
+    }
+  }, []);
+  useEffect(() => {
+    const stop = window.gameCanvas.onDocumentSaveChanged(acceptSave);
+    let active = true;
+    void window.gameCanvas
+      .getDocumentSaveStates()
+      .then((states) => {
+        if (active)
+          for (const state of states) {
+            if (
+              state.scope === dataRef.current.saveScope &&
+              state.key === dataRef.current.draftKey
+            )
+              draftSequence.current = Math.max(
+                draftSequence.current,
+                state.sequence,
+              );
+            acceptSave(state);
+          }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [acceptSave, data.draftKey, data.saveScope]);
   useEffect(() => {
     draftFlushers.set(data.draftKey, backupDraft);
     return () => {
@@ -527,80 +641,66 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   }, [document.body, document.title, editing]);
 
   const persist = useCallback(
-    async (finish: boolean) => {
-      while (composingRef.current)
-        await new Promise<void>((resolve) =>
-          compositionWaiters.current.push(resolve),
-        );
-      await backupDraft();
-      // Serialize the entire save, not just IPC. Finishing drains edits typed
-      // during a pending write before releasing the collaboration lock.
-      while (savingRef.current) await savingRef.current.catch(() => undefined);
+    async (finish: boolean, retry = false) => {
+      if (finishingRef.current) {
+        await savingRef.current;
+        return;
+      }
+      if (finish) finishingRef.current = true;
       const operation = (async () => {
-        setSaving(true);
         setSaveFailed(false);
         try {
-          await drainEditorDraft(
-            () => latestRef.current,
-            () => savedRef.current,
-            async (current) => {
-              const latestData = dataRef.current;
-              // React may not have committed the last refresh yet. Read the
-              // adapter's acknowledged revision, and never rebase silently onto
-              // someone else's text (including externally edited local files).
-              const stored = await window.gameCanvas.getDocument(
-                latestData.document.relativePath,
+          let submitted: number;
+          let released = false;
+          do {
+            while (composingRef.current)
+              await new Promise<void>((resolve) =>
+                compositionWaiters.current.push(resolve),
               );
-              if (!stored || stored.id !== latestData.document.id)
-                throw new Error(
-                  '문서를 찾을 수 없습니다. 초안을 보관한 뒤 프로젝트를 확인해주세요.',
-                );
-              if (editorDraftMatches(stored, current)) {
-                savedRef.current = current;
-                return;
-              }
-              if (!editorDraftMatches(stored, savedRef.current))
-                throw new Error(
-                  '문서가 다른 곳에서 변경되었습니다. 초안은 유지되며, 최신 내용을 확인한 뒤 다시 편집해주세요.',
-                );
-              const sent = { ...current };
-              await latestData.onSave(stored, sent.title, sent.body);
-              savedRef.current = current;
-            },
-            finish,
-            async () => {
-              while (composingRef.current)
-                await new Promise<void>((resolve) =>
-                  compositionWaiters.current.push(resolve),
-                );
-              await backupDraft();
-            },
-          );
-          if (
-            latestRef.current.title === savedRef.current.title &&
-            latestRef.current.body === savedRef.current.body
-          ) {
-            try {
-              await window.gameCanvas.setEditorDraft(
-                dataRef.current.draftKey,
-                null,
-                draftSequence.current,
+            await backupDraft();
+            const current = dataRef.current;
+            submitted = draftSequence.current;
+            const state = await window.gameCanvas.enqueueDocumentSave({
+              scope: current.saveScope,
+              key: current.draftKey,
+              documentId: current.document.id,
+              relativePath: current.document.relativePath,
+              sequence: submitted,
+              sessionId: editSession.current,
+              ...latestRef.current,
+              base: { ...savedRef.current },
+            });
+            acceptSave(state);
+            if (finish || retry) {
+              const states = await window.gameCanvas.flushDocumentSaves(
+                current.saveScope,
+                current.draftKey,
               );
-              localStorage.removeItem(dataRef.current.draftKey);
-            } catch {
-              /* Optional draft cache. */
+              for (const ack of states) acceptSave(ack);
             }
-            setCachedDraft(null);
-          }
+            if (
+              finish &&
+              !composingRef.current &&
+              submitted === draftSequence.current
+            ) {
+              await dataRef.current.endEdit(dataRef.current.document);
+              if (composingRef.current || submitted !== draftSequence.current)
+                await dataRef.current.beginEdit(dataRef.current.document);
+              else released = true;
+            }
+          } while (finish && !released);
           if (finish) {
-            await dataRef.current.endEdit(dataRef.current.document);
             setEditing(false);
           }
         } catch (error) {
+          await backupDraft().catch(() => undefined);
+          setTaskError(
+            error instanceof Error
+              ? error.message
+              : '문서를 저장하지 못했습니다.',
+          );
           setSaveFailed(true);
           throw error;
-        } finally {
-          setSaving(false);
         }
       })();
       savingRef.current = operation;
@@ -608,14 +708,52 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
         await operation;
       } finally {
         if (savingRef.current === operation) savingRef.current = null;
+        if (finish) finishingRef.current = false;
       }
     },
-    [backupDraft],
+    [backupDraft, acceptSave],
   );
-  const save = useCallback(() => persist(true), [persist]);
+  const save = useCallback(() => persist(false, true), [persist]);
+  const finishEdit = useCallback(() => persist(true), [persist]);
+  const flushRegistered = useCallback(
+    (finish = true) => persist(finish, !finish),
+    [persist],
+  );
+  const loadLatest = async () => {
+    if (!queueState || !['conflict', 'failed'].includes(queueState.phase))
+      return;
+    await backupDraft();
+    const current = await window.gameCanvas.getDocument(document.relativePath);
+    if (!current || current.id !== document.id)
+      throw new Error(
+        '문서가 이동되거나 삭제되었습니다. 초안을 복사해 보관해주세요.',
+      );
+    const archive = { ...latestRef.current, sequence: draftSequence.current };
+    await window.gameCanvas.setEditorDraft(
+      `${data.draftKey}:conflict`,
+      archive,
+      draftSequence.current,
+    );
+    archivedDraft.current = archive;
+    await window.gameCanvas.discardDocumentSave(
+      data.saveScope,
+      data.draftKey,
+      queueState.sequence,
+    );
+    setCachedDraft({ ...latestRef.current });
+    savedRef.current = { title: current.title, body: current.body };
+    acknowledgedSequence.current = 0;
+    lastSaveState.current = null;
+    draftSequence.current++;
+    latestRef.current = { title: current.title, body: current.body };
+    setTitle(current.title);
+    setBody(current.body);
+    setQueueState(null);
+    setSaveFailed(false);
+    setSaving(false);
+  };
   const dirty =
-    editing &&
-    (title !== savedRef.current.title || body !== savedRef.current.body);
+    editing && !editorDraftMatches({ title, body }, savedRef.current);
   useEffect(() => {
     data.reportEdit(document.id, { dirty, saving, failed: saveFailed });
   }, [data.reportEdit, document.id, dirty, saving, saveFailed]);
@@ -662,7 +800,6 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
     }
   };
   useEffect(() => {
-    draftSequence.current++;
     if (!editing || editorDraftMatches({ title, body }, savedRef.current))
       return;
     const timer = setTimeout(
@@ -680,7 +817,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
     )
       return;
     const timer = setTimeout(() => {
-      if (!composingRef.current && !savingRef.current)
+      if (!composingRef.current && !finishingRef.current)
         void persist(false).catch(() => undefined);
     }, 1000);
     return () => clearTimeout(timer);
@@ -690,7 +827,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
     const timer = setInterval(() => {
       if (
         !composingRef.current &&
-        !savingRef.current &&
+        !finishingRef.current &&
         !editorDraftMatches(latestRef.current, savedRef.current)
       )
         void persist(false).catch(() => undefined);
@@ -714,6 +851,11 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
     setStartingEdit(true);
     try {
       await data.beginEdit(document);
+      editSession.current = crypto.randomUUID();
+      draftSequence.current++;
+      if (!lastSaveState.current || lastSaveState.current.phase === 'saved')
+        savedRef.current = { title: document.title, body: document.body };
+      setTaskError('');
       setEditFocus(focus);
       setEditing(true);
     } catch {
@@ -728,9 +870,9 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   }, [editing, editFocus.title]);
 
   useEffect(() => {
-    data.registerEditor(document.id, editing ? save : null);
+    data.registerEditor(document.id, editing ? flushRegistered : null);
     return () => data.registerEditor(document.id, null);
-  }, [data.registerEditor, document.id, editing, save]);
+  }, [data.registerEditor, document.id, editing, flushRegistered]);
 
   useEffect(() => {
     if (!editing) return;
@@ -751,23 +893,29 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
       )
         return;
       if (target instanceof Node && !cardRef.current?.contains(target)) {
-        void save().catch(() => undefined);
+        void finishEdit().catch(() => undefined);
       }
     };
     window.addEventListener('pointerdown', finishEditingOutside, true);
     return () =>
       window.removeEventListener('pointerdown', finishEditingOutside, true);
-  }, [editing, save, editorOwner]);
+  }, [editing, finishEdit, editorOwner]);
 
   const editStatus = data.locked
     ? '편집 잠김 · 초안은 유지됩니다'
-    : saveFailed
-      ? '저장 실패 · 초안 보관됨'
-      : saving
-        ? '저장 중…'
-        : dirty
-          ? '자동 저장 대기…'
-          : '저장됨';
+    : queueState?.phase === 'conflict'
+      ? '충돌 · 초안은 이 PC에 보관됨'
+      : queueState?.phase === 'offline'
+        ? '이 PC에 보관됨 · 연결 후 전송'
+        : saveFailed
+          ? '저장 실패 · 초안 보관됨'
+          : saving
+            ? '저장 중…'
+            : dirty
+              ? '자동 저장 대기…'
+              : data.collaborative
+                ? '서버에 저장됨'
+                : '저장됨';
 
   return (
     <>
@@ -850,7 +998,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                   if (event.key === 'Escape') {
                     event.stopPropagation();
                     event.preventDefault();
-                    void save().catch(() => undefined);
+                    void finishEdit().catch(() => undefined);
                   }
                   if (
                     (event.ctrlKey || event.metaKey) &&
@@ -858,7 +1006,9 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                   ) {
                     event.preventDefault();
                     event.stopPropagation();
-                    void save().catch(() => undefined);
+                    void (event.key === 'Enter' ? finishEdit() : save()).catch(
+                      () => undefined,
+                    );
                   }
                 }}
               >
@@ -869,13 +1019,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                   aria-label="문서 제목"
                   value={title}
                   readOnly={data.locked}
-                  onChange={(event) => {
-                    latestRef.current = {
-                      ...latestRef.current,
-                      title: event.target.value,
-                    };
-                    setTitle(event.target.value);
-                  }}
+                  onChange={(event) => updateTitle(event.target.value)}
                 />
                 <MarkdownEditor
                   value={body}
@@ -883,50 +1027,101 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                   locked={data.locked}
                   owner={editorOwner}
                   title={title}
-                  onTitle={(next) => {
-                    latestRef.current = { ...latestRef.current, title: next };
-                    setTitle(next);
-                  }}
+                  onTitle={updateTitle}
                   status={editStatus}
-                  onFinish={() => void save().catch(() => undefined)}
+                  onSave={() => void save().catch(() => undefined)}
+                  onFinish={() => void finishEdit().catch(() => undefined)}
                   initialFocus={editFocus}
-                  onChange={(next) => {
-                    latestRef.current = { ...latestRef.current, body: next };
-                    setBody(next);
-                  }}
+                  onChange={updateBody}
                 />
                 <div className="document-editor__actions">
                   <span
                     role="status"
-                    title="Ctrl+S · Ctrl+Enter로 저장하고 편집 종료"
+                    title="Ctrl+S로 저장 · Ctrl+Enter로 편집 완료"
                   >
                     {editStatus}
                   </span>
+                  {taskError && <span role="alert">{taskError}</span>}
                   {cachedDraft && (
                     <button
                       type="button"
                       onClick={() => {
+                        draftSequence.current++;
                         setTitle(cachedDraft.title);
                         setBody(cachedDraft.body);
                         latestRef.current = {
                           title: cachedDraft.title,
                           body: cachedDraft.body,
                         };
+                        archivedDraft.current = null;
+                        const sequence = draftSequence.current;
+                        void window.gameCanvas
+                          .setEditorDraft(
+                            data.draftKey,
+                            { ...cachedDraft, sequence },
+                            sequence,
+                          )
+                          .then(() =>
+                            window.gameCanvas.setEditorDraft(
+                              `${data.draftKey}:conflict`,
+                              null,
+                              sequence,
+                            ),
+                          )
+                          .catch(() => setSaveFailed(true));
                         setCachedDraft(null);
                       }}
                     >
                       보관된 초안 불러오기
                     </button>
                   )}
+                  {queueState &&
+                    ['conflict', 'failed'].includes(queueState.phase) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void window.gameCanvas.copyText(
+                              `${title}\n\n${body}`,
+                            )
+                          }
+                        >
+                          초안 복사
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void loadLatest().catch((error) =>
+                              setTaskError(
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ),
+                            )
+                          }
+                        >
+                          최신 내용 불러오기
+                        </button>
+                      </>
+                    )}
                   <button
                     type="button"
                     className="button-primary"
-                    onClick={() => void save().catch(() => undefined)}
-                    disabled={saving}
+                    onClick={() => void finishEdit().catch(() => undefined)}
+                    disabled={finishingRef.current || data.locked}
                   >
-                    {saving ? '저장 중' : saveFailed ? '다시 저장' : '완료'}
+                    {finishingRef.current
+                      ? '저장 중'
+                      : saveFailed
+                        ? '다시 저장'
+                        : '완료'}
                   </button>
                 </div>
+                {queueState?.error && (
+                  <p className="markdown-editor-warning" role="status">
+                    {queueState.error}
+                  </p>
+                )}
               </div>
             ) : (
               <div
@@ -1654,7 +1849,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     paths: new Set(),
   });
   const projectLoadRef = useRef(0);
-  const editorsRef = useRef(new Map<string, () => Promise<void>>());
+  const editorsRef = useRef(
+    new Map<string, (finish?: boolean) => Promise<void>>(),
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
@@ -1818,6 +2015,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       : 'dark';
   });
   const flowRef = useRef<ReactFlowInstance<CanvasNode> | null>(null);
+  const documentSaveStates = useRef(new Map<string, DocumentSaveState>());
   const reportEdit = useCallback(
     (id: string, state: { dirty: boolean; saving: boolean; failed: boolean }) =>
       setEditStates((current) =>
@@ -2057,6 +2255,71 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     return window.gameCanvas.onCollaborationChanged(setCollaboration);
   }, []);
   useEffect(() => {
+    const scope = workspace.saveScope;
+    if (!scope) return;
+    let active = true;
+    const apply = (state: DocumentSaveState) => {
+      if (!active || state.scope !== scope) return;
+      const key = `${scope}:${state.documentId}`,
+        previous = documentSaveStates.current.get(key);
+      if (
+        previous &&
+        (previous.sequence > state.sequence ||
+          (previous.sequence === state.sequence &&
+            previous.savedSequence > state.savedSequence))
+      )
+        return;
+      if (state.phase === 'discarded') {
+        documentSaveStates.current.delete(key);
+        return;
+      }
+      documentSaveStates.current.set(key, state);
+      if (!state.document) {
+        if (['queued', 'saving', 'offline'].includes(state.phase)) {
+          const overlay = (items: CanvasDocument[]) =>
+            items.map((item) =>
+              item.id === state.documentId
+                ? pendingDocument(item, state)
+                : item,
+            );
+          setDocuments(overlay);
+          setTaskDocuments(overlay);
+        }
+        return;
+      }
+      const confirmed = state.document;
+      const replace = (items: CanvasDocument[]) =>
+        items.map((item) => {
+          if (
+            item.id !== state.documentId ||
+            item.relativePath !== state.relativePath ||
+            (item.revision !== undefined &&
+              confirmed.revision !== undefined &&
+              item.revision > confirmed.revision) ||
+            (item.revision === undefined &&
+              item.modifiedAt > confirmed.modifiedAt)
+          )
+            return item;
+          return JSON.stringify(item) === JSON.stringify(confirmed)
+            ? item
+            : confirmed;
+        });
+      setDocuments(replace);
+      setTaskDocuments(replace);
+    };
+    const stop = window.gameCanvas.onDocumentSaveChanged(apply);
+    void window.gameCanvas
+      .getDocumentSaveStates()
+      .then((states) => {
+        if (active) states.forEach(apply);
+      })
+      .catch(showError);
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [workspace.saveScope]);
+  useEffect(() => {
     const event = collaboration.aiRun;
     const project = collaboration.projectId ?? workspace.root;
     if (!collaboration.connected) return;
@@ -2102,7 +2365,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     await window.gameCanvas.releaseDocumentLock(document.relativePath);
   }, []);
   const registerEditor = useCallback(
-    (id: string, flush: (() => Promise<void>) | null) => {
+    (id: string, flush: ((finish?: boolean) => Promise<void>) | null) => {
       if (flush) editorsRef.current.set(id, flush);
       else editorsRef.current.delete(id);
     },
@@ -2338,7 +2601,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             : window.gameCanvas.getPreviewWindow(result.relativePath),
         ),
       );
-      const canvasDocuments = nextDocuments.filter(isCanvasDocument);
+      const visibleDocuments = nextDocuments.map((document) =>
+        pendingDocument(
+          document,
+          documentSaveStates.current.get(`${state.saveScope}:${document.id}`),
+        ),
+      );
+      const canvasDocuments = visibleDocuments.filter(isCanvasDocument);
       const right = canvasDocuments.length
         ? Math.max(
             ...canvasDocuments.map((document) => document.x + document.width),
@@ -2446,7 +2715,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setTaskDocuments((current) =>
         reconcile(
           current,
-          nextDocuments.filter(
+          visibleDocuments.filter(
             (doc) => doc.type === 'ai-task' || isAiTaskPath(doc.relativePath),
           ),
         ),
@@ -2650,7 +2919,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const saveDocument = useCallback(
     async (document: CanvasDocument, title: string, body: string) => {
       try {
-        await window.gameCanvas.saveDocument({
+        const confirmed = await window.gameCanvas.saveDocument({
           relativePath: document.relativePath,
           revision: document.revision,
           objectId: document.id,
@@ -2661,9 +2930,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           title,
           body,
         });
-        const confirmed = await window.gameCanvas.getDocument(
-          document.relativePath,
-        );
         if (confirmed) {
           setDocuments((current) =>
             current.map((item) =>
@@ -3093,6 +3359,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   : onBlocked,
             collaborative: collaboration.active,
             draftKey: `game-canvas-draft:${collaboration.projectId ?? workspace.root}:${document.id}`,
+            saveScope: workspace.saveScope ?? `local:${workspace.root}`,
             editingBy:
               collaboration.connected && !collaboration.pendingChanges
                 ? collaboration.locks.find(
@@ -3184,6 +3451,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               : node.data.locked;
           const result = {
             ...node,
+            // React Flow temporarily hides nodes without measured dimensions.
+            // Dropping this on a save/heartbeat blurs the still-mounted editor.
+            measured: old?.measured,
             selected: old?.selected ?? false,
             ...(old?.dragging && !geometryLocked
               ? { position: old.position, dragging: true }
@@ -4109,8 +4379,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     }
   }, [loadProject, setNodes]);
 
-  const flushEditors = async () => {
-    await Promise.all([...editorsRef.current.values()].map((flush) => flush()));
+  const flushEditors = async (finish = true) => {
+    await Promise.all(
+      [...editorsRef.current.values()].map((flush) => flush(finish)),
+    );
   };
   const changeEdit = async (direction: 'undo' | 'redo') => {
     if (locked) {
@@ -4442,7 +4714,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         if (action === 'undo') void changeEdit('undo');
         if (action === 'redo') void changeEdit('redo');
         if (action === 'save')
-          void flushEditors()
+          void flushEditors(false)
             .then(() => setNotice('편집 내용을 저장했습니다.'))
             .catch(showError);
         if (action === 'organize') void createTask();
