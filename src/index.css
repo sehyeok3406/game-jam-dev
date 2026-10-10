@@ -3763,7 +3763,8 @@ kbd {
   padding: 0 0 0 12px;
 }
 .game-feature-group button {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 6px 7px;
   justify-content: flex-start;
   text-align: left;
@@ -3771,6 +3772,20 @@ kbd {
   white-space: normal;
   border-color: transparent;
   background: transparent;
+}
+.game-feature-group li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ai-request-dialog .game-feature-group input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--selection);
+  cursor: pointer;
 }
 .game-feature-group button svg {
   flex-shrink: 0;
@@ -3845,6 +3860,72 @@ kbd {
   font-size: 10px;
   white-space: normal;
   text-align: left;
+}
+.game-feature-selection {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+  min-width: 0;
+}
+.game-feature-selection-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.game-feature-selection h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.game-feature-selection h4 span {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.game-feature-selection-heading button {
+  font-size: 11px;
+}
+.game-feature-selection > ul {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  max-height: 240px;
+  overflow: auto;
+}
+.game-feature-selection li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.game-feature-selection li > div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.game-feature-selection strong {
+  font-size: 12px;
+}
+.game-feature-selection small,
+.game-feature-selection-note {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.game-feature-selection li button {
+  flex-shrink: 0;
+  padding: 7px;
+}
+.game-feature-selection > p {
+  margin: 10px 0 0;
+  line-height: 1.7;
 }
 .gamejam-review {
   display: grid;

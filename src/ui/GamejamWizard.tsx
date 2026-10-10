@@ -132,7 +132,7 @@ export function GamejamReview({
       </section>
       <p className="gamejam-preview-notice">
         <Eye size={15} aria-hidden="true" />
-        기능 라이브러리는 미리보기입니다. 살펴본 기능은 이번 작업에 반영되지
+        기능 라이브러리는 미리보기입니다. 선택한 기능은 이번 작업에 반영되지
         않습니다.
       </p>
     </div>

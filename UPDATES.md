@@ -1,4 +1,10 @@
-# 앱 업데이트·GitHub Releases 연결 (v0.13.1)
+# 앱 업데이트·GitHub Releases 연결 (v0.13.2)
+
+## v0.13.2 기능 라이브러리 다중 선택
+
+4단계 기능 라이브러리에서 여러 기능을 선택해 하단 목록으로 확인하고 개별·전체 선택 취소를 할 수 있습니다. 검색·보기 전환·단계 이동 중 선택을 유지하며 실제 HTML 구현에는 아직 반영하지 않습니다. [사용 안내](UI_UX.md)
+
+Windows x64 설치 파일 `Game.Jam-0.13.2.Setup.exe`, 업데이트 패키지 `game_canvas-0.13.2-full.nupkg`, `RELEASES`를 같은 [v0.13.2 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.2)에 제공합니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다. 기존 v0.13.0 협업 서버와 호환됩니다.
 
 ## v0.13.1 단계별 gamejam! 설정 · 게임 기능 미리보기
 

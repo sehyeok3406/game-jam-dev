@@ -185,6 +185,52 @@ async function run() {
         'document.querySelector(".game-feature-detail").textContent.includes("추적 포기 거리")',
       ),
     );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".game-feature-selection li").length',
+      ),
+      1,
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.game-feature-group button')).find(b=>b.textContent==='플레이어 추적').click()`,
+    );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".game-feature-selection li").length',
+      ),
+      1,
+      'reselecting a feature must not duplicate it',
+    );
+    await setValue('game-feature-search', '더블 점프');
+    await js(`document.querySelector('[aria-label="더블 점프 선택"]').click()`);
+    await wait(
+      'document.querySelectorAll(".game-feature-selection li").length===2',
+    );
+    assert(
+      await js(
+        'document.querySelector(".game-feature-selection").textContent.includes("플레이어 추적")',
+      ),
+      'search changes must keep existing selections',
+    );
+    await js(
+      `document.querySelector('[aria-label="더블 점프 선택 취소"]').click()`,
+    );
+    await wait(
+      '!document.querySelector(\'[aria-label="더블 점프 선택"]\').checked',
+    );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".game-feature-selection li").length',
+      ),
+      1,
+    );
+    // Space on a focused native checkbox also adds/removes its selection.
+    await js(`document.querySelector('[aria-label="더블 점프 선택"]').focus()`);
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+    await wait(
+      'document.querySelectorAll(".game-feature-selection li").length===2',
+    );
     await js('document.documentElement.dataset.theme="light"');
     await sleep(300);
     await fs.writeFile(
@@ -209,6 +255,13 @@ async function run() {
     await wait(
       'document.querySelector(".game-feature-detail h4").textContent==="재장전"',
     );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".game-feature-selection li").length',
+      ),
+      3,
+      'preset selection must add to the existing list',
+    );
     await js('document.querySelector("#ai-request-previous").click()');
     await sleep(80);
     assert.equal(
@@ -221,6 +274,13 @@ async function run() {
     assert.equal(
       await js('document.querySelector("#game-feature-search").value'),
       '재장전',
+    );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".game-feature-selection li").length',
+      ),
+      3,
+      'previous/next navigation must keep selections',
     );
     await next();
     await wait(
@@ -375,6 +435,9 @@ async function run() {
     assert.equal(request.kind, 'implement');
     assert.equal(request.thenImplement, undefined);
     assert(!JSON.stringify(request).includes('game-feature'));
+    assert(!JSON.stringify(request).includes('플레이어 추적'));
+    assert(!JSON.stringify(request).includes('더블 점프'));
+    assert(!JSON.stringify(request).includes('재장전'));
     assert(!request.instructions.includes('미리보기'));
     assert(!request.instructions.includes('추적 포기 거리'));
     await setValue('ai-result-name', '고친 이름');
@@ -416,6 +479,9 @@ async function run() {
         page,
       );
       if (page === 4) {
+        await js(
+          'document.querySelector(".game-feature-selection").scrollIntoView({block:"center"})',
+        );
         win.webContents.invalidate();
         await sleep(400);
         await fs.writeFile(
@@ -424,6 +490,25 @@ async function run() {
         );
       }
     }
+    await goTo(4);
+    await js(
+      `document.querySelector('.game-feature-selection-heading button').click()`,
+    );
+    await wait(
+      'document.querySelectorAll(".game-feature-selection li").length===0',
+    );
+    assert(
+      await js(
+        '!document.querySelector(\'[aria-label="8방향 이동 선택"]\').checked',
+      ),
+      'clear all must also uncheck the visible feature',
+    );
+    await js(
+      `document.querySelector('[aria-label="8방향 이동 선택"]').click()`,
+    );
+    await wait(
+      'document.querySelectorAll(".game-feature-selection li").length===1',
+    );
     await js(`document.querySelector('[title="AI 실행창 닫기"]').click()`);
     await wait('!document.querySelector(".ai-request-dialog")');
     await js(`document.querySelector('[aria-label="gamejam!"]').click()`);
@@ -433,6 +518,12 @@ async function run() {
     assert.equal(
       await js('document.querySelector("#game-feature-search").value'),
       '',
+    );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".game-feature-selection li").length',
+      ),
+      0,
     );
     assert.equal(
       await js(`document.querySelector('[data-gamejam-step="5"]').disabled`),
@@ -463,7 +554,7 @@ async function run() {
     assert.equal(await js('qaValidation.creates'), 1);
     assert.equal(await js('qaValidation.runs'), 0);
     console.log(
-      'PASS: five-page wizard, separate instruction pages, previous/next preservation, single-task flow, searchable 32-folder preview, presets, disabled application, review, validation routing, blocked submit, folded settings, role/sync reasons, light/dark narrow layout, server errors and preserved input; preview excluded from task and no AI calls.',
+      'PASS: five-page wizard, separate instruction pages, previous/next preservation, single-task flow, searchable 32-folder preview, multiple selections without duplicates, checkbox/keyboard selection, individual/clear-all removal, preset and navigation preservation, reset on reopen, disabled application, review, validation routing, blocked submit, folded settings, role/sync reasons, light/dark narrow layout, server errors and preserved input; selected preview excluded from task and no AI calls.',
     );
   } catch (error) {
     exitCode = 1;

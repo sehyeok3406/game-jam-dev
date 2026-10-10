@@ -12,6 +12,17 @@ export function GameFeatureLibrary() {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'features' | 'presets'>('features');
   const [activeId, setActiveId] = useState(GAME_FEATURES[0].id);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedFeatures = selectedIds.map(
+    (id) => GAME_FEATURES.find((feature) => feature.id === id)!,
+  );
+  const selectFeature = (id: string) => {
+    setActiveId(id);
+    setSelectedIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+  };
+  const removeFeature = (id: string) => {
+    setSelectedIds((ids) => ids.filter((selectedId) => selectedId !== id));
+  };
   const matches = useMemo(() => searchGameFeatures(query), [query]);
   const matchIds = useMemo(
     () => new Set(matches.map((feature) => feature.id)),
@@ -76,7 +87,7 @@ export function GameFeatureLibrary() {
           <p className="game-feature-count" role="status">
             {query.trim()
               ? `검색 결과 ${matches.length}개 · 상위 분류와 하위 기능을 함께 표시합니다.`
-              : '폴더를 펼치고 기능 이름을 눌러 설명을 확인하세요.'}
+              : '폴더를 펼치고 기능 이름을 누르면 아래 선택 목록에 추가됩니다.'}
           </p>
           <div className="game-feature-browser">
             <div className="game-feature-tree" aria-label="게임 기능 폴더">
@@ -128,10 +139,20 @@ export function GameFeatureLibrary() {
                         <ul>
                           {group.features.map((feature) => (
                             <li key={feature.id}>
+                              <input
+                                type="checkbox"
+                                aria-label={`${feature.name} 선택`}
+                                checked={selectedIds.includes(feature.id)}
+                                onChange={(event) => {
+                                  if (event.target.checked)
+                                    selectFeature(feature.id);
+                                  else removeFeature(feature.id);
+                                }}
+                              />
                               <button
                                 type="button"
                                 aria-pressed={activeId === feature.id}
-                                onClick={() => setActiveId(feature.id)}
+                                onClick={() => selectFeature(feature.id)}
                               >
                                 <Eye size={13} aria-hidden="true" />
                                 <span>{feature.name}</span>
@@ -192,7 +213,7 @@ export function GameFeatureLibrary() {
         <div className="game-feature-presets">
           <p>
             여러 기능을 묶어 게임 구성을 시작하는 추천 예시입니다. 기능 이름을
-            누르면 해당 기능을 살펴볼 수 있습니다.
+            누르면 아래 선택 목록에 추가하고 상세 설명을 표시합니다.
           </p>
           {GAME_FEATURE_PRESETS.map((preset) => (
             <section key={preset.name}>
@@ -207,7 +228,7 @@ export function GameFeatureLibrary() {
                         (entry) => entry.name === name,
                       );
                       if (!feature) return;
-                      setActiveId(feature.id);
+                      selectFeature(feature.id);
                       setQuery(name);
                       setView('features');
                     }}
@@ -220,6 +241,48 @@ export function GameFeatureLibrary() {
           ))}
         </div>
       )}
+      <section className="game-feature-selection" aria-label="선택한 게임 기능">
+        <div className="game-feature-selection-heading">
+          <h4>
+            선택한 기능 <span role="status">{selectedIds.length}개</span>
+          </h4>
+          {selectedIds.length > 0 && (
+            <button type="button" onClick={() => setSelectedIds([])}>
+              전체 선택 취소
+            </button>
+          )}
+        </div>
+        {selectedFeatures.length ? (
+          <ul>
+            {selectedFeatures.map((feature) => (
+              <li key={feature.id}>
+                <div>
+                  <strong>{feature.name}</strong>
+                  <small>
+                    {feature.category} / {feature.group}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`${feature.name} 선택 취소`}
+                  onClick={() => removeFeature(feature.id)}
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>
+            선택한 기능이 없습니다. 기능 이름이나 체크박스로 여러 기능을
+            선택하세요.
+          </p>
+        )}
+        <p className="game-feature-selection-note">
+          선택 목록은 단계 이동 중 유지됩니다. 미리보기 선택이며 HTML 구현에는
+          아직 반영되지 않습니다.
+        </p>
+      </section>
     </div>
   );
 }
