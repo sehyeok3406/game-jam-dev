@@ -6,7 +6,7 @@
 
 Windows x64 설치 파일은 `Game.Jam-0.13.2.Setup.exe`입니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다. 기존 v0.13.0 협업 서버와 호환됩니다. [사용 안내](UI_UX.md)
 
-2026-10-10 [v0.13.2 정식 배포 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.2). 태그는 검증한 소스 커밋 `7e80ce76e8224f9aa61dee0da0c266de2bfd838e`를 가리킵니다. 별도 배포 소스의 자동 테스트 253개·타입/코드 검사·실제 Electron 다중 선택/중복 방지/개별·전체 취소/키보드 조작/단계 이동 중 유지/재개 시 초기화·Windows 패키지 실행과 패키지 내부 화면 검증을 통과했습니다. 선택 목록이 실제 작업 요청에 포함되지 않는 것도 확인했습니다. 공개 설치 파일·nupkg·RELEASES의 다운로드(200), 크기와 SHA-256 및 RELEASES의 SHA-1·크기를 검증했습니다. 게시 직후 자동 업데이트 서비스가 이전 v0.13.1 정보를 반환하여 반영이 지연되고 있습니다. 즉시 적용하려면 [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.2/Game.Jam-0.13.2.Setup.exe)을 사용하세요. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 검증 대상입니다.
+2026-10-10 [v0.13.2 정식 배포 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.2). 태그는 검증한 소스 커밋 `7e80ce76e8224f9aa61dee0da0c266de2bfd838e`를 가리킵니다. 별도 배포 소스의 자동 테스트 253개·타입/코드 검사·실제 Electron 다중 선택/중복 방지/개별·전체 취소/키보드 조작/단계 이동 중 유지/재개 시 초기화·Windows 패키지 실행과 패키지 내부 화면 검증을 통과했습니다. 선택 목록이 실제 작업 요청에 포함되지 않는 것도 확인했습니다. 공개 설치 파일·nupkg·RELEASES의 다운로드(200), 크기와 SHA-256 및 RELEASES의 SHA-1·크기를 검증했습니다. 게시 직후 자동 업데이트 서비스 반영이 잠시 지연됐으며, 2026-10-10 17:13 KST v0.13.1 → v0.13.2 업데이트 응답(200), v0.13.2 최신 버전 응답(204), Windows RELEASES 피드의 패키지 URL·SHA-1·크기 일치를 확인했습니다. 즉시 적용하려면 [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.2/Game.Jam-0.13.2.Setup.exe)을 사용하세요. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 검증 대상입니다.
 
 # Game Jam! v0.13.1
 

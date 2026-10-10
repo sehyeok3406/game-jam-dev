@@ -6,7 +6,7 @@
 
 Windows x64 설치 파일 `Game.Jam-0.13.2.Setup.exe`, 업데이트 패키지 `game_canvas-0.13.2-full.nupkg`, `RELEASES`를 같은 [v0.13.2 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.2)에 제공합니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다. 기존 v0.13.0 협업 서버와 호환됩니다.
 
-2026-10-10 정식 게시 완료. 태그 `v0.13.2`는 소스 커밋 `7e80ce76e8224f9aa61dee0da0c266de2bfd838e`를 가리킵니다. 배포 소스 자동 테스트 253개·타입/코드 검사·실제 Electron 선택·취소·유지·초기화·실행 요청 제외 검사와 Windows 패키지/패키지 내부 화면 검증을 통과했습니다. GitHub 파일 3개의 크기·SHA-256이 로컬 빌드와 일치하며 인증 없는 공개 다운로드(200)도 확인했습니다. 공개 RELEASES의 SHA-1·패키지 이름·크기도 일치합니다. 게시 직후 자동 업데이트 서비스는 아직 v0.13.1을 반환하고 있으므로 반영 대기 중입니다. 바로 적용하려면 [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.2/Game.Jam-0.13.2.Setup.exe)을 사용합니다. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상입니다.
+2026-10-10 정식 게시 완료. 태그 `v0.13.2`는 소스 커밋 `7e80ce76e8224f9aa61dee0da0c266de2bfd838e`를 가리킵니다. 배포 소스 자동 테스트 253개·타입/코드 검사·실제 Electron 선택·취소·유지·초기화·실행 요청 제외 검사와 Windows 패키지/패키지 내부 화면 검증을 통과했습니다. GitHub 파일 3개의 크기·SHA-256이 로컬 빌드와 일치하며 인증 없는 공개 다운로드(200)도 확인했습니다. 공개 RELEASES의 SHA-1·패키지 이름·크기도 일치합니다. 게시 직후 자동 업데이트 서비스 반영이 잠시 지연됐으며, 2026-10-10 17:13 KST v0.13.1 → v0.13.2 업데이트 응답(200), v0.13.2 최신 버전 응답(204), Windows RELEASES 피드의 패키지 URL·SHA-1·크기 일치를 확인했습니다. 바로 적용하려면 [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.2/Game.Jam-0.13.2.Setup.exe)을 사용합니다. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상입니다.
 
 ## v0.13.1 단계별 gamejam! 설정 · 게임 기능 미리보기
 
