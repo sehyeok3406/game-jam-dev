@@ -4,7 +4,11 @@
 
 저장 시 카드의 크기 정보가 빠져 잠시 숨겨지고 커서가 풀리던 문제를 수정했습니다. 문서별 저장 큐, 오프라인·재시작 복구, 최신 입력과 저장 응답 분리, 이미지·체크리스트 DOM 유지, Ctrl+S 편집 유지와 충돌 초안 보관을 추가했습니다. [사용법·검증](AUTOSAVE_QUEUE.md)
 
-배포 파일은 `Game.Jam-0.13.3.Setup.exe`, `game_canvas-0.13.3-full.nupkg`, `RELEASES`입니다. 기존 v0.13.0 협업 서버와 같은 저장 명령을 사용합니다. 게시 후 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다.
+배포 파일은 `Game.Jam-0.13.3.Setup.exe`, `game_canvas-0.13.3-full.nupkg`, `RELEASES`입니다. 기존 v0.13.0 협업 서버와 같은 저장 명령을 사용합니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다.
+
+2026-10-10 [v0.13.3 정식 게시 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.3). 태그는 소스 커밋 `777feb928d12963b0125fc3d65883a6fe9328dd3`를 가리킵니다. 작업 공간 검사 271개와 운영 도구를 제외한 배포 소스 검사 264개·타입/코드 검사·통합 검사·업데이트 UI·실제 Windows 실행 파일의 preload/IPC/디스크 큐·저장/커서 유지 검증을 통과했습니다. 실제 HTTP/SSE 서버와 두 클라이언트의 10분 검사에서 4,379회 입력·362회 저장·669회 팀원 변경을 처리했습니다. 배포 파일 3개의 인증 없는 다운로드(200)·크기·SHA-256이 로컬 빌드와 일치합니다. v0.13.2 → v0.13.3 피드(200), v0.13.3 최신 버전 응답(204), Windows RELEASES의 패키지 URL·SHA-1·크기를 확인했습니다. [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.3/Game.Jam-0.13.3.Setup.exe)
+
+전체 포맷 검사에는 기존 `src/web-viewer-sync.ts`, `tests/web-viewer-sync.test.mjs`, `tools/web-viewer/README.md` 3개의 서식 문제가 남아 있습니다. 이번 변경 파일의 서식 검사는 통과했습니다. Windows 실제 한글 IME와 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상입니다.
 
 ## v0.13.2 기능 라이브러리 다중 선택
 
