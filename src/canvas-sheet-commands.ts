@@ -1,4 +1,9 @@
 import matter from './markdown.ts';
+import {
+  drawingPath,
+  readDrawingFile,
+  serializeDrawing,
+} from './drawing-model.ts';
 import type { Snapshot } from './project-store.ts';
 import type { CanvasSheetCommand } from './shared.ts';
 import { isPreviewPath } from './preview-output.ts';
@@ -151,6 +156,22 @@ export function changeCanvasSheets(
       }
     }
     for (const path of paths) assign(path, target);
+    if (input.action === 'delete') {
+      const sourcePath = drawingPath(id),
+        targetPath = drawingPath(target);
+      if (next[sourcePath] !== undefined) {
+        const source = readDrawingFile(next[sourcePath], id),
+          destination = readDrawingFile(next[targetPath], target);
+        destination.objects.push(
+          ...source.objects.map((o) => ({
+            ...o,
+            generation: globalThis.crypto.randomUUID(),
+          })),
+        );
+        next[targetPath] = serializeDrawing(destination);
+        delete next[sourcePath];
+      }
+    }
     if (input.action === 'delete')
       sheets.canvases = sheets.canvases.filter((item) => item.id !== id);
   } else throw new Error('지원하지 않는 캔버스 작업입니다.');

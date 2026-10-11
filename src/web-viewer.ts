@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { snapshotDrawings } from './drawing-model.ts';
+import { drawingBounds, drawingSvg } from './drawing-geometry.ts';
+import { drawingName } from './drawing-types.ts';
 import matter from './markdown.ts';
 import { snapshotDocuments, snapshotSections } from './collaboration-model.ts';
 import { isPreviewPath, previewLabel } from './preview-output.ts';
@@ -127,6 +130,26 @@ export function projectForWeb(input: {
   const overview = input.files['project.md']
     ? matter(input.files['project.md'])
     : null;
+  // Existing web readers already display image cards; generated SVG keeps new
+  // drawings visible without requiring a coordinated deployment of the website.
+  for (const o of snapshotDrawings(input.files)) {
+    const b = drawingBounds(o);
+    documents.push({
+      id: `drawing:${o.id}`,
+      title: drawingName(o),
+      kind: 'image',
+      section: '',
+      summary: '도형 · 그림 (읽기 전용)',
+      body: '',
+      position: { x: b.x, y: b.y },
+      width: b.width,
+      height: b.height,
+      onCanvas: true,
+      color: 'blue',
+      image: `data:image/svg+xml;base64,${Buffer.from(drawingSvg(o)).toString('base64')}`,
+      modifiedAt: o.updatedAt,
+    });
+  }
   return {
     schemaVersion: 1,
     id: webProjectId(input.libraryId),

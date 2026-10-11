@@ -6,7 +6,8 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
   const node = useNodesData(props.id);
   const data = node?.data as
     | {
-        kind?: 'document' | 'section' | 'preview';
+        kind?: 'document' | 'section' | 'preview' | 'drawing';
+        object?: import('../drawing-types').DrawingObject;
         document?: CanvasDocument;
         section?: CanvasSection;
         preview?: PreviewResult;
@@ -29,6 +30,11 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
       ry={props.borderRadius}
       strokeWidth={props.selected ? 4 : 2}
       shapeRendering={props.shapeRendering}
+      style={
+        kind === 'drawing'
+          ? { fill: data?.object?.style.stroke ?? '#2563eb' }
+          : undefined
+      }
       onClick={(event) => props.onClick?.(event, props.id)}
     />
   );

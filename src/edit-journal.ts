@@ -8,6 +8,12 @@ export class EditJournal {
   undoStack: EditRecord[] = [];
   redoStack: EditRecord[] = [];
   push(record: EditRecord) {
+    if (
+      [...this.undoStack, ...this.redoStack].some(
+        (item) => item.id === record.id,
+      )
+    )
+      return;
     this.undoStack.push(record);
     this.undoStack = this.undoStack.slice(-100);
     this.redoStack = [];

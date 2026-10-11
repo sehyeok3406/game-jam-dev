@@ -1,4 +1,13 @@
 export type Shortcut =
+  | 'rectangle'
+  | 'ellipse'
+  | 'triangle'
+  | 'arrow'
+  | 'line'
+  | 'pen'
+  | 'highlighter'
+  | 'eraser'
+  | 'shapes'
   | 'import'
   | 'select'
   | 'hand'
@@ -33,10 +42,17 @@ export function canvasShortcut(
     altKey?: boolean;
     shiftKey?: boolean;
     repeat?: boolean;
+    isComposing?: boolean;
   },
   scope: { editable?: boolean; dialog?: boolean; playing?: boolean },
 ): Shortcut | null {
-  if (scope.editable || scope.dialog || scope.playing || event.altKey)
+  if (
+    scope.editable ||
+    scope.dialog ||
+    scope.playing ||
+    event.altKey ||
+    event.isComposing
+  )
     return null;
   const key = event.key.toLowerCase(),
     command = event.ctrlKey || event.metaKey;
@@ -68,12 +84,21 @@ export function canvasShortcut(
   if (key === '-') return 'zoom-out';
   if (key === ' ' && !event.repeat) return 'pan';
   if (key === 's' && event.shiftKey) return 'section';
+  if (key === 'l' && event.shiftKey) return 'line';
+  if (key === 'p' && event.shiftKey) return 'pen';
   return (
     (
       {
         v: 'select',
         h: 'hand',
         n: 'note',
+        r: 'rectangle',
+        o: 'ellipse',
+        t: 'triangle',
+        a: 'arrow',
+        b: 'highlighter',
+        e: 'eraser',
+        d: 'shapes',
         f: 'search',
         l: 'navigator',
         delete: 'delete',
@@ -84,6 +109,8 @@ export function canvasShortcut(
 }
 
 export const SHORTCUTS = [
+  ['도형: 사각형 / 타원 / 삼각형 / 화살표', 'R / O / T / A'],
+  ['선 / 펜 / 형광펜 / 획 지우개', 'Shift+L / Shift+P / B / E'],
   ['Markdown · 이미지 불러오기', 'Ctrl + I'],
   ['선택 추가 / 선택 해제', 'Shift 또는 Ctrl + 클릭'],
   ['선택 / 이동 / 새 메모', 'V / H / N'],

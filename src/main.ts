@@ -1,4 +1,10 @@
 import { PropertyQueue } from './property-queue.ts';
+import {
+  snapshotDrawings,
+  DRAWING_DIRECTORY,
+  isDrawingPath,
+} from './drawing-model.ts';
+import type { DrawingCommand } from './drawing-types.ts';
 import { installUiDebugShortcut } from './ui-debug-shortcut';
 import { CanvasView } from './canvas-view.ts';
 import { writeClientCache, readClientCache } from './client-cache.ts';
@@ -672,6 +678,13 @@ const assertEditable = () => {
     );
 };
 const assertMutationAllowed = async (channel: string, args: unknown[]) => {
+  if (
+    (channel === 'drawings:apply' || channel === 'canvas:batch') &&
+    (args[0] as DrawingCommand)?.scope !== documentSaveScope()
+  )
+    throw new Error(
+      '프로젝트가 변경되었습니다. 그림 초안은 이 PC에 보관됩니다.',
+    );
   if (channel === 'documents:save') {
     const scope = (args[0] as SaveDocumentInput)?.queueScope;
     if (scope && scope !== documentSaveScope())
@@ -1239,6 +1252,8 @@ const startWatcher = async () => {
         .relative(workspaceRoot!, target)
         .replaceAll('\\', '/');
       if (relative === '.canvas' || relative === CANVAS_SHEETS_PATH)
+        return false;
+      if (relative === DRAWING_DIRECTORY || isDrawingPath(relative))
         return false;
       return (
         /(^|\/)\./.test(relative) ||
@@ -2023,6 +2038,8 @@ const startCodexRun = async (
 };
 
 const mutationLabels: Record<string, string> = {
+  'drawings:apply': '도형 · 그림 편집',
+  'canvas:batch': '선택 항목 함께 편집',
   'canvases:change': '캔버스 구성 변경',
   'results:move': 'HTML 결과물 폴더 이동',
   'results:organize': '기존 HTML 결과물 폴더 정리',
@@ -2053,6 +2070,20 @@ const guardedChannels = new Set([
   'documents:delete-many',
 ]);
 const propertyQueue = new PropertyQueue();
+function drawingChanges(files: Snapshot, known: Record<string, string> = {}) {
+  const objects = snapshotDrawings(files),
+    signatures = Object.fromEntries(
+      objects.map((o) => [
+        o.id,
+        createHash('sha256').update(JSON.stringify(o)).digest('hex'),
+      ]),
+    );
+  return {
+    changed: objects.filter((o) => known[o.id] !== signatures[o.id]),
+    removed: Object.keys(known).filter((id) => !signatures[id]),
+    signatures,
+  };
+}
 const handle = (
   channel: string,
   listener: Parameters<typeof ipcMain.handle>[1],
@@ -2100,7 +2131,8 @@ const handle = (
               await syncSharedSnapshot(client.files);
             if (
               channel === 'documents:delete' ||
-              channel === 'documents:delete-many'
+              channel === 'documents:delete-many' ||
+              channel === 'canvas:batch'
             )
               await trashWorkspaceFiles(before, client.files);
             if (client.lastCommandHistoryId && channel !== 'tasks:create')
@@ -2125,6 +2157,8 @@ const handle = (
                 collapsed: personalCollapsed.get(relative) ?? doc.collapsed,
               };
             }
+            if (channel === 'drawings:apply')
+              return snapshotDrawings(client.files);
             return result;
           });
         if (channel === 'edit:undo' || channel === 'edit:redo')
@@ -2141,6 +2175,9 @@ const handle = (
             ...readCanvasSheets(client.files[CANVAS_SHEETS_PATH]),
             raw: client.files[CANVAS_SHEETS_PATH] ?? null,
           };
+        if (channel === 'drawings:list') return snapshotDrawings(client.files);
+        if (channel === 'drawings:changes')
+          return drawingChanges(client.files, args[0]);
         if (channel === 'canvas:changes') {
           let view = canvasViews.get(client);
           if (!view) {
@@ -2480,6 +2517,54 @@ const registerIpc = () => {
       raw: files[CANVAS_SHEETS_PATH] ?? null,
     };
   });
+  handle('drawings:list', async () =>
+    snapshotDrawings(await captureProject(requireWorkspace())),
+  );
+  handle('drawings:changes', async (_event, known) =>
+    drawingChanges(await captureProject(requireWorkspace()), known),
+  );
+  const completedDrawingRequests = new Set<string>();
+  handle('drawings:apply', async (_event, input: DrawingCommand) => {
+    const root = requireWorkspace(),
+      before = await captureProject(root);
+    const key = `${input.scope}:${input.requestId}`;
+    if (input.requestId && completedDrawingRequests.has(key))
+      return snapshotDrawings(before);
+    const reduced = reduceCollaboration(before, 'drawings:apply', input);
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.keys({ ...before, ...reduced.files })
+          .filter((p) => before[p] !== reduced.files[p])
+          .map((p) => [p, reduced.files[p] ?? null]),
+      ),
+    );
+    if (input.requestId) {
+      completedDrawingRequests.add(key);
+      if (completedDrawingRequests.size > 1000)
+        completedDrawingRequests.delete(
+          completedDrawingRequests.values().next().value!,
+        );
+    }
+    return snapshotDrawings(reduced.files);
+  });
+  handle('canvas:batch', async (_event, input) => {
+    const root = requireWorkspace(),
+      before = await captureProject(root);
+    const reduced = reduceCollaboration(before, 'canvas:batch', input);
+    await trashWorkspaceFiles(before, reduced.files);
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.keys({ ...before, ...reduced.files })
+          .filter((p) => before[p] !== reduced.files[p])
+          .map((p) => [p, reduced.files[p] ?? null]),
+      ),
+    );
+    return reduced.result;
+  });
   handle('canvases:change', async (_event, input) => {
     const root = requireWorkspace();
     const before = await captureProject(root);
@@ -2488,7 +2573,9 @@ const registerIpc = () => {
       root,
       before,
       Object.fromEntries(
-        Object.entries(next).filter(([key, raw]) => before[key] !== raw),
+        Object.keys({ ...before, ...next })
+          .filter((key) => before[key] !== next[key])
+          .map((key) => [key, next[key] ?? null]),
       ),
     );
   });

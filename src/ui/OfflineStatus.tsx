@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CloudOff, GitMerge, X } from 'lucide-react';
 import type { CollaborationState } from '../shared';
+import { isDrawingPath } from '../drawing-model';
+import { DrawingConflictPreview } from './drawing/DrawingConflictPreview';
 
 export function OfflineStatus({
   state,
@@ -147,13 +149,20 @@ export function OfflineStatus({
                     {conflict[version].map((file) => (
                       <div key={file.path}>
                         <strong>{file.path}</strong>
-                        <pre>
-                          {file.content === null
-                            ? '이 버전에서는 삭제됨'
-                            : file.path.startsWith('assets/')
-                              ? '이미지 파일 (미리보기 대신 파일 정보 표시)'
-                              : file.content}
-                        </pre>
+                        {isDrawingPath(file.path) ? (
+                          <DrawingConflictPreview
+                            path={file.path}
+                            content={file.content}
+                          />
+                        ) : (
+                          <pre>
+                            {file.content === null
+                              ? '이 버전에서는 삭제됨'
+                              : file.path.startsWith('assets/')
+                                ? '이미지 파일 (미리보기 대신 파일 정보 표시)'
+                                : file.content}
+                          </pre>
+                        )}
                       </div>
                     ))}
                   </div>

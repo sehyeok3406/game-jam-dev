@@ -1,4 +1,5 @@
 import { CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
+import { DRAWING_DIRECTORY, isDrawingPath } from './drawing-model.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -80,6 +81,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       isPreviewPath(relative) ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
+      isDrawingPath(relative) ||
       isAssetPath(relative)
     ) {
       snapshot[relative] = await readSnapshotFile(absolute, relative);
@@ -93,6 +95,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     '.ai/tasks',
     RESULT_CATALOG_PATH,
     CANVAS_SHEETS_PATH,
+    DRAWING_DIRECTORY,
     'output',
     'assets/images',
   ])

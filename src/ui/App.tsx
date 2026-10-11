@@ -1,4 +1,25 @@
 import { ArrowRight } from 'lucide-react';
+import './drawing/drawing.css';
+import { useDrawing } from './drawing/useDrawing';
+import { DrawingNode, type DrawingCanvasNode } from './drawing/DrawingNode';
+import { DrawingInputLayer } from './drawing/DrawingInputLayer';
+import {
+  DrawingToolButtons,
+  DrawingInspector,
+} from './drawing/DrawingControls';
+import {
+  drawingBounds,
+  DEFAULT_SHAPE_STYLE,
+  DEFAULT_PEN_STYLE,
+  DEFAULT_HIGHLIGHT_STYLE,
+} from '../drawing-geometry';
+import type {
+  DrawingCommand,
+  DrawingObject,
+  DrawingStyle,
+  DrawingTool,
+} from '../drawing-types';
+import { drawingName } from '../drawing-types';
 import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
 import { SelfHostDialog } from '../features/self-host/SelfHostDialog';
 import { UiDebugConsole } from './debug/UiDebugConsole';
@@ -202,7 +223,7 @@ import type {
   FileAuthorship,
 } from '../shared';
 
-type CanvasTool = 'select' | 'hand' | 'note';
+type CanvasTool = 'select' | 'hand' | 'note' | 'drawing';
 type Theme = 'dark' | 'light';
 
 type ContextMenuState = {
@@ -377,7 +398,11 @@ type SectionNodeData = {
 type DocumentCanvasNode = Node<DocumentNodeData, 'document'>;
 type PreviewCanvasNode = Node<PreviewNodeData, 'preview'>;
 type SectionCanvasNode = Node<SectionNodeData, 'section'>;
-type CanvasNode = DocumentCanvasNode | PreviewCanvasNode | SectionCanvasNode;
+type CanvasNode =
+  | DocumentCanvasNode
+  | PreviewCanvasNode
+  | SectionCanvasNode
+  | DrawingCanvasNode;
 
 function sameIds(left: string[], right: string[]) {
   return (
@@ -1649,6 +1674,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
 }
 
 const nodeTypes: NodeTypes = {
+  drawing: DrawingNode,
   document: DocumentCard,
   preview: PreviewCard,
   section: SectionCard,
@@ -1786,6 +1812,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [deleteManyPrompt, setDeleteManyPrompt] = useState<
     DeletionItem[] | null
   >(null);
+  const [deleteDrawingTargets, setDeleteDrawingTargets] = useState<
+    DrawingObject[]
+  >([]);
+  const [deleteSectionTargets, setDeleteSectionTargets] = useState<
+    CanvasSection[]
+  >([]);
   const [workspace, setWorkspace] = useState<WorkspaceState>({
     root: null,
     name: null,
@@ -1800,6 +1832,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [movingCanvasItems, setMovingCanvasItems] = useState<{
     paths: string[];
     source: string;
+    drawings?: DrawingObject[];
   } | null>(null);
   const [moveCanvasTarget, setMoveCanvasTarget] = useState('');
   const [canvasOperationBusy, setCanvasOperationBusy] = useState(false);
@@ -1892,6 +1925,49 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [importError, setImportError] = useState('');
   const [loading, setLoading] = useState(true);
   const [tool, setTool] = useState<CanvasTool>('select');
+  const drawing = useDrawing(workspace.saveScope, activeCanvas);
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>('rectangle');
+  const [drawingStyle, setDrawingStyle] = useState<DrawingStyle>({
+    ...DEFAULT_SHAPE_STYLE,
+  });
+  const [drawingPressure, setDrawingPressure] = useState(true),
+    [drawingTouch, setDrawingTouch] = useState(false),
+    [drawingContinuous, setDrawingContinuous] = useState(false),
+    [drawingGesture, setDrawingGesture] = useState(false);
+  const drawingClipboard = useRef<DrawingObject[] | null>(null);
+  const drawingPasteCount = useRef(0);
+  const createdDrawingSelection = useRef<string | null>(null);
+  const submitDrawing = useCallback(
+    (command: Omit<DrawingCommand, 'canvasId' | 'scope'>) => {
+      void drawing
+        .submit(command)
+        .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+    },
+    [drawing.submit],
+  );
+  const chooseDrawingTool = (next: DrawingTool) => {
+    if (collaboration.active && collaboration.drawingsVersion !== 1) {
+      setNotice('도형 · 그림 편집을 사용하려면 협업 서버를 업데이트해주세요.');
+      return;
+    }
+    firstCanvasView.current = null;
+    setSelectedIds([]);
+    setSelectedSectionIds([]);
+    setNodes((current) => current.map((n) => ({ ...n, selected: false })));
+    setInspectorId(null);
+    setDrawingTool(next);
+    setDrawingStyle({
+      ...(next === 'pen'
+        ? {
+            ...DEFAULT_PEN_STYLE,
+            stroke: theme === 'dark' ? '#e2e8f0' : DEFAULT_PEN_STYLE.stroke,
+          }
+        : next === 'highlighter'
+          ? DEFAULT_HIGHLIGHT_STYLE
+          : DEFAULT_SHAPE_STYLE),
+    });
+    setTool('drawing');
+  };
   const [noteDraft, setNoteDraft] = useState<{
     start: { x: number; y: number };
     end: { x: number; y: number };
@@ -1916,6 +1992,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   }, [activeCanvas, workspace.root]);
   const [uiHidden, setUiHidden] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [overlapMenu, setOverlapMenu] = useState<{
+    x: number;
+    y: number;
+    ids: string[];
+  } | null>(null);
+  useEffect(() => {
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element).closest('.drawing-overlap-menu'))
+        setOverlapMenu(null);
+    };
+    if (overlapMenu) window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [overlapMenu]);
+  useEffect(() => setOverlapMenu(null), [activeCanvas, workspace.saveScope]);
   const [documentContextMenu, setDocumentContextMenu] =
     useState<DocumentContextMenuState | null>(null);
   const [sectionContextMenu, setSectionContextMenu] =
@@ -2592,6 +2682,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       }),
     [],
   );
+  useEffect(() => {
+    const key = `drawing:${workspace.saveScope}`;
+    draftFlushers.set(key, drawing.flush);
+    return () => {
+      draftFlushers.delete(key);
+    };
+  }, [workspace.saveScope, drawing.flush]);
   const loadProject = useCallback(async (fit = false) => {
     const request = ++projectLoadRef.current;
     try {
@@ -3536,39 +3633,88 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       });
     setNodes((currentNodes) => {
       const existing = new Map(currentNodes.map((node) => [node.id, node]));
-      const next = [...sectionNodes, ...documentNodes, ...previewNodes].map(
-        (node) => {
-          const old = existing.get(node.id),
-            pending = pendingGeometry.current.get(node.id);
-          const geometryLocked =
-            node.data.kind === 'document'
-              ? node.data.layoutLocked
-              : node.data.locked;
-          const result = {
-            ...node,
-            // React Flow temporarily hides nodes without measured dimensions.
-            // Dropping this on a save/heartbeat blurs the still-mounted editor.
-            measured: old?.measured,
-            selected: old?.selected ?? false,
-            ...(old?.dragging && !geometryLocked
-              ? { position: old.position, dragging: true }
-              : pending
-                ? { position: pending.position, style: pending.style }
-                : {}),
-          } as CanvasNode;
-          if (
-            old &&
-            JSON.stringify(old, (_key, value) =>
+      const currentDrawings = drawing.items
+        .filter((o) => o.canvasId === activeCanvas)
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      const drawingNodes: DrawingCanvasNode[] = currentDrawings.map((o) => {
+        const bounds = drawingBounds(o);
+        const { canvasId: _canvasId, ...object } = o;
+        return {
+          id: `drawing:${o.id}`,
+          type: 'drawing',
+          className: 'canvas-drawing-node',
+          position: { x: bounds.x, y: bounds.y },
+          style: { width: bounds.width, height: bounds.height },
+          zIndex: o.layer === 'annotation' ? 4 : 1,
+          draggable: !locked,
+          data: {
+            kind: 'drawing',
+            object,
+            locked,
+            zoom: viewZoom,
+            onGesture: setDrawingGesture,
+            onPatch: (patch) =>
+              submitDrawing({ action: 'patch', patches: [patch] }),
+            onContext: () => {
+              setTool('select');
+              setNodes((current) =>
+                current.map((n) => ({
+                  ...n,
+                  selected: n.id === `drawing:${o.id}`,
+                })),
+              );
+            },
+          },
+        };
+      });
+      const next = [
+        ...sectionNodes,
+        ...drawingNodes,
+        ...documentNodes,
+        ...previewNodes,
+      ].map((node) => {
+        const old = existing.get(node.id),
+          pending = pendingGeometry.current.get(node.id);
+        const geometryLocked =
+          node.data.kind === 'document'
+            ? node.data.layoutLocked
+            : node.data.locked;
+        const result = {
+          ...node,
+          // React Flow temporarily hides nodes without measured dimensions.
+          // Dropping this on a save/heartbeat blurs the still-mounted editor.
+          measured: old?.measured,
+          selected: createdDrawingSelection.current
+            ? node.id === `drawing:${createdDrawingSelection.current}`
+            : node.data.kind === 'drawing' &&
+                ['drawing-object', 'drawing-inspector'].includes(
+                  preview?.id ?? '',
+                )
+              ? true
+              : (old?.selected ?? false),
+          ...(old?.dragging && !geometryLocked
+            ? { position: old.position, dragging: true }
+            : pending
+              ? { position: pending.position, style: pending.style }
+              : {}),
+        } as CanvasNode;
+        if (
+          old &&
+          JSON.stringify(old, (_key, value) =>
+            typeof value === 'function' ? undefined : value,
+          ) ===
+            JSON.stringify(result, (_key, value) =>
               typeof value === 'function' ? undefined : value,
-            ) ===
-              JSON.stringify(result, (_key, value) =>
-                typeof value === 'function' ? undefined : value,
-              )
-          )
-            return old;
-          return result;
-        },
-      );
+            )
+        )
+          return old;
+        return result;
+      });
+      if (
+        createdDrawingSelection.current &&
+        next.some((n) => n.id === `drawing:${createdDrawingSelection.current}`)
+      )
+        createdDrawingSelection.current = null;
       return next.length === currentNodes.length &&
         next.every((node, index) => node === currentNodes[index])
         ? currentNodes
@@ -3576,6 +3722,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     });
   }, [
     geometryEpoch,
+    drawing.items,
+    submitDrawing,
+    viewZoom,
     sourceTitles,
     activeCanvas,
     findOpen,
@@ -4153,6 +4302,49 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     () => documents.filter((document) => selectedIds.includes(document.id)),
     [documents, selectedIds],
   );
+  const selectedDrawings = nodes
+    .filter(
+      (n): n is DrawingCanvasNode => !!n.selected && n.data.kind === 'drawing',
+    )
+    .map((n) => n.data.object);
+  const drawingCopies = (objects: DrawingObject[], offset = 32) => {
+    const now = Date.now();
+    return objects.map((o) => ({
+      ...o,
+      id: crypto.randomUUID(),
+      generation: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      transform: {
+        ...o.transform,
+        x: o.transform.x + offset,
+        y: o.transform.y + offset,
+      },
+    }));
+  };
+  const duplicateDrawings = (objects: DrawingObject[] = selectedDrawings) => {
+    if (objects.length)
+      submitDrawing({ action: 'create', objects: drawingCopies(objects) });
+  };
+  const canvasBatch = async (
+    commands: { channel: string; input: unknown }[],
+  ) => {
+    await drawing.flush();
+    const result = await window.gameCanvas.applyCanvasCommands({
+      scope: workspace.saveScope!,
+      commands,
+    });
+    await drawing.reload();
+    return result;
+  };
+  const deleteDrawings = () =>
+    submitDrawing({
+      action: 'delete',
+      targets: selectedDrawings.map((o) => ({
+        id: o.id,
+        generation: o.generation,
+      })),
+    });
 
   const selectedSections = useMemo(
     () => sections.filter((section) => selectedSectionIds.includes(section.id)),
@@ -4351,7 +4543,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             : [
                 node.data.kind === 'document'
                   ? node.data.document.relativePath
-                  : node.data.preview.relativePath,
+                  : node.data.kind === 'preview'
+                    ? node.data.preview.relativePath
+                    : '',
               ],
         ),
       )
@@ -4375,7 +4569,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (!movedNodes.some((node) => node.data.kind !== 'preview')) return;
     if (locked) return;
 
-    if (movedNodes.length > 1) {
+    if (
+      movedNodes.length > 1 ||
+      movedNodes.some((n) => n.data.kind === 'drawing')
+    ) {
       const movedSectionNodeIds = new Set(
         movedNodes.flatMap((node) =>
           node.data.kind === 'section' ? [node.id] : [],
@@ -4431,7 +4628,35 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             };
           }),
         );
-        await window.gameCanvas.updateLayouts(updates);
+        const drawingNodes = movedNodes.filter(
+          (n): n is DrawingCanvasNode => n.data.kind === 'drawing',
+        );
+        if (drawingNodes.length) {
+          const patches = drawingNodes.map((n) => {
+            const b = drawingBounds(n.data.object);
+            return {
+              id: n.data.object.id,
+              generation: n.data.object.generation,
+              transform: {
+                x: n.data.object.transform.x + n.position.x - b.x,
+                y: n.data.object.transform.y + n.position.y - b.y,
+              },
+            };
+          });
+          if (updates.length)
+            await canvasBatch([
+              { channel: 'layouts:update', input: { updates } },
+              {
+                channel: 'drawings:apply',
+                input: {
+                  canvasId: activeCanvasRef.current,
+                  action: 'patch',
+                  patches,
+                },
+              },
+            ]);
+          else await drawing.submit({ action: 'patch', patches });
+        } else await window.gameCanvas.updateLayouts(updates);
 
         await loadProject(false);
         setNotice(`${movedNodes.length}개 항목의 위치를 함께 저장했습니다.`);
@@ -4528,10 +4753,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   };
 
   const copyCanvasSelection = useCallback(() => {
+    const copiedDrawings = nodes
+      .filter(
+        (n): n is DrawingCanvasNode =>
+          !!n.selected && n.data.kind === 'drawing',
+      )
+      .map((n) => structuredClone(n.data.object));
+    drawingClipboard.current = copiedDrawings;
+    drawingPasteCount.current = 0;
     const copiedDocuments = documents
       .filter((document) => selectedIds.includes(document.id))
       .map((document) => ({ id: document.id, path: document.relativePath }));
     if (copiedDocuments.length === 0) {
+      canvasClipboardRef.current = null;
+      if (copiedDrawings.length) {
+        setNotice(`${copiedDrawings.length}개 그림을 복사했습니다.`);
+        return;
+      }
       setNotice('복사할 메모 또는 파일을 선택하세요.');
       return;
     }
@@ -4540,9 +4778,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       pasteCount: 0,
     };
     setNotice(`${copiedDocuments.length}개 파일을 복사했습니다.`);
-  }, [documents, selectedIds]);
+  }, [documents, selectedIds, nodes]);
 
   const pasteCanvasSelection = useCallback(async () => {
+    const copiedDrawings = drawingClipboard.current ?? [];
+    if (
+      copiedDrawings.length &&
+      !canvasClipboardRef.current?.documents.length
+    ) {
+      submitDrawing({
+        action: 'create',
+        objects: drawingCopies(
+          copiedDrawings,
+          ++drawingPasteCount.current * 32,
+        ),
+      });
+      return;
+    }
     const copied = canvasClipboardRef.current;
     if (!copied || copied.documents.length === 0) {
       setNotice('먼저 Ctrl+C로 메모 또는 파일을 복사하세요.');
@@ -4551,12 +4803,28 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     copied.pasteCount += 1;
     const offset = copied.pasteCount * 32;
     try {
-      const created = await window.gameCanvas.duplicateDocuments({
+      const input = {
         canvasId: activeCanvasRef.current,
         documents: copied.documents,
         offsetX: offset,
         offsetY: offset,
-      });
+      };
+      const copies = drawingCopies(copiedDrawings, offset);
+      const created = copies.length
+        ? ((
+            await canvasBatch([
+              { channel: 'documents:duplicate', input },
+              {
+                channel: 'drawings:apply',
+                input: {
+                  canvasId: activeCanvasRef.current,
+                  action: 'create',
+                  objects: copies,
+                },
+              },
+            ])
+          )[0] as CanvasDocument[])
+        : await window.gameCanvas.duplicateDocuments(input);
       const createdIds = created.map((document) => document.id);
       setSelectedIds(createdIds);
       setSelectedSectionIds([]);
@@ -4567,8 +4835,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             current.map((node) => ({
               ...node,
               selected:
-                node.data.kind === 'document' &&
-                createdIds.includes(node.data.document.id),
+                node.data.kind === 'document'
+                  ? createdIds.includes(node.data.document.id)
+                  : node.data.kind === 'drawing' &&
+                    copies.some((o) => `drawing:${o.id}` === node.id),
             })),
           ),
         80,
@@ -4577,9 +4847,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     } catch (error) {
       showError(error);
     }
-  }, [loadProject, setNodes]);
+  }, [loadProject, setNodes, submitDrawing]);
 
   const flushEditors = async (finish = true) => {
+    await drawing.flush();
     await Promise.all(
       [...editorsRef.current.values()].map((flush) => flush(finish)),
     );
@@ -4658,8 +4929,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     await window.gameCanvas.changeCanvasSheets(command);
     await loadProject(false);
   };
-  const beginCanvasMove = (paths: string[]) => {
-    setMovingCanvasItems({ paths, source: activeCanvasRef.current });
+  const beginCanvasMove = (paths: string[], drawings: DrawingObject[] = []) => {
+    setMovingCanvasItems({
+      paths: paths.filter(Boolean),
+      drawings,
+      source: activeCanvasRef.current,
+    });
     setMoveCanvasTarget(
       canvasSheets.canvases.find(
         (sheet) => sheet.id !== activeCanvasRef.current,
@@ -4743,21 +5018,44 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     }
     try {
       await flushEditors();
-      const created = await window.gameCanvas.duplicateDocuments({
+      const input = {
         documents: selectedDocuments.map((item) => ({
           id: item.id,
           path: item.relativePath,
         })),
         offsetX: 56,
         offsetY: 56,
-      });
+      };
+      const copies = drawingCopies(selectedDrawings, 56);
+      if (!selectedDocuments.length) {
+        duplicateDrawings();
+        return;
+      }
+      const created = copies.length
+        ? ((
+            await canvasBatch([
+              { channel: 'documents:duplicate', input },
+              {
+                channel: 'drawings:apply',
+                input: {
+                  canvasId: activeCanvasRef.current,
+                  action: 'create',
+                  objects: copies,
+                },
+              },
+            ])
+          )[0] as CanvasDocument[])
+        : await window.gameCanvas.duplicateDocuments(input);
       await loadProject(false);
       setSelectedIds(created.map((item) => item.id));
       setSelectedSectionIds([]);
       setNodes((current) =>
         current.map((item) => ({
           ...item,
-          selected: created.some((doc) => doc.id === item.id),
+          selected:
+            created.some((doc) => doc.id === item.id) ||
+            (item.data.kind === 'drawing' &&
+              copies.some((o) => `drawing:${o.id}` === item.id)),
         })),
       );
       setNotice(`${created.length}개 문서를 복제했습니다.`);
@@ -4832,7 +5130,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       onBlocked();
       return;
     }
-    if (selectedDocuments.length || selectedPreviews.length) {
+    if (
+      selectedDrawings.length &&
+      !selectedDocuments.length &&
+      !selectedPreviews.length &&
+      !selectedSections.length
+    ) {
+      deleteDrawings();
+      return;
+    }
+    if (
+      selectedDocuments.length ||
+      selectedPreviews.length ||
+      selectedSections.length
+    ) {
+      setDeleteDrawingTargets(selectedDrawings);
+      setDeleteSectionTargets(selectedSections);
       setDeleteManyPrompt([...selectedDocuments, ...selectedPreviews]);
       return;
     }
@@ -4920,7 +5233,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         if (action === 'organize') void createTask();
         if (action === 'implement') void createTask('implement');
         if (action === 'section') selectionSection();
-        if (action === 'duplicate' && selectedDocuments.length)
+        if (
+          action === 'duplicate' &&
+          (selectedDocuments.length || selectedDrawings.length)
+        )
           void duplicateSelection();
         if (action === 'delete') requestDelete();
         if (action === 'minimize') void minimizeSelection();
@@ -4945,7 +5261,29 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           if (locked) onBlocked();
           else setTool('note');
         }
+        if (
+          [
+            'rectangle',
+            'ellipse',
+            'triangle',
+            'arrow',
+            'line',
+            'pen',
+            'highlighter',
+            'eraser',
+            'shapes',
+          ].includes(action)
+        ) {
+          if (locked) onBlocked();
+          else
+            chooseDrawingTool(
+              ({ shapes: 'rectangle' } as Record<string, DrawingTool>)[
+                action
+              ] ?? (action as DrawingTool),
+            );
+        }
         if (action === 'pan') {
+          if (drawingGesture) return;
           panPrevious.current = tool;
           setTool('hand');
         }
@@ -4957,7 +5295,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           setNodes((current) =>
             current.map((node) => ({
               ...node,
-              selected: node.data.kind === 'document',
+              selected:
+                node.data.kind === 'document' || node.data.kind === 'drawing',
             })),
           );
           setNotice(`전체 파일 ${allDocumentIds.length}개를 선택했습니다.`);
@@ -4981,6 +5320,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         setInspectorId(null);
         setSettingsOpen(false);
         setContextMenu(null);
+        setOverlapMenu(null);
         setDocumentContextMenu(null);
         setSectionContextMenu(null);
         setPreviewContextMenu(null);
@@ -5542,6 +5882,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setTool('note');
       setNoteDraft({ start: { x: 440, y: 220 }, end: { x: 800, y: 470 } });
     }
+    if (id === 'drawing-inspector' && state === 'tool')
+      chooseDrawingTool('rectangle');
+    if (id === 'drawing-tools')
+      requestAnimationFrame(() =>
+        document
+          .querySelector('[data-ui-id="drawing-tools"]')
+          ?.setAttribute('open', ''),
+      );
     if (id === 'guides') setGuides({ x: 600, y: 400 });
     const doc = documents[0] ?? SAMPLE_DOCUMENT;
     const section = sections[0] ?? SAMPLE_SECTION;
@@ -6318,6 +6666,44 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         }}
         onPointerCancel={cancelNoteDrawing}
         onLostPointerCapture={cancelNoteDrawing}
+        onContextMenuCapture={(event) => {
+          if (!event.altKey || tool !== 'select') return;
+          const point = flowRef.current?.screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          if (!point) return;
+          const ids = [...nodes]
+            .sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0))
+            .filter((n) => {
+              const parent = sections.find(
+                  (s) => n.parentId === sectionNodeId(s.id),
+                ),
+                x = n.position.x + (parent?.x ?? 0),
+                y = n.position.y + (parent?.y ?? 0);
+              return (
+                point.x >= x &&
+                point.x <=
+                  x + (n.measured?.width ?? Number(n.style?.width ?? 0)) &&
+                point.y >= y &&
+                point.y <=
+                  y + (n.measured?.height ?? Number(n.style?.height ?? 0))
+              );
+            })
+            .map((n) => n.id);
+          if (!ids.length) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setContextMenu(null);
+          setDocumentContextMenu(null);
+          setSectionContextMenu(null);
+          setPreviewContextMenu(null);
+          setOverlapMenu({
+            x: Math.min(event.clientX, window.innerWidth - 270),
+            y: Math.min(event.clientY, window.innerHeight - 320),
+            ids,
+          });
+        }}
         onContextMenu={(event) => {
           if ((event.target as Element).closest('.react-flow__node')) return;
           event.preventDefault();
@@ -6502,7 +6888,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             );
             setGuides({});
             snapLatest.current = null;
-            void persistDraggedNodes(target, moved);
+            void persistDraggedNodes(target, moved).catch(showError);
           }}
           onSelectionChange={({ nodes: selected }) => {
             const nextIds = selected.flatMap((node) =>
@@ -6548,12 +6934,15 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           nodesDraggable={tool === 'select'}
           elementsSelectable={tool === 'select'}
           multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
-          fitView
-          zoomOnScroll={!noteDraft}
-          zoomOnPinch={!noteDraft}
-          zoomOnDoubleClick={tool !== 'note'}
+          fitView={false}
+          zoomOnScroll={!noteDraft && !drawingGesture}
+          zoomOnPinch={!noteDraft && !drawingGesture}
+          zoomOnDoubleClick={
+            tool !== 'note' && tool !== 'drawing' && !drawingGesture
+          }
           minZoom={0.15}
           maxZoom={2}
+          elevateNodesOnSelect={false}
           deleteKeyCode={null}
         >
           <Background
@@ -6573,6 +6962,36 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 ? 'rgba(13, 15, 19, 0.72)'
                 : 'rgba(238, 240, 243, 0.72)'
             }
+          />
+          <DrawingInputLayer
+            tool={drawingTool}
+            style={drawingStyle}
+            enabled={
+              tool === 'drawing' &&
+              !locked &&
+              (!collaboration.active || collaboration.drawingsVersion === 1)
+            }
+            scope={workspace.saveScope ?? ''}
+            canvasId={activeCanvas}
+            items={drawing.items}
+            pressure={drawingPressure}
+            touch={drawingTouch}
+            onCreate={(o) => {
+              if (o.kind === 'shape' && !drawingContinuous)
+                createdDrawingSelection.current = o.id;
+              submitDrawing({ action: 'create', objects: [o] });
+            }}
+            onErase={(targets) => submitDrawing({ action: 'delete', targets })}
+            onPartial={drawing.partial}
+            onGesture={setDrawingGesture}
+            onFinished={() => {
+              if (
+                drawingTool !== 'pen' &&
+                drawingTool !== 'highlighter' &&
+                !drawingContinuous
+              )
+                setTool('select');
+            }}
           />
         </ReactFlow>
         {noteDraft && (
@@ -6665,8 +7084,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       ? node.data.document.relativePath
                       : node.data.kind === 'section'
                         ? node.data.section.relativePath
-                        : node.data.preview.relativePath,
+                        : node.data.kind === 'preview'
+                          ? node.data.preview.relativePath
+                          : '',
                   ),
+                selectedDrawings,
               )
             }
           >
@@ -6677,7 +7099,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               ? `섹션 ${selectedSections.length}개 · 실제 문서 ${inputSelection.length}개`
               : selectedDocuments.length
                 ? `문서 ${selectedDocuments.length}개 선택`
-                : 'HTML 결과 선택'}
+                : selectedDrawings.length
+                  ? `그림 ${selectedDrawings.length}개 선택`
+                  : 'HTML 결과 선택'}
           </span>
           <button
             title="선택 항목 상세 정보"
@@ -6802,6 +7226,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       )}
 
       <nav className="bottom-toolbar floating-surface" aria-label="캔버스 도구">
+        <DrawingToolButtons
+          active={tool === 'drawing'}
+          tool={drawingTool}
+          onTool={chooseDrawingTool}
+          disabled={
+            locked ||
+            !workspace.root ||
+            (collaboration.active && collaboration.drawingsVersion !== 1)
+          }
+        />
         <button
           type="button"
           className={tool === 'select' ? 'active' : ''}
@@ -6861,6 +7295,57 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           <kbd>Ctrl I</kbd>
         </button>
       </nav>
+
+      {(tool === 'drawing' || selectedDrawings.length > 0) && (
+        <DrawingInspector
+          objects={drawing.items.filter((o) =>
+            selectedDrawings.some((s) => s.id === o.id),
+          )}
+          tool={drawingTool}
+          style={drawingStyle}
+          onStyle={setDrawingStyle}
+          submit={submitDrawing}
+          disabled={locked || drawing.saving}
+          onDuplicate={() => duplicateDrawings()}
+          allObjects={drawing.items}
+          onDelete={deleteDrawings}
+          pressure={drawingPressure}
+          onPressure={setDrawingPressure}
+          touch={drawingTouch}
+          onTouch={setDrawingTouch}
+          continuous={drawingContinuous}
+          onContinuous={setDrawingContinuous}
+          canvases={canvasSheets.canvases}
+          canvasId={activeCanvas}
+        />
+      )}
+      {(drawing.error || drawing.recovery || drawing.saving) && (
+        <aside className="drawing-save-alert floating-surface" role="status">
+          {drawing.error ||
+            (drawing.recovery
+              ? '이전에 저장하지 못한 그림 초안이 있습니다.'
+              : '그림 저장 중…')}
+          {drawing.recovery ? (
+            <>
+              <button onClick={() => void drawing.recover().catch(showError)}>
+                초안 복구
+              </button>
+              <button
+                onClick={() => void drawing.discardRecovery().catch(showError)}
+              >
+                초안 버리기
+              </button>
+            </>
+          ) : drawing.error ? (
+            <>
+              <button onClick={drawing.retry}>저장 재시도</button>
+              <button onClick={() => void drawing.hold().catch(showError)}>
+                초안으로 보류
+              </button>
+            </>
+          ) : null}
+        </aside>
+      )}
 
       {runPanelVisible && codexRun && (
         <aside
@@ -7798,6 +8283,48 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </div>
       )}
 
+      {overlapMenu && (
+        <div
+          className="canvas-context-menu drawing-overlap-menu floating-surface"
+          role="menu"
+          aria-label="겹친 항목 선택"
+          style={{
+            left: overlapMenu.x,
+            top: overlapMenu.y,
+            maxHeight: 300,
+            overflow: 'auto',
+          }}
+        >
+          <div className="context-menu-title">겹친 항목 선택</div>
+          {overlapMenu.ids.map((id) => {
+            const n = nodes.find((n) => n.id === id);
+            if (!n) return null;
+            const label =
+              n.data.kind === 'drawing'
+                ? drawingName(n.data.object)
+                : n.data.kind === 'document'
+                  ? n.data.document.title
+                  : n.data.kind === 'section'
+                    ? n.data.section.title
+                    : (n.data.preview.title ?? 'HTML 결과');
+            return (
+              <button
+                key={id}
+                role="menuitem"
+                onClick={() => {
+                  setNodes((current) =>
+                    current.map((n) => ({ ...n, selected: n.id === id })),
+                  );
+                  setOverlapMenu(null);
+                }}
+              >
+                {label}
+                <small>{id.slice(-8)}</small>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {contextMenu && (
         <div
           data-ui-id="canvas-menu"
@@ -7953,13 +8480,35 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 disabled={canvasOperationBusy || !moveCanvasTarget}
                 onClick={() => {
                   setCanvasOperationBusy(true);
-                  void changeSheets({
+                  const command = {
                     action: 'move',
                     id: movingCanvasItems.source,
                     paths: movingCanvasItems.paths,
                     targetId: moveCanvasTarget,
                     expected: canvasSheets.raw ?? null,
-                  })
+                  } as CanvasSheetCommand;
+                  const drawings = movingCanvasItems.drawings ?? [];
+                  void (
+                    drawings.length
+                      ? canvasBatch([
+                          ...(movingCanvasItems.paths.length
+                            ? [{ channel: 'canvases:change', input: command }]
+                            : []),
+                          {
+                            channel: 'drawings:apply',
+                            input: {
+                              canvasId: movingCanvasItems.source,
+                              action: 'move',
+                              targetCanvasId: moveCanvasTarget,
+                              targets: drawings.map((o) => ({
+                                id: o.id,
+                                generation: o.generation,
+                              })),
+                            },
+                          },
+                        ]).then(() => loadProject(false))
+                      : changeSheets(command)
+                  )
                     .then(() => {
                       setMovingCanvasItems(null);
                       setSelectedIds([]);
@@ -9453,7 +10002,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               if (event.key === 'Escape') setDeleteManyPrompt(null);
             }}
           >
-            <h2>선택한 파일·결과 {deleteManyPrompt.length}개를 삭제할까요?</h2>
+            <h2>
+              선택 항목{' '}
+              {deleteManyPrompt.length +
+                deleteDrawingTargets.length +
+                deleteSectionTargets.length}
+              개를 삭제할까요?
+            </h2>
             <p>
               선택한 파일을 휴지통으로 이동하고 섹션의 멤버 목록에서도
               제거합니다. HTML 결과는 전용 결과 폴더 안의 모든 파일과 창
@@ -9463,6 +10018,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               {deleteManyPrompt.map((doc) => (
                 <li key={doc.id}>{doc.title}</li>
               ))}
+              {deleteSectionTargets.map((s) => (
+                <li key={s.id}>{s.title} 섹션과 내부 파일</li>
+              ))}
+              {!!deleteDrawingTargets.length && (
+                <li>그림 {deleteDrawingTargets.length}개</li>
+              )}
             </ul>
             <div className="section-dialog__actions">
               <button autoFocus onClick={() => setDeleteManyPrompt(null)}>
@@ -9483,19 +10044,53 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         window.gameCanvas.listDocuments(),
                         window.gameCanvas.listPreviews(),
                       ]);
-                    await window.gameCanvas.deleteDocuments(
-                      deleteManyPrompt.map((doc) => ({
-                        documentId: doc.id,
-                        relativePath: doc.relativePath,
-                        revision: [
-                          ...currentDocuments,
-                          ...currentPreviews,
-                        ].find(
-                          (current) =>
-                            current.relativePath === doc.relativePath,
-                        )?.revision,
-                      })),
-                    );
+                    const deletions = deleteManyPrompt.map((doc) => ({
+                      documentId: doc.id,
+                      relativePath: doc.relativePath,
+                      revision: [...currentDocuments, ...currentPreviews].find(
+                        (current) => current.relativePath === doc.relativePath,
+                      )?.revision,
+                    }));
+                    if (
+                      deleteDrawingTargets.length ||
+                      deleteSectionTargets.length
+                    ) {
+                      await canvasBatch([
+                        ...(deletions.length
+                          ? [
+                              {
+                                channel: 'documents:delete-many',
+                                input: { documents: deletions },
+                              },
+                            ]
+                          : []),
+                        ...deleteSectionTargets.map((s) => ({
+                          channel: 'sections:delete',
+                          input: {
+                            sectionId: s.id,
+                            relativePath: s.relativePath,
+                            deleteMembers: true,
+                          },
+                        })),
+                        ...(deleteDrawingTargets.length
+                          ? [
+                              {
+                                channel: 'drawings:apply',
+                                input: {
+                                  canvasId: activeCanvasRef.current,
+                                  action: 'delete',
+                                  targets: deleteDrawingTargets.map((o) => ({
+                                    id: o.id,
+                                    generation: o.generation,
+                                  })),
+                                },
+                              },
+                            ]
+                          : []),
+                      ]);
+                    } else await window.gameCanvas.deleteDocuments(deletions);
+                    setDeleteDrawingTargets([]);
+                    setDeleteSectionTargets([]);
                     setDeleteManyPrompt(null);
                     await loadProject(false);
                     setNotice(

@@ -5,6 +5,14 @@ import {
   readCanvasSheets,
 } from './canvas-sheets.ts';
 import {
+  isDrawingPath,
+  snapshotDrawings,
+  readDrawingFile,
+  applyDrawing,
+  DRAWING_DIRECTORY,
+} from './drawing-model.ts';
+import type { DrawingCommand } from './drawing-types.ts';
+import {
   validateCanvasMembership,
   changeCanvasSheets,
 } from './canvas-sheet-commands.ts';
@@ -55,6 +63,7 @@ export function collaborationPath(relative: unknown): string {
       relative === 'output/README.md' ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
+      isDrawingPath(relative) ||
       isAssetPath(relative)
     ) ||
     relative
@@ -68,7 +77,8 @@ export function collaborationPath(relative: unknown): string {
           (segment.startsWith('.') &&
             segment !== '.ai' &&
             !(
-              [RESULT_CATALOG_PATH, CANVAS_SHEETS_PATH].includes(relative) &&
+              ([RESULT_CATALOG_PATH, CANVAS_SHEETS_PATH].includes(relative) ||
+                isDrawingPath(relative)) &&
               segment === '.canvas'
             )) ||
           /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment),
@@ -82,6 +92,15 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
   validateCanvasMembership(files as Snapshot);
+  const sheets = readCanvasSheets((files as Snapshot)[CANVAS_SHEETS_PATH]);
+  for (const path of Object.keys(files).filter(isDrawingPath)) {
+    const id = path.slice(DRAWING_DIRECTORY.length + 1, -5);
+    if (!sheets.canvases.some((c) => c.id === id))
+      throw new Error('그림 파일의 캔버스를 찾을 수 없습니다.');
+  }
+  for (const o of snapshotDrawings(files as Snapshot))
+    if (!sheets.canvases.some((c) => c.id === o.canvasId))
+      throw new Error('그림의 캔버스를 찾을 수 없습니다.');
   const entries = Object.entries(files);
   if (entries.length > 500)
     throw new Error('최대 500개 파일을 공유할 수 있습니다.');
@@ -107,6 +126,10 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
     bytes += Buffer.byteLength(value);
+    if (isDrawingPath(key)) {
+      readDrawingFile(value, key.slice(DRAWING_DIRECTORY.length + 1, -5));
+      continue;
+    }
     if (key === CANVAS_SHEETS_PATH) {
       readCanvasSheets(value);
       continue;
@@ -263,6 +286,8 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
 }
 
 export const commandLabels: Record<string, string> = {
+  'drawings:apply': '도형 · 그림 편집',
+  'canvas:batch': '선택 항목 함께 편집',
   'canvases:change': '캔버스 구성 변경',
   'results:move': 'HTML 결과물 폴더 이동',
   'results:organize': '기존 HTML 결과물 폴더 정리',
@@ -319,6 +344,42 @@ export function reduceCollaboration(
     throw new Error('허용되지 않은 공동 작업입니다.');
   const next = { ...files };
   const input = record(value);
+  if (channel === 'canvas:batch') {
+    const commands = array(input.commands);
+    if (!commands.length || commands.length > 10)
+      throw new Error('함께 편집할 항목을 확인해주세요.');
+    let changed = files;
+    const results: unknown[] = [];
+    const allowed = [
+      'drawings:apply',
+      'layouts:update',
+      'documents:duplicate',
+      'documents:delete-many',
+      'sections:delete',
+      'canvases:change',
+    ];
+    for (const command of commands) {
+      const part = record(command);
+      if (!allowed.includes(String(part.channel)))
+        throw new Error('허용되지 않은 묶음 작업입니다.');
+      const reduced = reduceCollaboration(
+        changed,
+        String(part.channel),
+        part.input,
+      );
+      changed = reduced.files;
+      results.push(reduced.result);
+    }
+    checkSnapshot(changed);
+    return { files: changed, result: results };
+  }
+  if (channel === 'drawings:apply') {
+    assertCanvas(files, input.canvasId);
+    if (input.action === 'move') assertCanvas(files, input.targetCanvasId);
+    const changed = applyDrawing(files, input as unknown as DrawingCommand);
+    checkSnapshot(changed);
+    return { files: changed, result: undefined };
+  }
   if (channel === 'canvases:change') {
     const changed = changeCanvasSheets(
       files,

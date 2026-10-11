@@ -15,6 +15,7 @@ const api: GameCanvasApi = {
     return () => ipcRenderer.removeListener('ui-debug:toggle', wrapped);
   },
   getCanvasChanges: (known) => ipcRenderer.invoke('canvas:changes', known),
+  applyCanvasCommands: (input) => ipcRenderer.invoke('canvas:batch', input),
   getDocument: (relative) => ipcRenderer.invoke('documents:get', relative),
   getEditorDraft: (key) => ipcRenderer.invoke('drafts:get', key),
   setEditorDraft: (key, draft, sequence) =>
@@ -155,6 +156,9 @@ const api: GameCanvasApi = {
   getCanvasSheets: () => ipcRenderer.invoke('canvases:list'),
   changeCanvasSheets: (input) => ipcRenderer.invoke('canvases:change', input),
   listDocuments: () => ipcRenderer.invoke('documents:list'),
+  listDrawings: () => ipcRenderer.invoke('drawings:list'),
+  getDrawingChanges: (known) => ipcRenderer.invoke('drawings:changes', known),
+  applyDrawingCommand: (input) => ipcRenderer.invoke('drawings:apply', input),
   listSections: () => ipcRenderer.invoke('sections:list'),
   createIdea: (input) => ipcRenderer.invoke('documents:create-idea', input),
   createSection: (input) => ipcRenderer.invoke('sections:create', input),

@@ -43,7 +43,7 @@ async function run() {
     `<body style="margin:0"><canvas id="view" width="800" height="600"></canvas><script>
     window.bootId=Math.random();window.turn=0;
     document.addEventListener('mousemove',e=>{if(document.pointerLockElement)turn+=e.movementX});
-    window.capture=()=>document.querySelector('canvas').requestPointerLock().then(()=>true,()=>false);
+    window.capture=()=>document.querySelector('canvas').requestPointerLock().then(()=>true,e=>{console.log('pointer capture failed',e.name,e.message);return false});
   </script></body>`,
     'test-card',
   );
@@ -74,6 +74,10 @@ async function run() {
       true,
     );
     await wait(3000);
+    // A foreground app can take focus during the native fullscreen transition.
+    // Pointer lock needs focus independently of the permission decision.
+    win.focus();
+    await wait(250);
     assert.equal(
       await win.webContents.executeJavaScript('!!document.fullscreenElement'),
       true,

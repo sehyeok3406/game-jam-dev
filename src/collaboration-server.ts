@@ -1,4 +1,5 @@
 import { SyncStore } from './sync-store.ts';
+import { isDrawingPath, drawingDelta } from './drawing-model.ts';
 import {
   advanceProperties,
   changedGroups,
@@ -128,7 +129,11 @@ export type CollaborationEnvelope = {
   revisions: Record<string, number>;
   authorship?: FileAuthorshipMap;
   properties?: PropertyVersions;
-  delta?: { from: number; changes: Record<string, string | null> };
+  delta?: {
+    from: number;
+    changes: Record<string, string | null>;
+    drawings?: Record<string, import('./drawing-types.ts').DrawingDelta>;
+  };
 };
 type Options = {
   dataDirectory: string;
@@ -386,6 +391,7 @@ export async function createCollaborationServer(options: Options) {
       gamejamWorkflow: true,
       documentBundles: true,
       documentOutputFormats: true,
+      drawingsVersion: 1,
       htmlImportAnalysis: true,
       htmlResultFolders: true,
       structuredResults: true,
@@ -501,6 +507,13 @@ export async function createCollaborationServer(options: Options) {
       (relative) => before[relative] !== after[relative],
     )) {
       const groups = changedGroups(relative, before[relative], after[relative]);
+      // Targets are checked by the drawing reducer against the current snapshot.
+      if (
+        (command?.channel === 'drawings:apply' ||
+          command?.channel === 'canvas:batch') &&
+        isDrawingPath(relative)
+      )
+        continue;
       const scoped =
         command?.propertySyncVersion === 1 &&
         [
@@ -651,6 +664,7 @@ export async function createCollaborationServer(options: Options) {
           gamejamWorkflow: true,
           documentBundles: true,
           documentOutputFormats: true,
+          drawingsVersion: 1,
           htmlImportAnalysis: true,
           htmlResultFolders: true,
           structuredResults: true,
@@ -660,7 +674,7 @@ export async function createCollaborationServer(options: Options) {
           propertySync: true,
           deltaSync: true,
           eventStream: true,
-          version: '0.12.2',
+          version: '0.14.0',
         });
         return;
       }
@@ -860,6 +874,25 @@ export async function createCollaborationServer(options: Options) {
         project = await expireJob(project);
         if (['rename', 'role', 'invite', 'restore'].includes(action))
           admin(member);
+        if (
+          Object.keys(project.files).some(isDrawingPath) &&
+          ![
+            'state',
+            'leave',
+            'history',
+            'history-read',
+            'lock',
+            'unlock',
+            'ai-heartbeat',
+            'ai-event',
+            'ai-cancel',
+          ].includes(action) &&
+          input.drawingsVersion !== 1
+        )
+          throw new ApiError(
+            '그림이 있는 프로젝트입니다. 앱을 업데이트해주세요.',
+            409,
+          );
         if (
           project.propertySync &&
           ![
@@ -1717,6 +1750,22 @@ export async function createCollaborationServer(options: Options) {
               changes[file.relativePath] =
                 current.files[file.relativePath] ?? null;
           const relatives = Object.keys(changes);
+          const drawings: Record<
+            string,
+            import('./drawing-types.ts').DrawingDelta
+          > = {};
+          if (input.drawingsVersion === 1)
+            for (const relative of relatives.filter(isDrawingPath)) {
+              const first = records.find((r) =>
+                r.entry.files.some((f) => f.relativePath === relative),
+              );
+              drawings[relative] = drawingDelta(
+                relative,
+                first?.before[relative],
+                current.files[relative],
+              );
+              delete changes[relative];
+            }
           output = {
             ...(result as object),
             files: undefined,
@@ -1732,7 +1781,11 @@ export async function createCollaborationServer(options: Options) {
             authorship: Object.fromEntries(
               relatives.map((key) => [key, current.authorship[key] ?? null]),
             ),
-            delta: { from, changes },
+            delta: {
+              from,
+              changes,
+              ...(Object.keys(drawings).length ? { drawings } : {}),
+            },
           };
         }
       }

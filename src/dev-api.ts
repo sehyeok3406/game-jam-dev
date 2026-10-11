@@ -3,6 +3,16 @@ import {
   readCanvasSheets,
   canvasId,
 } from './canvas-sheets';
+import {
+  applyDrawing,
+  snapshotDrawings,
+  mergeDrawingFile,
+  isDrawingPath,
+  drawingPath,
+  readDrawingFile,
+  serializeDrawing,
+} from './drawing-model';
+let drawingFiles: Record<string, string> = {};
 import type {
   CanvasDocument,
   CanvasSection,
@@ -153,13 +163,17 @@ const taskDocumentOutputs = new Map<
 >();
 
 const listeners = new Set<() => void>();
-const notify = () => listeners.forEach((listener) => listener());
+let devBatchActive = false;
+const notify = () => {
+  if (!devBatchActive) listeners.forEach((listener) => listener());
+};
 const runListeners = new Set<(event: CodexRunEvent) => void>();
 let lastDevEvent: CodexRunEvent | null = null;
 const previewWindows = new Map<string, PreviewWindowState>();
 const histories: HistoryEntry[] = [];
 const devAuthorship: Record<string, FileAuthorship> = {};
 type DevState = {
+  drawingFiles: Record<string, string>;
   sheetsRaw: string | null;
   documents: CanvasDocument[];
   sections: CanvasSection[];
@@ -167,9 +181,10 @@ type DevState = {
 };
 const historyStates = new Map<string, { before: DevState; after: DevState }>();
 const devSnapshot = (): DevState =>
-  structuredClone({ documents, sections, previews, sheetsRaw });
+  structuredClone({ documents, sections, previews, sheetsRaw, drawingFiles });
 const devFiles = (state: DevState): Record<string, string> =>
   Object.fromEntries([
+    ...Object.entries(state.drawingFiles),
     ...(state.sheetsRaw ? [[CANVAS_SHEETS_PATH, state.sheetsRaw]] : []),
     ...state.documents.map((item) => [
       item.relativePath,
@@ -309,9 +324,25 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       (key) => left[key] !== right[key],
     );
     assertAiFilesUnlocked(activeDevRun?.fileLock, touched);
-    if (touched.some((key) => current[key] !== left[key]))
+    if (
+      touched.some((key) => !isDrawingPath(key) && current[key] !== left[key])
+    )
       throw new Error('이후 변경과 충돌하여 중단했습니다.');
     const before = devSnapshot();
+    for (const p of new Set([
+      ...Object.keys(expected.drawingFiles),
+      ...Object.keys(desired.drawingFiles),
+    ])) {
+      const raw = mergeDrawingFile(
+        p,
+        expected.drawingFiles[p],
+        desired.drawingFiles[p],
+        drawingFiles[p],
+        true,
+      );
+      if (raw === undefined) delete drawingFiles[p];
+      else drawingFiles[p] = raw;
+    }
     if (touched.includes(CANVAS_SHEETS_PATH)) sheetsRaw = desired.sheetsRaw;
     previews = [
       ...previews.filter((item) => !touched.includes(item.relativePath)),
@@ -829,10 +860,27 @@ export function createDevGameCanvasApi(): GameCanvasApi {
                   ?.canvasId,
               ) === canvasId(section.canvasId),
           );
-        if (input.action === 'delete')
+        if (input.action === 'delete') {
+          const from = drawingPath(input.id),
+            to = drawingPath(input.targetId!);
+          const objects = readDrawingFile(drawingFiles[from], input.id).objects;
+          if (objects.length)
+            drawingFiles[to] = serializeDrawing({
+              version: 1,
+              canvasId: input.targetId!,
+              objects: [
+                ...readDrawingFile(drawingFiles[to], input.targetId!).objects,
+                ...objects.map((o) => ({
+                  ...o,
+                  generation: crypto.randomUUID(),
+                })),
+              ],
+            });
+          delete drawingFiles[from];
           registry.canvases = registry.canvases.filter(
             (item) => item.id !== input.id,
           );
+        }
       } else throw new Error('캔버스를 찾을 수 없습니다.');
       sheetsRaw =
         JSON.stringify(readCanvasSheets(JSON.stringify(registry)), null, 2) +
@@ -840,6 +888,77 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
     },
     listDocuments: async () => structuredClone(documents),
+    applyCanvasCommands: async ({ commands }) => {
+      const before = devSnapshot();
+      devBatchActive = true;
+      try {
+        const results: unknown[] = [];
+        for (const command of commands) {
+          const input = command.input as never;
+          if (command.channel === 'drawings:apply') {
+            drawingFiles = applyDrawing(drawingFiles, input);
+            results.push(undefined);
+          } else if (command.channel === 'documents:duplicate')
+            results.push(await api.duplicateDocuments(input));
+          else if (command.channel === 'layouts:update') {
+            await api.updateLayouts(
+              (
+                command.input as {
+                  updates: Parameters<GameCanvasApi['updateLayouts']>[0];
+                }
+              ).updates,
+            );
+            results.push(undefined);
+          } else if (command.channel === 'documents:delete-many') {
+            await api.deleteDocuments(
+              (
+                command.input as {
+                  documents: Parameters<GameCanvasApi['deleteDocuments']>[0];
+                }
+              ).documents,
+            );
+            results.push(undefined);
+          } else if (command.channel === 'sections:delete')
+            results.push(await api.deleteSection(input));
+          else if (command.channel === 'canvases:change')
+            results.push(await api.changeCanvasSheets(input));
+          else throw new Error('허용되지 않은 묶음 작업입니다.');
+        }
+        return results;
+      } catch (error) {
+        documents = before.documents;
+        sections = before.sections;
+        previews = before.previews;
+        sheetsRaw = before.sheetsRaw;
+        drawingFiles = before.drawingFiles;
+        throw error;
+      } finally {
+        devBatchActive = false;
+      }
+    },
+    listDrawings: async () => snapshotDrawings(drawingFiles),
+    getDrawingChanges: async (known) => {
+      const objects = snapshotDrawings(drawingFiles),
+        signatures = Object.fromEntries(
+          objects.map((o) => [o.id, JSON.stringify(o)]),
+        );
+      return {
+        changed: objects.filter((o) => signatures[o.id] !== known[o.id]),
+        removed: Object.keys(known).filter((id) => !signatures[id]),
+        signatures,
+      };
+    },
+    applyDrawingCommand: async (input) => {
+      if (collab.active && collab.role === 'viewer')
+        throw new Error('보기 권한입니다.');
+      const before = devSnapshot();
+      drawingFiles = applyDrawing(drawingFiles, input);
+      recordDevHistory(before, devSnapshot(), '도형 · 그림 편집', 'user');
+      const entry = histories[0];
+      if (entry) journal.push({ id: entry.id, label: entry.label });
+      notify();
+      return snapshotDrawings(drawingFiles);
+    },
     listSections: async () => structuredClone(sections),
     createIdea: async ({ x, y, width, height, canvasId: selectedCanvas }) => {
       const id = `idea-${documents.length + 1}`;
@@ -1486,6 +1605,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
   };
   const mutating = new Set([
+    'applyCanvasCommands',
     'changeCanvasSheets',
     'moveResult',
     'organizeResults',
@@ -1550,6 +1670,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
             sections = before.sections;
             previews = before.previews;
             sheetsRaw = before.sheetsRaw;
+            drawingFiles = before.drawingFiles;
             notify();
             throw error;
           }

@@ -1,4 +1,6 @@
 import { canvasId, assertCanvas } from './canvas-sheets.ts';
+import { snapshotDrawings } from './drawing-model.ts';
+import { drawingBounds } from './drawing-geometry.ts';
 import { isPreviewPath } from './preview-output.ts';
 import { htmlSourcePath, sourceMetadata } from './html-source.ts';
 import matter from './markdown.ts';
@@ -21,21 +23,26 @@ export function documentBounds(
   files: Snapshot,
   selectedCanvas?: string,
 ): CanvasRect[] {
-  return Object.entries(files).flatMap(([path, raw]) => {
-    if (!path.endsWith('.md')) return [];
-    const { data } = matter(raw);
-    if (selectedCanvas && canvasId(data.canvas_id) !== selectedCanvas)
-      return [];
-    if (!visible(path, data) && !data.html_source) return [];
-    return [
-      {
-        x: finite(data.x, 120),
-        y: finite(data.y, 120),
-        ...dimensions(data),
-        ...(data.collapsed === true ? { height: 38 } : {}),
-      },
-    ];
-  });
+  return [
+    ...snapshotDrawings(files)
+      .filter((o) => !selectedCanvas || o.canvasId === selectedCanvas)
+      .map(drawingBounds),
+    ...Object.entries(files).flatMap(([path, raw]) => {
+      if (!path.endsWith('.md')) return [];
+      const { data } = matter(raw);
+      if (selectedCanvas && canvasId(data.canvas_id) !== selectedCanvas)
+        return [];
+      if (!visible(path, data) && !data.html_source) return [];
+      return [
+        {
+          x: finite(data.x, 120),
+          y: finite(data.y, 120),
+          ...dimensions(data),
+          ...(data.collapsed === true ? { height: 38 } : {}),
+        },
+      ];
+    }),
+  ];
 }
 
 /** App-owned geometry overrides AI coordinates; existing cards keep their layout. */

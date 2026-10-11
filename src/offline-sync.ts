@@ -1,4 +1,5 @@
 import { mergeProperties, changedGroups } from './sync-properties.ts';
+import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
 import { createHash } from 'node:crypto';
 import matter from './markdown.ts';
 import {
@@ -23,6 +24,29 @@ function mergeFile(
   local: string | undefined,
   server: string | undefined,
 ) {
+  if (isDrawingPath(path)) {
+    try {
+      return { value: mergeDrawingFile(path, base, local, server) };
+    } catch {
+      const localChoice = mergeDrawingFile(
+        path,
+        base,
+        local,
+        server,
+        false,
+        'local',
+      );
+      const serverChoice = mergeDrawingFile(
+        path,
+        base,
+        local,
+        server,
+        false,
+        'server',
+      );
+      return { conflict: true, value: localChoice, localChoice, serverChoice };
+    }
+  }
   if (local === base || local === server) return { value: server };
   if (server === base) return { value: local };
   if (
@@ -119,7 +143,18 @@ export function planOfflineMerge(
   const touched = changedPaths(base, local);
   for (const path of touched) {
     const result = mergeFile(path, base[path], local[path], server[path]);
-    if (result.conflict) conflicts.push(conflict([path], local, server));
+    if (result.conflict)
+      conflicts.push(
+        conflict(
+          [path],
+          'localChoice' in result
+            ? { ...local, [path]: result.localChoice! }
+            : local,
+          'serverChoice' in result
+            ? { ...server, [path]: result.serverChoice! }
+            : server,
+        ),
+      );
     if (result.value === undefined) delete merged[path];
     else merged[path] = result.value;
   }

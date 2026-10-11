@@ -42,6 +42,35 @@ const entry = (
 // actual state identifier; never invent a component name for an inline view.
 export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
   entry(
+    'drawing-tools',
+    '도형 · 펜 · 지우개',
+    'DrawingToolButtons',
+    'drawing/DrawingControls',
+    '캔버스',
+    project,
+    '[data-ui-id="drawing-tools"]',
+  ),
+  entry(
+    'drawing-inspector',
+    '도형 · 그림 속성',
+    'DrawingInspector',
+    'drawing/DrawingControls',
+    '패널',
+    project,
+    '[data-ui-id="drawing-inspector"]',
+    ['tool', 'rectangle', 'arrow', 'pen'],
+  ),
+  entry(
+    'drawing-object',
+    '도형 선택 · 변형',
+    'DrawingNode',
+    'drawing/DrawingNode',
+    '캔버스',
+    project,
+    '.drawing-node',
+    ['rectangle', 'ellipse', 'arrow', 'pen'],
+  ),
+  entry(
     'flow-controls',
     '캔버스 확대·맞춤',
     'Controls',

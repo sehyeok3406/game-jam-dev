@@ -10,6 +10,53 @@ import type {
   UpdateState,
 } from '../../shared';
 import type { UiDebugSelection } from './uiDebugRegistry';
+import {
+  DEFAULT_SHAPE_STYLE,
+  DEFAULT_PEN_STYLE,
+  shapeFromDrag,
+  strokeGeometry,
+} from '../../drawing-geometry.ts';
+import type { DrawingItem, ShapeKind } from '../../drawing-types';
+export function sampleDrawing(state: string): DrawingItem {
+  return {
+    canvasId: 'default',
+    id: '00000000-0000-4000-8000-000000000001',
+    generation: '00000000-0000-4000-8000-000000000002',
+    createdAt: 1,
+    updatedAt: 1,
+    order: 1,
+    layer: state === 'pen' ? 'annotation' : 'background',
+    ...(state === 'pen'
+      ? {
+          kind: 'stroke',
+          style: { ...DEFAULT_PEN_STYLE },
+          ...strokeGeometry(
+            [
+              [200, 200, 0.5],
+              [270, 160, 0.7],
+              [340, 220, 0.9],
+              [400, 150, 0.4],
+            ],
+            'pen',
+            true,
+          ),
+        }
+      : {
+          kind: 'shape',
+          style: {
+            ...DEFAULT_SHAPE_STYLE,
+            ...(state === 'arrow' ? { fill: null } : {}),
+          },
+          ...shapeFromDrag(
+            (['ellipse', 'arrow'].includes(state)
+              ? state
+              : 'rectangle') as ShapeKind,
+            { x: 200, y: 140 },
+            { x: 520, y: 340 },
+          ),
+        }),
+  } as DrawingItem;
+}
 
 export const SAMPLE_TIME = Date.UTC(2026, 9, 9, 3);
 export const SAMPLE_DOCUMENT: CanvasDocument = {
@@ -259,11 +306,19 @@ export function createUiPreviewApi(
   selection: UiDebugSelection,
   blocked: (method: string) => void,
 ): GameCanvasApi {
-  const documents = sampleDocuments(selection);
+  const drawings =
+    ['drawing-inspector', 'drawing-object'].includes(selection.id) &&
+    selection.state !== 'tool'
+      ? [sampleDrawing(selection.state)]
+      : [];
+  const drawingPreview = selection.id.startsWith('drawing-');
+  const documents = drawingPreview ? [] : sampleDocuments(selection);
   const empty =
     ['canvas', 'compare'].includes(selection.id) && selection.state === 'empty';
   let previews =
-    empty || ['document', 'image', 'editor', 'markdown'].includes(selection.id)
+    empty ||
+    drawingPreview ||
+    ['document', 'image', 'editor', 'markdown'].includes(selection.id)
       ? []
       : [
           SAMPLE_PREVIEW,
@@ -330,6 +385,7 @@ export function createUiPreviewApi(
     getWorkspace: async () => ({
       root: 'ui-preview',
       name: '전투 시스템 연구',
+      saveScope: 'ui-preview',
     }),
     listProjects: async () => {
       if (selection.id === 'home' && selection.state === 'loading')
@@ -351,12 +407,19 @@ export function createUiPreviewApi(
       raw: null,
     }),
     listDocuments: async () => structuredClone(documents),
+    listDrawings: async () => structuredClone(drawings),
+    getDrawingChanges: async () => ({
+      changed: structuredClone(drawings),
+      removed: [],
+      signatures: {},
+    }),
     getDocument: async (path: string) =>
       structuredClone(
         documents.find((item) => item.relativePath === path) ?? null,
       ),
     listSections: async () =>
       empty ||
+      drawingPreview ||
       ['document', 'image', 'editor', 'markdown'].includes(selection.id) ||
       (['navigator', 'command'].includes(selection.id) &&
         selection.state === 'empty')
@@ -375,6 +438,8 @@ export function createUiPreviewApi(
       collapsed: selection.id === 'preview' && selection.state === 'collapsed',
     }),
     getEditorDraft: async () => null,
+    getDocumentSaveStates: async () => [],
+    onDocumentSaveChanged: subscribe,
     getUndoState: async () => ({ undo: null, redo: null }),
     getCollaboration: async () => sampleCollaboration(selection),
     getTestUsers: async () => ({

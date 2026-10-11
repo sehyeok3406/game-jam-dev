@@ -243,7 +243,10 @@ test(
         if ($LASTEXITCODE -ne 0 -or (Get-Clipboard -Raw) -cne $expectedInfo) { throw 'INFO_WITHOUT_KEY_FAILED' }
         Write-Output 'Fixture clipboard verified'
       } finally {
-        if ($null -eq $previousClipboard) { Set-Clipboard -Value '' } else { Set-Clipboard -Value $previousClipboard }
+        if ([string]::IsNullOrEmpty($previousClipboard)) {
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Clipboard]::Clear()
+        } else { Set-Clipboard -Value $previousClipboard }
       }
     `,
     );

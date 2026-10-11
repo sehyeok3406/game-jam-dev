@@ -1,4 +1,5 @@
 import matter from './markdown.ts';
+import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
 import type { Snapshot } from './project-store.ts';
 
 export const propertyKeys = {
@@ -52,6 +53,8 @@ export function mergeProperties(
   desired?: string,
   current?: string,
 ) {
+  if (isDrawingPath(relative))
+    return mergeDrawingFile(relative, expected, desired, current, true);
   if (current === expected) return desired;
   if (
     expected === undefined ||

@@ -9,6 +9,7 @@ import type {
 } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
 import { checkSnapshot, reduceCollaboration } from './collaboration-model.ts';
+import { applyDrawingDelta } from './drawing-model.ts';
 import {
   changedPaths,
   planOfflineMerge,
@@ -304,6 +305,10 @@ export class CollaborationClient {
         if (value === null) delete files[relative];
         else files[relative] = value;
       }
+      for (const [relative, delta] of Object.entries(
+        result.delta.drawings ?? {},
+      ))
+        applyDrawingDelta(files, relative, delta);
       checkSnapshot(files);
       this.files = this.offline?.local ?? files;
       this.revisions = { ...this.revisions, ...result.revisions };
@@ -502,6 +507,7 @@ export class CollaborationClient {
       {
         ...(input as object),
         syncClientVersion: 1,
+        drawingsVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
         action !== 'ai-start' &&
@@ -738,7 +744,32 @@ export class CollaborationClient {
   async command(channel: string, input: unknown) {
     return this.serial(async () => {
       if (
-        channel === 'canvases:change' &&
+        (channel === 'drawings:apply' || channel === 'canvas:batch') &&
+        this.state.drawingsVersion !== 1
+      )
+        throw new Error(
+          '도형 · 그림 편집을 사용하려면 협업 서버를 업데이트해주세요.',
+        );
+      if (
+        channel === 'drawings:apply' &&
+        (input as { action?: string }).action === 'move' &&
+        (this.offline || !this.state.connected || this.state.pendingChanges)
+      )
+        throw new Error(
+          '그림의 캔버스 이동은 온라인에서 동기화 완료 후 진행해주세요.',
+        );
+      if (
+        (channel === 'canvases:change' ||
+          (channel === 'canvas:batch' &&
+            (
+              input as {
+                commands?: { channel: string; input: { action?: string } }[];
+              }
+            ).commands?.some(
+              (c) =>
+                c.channel === 'canvases:change' ||
+                (c.channel === 'drawings:apply' && c.input.action === 'move'),
+            ))) &&
         (this.offline || !this.state.connected || this.state.pendingChanges)
       )
         throw new Error(
@@ -921,7 +952,10 @@ export class CollaborationClient {
         );
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {
-        id: randomUUID(),
+        id:
+          channel === 'drawings:apply'
+            ? ((input as { requestId?: string }).requestId ?? randomUUID())
+            : randomUUID(),
         ...(this.state.propertySync
           ? {
               propertySyncVersion: 1,
@@ -1000,10 +1034,20 @@ export class CollaborationClient {
         historyId?: string;
       };
       // Keep the exact operation ID across app crashes and lost responses.
-      const preview =
-        channel !== 'tasks:create'
-          ? reduceCollaboration(this.files, channel, input).files
-          : undefined;
+      let preview: Snapshot | undefined;
+      if (channel !== 'tasks:create') {
+        try {
+          preview = reduceCollaboration(this.files, channel, input).files;
+        } catch (error) {
+          // A confirmed drawing request may be replayed after a lost IPC reply.
+          // Let the server resolve its stable operation ID before validating again.
+          if (
+            channel !== 'drawings:apply' ||
+            !(input as { requestId?: string }).requestId
+          )
+            throw error;
+        }
+      }
       this.outgoing = { command, base: { ...this.files }, local: preview };
       try {
         await this.persist();

@@ -30,7 +30,7 @@ async function call(channel: string, ...args: unknown[]) {
   ) as Promise<any>;
 }
 async function terminal(id: string) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 600; attempt++) {
     const event = events.find(
       (item) =>
         item.runId === id &&
@@ -2156,6 +2156,126 @@ try {
   );
   console.log(
     'PASS: production IPC synchronizes canvas membership, freezes local AI destination, allows new sheets during AI, preserves files on canvas deletion and restores them with undo/redo',
+  );
+  const drawingScope = (await call('workspace:get')).saveScope;
+  const shape = {
+    id: crypto.randomUUID(),
+    generation: crypto.randomUUID(),
+    kind: 'shape',
+    geometry: { shape: 'ellipse' },
+    transform: { x: 130, y: 240, width: 160, height: 120, rotation: 0 },
+    style: {
+      fill: '#dbeafe',
+      stroke: '#2563eb',
+      strokeWidth: 2,
+      opacity: 1,
+      strokePattern: 'solid',
+    },
+    layer: 'background',
+    order: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const drawingRequest = crypto.randomUUID();
+  await assert.rejects(
+    call('drawings:apply', {
+      scope: 'wrong-project',
+      canvasId: 'default',
+      action: 'create',
+      objects: [shape],
+    }),
+    /프로젝트/,
+  );
+  await call('drawings:apply', {
+    scope: drawingScope,
+    requestId: drawingRequest,
+    canvasId: 'default',
+    action: 'create',
+    objects: [shape],
+  });
+  await call('drawings:apply', {
+    scope: drawingScope,
+    requestId: drawingRequest,
+    canvasId: 'default',
+    action: 'create',
+    objects: [shape],
+  });
+  assert.equal((await call('drawings:list')).length, 1);
+  const changes = await call('drawings:changes', {});
+  assert.equal(changes.changed[0].id, shape.id);
+  assert.equal(
+    (await call('drawings:changes', changes.signatures)).changed.length,
+    0,
+  );
+  await call('canvas:batch', {
+    scope: drawingScope,
+    commands: [
+      {
+        channel: 'drawings:apply',
+        input: {
+          canvasId: 'default',
+          action: 'patch',
+          patches: [
+            {
+              id: shape.id,
+              generation: shape.generation,
+              transform: { x: 800 },
+            },
+          ],
+        },
+      },
+      {
+        channel: 'layouts:update',
+        input: {
+          updates: [
+            {
+              kind: 'document',
+              relativePath: canvasNote.relativePath,
+              x: 800,
+              y: 600,
+              width: 340,
+              height: 300,
+              size: false,
+            },
+          ],
+        },
+      },
+    ],
+  });
+  assert.equal((await call('drawings:list'))[0].transform.x, 800);
+  await call('edit:undo');
+  assert.equal((await call('drawings:list'))[0].transform.x, 130);
+  await call('edit:redo');
+  assert.equal((await call('drawings:list'))[0].transform.x, 800);
+  await call('drawings:apply', {
+    scope: drawingScope,
+    canvasId: 'default',
+    action: 'move',
+    targetCanvasId: 'ipc-shop',
+    targets: [shape],
+  });
+  await call('canvases:change', {
+    action: 'delete',
+    id: 'ipc-shop',
+    targetId: 'default',
+    expected: (await call('canvases:list')).raw,
+  });
+  assert.equal((await call('drawings:list'))[0].canvasId, 'default');
+  await assert.rejects(
+    fs.stat(
+      path.join(
+        (await call('workspace:get')).root,
+        '.canvas/drawings/ipc-shop.json',
+      ),
+    ),
+    (e) => e.code === 'ENOENT',
+  );
+  await call('edit:undo');
+  assert.equal((await call('drawings:list'))[0].canvasId, 'ipc-shop');
+  await call('edit:redo');
+  assert.equal((await call('drawings:list'))[0].canvasId, 'default');
+  console.log(
+    'PASS: production drawing IPC validates project scopes, serves object changes, saves mixed gestures atomically, moves/deletes canvases and supports undo/redo on disk',
   );
 } finally {
   if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;

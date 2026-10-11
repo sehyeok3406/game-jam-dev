@@ -478,6 +478,17 @@ export type GameCanvasApi = {
   getWorkspace: () => Promise<WorkspaceState>;
   selectWorkspace: () => Promise<WorkspaceState>;
   listDocuments: () => Promise<CanvasDocument[]>;
+  listDrawings: () => Promise<import('./drawing-types').DrawingItem[]>;
+  applyCanvasCommands: (input: {
+    scope: string;
+    commands: { channel: string; input: unknown }[];
+  }) => Promise<unknown[]>;
+  getDrawingChanges: (
+    known: Record<string, string>,
+  ) => Promise<import('./drawing-types').DrawingChanges>;
+  applyDrawingCommand: (
+    command: import('./drawing-types').DrawingCommand,
+  ) => Promise<import('./drawing-types').DrawingItem[]>;
   listSections: () => Promise<CanvasSection[]>;
   createIdea: (input: CreateIdeaInput) => Promise<CanvasDocument>;
   createSection: (input: CreateSectionInput) => Promise<CanvasSection>;
@@ -598,6 +609,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  drawingsVersion?: number;
   propertySync?: boolean;
   deltaSync?: boolean;
   eventStream?: boolean;
