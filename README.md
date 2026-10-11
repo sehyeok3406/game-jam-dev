@@ -4,6 +4,8 @@
 
 문서 정리와 HTML 분석은 `게임 개요 / 핵심 플레이 / 모호한 점` 세 문서를 기본값으로 두고, 제목·종류·포함할 내용과 개수(1–21개)를 편집합니다. 시스템별 자동 분리도 선택할 수 있으며 HTML 구현에는 생성된 문서 전체를 전달합니다. 기존 문서 갱신은 ID를 유지합니다. 공동 프로젝트에서는 앱과 협업 서버 모두 v0.13.6의 출력 구성 지원이 필요합니다. [사용법·저장 구조·검증](SYSTEM_DOCUMENTS.md)
 
+2026-10-11 [v0.13.6 정식 배포 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.6) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.6/Game.Jam-0.13.6.Setup.exe). 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 배포 소스 285개 자동 테스트·전체 통합 검사·실제 Windows 앱과 내장 서버 런타임·공개 다운로드와 업데이트 피드 검증을 통과했습니다.
+
 ### v0.13.5 HTML 외부 참조 오탐 · 미리보기 배치 수정
 
 PixiJS의 `isUrl(r)`·`toDataURL(a)`를 외부 파일로 인식하던 문제를 수정했습니다. HTML·CSS·JavaScript를 구분해 실제 주소를 검사하며, 경고가 있어도 게임이 아래로 밀리지 않고 남은 높이를 채웁니다. 기존 HTML을 다시 합치거나 불러올 필요가 없습니다. [검사 범위·사용 안내](HTML_REFERENCE_INSPECTION.md)
