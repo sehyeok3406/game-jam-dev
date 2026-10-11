@@ -690,6 +690,8 @@ export function reduceCollaboration(
         instructions: input.instructions as string | undefined,
         resultName: input.resultName as string | undefined,
         thenImplement: input.thenImplement as CreateTaskInput['thenImplement'],
+        requestSnapshot:
+          input.requestSnapshot as CreateTaskInput['requestSnapshot'],
       },
       id,
       files,

@@ -24,6 +24,8 @@ import {
 } from '../src/project-store.ts';
 import { defaultDocumentTemplates } from '../src/document-format.ts';
 import { gamejamIssues } from '../src/gamejam-validation.ts';
+import { CollaborationClient } from '../src/collaboration-client.ts';
+import { createCollaborationServer } from '../src/collaboration-server.ts';
 
 const request = {
   canvasId: 'default',
@@ -256,5 +258,65 @@ test('restored requests cannot silently run with empty or removed input material
     gamejamIssues({ ...request, inputPaths: ['deleted.html'] }, context).some(
       (issue) => issue.message.includes('deleted.html'),
     ),
+  );
+});
+
+test('shared request snapshots preserve inactive instructions, provider, model and retry link across server restart', async (t) => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'gamejam-shared-history-'),
+  );
+  let server = await createCollaborationServer({
+    port: 0,
+    dataDirectory: root,
+    creationKey: 'fixture',
+  });
+  let owner;
+  t.after(async () => {
+    owner?.stop();
+    await server.close();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const url = `http://127.0.0.1:${server.port}`;
+  const created = await CollaborationClient.create(
+    url,
+    'fixture',
+    '검증 관리자',
+    '작업 기록',
+    {
+      'project.md':
+        '---\nid: project\ntitle: Project\ntype: overview\nstatus: draft\nsources: []\n---\n# Input',
+    },
+  );
+  owner = new CollaborationClient(created.credentials, () => {});
+  owner.accept(created.result);
+  const savedRequest = { ...structuredClone(request), implement: false };
+  const task = await owner.command(
+    'tasks:create',
+    gamejamTaskInput(savedRequest, settings),
+  );
+  assert.deepEqual(requestSnapshotFromTask(owner.files[task.relativePath]), {
+    version: 1,
+    request: savedRequest,
+    ...settings,
+  });
+  await owner.beginAi(task.relativePath, settings.modelId, settings.providerId);
+  await owner.request('ai-cancel');
+  const record = (await owner.history()).find(
+    (item) => item.status === 'cancelled',
+  );
+  assert.deepEqual(record.aiTask.requestSnapshot.request, savedRequest);
+  assert.equal(record.aiTask.requestSnapshot.providerId, settings.providerId);
+  assert.equal(record.aiTask.requestSnapshot.modelId, settings.modelId);
+  assert.equal(record.aiTask.requestSnapshot.retryOf, settings.retryOf);
+  const port = server.port;
+  await server.close();
+  server = await createCollaborationServer({
+    port,
+    dataDirectory: root,
+    creationKey: 'fixture',
+  });
+  assert.deepEqual(
+    (await owner.history()).find((item) => item.id === record.id).aiTask,
+    record.aiTask,
   );
 });
