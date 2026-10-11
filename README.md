@@ -6,6 +6,8 @@ PixiJS의 `isUrl(r)`·`toDataURL(a)`를 외부 파일로 인식하던 문제를 
 
 Windows 설치 파일은 `Game.Jam-0.13.5.Setup.exe`입니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 공동 프로젝트의 HTML 재료 검사에도 수정이 필요하므로 별도 운영 서버에는 새 서버 번들을 사용합니다.
 
+2026-10-11 [v0.13.5 정식 배포 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.5) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.5/Game.Jam-0.13.5.Setup.exe). 배포 소스 자동 테스트 273개·타입/코드 검사·전체 통합 검사·실제 Windows 실행 파일과 설치판 내부 미리보기·업데이트 UI 검증을 통과했습니다. 공개 파일 3개의 다운로드·해시와 v0.13.4 → v0.13.5 자동 업데이트 피드를 확인했습니다.
+
 ### v0.13.4 새 프로젝트 이름 안내
 
 새 프로젝트 생성창에 사용할 수 없는 문자·줄바꿈·탭, 끝의 점과 Windows 예약 이름을 안내합니다. 이름 앞뒤 공백을 자동으로 제거하고, 잘못된 이름은 해당 제한을 구체적으로 표시합니다. `PROJECTRC`처럼 정상적인 영문 이름과 한글 이름을 사용할 수 있습니다.
