@@ -6,6 +6,10 @@ gamejam!에서 편집한 지시·입력·출력 설정과 AI 선택을 프로젝
 
 배포 파일은 `Game.Jam-0.13.7.Setup.exe`, `game_canvas-0.13.7-full.nupkg`, `RELEASES`입니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 공동 프로젝트의 구조화된 요청 저장에는 새 협업 서버가 필요하며 앱 내장 서버 런타임에도 포함됩니다. 초안은 이 PC에만 저장되고 AI 연결 세션 자체의 재개는 지원하지 않습니다.
 
+2026-10-11 [v0.13.7 정식 배포 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.7). 태그는 검증한 소스 커밋 `3532d0f385a9d6bf8251dde2d2bc3bbd4dda4d55`를 가리킵니다. 299개 자동 테스트·타입/코드 검사·전체 Electron/IPC 통합 검사·업데이트 UI·실제 Windows 설치판과 내장 Node/협업 서버의 요청 저장/복구 검증을 통과했습니다. 이 PC의 다음 실행용 서버 번들만 갱신했으며 운영 서버·터널은 꺼져 있습니다. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상입니다.
+
+공개 배포 파일 3개를 실제 다운로드해 크기·SHA-256을 검증했습니다. 게시 직후 기존 앱의 저장소 표기(`sehyeok3406`) 피드는 서버 캐시로 v0.13.6 최신 응답(204)을 유지했습니다. 새 캐시로 조회한 동일 GitHub 저장소(`Sehyeok3406`)에서는 v0.13.7 안내(200), 최신 응답(204), Windows RELEASES의 패키지 URL·SHA-1·크기가 일치합니다. 이는 기존 앱의 피드 반영 완료 검증과 구분합니다. 업데이트 서비스의 [기본 캐시 유효기간은 15분](https://github.com/electron/update.electronjs.org/blob/main/bin/update-server.ts)이며 실제 운영 설정에 따라 달라질 수 있습니다. 즉시 적용하려면 [설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.7/Game.Jam-0.13.7.Setup.exe)을 사용하세요.
+
 ## v0.13.6 문서 출력 구성 편집
 
 문서 결과물을 고정된 세 문서에서 사용자가 편집하는 출력 구성으로 변경했습니다.
