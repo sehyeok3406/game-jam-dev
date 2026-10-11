@@ -189,7 +189,7 @@ export function DrawingInspector({
             (v !== value || mixedValue)
           )
             fn(v);
-          else e.currentTarget.value = String(value);
+          else e.currentTarget.value = mixedValue ? '' : String(value);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();

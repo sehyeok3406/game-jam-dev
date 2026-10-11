@@ -291,6 +291,74 @@ async function run() {
       'Array.from(document.querySelectorAll(".drawing-overlap-menu button")).find(b=>b.textContent.includes("사각형")).click()',
     );
     await wait('!!document.querySelector(".drawing-handles")');
+    // A peer's geometry edit during our resize must survive the transform save.
+    const peerObject = await js(
+      '(async()=>{const id=document.querySelector(".canvas-drawing-node.selected").dataset.id.slice(8);return (await window.gameCanvas.listDrawings()).find(o=>o.id===id)})()',
+    );
+    const handle = await center('[data-handle=se]');
+    await mouse('mouseDown', handle.x, handle.y);
+    await mouse('mouseMove', handle.x + 10, handle.y + 10, ['leftButtonDown']);
+    await js(
+      `window.gameCanvas.applyDrawingCommand({scope:'local:dev-workspace',canvasId:'drawing-test',action:'patch',patches:[{id:${JSON.stringify(peerObject.id)},generation:${JSON.stringify(peerObject.generation)},geometry:{shape:'diamond'},expectedGeometry:${JSON.stringify(peerObject.geometry)}}]})`,
+    );
+    await wait(
+      'document.querySelector(".drawing-inspector h3")?.textContent.includes("마름모")',
+    );
+    await js(
+      '(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)})()',
+    );
+    await mouse('mouseMove', handle.x + 40, handle.y + 30, ['leftButtonDown']);
+    await mouse('mouseUp', handle.x + 40, handle.y + 30);
+    await wait('!document.querySelector(".drawing-save-alert")');
+    assert.equal(
+      await js(
+        `(async()=> (await window.gameCanvas.listDrawings()).find(o=>o.id===${JSON.stringify(peerObject.id)}).geometry.shape)()`,
+      ),
+      'diamond',
+    );
+    // Competing endpoint edits must report a conflict and retain a draft,
+    // without an uncaught event error or overwriting the peer's endpoint.
+    const line = {
+      shape: 'line',
+      endpoints: [
+        [0, 0],
+        [1, 1],
+      ],
+    };
+    await js(
+      `window.gameCanvas.applyDrawingCommand({scope:'local:dev-workspace',canvasId:'drawing-test',action:'patch',patches:[{id:${JSON.stringify(peerObject.id)},generation:${JSON.stringify(peerObject.generation)},geometry:${JSON.stringify(line)},expectedGeometry:{shape:'diamond'}}]})`,
+    );
+    await wait('!!document.querySelector("[data-handle=end1]")');
+    const tip = await center('[data-handle=end1]');
+    await mouse('mouseDown', tip.x, tip.y);
+    await mouse('mouseMove', tip.x + 10, tip.y + 10, ['leftButtonDown']);
+    await js(
+      `window.gameCanvas.applyDrawingCommand({scope:'local:dev-workspace',canvasId:'drawing-test',action:'patch',patches:[{id:${JSON.stringify(peerObject.id)},generation:${JSON.stringify(peerObject.generation)},geometry:{shape:'line',endpoints:[[0,0],[0.5,1]]},expectedGeometry:${JSON.stringify(line)}}]})`,
+    );
+    await pause();
+    await mouse('mouseMove', tip.x + 30, tip.y + 20, ['leftButtonDown']);
+    await mouse('mouseUp', tip.x + 30, tip.y + 20);
+    await wait(
+      'document.querySelector(".drawing-save-alert")?.textContent.includes("모양이 변경")',
+    );
+    assert.deepEqual(
+      await js(
+        `(async()=> (await window.gameCanvas.listDrawings()).find(o=>o.id===${JSON.stringify(peerObject.id)}).geometry.endpoints)()`,
+      ),
+      [
+        [0, 0],
+        [0.5, 1],
+      ],
+    );
+    assert.ok(
+      await js(
+        '(async()=> !!(await window.gameCanvas.getEditorDraft("drawing:local:dev-workspace")))()',
+      ),
+    );
+    await js(
+      'Array.from(document.querySelectorAll(".drawing-save-alert button")).find(b=>b.textContent.includes("초안 버리기")).click()',
+    );
+    await wait('!document.querySelector(".drawing-save-alert")');
     await js('document.documentElement.dataset.theme="dark"');
     await pause();
     await fs.writeFile(

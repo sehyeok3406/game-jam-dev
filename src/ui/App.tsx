@@ -1939,9 +1939,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const createdDrawingSelection = useRef<string | null>(null);
   const submitDrawing = useCallback(
     (command: Omit<DrawingCommand, 'canvasId' | 'scope'>) => {
-      void drawing
-        .submit(command)
-        .catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+      void drawing.submit(command).catch((e) => {
+        createdDrawingSelection.current = null;
+        setNotice(e instanceof Error ? e.message : String(e));
+      });
     },
     [drawing.submit],
   );

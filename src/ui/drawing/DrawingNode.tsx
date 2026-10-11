@@ -130,13 +130,13 @@ export const DrawingNode = memo(function DrawingNode({
     t = object.transform,
     base = drawingBounds(data.object),
     z = data.zoom;
-  const patch = (next: DrawingObject) =>
+  const patch = (next: DrawingObject, original: DrawingObject) =>
     data.onPatch({
-      id: data.object.id,
-      generation: data.object.generation,
+      id: original.id,
+      generation: original.generation,
       transform: next.transform,
-      ...(next.geometry !== data.object.geometry
-        ? { geometry: next.geometry, expectedGeometry: data.object.geometry }
+      ...(next.geometry !== original.geometry
+        ? { geometry: next.geometry, expectedGeometry: original.geometry }
         : {}),
     });
   return (
@@ -306,8 +306,9 @@ export const DrawingNode = memo(function DrawingNode({
                 if (gesture.current?.pointerId !== e.pointerId) return;
                 e.preventDefault();
                 e.stopPropagation();
+                const original = gesture.current.object;
                 gesture.current = null;
-                if (draftRef.current) patch(draftRef.current);
+                if (draftRef.current) patch(draftRef.current, original);
                 draftRef.current = null;
                 data.onGesture(false);
                 setDraft(null);

@@ -167,7 +167,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
     }
   }, [backup]);
   const submit = useCallback(
-    (
+    async (
       command: Omit<DrawingCommand, 'canvasId' | 'scope'> & {
         canvasId?: string;
       },
@@ -181,9 +181,22 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
         scope: s.scope,
         requestId: command.requestId ?? crypto.randomUUID(),
       };
-      let current = s.confirmed;
-      for (const p of s.commands) current = optimistic(current, p);
-      optimistic(current, cmd);
+      try {
+        let current = s.confirmed;
+        for (const p of s.commands) current = optimistic(current, p);
+        optimistic(current, cmd);
+      } catch (error) {
+        // Local quota/conflict failures must be recoverable too; never throw
+        // synchronously out of a pointer event or lose the completed gesture.
+        s.partial = null;
+        s.recovery.unshift(cmd);
+        setRecovery([...s.recovery]);
+        setError(
+          `그림 저장 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await backup();
+        throw error;
+      }
       s.commands.push(cmd);
       s.epoch++;
       setPending([...s.commands]);
@@ -192,7 +205,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
       chain.current = next;
       return next;
     },
-    [canvasId, drain],
+    [canvasId, drain, backup],
   );
   const flush = useCallback(async () => {
     await backup();
@@ -240,6 +253,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
     setRecovery(null);
     state.current.recovery = [];
     state.current.partial = null;
+    if (!state.current.commands.length) setError('');
     await backup();
   };
   const hold = async () => {
