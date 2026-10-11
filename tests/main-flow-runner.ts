@@ -2277,6 +2277,49 @@ try {
   console.log(
     'PASS: production drawing IPC validates project scopes, serves object changes, saves mixed gestures atomically, moves/deletes canvases and supports undo/redo on disk',
   );
+  const mixedNote = await call('documents:create-idea', { x: 120, y: 120 });
+  const mixedDrawing = (await call('drawings:list'))[0];
+  await call('canvas:batch', {
+    scope: drawingScope,
+    commands: [
+      {
+        channel: 'documents:delete-many',
+        input: {
+          documents: [
+            { documentId: mixedNote.id, relativePath: mixedNote.relativePath },
+          ],
+        },
+      },
+      {
+        channel: 'drawings:apply',
+        input: {
+          canvasId: 'default',
+          action: 'delete',
+          targets: [
+            { id: mixedDrawing.id, generation: mixedDrawing.generation },
+          ],
+        },
+      },
+    ],
+  });
+  assert.equal((await call('drawings:list')).length, 0);
+  await assert.rejects(
+    fs.stat(
+      path.join((await call('workspace:get')).root, mixedNote.relativePath),
+    ),
+    (e) => e.code === 'ENOENT',
+  );
+  await call('edit:undo');
+  assert.equal((await call('drawings:list')).length, 1);
+  assert.equal(
+    (await call('documents:list')).find((d: any) => d.id === mixedNote.id).id,
+    mixedNote.id,
+  );
+  await call('edit:redo');
+  assert.equal((await call('drawings:list')).length, 0);
+  console.log(
+    'PASS: production mixed deletion moves files to recycle bin once, deletes drawings in the same edit and restores/redoes both on disk',
+  );
 } finally {
   if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = originalGeminiKey;

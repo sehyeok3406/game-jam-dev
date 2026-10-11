@@ -2558,9 +2558,9 @@ const registerIpc = () => {
       root,
       before,
       Object.fromEntries(
-        Object.keys({ ...before, ...reduced.files })
-          .filter((p) => before[p] !== reduced.files[p])
-          .map((p) => [p, reduced.files[p] ?? null]),
+        // Removed files have already moved to the recycle bin. Verify/write
+        // the remaining targets against their original baseline only.
+        Object.entries(reduced.files).filter(([p, raw]) => before[p] !== raw),
       ),
     );
     return reduced.result;
