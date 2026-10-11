@@ -1,5 +1,11 @@
 # Game Jam! (game-jam-dev)
 
+### v0.13.4 새 프로젝트 이름 안내
+
+새 프로젝트 생성창에 사용할 수 없는 문자·줄바꿈·탭, 끝의 점과 Windows 예약 이름을 안내합니다. 이름 앞뒤 공백을 자동으로 제거하고, 잘못된 이름은 해당 제한을 구체적으로 표시합니다. `PROJECTRC`처럼 정상적인 영문 이름과 한글 이름을 사용할 수 있습니다.
+
+[v0.13.4 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.4) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.4/Game.Jam-0.13.4.Setup.exe). 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다.
+
 ### v0.13.3 자동 저장 큐 · 커서와 화면 유지
 
 문서별 저장 큐와 오프라인 복구를 추가하고 저장·동기화 중 메모 카드가 잠시 숨겨지던 문제를 수정했습니다. Ctrl+S로 저장하고 계속 편집하며, 충돌 초안은 별도로 보관합니다. [사용법·원인·검증 방법](AUTOSAVE_QUEUE.md)

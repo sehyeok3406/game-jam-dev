@@ -45,6 +45,7 @@ import { previewState } from './debug/uiDebugPreviewState';
 import { SAMPLE_PROJECTS } from './debug/uiDebugFixtures';
 import { ConnectionInfoDialog } from './ConnectionInfoDialog';
 import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
+import { MAX_PROJECT_NAME } from '../project-name';
 
 export function ProjectHome({
   opened,
@@ -903,7 +904,8 @@ export function ProjectHome({
               <input
                 autoFocus
                 required
-                maxLength={server ? 500 : 100}
+                maxLength={server ? 500 : MAX_PROJECT_NAME}
+                aria-describedby={server ? undefined : 'home-project-name-help'}
                 value={server ? address : name}
                 onChange={(event) =>
                   server
@@ -912,6 +914,18 @@ export function ProjectHome({
                 }
               />
             </label>
+            {!server && (
+              <p id="home-project-name-help">
+                한글·영문·숫자·공백을 사용할 수 있습니다(최대 {MAX_PROJECT_NAME}
+                자). 이름 앞뒤의 공백은 자동으로 제거됩니다.
+                <br />
+                사용할 수 없는 문자: {'< > : " / \\ | ? *'} 및 줄바꿈·탭.
+                <br />
+                점(.)으로 끝나는 이름과 Windows 예약 이름(CON, PRN, AUX, NUL,
+                COM1~9, LPT1~9)은 사용할 수 없습니다. 예약 이름에 확장자를 붙인
+                형태도 사용할 수 없습니다.
+              </p>
+            )}
             {error && (
               <p className="home-error" role="alert">
                 {error}

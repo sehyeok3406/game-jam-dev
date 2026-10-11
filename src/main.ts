@@ -3061,28 +3061,15 @@ const registerIpc = () => {
       throw new Error('홈으로 돌아온 뒤 연결 정보를 적용해주세요.');
     await projectLibrary.updateServer(entry.id, entry.serverUrl);
   });
-  handle('projects:create', async (_event, name: string) => {
-    if (
-      typeof name !== 'string' ||
-      !name.trim() ||
-      name.length > 100 ||
-      /[<>:"/\\|?*]/.test(name) ||
-      /[. ]$/.test(name) ||
-      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ||
-      [...name].some((char) => char.charCodeAt(0) < 32)
-    )
-      throw new Error(
-        '프로젝트 이름에는 파일 이름에 사용할 수 있는 문자만 입력해주세요.',
-      );
+  handle('projects:create', async (_event, inputName: string) => {
+    const { projectDirectoryName } = await import('./project-name');
+    const name = projectDirectoryName(inputName);
     const selected = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       title: '새 프로젝트를 저장할 상위 폴더 선택',
     });
     if (selected.canceled || !selected.filePaths[0]) return workspaceState();
-    const target = path.join(
-      await fs.realpath(selected.filePaths[0]),
-      name.trim(),
-    );
+    const target = path.join(await fs.realpath(selected.filePaths[0]), name);
     try {
       await fs.mkdir(target);
     } catch (error) {

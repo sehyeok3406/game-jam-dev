@@ -99,6 +99,18 @@ try {
   assert.equal((await call('workspace:get')).root, null);
   for (const name of ['', '../escape', 'CON', 'trailing.', 'bad:name'])
     await assert.rejects(call('projects:create', name), /프로젝트 이름/);
+  const englishProject = await call('projects:create', 'PROJECTRC');
+  assert.equal(englishProject.root, path.join(root, 'PROJECTRC'));
+  assert.ok(
+    await fs.readFile(path.join(englishProject.root, 'project.md'), 'utf8'),
+  );
+  await call('projects:home');
+  console.log(
+    'PASS: PROJECTRC creates a project with the production IPC handler',
+  );
+  const paddedProject = await call('projects:create', ' MyGame ');
+  assert.equal(paddedProject.root, path.join(root, 'MyGame'));
+  await call('projects:home');
   const newProject = await call('projects:create', '홈 생성 검증');
   assert.equal(newProject.root, path.join(root, '홈 생성 검증'));
   const newProjectFile = path.join(newProject.root, 'project.md');
