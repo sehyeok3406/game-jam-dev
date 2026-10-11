@@ -1,4 +1,4 @@
-import { parse, type DefaultTreeAdapterMap } from 'parse5';
+import { htmlReferences } from './html-references.ts';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { isAssetPath, decodeAsset } from './file-assets.ts';
@@ -13,36 +13,6 @@ export type HtmlInputSource = {
   files: { path: string; sha256: string }[];
   warnings: string[];
 };
-
-/** Static dependency inspection only; never execute code or download resources. */
-function references(content: string, html: boolean) {
-  const result = new Set<string>();
-  if (html) {
-    const walk = (node: DefaultTreeAdapterMap['node']) => {
-      if ('attrs' in node)
-        for (const attr of node.attrs) {
-          if (node.tagName === 'a' && attr.name === 'href') continue;
-          if (['src', 'href', 'poster'].includes(attr.name))
-            result.add(attr.value);
-          if (attr.name === 'srcset')
-            for (const item of attr.value.match(
-              /(?:data:[^\s]+|[^,\s]+)(?:\s+[\d.]+[wx])?/g,
-            ) ?? [])
-              result.add(item.trim().split(/\s+/)[0].replace(/,$/, ''));
-        }
-      if ('childNodes' in node)
-        for (const child of node.childNodes) walk(child);
-    };
-    walk(parse(content));
-  }
-  for (const match of content.matchAll(
-    /(?:url\(\s*['"]?|(?:fetch|import)\(\s*['"]|(?:\bfrom|@import)\s*['"]|\bimport\s*['"])([^'"\s)]+)/gi,
-  ))
-    result.add(match[1]);
-  return [...result].filter(
-    (value) => value && !/^(?:data:|blob:|#)/i.test(value),
-  );
-}
 
 export function describeHtmlInput(
   files: Snapshot,
@@ -66,7 +36,10 @@ export function describeHtmlInput(
       relative === path
         ? files[path]
         : decodeAsset(relative, files[relative]).toString('utf8');
-    for (const ref of references(content, relative === path)) {
+    for (const ref of htmlReferences(
+      content,
+      relative === path ? 'html' : relative.endsWith('.css') ? 'css' : 'js',
+    )) {
       if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(ref)) {
         warnings.add(`외부 참조는 내려받지 않습니다: ${ref.slice(0, 200)}`);
         continue;

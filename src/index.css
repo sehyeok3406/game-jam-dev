@@ -1745,6 +1745,10 @@ button:disabled {
   box-shadow: var(--shadow-card);
 }
 
+.preview-card--warning {
+  grid-template-rows: 38px auto minmax(0, 1fr);
+}
+
 .preview-card header {
   display: flex;
   align-items: center;

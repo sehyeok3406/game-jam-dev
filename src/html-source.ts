@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { parse, type DefaultTreeAdapterMap } from 'parse5';
+import { htmlReferences } from './html-references.ts';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { inspectHtml } from './html-document.ts';
@@ -34,30 +34,13 @@ export function inspectImportedHtml(content: string, name: string) {
       `${name}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const references = new Set<string>();
-  const walk = (node: DefaultTreeAdapterMap['node']) => {
-    if ('attrs' in node)
-      for (const attr of node.attrs) {
-        if (
-          ['src', 'href', 'poster', 'srcset'].includes(attr.name) &&
-          !(node.tagName === 'a' && attr.name === 'href') &&
-          attr.value &&
-          !/^(?:data:|#)/i.test(attr.value)
-        )
-          references.add(attr.value.slice(0, 200));
-      }
-    if ('childNodes' in node) for (const child of node.childNodes) walk(child);
-  };
-  walk(parse(content));
-  // Include CSS URLs and JavaScript network/file loads without executing them.
-  for (const match of content.matchAll(
-    /(?:url\(\s*['"]?|(?:fetch|import)\(\s*['"])([^'"\s)]+)/gi,
-  )) {
-    if (!/^(?:data:|#)/i.test(match[1])) references.add(match[1].slice(0, 200));
-  }
-  return references.size
+  const references = htmlReferences(content, 'html');
+  return references.length
     ? [
-        `외부 파일·URL 참조가 있습니다. 단일 HTML만 복사되므로 일부 기능이 동작하지 않을 수 있습니다: ${[...references].slice(0, 8).join(', ')}`,
+        `외부 파일·URL 참조가 있습니다. 단일 HTML만 복사되므로 일부 기능이 동작하지 않을 수 있습니다: ${references
+          .slice(0, 8)
+          .map((ref) => ref.slice(0, 200))
+          .join(', ')}`,
       ]
     : [];
 }

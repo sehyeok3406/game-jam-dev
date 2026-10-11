@@ -276,6 +276,11 @@ export function createUiPreviewApi(
       ...item,
       relativePath: index ? 'output/versions/v2.html' : 'output/index.html',
     }));
+  if (selection.id === 'preview' && selection.state === 'warning')
+    previews = previews.map((item) => ({
+      ...item,
+      warnings: ['외부 파일·URL 참조가 있습니다: ./assets/player.png'],
+    }));
   const history =
     selection.state === 'empty'
       ? []

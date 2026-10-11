@@ -1,4 +1,10 @@
-# 앱 업데이트·GitHub Releases 연결 (v0.13.4)
+# 앱 업데이트·GitHub Releases 연결 (v0.13.5)
+
+## v0.13.5 HTML 외부 참조 오탐 · 미리보기 배치
+
+`isUrl`·`toDataURL` 호출을 파일 주소로 인식하던 오탐을 수정하고 HTML/CSS/JavaScript 구문별 검사로 통합했습니다. 실제 경고가 있어도 안내는 필요한 높이만 사용하고 게임이 나머지 공간을 채웁니다. 기존 HTML을 다시 불러오지 않아도 적용됩니다. [검사 범위와 검증](HTML_REFERENCE_INSPECTION.md)
+
+배포 파일은 `Game.Jam-0.13.5.Setup.exe`, `game_canvas-0.13.5-full.nupkg`, `RELEASES`입니다. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 프로토콜은 유지되지만 별도 협업 서버의 HTML 재료 검사에도 수정이 필요하므로 서버 번들을 갱신합니다. 앱 내장 서버 런타임에도 포함됩니다.
 
 ## v0.13.4 새 프로젝트 이름 안내
 

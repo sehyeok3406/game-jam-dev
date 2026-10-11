@@ -1433,7 +1433,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
       <section
         ref={cardRef}
         data-card-color={cardColor(data.preview.backgroundColor)}
-        className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
+        className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${!collapsed && data.preview.warnings?.length ? ' preview-card--warning' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
       >
         <header className={fullscreen ? 'nodrag' : 'preview-drag-handle'}>
           <strong
