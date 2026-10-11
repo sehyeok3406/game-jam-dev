@@ -6,6 +6,8 @@
 
 [v0.13.4 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.4) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.4/Game.Jam-0.13.4.Setup.exe). 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용할 수 있습니다.
 
+2026-10-11 정식 배포 완료. 자동 테스트 267개·전체 Electron/IPC 통합 검사·실제 Windows 패키지와 생성창의 다크/라이트·작은 화면 검사를 통과했습니다. 공개 파일 3개의 다운로드·해시와 v0.13.3 → v0.13.4 자동 업데이트 피드를 확인했습니다.
+
 ### v0.13.3 자동 저장 큐 · 커서와 화면 유지
 
 문서별 저장 큐와 오프라인 복구를 추가하고 저장·동기화 중 메모 카드가 잠시 숨겨지던 문제를 수정했습니다. Ctrl+S로 저장하고 계속 편집하며, 충돌 초안은 별도로 보관합니다. [사용법·원인·검증 방법](AUTOSAVE_QUEUE.md)
