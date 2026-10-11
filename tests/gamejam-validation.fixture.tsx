@@ -5,6 +5,8 @@ import type { CollaborationState, CodexConnectionStatus } from '../src/shared';
 import '@xyflow/react/dist/style.css';
 import '../src/index.css';
 const api = createDevGameCanvasApi();
+const mockCreateTask = api.createTask;
+const mockStartRun = api.startCodexRun;
 let connection: CodexConnectionStatus = {
   available: true,
   authenticated: true,
@@ -14,6 +16,7 @@ let connection: CodexConnectionStatus = {
 };
 const listeners = new Set<(state: CollaborationState) => void>();
 const qa = {
+  allowMockRun: false,
   creates: 0,
   runs: 0,
   requests: [] as unknown[],
@@ -40,6 +43,8 @@ const qa = {
       htmlComposition: true,
       htmlImportAnalysis: true,
       gamejamWorkflow: true,
+      documentBundles: true,
+      documentOutputFormats: true,
       taskResultNaming: true,
       taskInstructionsEditable: true,
       multiProviderAi: true,
@@ -58,10 +63,12 @@ api.getAiStatus = async () => connection;
 api.createTask = async (input) => {
   qa.creates++;
   qa.requests.push(input);
+  if (qa.allowMockRun) return mockCreateTask(input);
   throw Error('테스트 서버에서 작업 요청을 거절했습니다. 입력은 유지됩니다.');
 };
-api.startCodexRun = async () => {
+api.startCodexRun = async (input) => {
   qa.runs++;
+  if (qa.allowMockRun) return mockStartRun(input);
   throw Error('AI 실행 금지');
 };
 api.onCollaborationChanged = (listener) => {

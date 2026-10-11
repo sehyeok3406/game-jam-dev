@@ -24,6 +24,11 @@ import {
   reduceCollaboration,
 } from './collaboration-model.ts';
 import { expectedArtifacts, validateArtifacts } from './ai-artifacts.ts';
+import {
+  documentBundleContract,
+  resolveTaskArtifacts,
+} from './document-bundle.ts';
+import { taskDocumentFormat } from './document-format.ts';
 import { newOutputsAlreadyExist, workflowStages } from './task-plan.ts';
 import { validateHtmlAnalysis } from './html-source.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
@@ -379,6 +384,8 @@ export async function createCollaborationServer(options: Options) {
       taskInstructionsEditable: true,
       taskResultNaming: true,
       gamejamWorkflow: true,
+      documentBundles: true,
+      documentOutputFormats: true,
       htmlImportAnalysis: true,
       htmlResultFolders: true,
       structuredResults: true,
@@ -642,6 +649,8 @@ export async function createCollaborationServer(options: Options) {
           taskInstructionsEditable: true,
           taskResultNaming: true,
           gamejamWorkflow: true,
+          documentBundles: true,
+          documentOutputFormats: true,
           htmlImportAnalysis: true,
           htmlResultFolders: true,
           structuredResults: true,
@@ -1384,6 +1393,22 @@ export async function createCollaborationServer(options: Options) {
                 '여러 캔버스의 AI 작업에는 앱 v0.11.0 이상이 필요합니다.',
               );
             const outputs = expectedArtifacts(project.files[taskPath]);
+            if (
+              taskDocumentFormat(project.files[taskPath]) &&
+              input.documentOutputFormatVersion !== 1
+            )
+              throw new CanvasError(
+                'GC-AI-004',
+                '문서 출력 구성 실행을 지원하는 앱으로 업데이트해주세요.',
+              );
+            if (
+              documentBundleContract(project.files[taskPath]) &&
+              input.documentBundleVersion !== 1
+            )
+              throw new CanvasError(
+                'GC-AI-004',
+                '시스템별 문서 생성 실행을 지원하는 앱으로 업데이트해주세요.',
+              );
             const fileLock = taskFileLock(project.files, taskPath);
             try {
               assertAiFilesUnlocked(fileLock, [...projectLocks(id).keys()]);
@@ -1555,19 +1580,26 @@ export async function createCollaborationServer(options: Options) {
                 !artifacts ||
                 typeof artifacts !== 'object' ||
                 Array.isArray(artifacts) ||
-                Object.keys(artifacts).length !== job.outputs.length ||
-                Object.keys(artifacts).some(
-                  (relative) => !job.outputs.includes(relative),
+                Object.values(artifacts).some(
+                  (content) => typeof content !== 'string',
                 )
               )
                 throw new ApiError('허용된 AI 결과만 제출할 수 있습니다.');
               files = { ...files, ...(artifacts as Snapshot) };
-              validateArtifacts(project.files, files, job.outputs);
-              validateHtmlAnalysis(
+              const outputs = resolveTaskArtifacts(
                 project.files[job.taskPath],
                 files,
-                job.outputs,
+                project.files,
               );
+              if (
+                Object.keys(artifacts).length !== outputs.length ||
+                Object.keys(artifacts).some(
+                  (relative) => !outputs.includes(relative),
+                )
+              )
+                throw new ApiError('허용된 AI 결과만 제출할 수 있습니다.');
+              validateArtifacts(project.files, files, outputs);
+              validateHtmlAnalysis(project.files[job.taskPath], files, outputs);
               const taskData = matter(project.files[job.taskPath]).data;
               files = {
                 ...files,

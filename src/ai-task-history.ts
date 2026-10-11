@@ -1,6 +1,7 @@
 import matter from './markdown.ts';
 import type { AiTaskRecord, HistoryEntry } from './shared';
 import { historyTaskPath } from './ai-task-records.ts';
+import { resolveTaskArtifacts } from './document-bundle.ts';
 
 /** Store a small read-only execution specification, not another canvas object. */
 export function taskHistoryRecord(
@@ -38,5 +39,15 @@ export function withTaskHistory(
   const aiTask = taskPath
     ? taskHistoryRecord(after[taskPath] ?? before[taskPath])
     : undefined;
+  if (aiTask && taskPath) {
+    try {
+      aiTask.outputs = resolveTaskArtifacts(
+        after[taskPath] ?? before[taskPath],
+        { ...before, ...after },
+      );
+    } catch {
+      /* Incomplete/failed runs retain the frozen required outputs. */
+    }
+  }
   return aiTask ? { ...entry, aiTask } : entry;
 }

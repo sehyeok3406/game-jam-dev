@@ -17,7 +17,13 @@ async function run() {
       backgroundThrottling: false,
     },
   });
-  const js = (code) => win.webContents.executeJavaScript(code);
+  const js = async (code) => {
+    try {
+      return await win.webContents.executeJavaScript(code);
+    } catch (error) {
+      throw new Error(`UI script failed: ${code}`, { cause: error });
+    }
+  };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const wait = async (code) => {
     for (let i = 0; i < 160; i++) {
@@ -553,6 +559,139 @@ async function run() {
     );
     assert.equal(await js('qaValidation.creates'), 1);
     assert.equal(await js('qaValidation.runs'), 0);
+    assert(
+      await js(
+        'document.querySelector(".ai-output-hint").textContent.includes("문서 3개")',
+      ),
+    );
+    await goTo(2);
+    assert.deepEqual(
+      await js(
+        'Array.from(document.querySelectorAll(".document-output-template input")).map(e=>e.value)',
+      ),
+      ['게임 개요', '핵심 플레이', '모호한 점'],
+    );
+    await js('qaValidation.shared({documentOutputFormats:false})');
+    await goTo(5);
+    await wait(
+      'document.querySelector(".ai-validation-summary")?.textContent.includes("문서 출력 구성")',
+    );
+    await clickRun();
+    assert.equal(await js('qaValidation.creates'), 1);
+    await js('qaValidation.shared({})');
+    await goTo(2);
+    await js(
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('시스템별 자동 분리')).click()`,
+    );
+    await goTo(5);
+    await js('qaValidation.shared({documentBundles:false})');
+    await wait(
+      'document.querySelector(".ai-validation-summary")?.textContent.includes("시스템별 문서 생성")',
+    );
+    await clickRun();
+    assert.equal(await js('qaValidation.creates'), 1);
+    await js('qaValidation.shared({})');
+    await wait('!document.querySelector(".ai-validation-summary")');
+    await clickRun();
+    await wait('qaValidation.creates===2');
+    assert.equal(
+      (await js('qaValidation.requests[1]')).documentResult.structure,
+      'systems',
+    );
+    assert.equal(await js('qaValidation.runs'), 0);
+    await goTo(2);
+    await js(
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('직접 구성 편집')).click()`,
+    );
+    await js(`document.querySelector('[aria-label="문서 3 제거"]').click()`);
+    assert.equal(
+      await js('document.querySelectorAll(".document-output-template").length'),
+      2,
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('기본 3개로 복원')).click()`,
+    );
+    await js(
+      `Array.from(document.querySelectorAll('#ai-document-format > button')).find(e=>e.textContent.includes('문서 추가')).click()`,
+    );
+    const setTemplate = async (number, kind, value) => {
+      await js(
+        `{const e=document.querySelector('[aria-label="문서 ${number} ${kind}"]');Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));}`,
+      );
+    };
+    await setTemplate(1, '제목', '카드 데이터');
+    await setTemplate(1, '종류', 'system');
+    await setTemplate(
+      1,
+      '포함할 내용',
+      '## 카드 목록\nID/비용/효과를 표로 작성한다.',
+    );
+    await setTemplate(4, '제목', '경제 분석');
+    await setTemplate(4, '포함할 내용', '가격표와 재화 순환을 정리한다.');
+    await goTo(3);
+    await goTo(2);
+    assert.equal(
+      await js(`document.querySelector('[aria-label="문서 1 제목"]').value`),
+      '카드 데이터',
+    );
+    assert.equal(
+      await js('document.querySelectorAll(".document-output-template").length'),
+      4,
+    );
+    await goTo(5);
+    assert(
+      await js(
+        'document.querySelector(".gamejam-review").textContent.includes("카드 데이터")',
+      ),
+    );
+    await goTo(2);
+    win.setSize(640, 850);
+    await sleep(100);
+    assert(
+      await js(
+        'document.querySelector(".ai-request-fields").scrollWidth<=document.querySelector(".ai-request-fields").clientWidth',
+      ),
+    );
+    await fs.writeFile(
+      'out/gamejam-validation/document-format-editor.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js('qaValidation.allowMockRun=true');
+    await setValue('ai-result-name', '문서 묶음 검증');
+    await clickRun();
+    await wait('!document.querySelector(".ai-request-dialog")');
+    await wait(
+      `(async()=> (await gameCanvas.listDocuments()).filter(d=>d.documentBundleId).length===4)()`,
+    );
+    assert.equal(await js('qaValidation.runs'), 1);
+    const bundleDocs = await js(
+      '(async()=> (await gameCanvas.listDocuments()).filter(d=>d.documentBundleId))()',
+    );
+    assert.equal(bundleDocs.filter((doc) => doc.type === 'overview').length, 0);
+    assert.equal(bundleDocs.filter((doc) => doc.outputKey).length, 4);
+    assert(
+      bundleDocs.some(
+        (doc) =>
+          doc.title === '카드 데이터' &&
+          doc.outputInstructions.includes('ID/비용/효과'),
+      ),
+    );
+    assert.equal(
+      bundleDocs.filter((doc) => doc.type === 'system' && doc.systemId).length,
+      3,
+    );
+    win.setSize(1280, 900);
+    await js(
+      `document.querySelector('[title="캔버스 전체 보기 (Shift+1)"]').click()`,
+    );
+    await sleep(600);
+    await fs.writeFile(
+      'out/gamejam-validation/system-documents.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    console.log(
+      'PASS: editable three-document defaults, preset switches, add/remove, arbitrary titles/types/Markdown instructions, stage preservation, review, old-server guards and four custom document cards with IDs (mock AI, no paid calls).',
+    );
     console.log(
       'PASS: five-page wizard, separate instruction pages, previous/next preservation, single-task flow, searchable 32-folder preview, multiple selections without duplicates, checkbox/keyboard selection, individual/clear-all removal, preset and navigation preservation, reset on reopen, disabled application, review, validation routing, blocked submit, folded settings, role/sync reasons, light/dark narrow layout, server errors and preserved input; selected preview excluded from task and no AI calls.',
     );

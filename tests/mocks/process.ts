@@ -115,7 +115,31 @@ export function spawn(
           throw new Error(
             'Edited instructions did not reach the CLI workspace or protection prompt.',
           );
-        const outputs = spec.expected_outputs ?? ['output/index.html'];
+        const bundle = spec.document_bundle;
+        const format = spec.document_output_format;
+        const bundleSystems = bundle
+          ? await Promise.all(
+              (mode === 'fixture-bundle-one'
+                ? ['play']
+                : ['combat', 'cards', 'rewards', 'shop']
+              ).map(async (key, index) => {
+                const relative = `${bundle.systemPrefix}${key}.md`;
+                const previous = await fs
+                  .readFile(path.join(stage, relative), 'utf8')
+                  .then((raw) => matter(raw).data)
+                  .catch(() => ({}));
+                return {
+                  key,
+                  id: previous.id ?? `fixture-${child.pid}-system-${index}`,
+                  title: `System ${key}`,
+                  path: relative,
+                };
+              }),
+            )
+          : [];
+        const outputs = bundle
+          ? [bundle.overview, ...bundleSystems.map((system) => system.path)]
+          : (spec.expected_outputs ?? ['output/index.html']);
         executionSpecs.push({ model: mode, inputs: spec.inputs, outputs });
         const output = outputs.find((relative: string) =>
           relative.endsWith('.html'),
@@ -130,6 +154,29 @@ export function spawn(
           ) + '\n',
         );
         if (mode !== 'fixture-empty' && output) {
+          if (mode.startsWith('fixture-bundle')) {
+            const overviewPath = spec.inputs.find((relative: string) =>
+              relative.endsWith('game-overview.md'),
+            );
+            const overview = matter(
+              await fs.readFile(path.join(stage, overviewPath), 'utf8'),
+            ).data;
+            for (const system of overview.document_bundle.systems) {
+              if (!spec.inputs.includes(system.path))
+                throw new Error('HTML phase is missing a system document');
+              if (
+                !(
+                  await fs.readFile(path.join(stage, system.path), 'utf8')
+                ).includes(`organized ${mode}`)
+              )
+                throw new Error('HTML phase read stale system documents');
+            }
+            if (mode === 'fixture-bundle-tamper')
+              await fs.appendFile(
+                path.join(stage, overviewPath),
+                '\nILLEGAL-EDIT',
+              );
+          }
           if (
             mode === 'fixture-html-compose' ||
             mode === 'fixture-gamejam-html-compose'
@@ -232,6 +279,16 @@ export function spawn(
               })),
           );
           for (const [index, relative] of outputs.entries()) {
+            if (
+              mode === 'fixture-format-missing' &&
+              index === outputs.length - 1
+            )
+              continue;
+            if (
+              mode === 'fixture-bundle-missing' &&
+              index === outputs.length - 1
+            )
+              continue;
             const absolute = path.join(stage, relative);
             const previous = await fs
               .readFile(absolute, 'utf8')
@@ -242,10 +299,50 @@ export function spawn(
               absolute,
               matter.stringify(`## organized ${mode}`, {
                 id: previous.id ?? `fixture-${child.pid}-${index}`,
-                title: `Game ${index}`,
-                type: 'system',
+                ...(previous.system_id
+                  ? { system_id: previous.system_id }
+                  : {}),
+                title:
+                  bundle && index > 0
+                    ? bundleSystems[index - 1].title
+                    : `Game ${index}`,
+                type: bundle && index === 0 ? 'overview' : 'system',
                 status: 'draft',
                 sources,
+                ...(bundle
+                  ? index === 0
+                    ? {
+                        document_bundle: {
+                          version: 1,
+                          id: bundle.id,
+                          systems: bundleSystems,
+                        },
+                      }
+                    : {
+                        id: bundleSystems[index - 1].id,
+                        document_bundle_id: bundle.id,
+                        system_id: `${bundle.id}:${bundleSystems[index - 1].key}`,
+                      }
+                  : {}),
+                ...(format
+                  ? {
+                      title:
+                        mode === 'fixture-format-wrong-title'
+                          ? 'wrong title'
+                          : format.documents[index].title,
+                      type: format.documents[index].type,
+                      document_bundle_id: format.id,
+                      document_output: {
+                        key: format.documents[index].key,
+                        instructions: format.documents[index].instructions,
+                      },
+                      ...(format.documents[index].type === 'system'
+                        ? {
+                            system_id: `${format.id}:${format.documents[index].key}`,
+                          }
+                        : {}),
+                    }
+                  : {}),
                 ...(spec.source_mode === 'html-compose'
                   ? {
                       analyzed_htmls: spec.html_input_sources.map(

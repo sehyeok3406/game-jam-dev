@@ -15,6 +15,8 @@ import {
   snapshotChanges,
 } from './offline-sync.ts';
 import { CanvasError, errorText, failureInfo } from './app-errors.ts';
+import { documentBundleContract } from './document-bundle.ts';
+import { taskDocumentFormat } from './document-format.ts';
 import type {
   CollaborationCommand,
   CollaborationEnvelope,
@@ -823,6 +825,24 @@ export class CollaborationClient {
         );
       if (
         channel === 'tasks:create' &&
+        (input as CreateTaskInput)?.documentResult?.structure === 'custom' &&
+        !this.state.documentOutputFormats
+      )
+        throw new CanvasError(
+          'GC-AI-004',
+          '문서 출력 구성을 편집하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
+      if (
+        channel === 'tasks:create' &&
+        (input as CreateTaskInput)?.documentResult?.structure === 'systems' &&
+        !this.state.documentBundles
+      )
+        throw new CanvasError(
+          'GC-AI-004',
+          '시스템별 문서 생성을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
+      if (
+        channel === 'tasks:create' &&
         (input as { thenImplement?: unknown })?.thenImplement !== undefined &&
         !this.state.gamejamWorkflow
       )
@@ -1166,6 +1186,24 @@ export class CollaborationClient {
       if (!this.state.connected || this.offline || this.state.role === 'viewer')
         throw new Error('연결된 관리자·편집자만 AI를 실행할 수 있습니다.');
       if (
+        this.files[taskPath] &&
+        taskDocumentFormat(this.files[taskPath]) &&
+        !this.state.documentOutputFormats
+      )
+        throw new CanvasError(
+          'GC-AI-004',
+          '문서 출력 구성을 편집하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
+      if (
+        this.files[taskPath] &&
+        documentBundleContract(this.files[taskPath]) &&
+        !this.state.documentBundles
+      )
+        throw new CanvasError(
+          'GC-AI-004',
+          '시스템별 문서 생성을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
+      if (
         (this.state.role === 'editor' && !this.state.editorAi) ||
         (providerId !== 'codex-cli' && !this.state.multiProviderAi)
       )
@@ -1178,6 +1216,8 @@ export class CollaborationClient {
         modelId,
         providerId,
         gamejamVersion: 1,
+        documentBundleVersion: 1,
+        documentOutputFormatVersion: 1,
         htmlAnalysisVersion: 1,
         htmlInputVersion: 1,
         canvasSheetsVersion: 1,

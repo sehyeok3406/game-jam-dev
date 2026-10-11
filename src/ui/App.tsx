@@ -126,6 +126,11 @@ import {
 } from '../preview-output';
 import { PREVIEW_SANDBOX } from '../preview-permissions';
 import { gamejamTaskInput, type GamejamRequest } from '../gamejam-request';
+import {
+  defaultDocumentTemplates,
+  MAX_FORMAT_DOCUMENTS,
+  type DocumentOutputTemplate,
+} from '../document-format';
 import { gamejamFieldPage, type GamejamPage } from '../gamejam-wizard';
 import { GamejamProgress, GamejamReview } from './GamejamWizard';
 import { GameFeatureLibrary } from './GameFeatureLibrary';
@@ -1963,6 +1968,32 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     );
   }, [noticeProject]);
   const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
+  const documentChoiceForUpdate = (baseDir: string) => {
+    const group = organizedSets.find((set) => set.baseDir === baseDir);
+    return {
+      mode: 'update' as const,
+      baseDir,
+      ...(group?.structure === 'custom'
+        ? {
+            structure: 'custom' as const,
+            documents: group.paths.map((path) => {
+              const doc = documents.find((item) => item.relativePath === path)!;
+              return {
+                key:
+                  doc.outputKey ??
+                  path.match(/document-(d\d+)\.md$/)?.[1] ??
+                  'd1',
+                title: doc.title,
+                type: (['overview', 'system', 'question'].includes(doc.type)
+                  ? doc.type
+                  : 'system') as DocumentOutputTemplate['type'],
+                instructions: doc.outputInstructions ?? '',
+              };
+            }),
+          }
+        : {}),
+    };
+  };
   const runFailure = codexRun?.events.findLast(
     (event) => event.failure,
   )?.failure;
@@ -3849,7 +3880,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         ...(htmlInput ? { basePath: htmlInput.relativePath } : {}),
         ...(htmlPreviews.length > 1 ? { category: 'prototypes' } : {}),
       },
-      documentResult: { mode: 'new' },
+      documentResult: {
+        mode: 'new',
+        structure: 'custom',
+        documents: defaultDocumentTemplates(),
+      },
       instructions: {
         ...DEFAULT_TASK_INSTRUCTIONS,
         organize: defaultTaskInstructions('organize', sourceMode),
@@ -8289,7 +8324,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         onClick={() =>
                           setAiRequest({
                             ...aiRequest,
-                            documentResult: { mode: 'new' },
+                            documentResult: {
+                              ...aiRequest.documentResult,
+                              mode: 'new',
+                              baseDir: undefined,
+                              structure:
+                                aiRequest.documentResult?.structure ?? 'custom',
+                              documents:
+                                aiRequest.documentResult?.documents ??
+                                defaultDocumentTemplates(),
+                            },
                           })
                         }
                       >
@@ -8305,10 +8349,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         onClick={() =>
                           setAiRequest({
                             ...aiRequest,
-                            documentResult: {
-                              mode: 'update',
-                              baseDir: organizedSets.at(-1)?.baseDir,
-                            },
+                            documentResult: documentChoiceForUpdate(
+                              organizedSets.at(-1)!.baseDir,
+                            ),
                           })
                         }
                       >
@@ -8327,26 +8370,283 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                           onChange={(event) =>
                             setAiRequest({
                               ...aiRequest,
-                              documentResult: {
-                                mode: 'update',
-                                baseDir: event.target.value,
-                              },
+                              documentResult: documentChoiceForUpdate(
+                                event.target.value,
+                              ),
                             })
                           }
                         >
                           {organizedSets.map((set) => (
                             <option key={set.baseDir} value={set.baseDir}>
-                              {set.label} · {set.baseDir}
+                              {set.label} · {set.paths.length}개 문서 ·{' '}
+                              {set.baseDir}
                             </option>
                           ))}
                         </select>
+                        <small>
+                          기존 문서의 ID를 유지해 갱신합니다. 시스템별 문서
+                          묶음은 새 시스템 문서를 추가할 수 있으며, 이전 세 문서
+                          묶음은 기존 구성을 유지합니다.
+                        </small>
                       </label>
                     ) : (
                       <p className="ai-output-hint">
-                        새 .md 파일 3개를 생성합니다. 기존 정리 문서를 덮어쓰지
-                        않습니다.
+                        {aiRequest.documentResult?.structure === 'systems'
+                          ? '게임 개요 1개와 시스템별 문서 1~20개를 생성합니다. 시스템 수는 AI가 입력을 분석해 결정합니다.'
+                          : `설정한 문서 ${aiRequest.documentResult?.documents?.length ?? 3}개를 생성합니다. 제목과 포함할 내용을 자유롭게 편집할 수 있습니다.`}
                       </p>
                     )}
+                    <section
+                      id="ai-document-format"
+                      className="document-output-format"
+                      tabIndex={-1}
+                      {...aiFieldProps('document-format')}
+                    >
+                      <div className="document-output-format__heading">
+                        <strong>문서 출력 구성</strong>
+                        <span>
+                          {aiRequest.documentResult?.structure === 'systems'
+                            ? '시스템별 자동 분리'
+                            : aiRequest.documentResult?.structure === 'custom'
+                              ? `${aiRequest.documentResult.documents?.length ?? 0}개 문서`
+                              : '기존 세 문서'}
+                        </span>
+                      </div>
+                      {aiRequest.documentResult?.mode !== 'update' && (
+                        <div className="document-output-presets">
+                          <button
+                            type="button"
+                            disabled={creatingTask}
+                            onClick={() =>
+                              setAiRequest({
+                                ...aiRequest,
+                                documentResult: {
+                                  mode: 'new',
+                                  structure: 'custom',
+                                  documents: defaultDocumentTemplates(),
+                                },
+                              })
+                            }
+                          >
+                            기본 3개로 복원
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={
+                              aiRequest.documentResult?.structure === 'systems'
+                            }
+                            disabled={creatingTask}
+                            onClick={() =>
+                              setAiRequest({
+                                ...aiRequest,
+                                documentResult: {
+                                  ...aiRequest.documentResult,
+                                  mode: 'new',
+                                  structure: 'systems',
+                                },
+                              })
+                            }
+                          >
+                            시스템별 자동 분리
+                          </button>
+                          {aiRequest.documentResult?.structure ===
+                            'systems' && (
+                            <button
+                              type="button"
+                              disabled={creatingTask}
+                              onClick={() =>
+                                setAiRequest({
+                                  ...aiRequest,
+                                  documentResult: {
+                                    ...aiRequest.documentResult,
+                                    mode: 'new',
+                                    structure: 'custom',
+                                    documents:
+                                      aiRequest.documentResult?.documents ??
+                                      defaultDocumentTemplates(),
+                                  },
+                                })
+                              }
+                            >
+                              직접 구성 편집
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {aiRequest.documentResult?.structure === 'custom' && (
+                        <>
+                          {(aiRequest.documentResult.documents ?? []).map(
+                            (template, index) => (
+                              <div
+                                key={template.key}
+                                className="document-output-template"
+                              >
+                                <div className="document-output-template__header">
+                                  <strong>문서 {index + 1}</strong>
+                                  <button
+                                    type="button"
+                                    aria-label={`문서 ${index + 1} 제거`}
+                                    disabled={
+                                      creatingTask ||
+                                      aiRequest.documentResult?.mode ===
+                                        'update' ||
+                                      (aiRequest.documentResult?.documents
+                                        ?.length ?? 0) <= 1
+                                    }
+                                    onClick={() =>
+                                      setAiRequest({
+                                        ...aiRequest,
+                                        documentResult: {
+                                          ...aiRequest.documentResult!,
+                                          documents:
+                                            aiRequest.documentResult!.documents!.filter(
+                                              (doc) => doc.key !== template.key,
+                                            ),
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                                <label>
+                                  문서 제목
+                                  <input
+                                    aria-label={`문서 ${index + 1} 제목`}
+                                    aria-invalid={
+                                      !template.title.trim() || undefined
+                                    }
+                                    value={template.title}
+                                    maxLength={120}
+                                    disabled={creatingTask}
+                                    onChange={(event) =>
+                                      setAiRequest({
+                                        ...aiRequest,
+                                        documentResult: {
+                                          ...aiRequest.documentResult!,
+                                          documents:
+                                            aiRequest.documentResult!.documents!.map(
+                                              (doc) =>
+                                                doc.key === template.key
+                                                  ? {
+                                                      ...doc,
+                                                      title: event.target.value,
+                                                    }
+                                                  : doc,
+                                            ),
+                                        },
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  문서 종류
+                                  <select
+                                    aria-label={`문서 ${index + 1} 종류`}
+                                    value={template.type}
+                                    disabled={creatingTask}
+                                    onChange={(event) =>
+                                      setAiRequest({
+                                        ...aiRequest,
+                                        documentResult: {
+                                          ...aiRequest.documentResult!,
+                                          documents:
+                                            aiRequest.documentResult!.documents!.map(
+                                              (doc) =>
+                                                doc.key === template.key
+                                                  ? {
+                                                      ...doc,
+                                                      type: event.target
+                                                        .value as DocumentOutputTemplate['type'],
+                                                    }
+                                                  : doc,
+                                            ),
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <option value="overview">개요</option>
+                                    <option value="system">시스템</option>
+                                    <option value="question">
+                                      질문·확인 사항
+                                    </option>
+                                  </select>
+                                </label>
+                                <label>
+                                  포함할 내용
+                                  <textarea
+                                    aria-label={`문서 ${index + 1} 포함할 내용`}
+                                    value={template.instructions}
+                                    maxLength={4000}
+                                    rows={3}
+                                    disabled={creatingTask}
+                                    placeholder="원하는 내용, Markdown 제목·목차, 표·목록 등의 양식을 적어주세요."
+                                    onChange={(event) =>
+                                      setAiRequest({
+                                        ...aiRequest,
+                                        documentResult: {
+                                          ...aiRequest.documentResult!,
+                                          documents:
+                                            aiRequest.documentResult!.documents!.map(
+                                              (doc) =>
+                                                doc.key === template.key
+                                                  ? {
+                                                      ...doc,
+                                                      instructions:
+                                                        event.target.value,
+                                                    }
+                                                  : doc,
+                                            ),
+                                        },
+                                      })
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            ),
+                          )}
+                          <button
+                            type="button"
+                            disabled={
+                              creatingTask ||
+                              (aiRequest.documentResult.documents?.length ??
+                                0) >= MAX_FORMAT_DOCUMENTS
+                            }
+                            onClick={() => {
+                              const templates =
+                                aiRequest.documentResult?.documents ?? [];
+                              const key = `d${Math.max(0, ...templates.map((doc) => Number(doc.key.slice(1)))) + 1}`;
+                              setAiRequest({
+                                ...aiRequest,
+                                documentResult: {
+                                  ...aiRequest.documentResult!,
+                                  documents: [
+                                    ...templates,
+                                    {
+                                      key,
+                                      title: '새 문서',
+                                      type: 'system',
+                                      instructions: '',
+                                    },
+                                  ],
+                                },
+                              });
+                            }}
+                          >
+                            <Plus size={16} /> 문서 추가
+                          </button>
+                          <small>
+                            최대 21개까지 설정하며 제목과 포함할 내용이 생성
+                            지침에 반영됩니다. 기존 묶음의 문서를 줄이거나 다른
+                            구성으로 바꾸려면 새 버전을 만드세요.
+                          </small>
+                        </>
+                      )}
+                      <GamejamFieldErrors
+                        field="document-format"
+                        issues={aiRequestIssues}
+                      />
+                    </section>
                   </>
                 )}
                 {aiRequest.implement && previews.length > 0 && (
@@ -8476,7 +8776,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     변환). 기존 파일 업데이트는 경로를 유지하고 제목에
                     반영합니다. 비워두면 기존 기본 이름을 사용합니다.
                     {aiRequest.organize &&
-                      ' 문서 정리는 게임 개요·핵심 루프·미결정 사항 3개 파일을 생성합니다.'}
+                      ' 문서 정리는 선택한 출력 구성의 제목과 포함할 내용을 따릅니다.'}
                   </small>
                   <GamejamFieldErrors field="name" issues={aiRequestIssues} />
                 </section>

@@ -26,6 +26,8 @@ const collaboration = {
   htmlComposition: true,
   htmlImportAnalysis: true,
   gamejamWorkflow: true,
+  documentBundles: true,
+  documentOutputFormats: true,
   taskResultNaming: true,
   taskInstructionsEditable: true,
   multiProviderAi: true,

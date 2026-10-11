@@ -90,6 +90,19 @@ export function GamejamReview({
                 {request.documentResult?.mode === 'update'
                   ? `기존 문서 업데이트 · ${request.documentResult.baseDir ?? '묶음 선택 필요'}`
                   : '새 문서 버전 만들기'}
+                {request.documentResult?.structure === 'custom' && (
+                  <ul>
+                    {request.documentResult.documents?.map((doc) => (
+                      <li key={doc.key}>
+                        <strong>{doc.title || '제목 미입력'}</strong>
+                        {doc.instructions && <span> — {doc.instructions}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {request.documentResult?.structure === 'systems' && (
+                  <span> · 게임 개요 + 시스템별 자동 분리</span>
+                )}
               </dd>
             </>
           )}

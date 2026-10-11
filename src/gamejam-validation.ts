@@ -6,6 +6,7 @@ import type {
 } from './shared';
 import { resultName } from './result-name.ts';
 import { taskInstructions } from './task-instructions.ts';
+import { documentTemplates } from './document-format.ts';
 
 export type GamejamField =
   | 'steps'
@@ -13,6 +14,7 @@ export type GamejamField =
   | 'organize'
   | 'implement'
   | 'html-result'
+  | 'document-format'
   | 'connection'
   | 'model'
   | 'status';
@@ -54,6 +56,18 @@ export function gamejamIssues(
       add(
         kind,
         error instanceof Error ? error.message : '작업 지시를 확인해주세요.',
+      );
+    }
+  }
+  if (request.organize && request.documentResult?.structure === 'custom') {
+    try {
+      documentTemplates(request.documentResult.documents);
+    } catch (error) {
+      add(
+        'document-format',
+        error instanceof Error
+          ? error.message
+          : '문서 출력 구성을 확인해주세요.',
       );
     }
   }
@@ -117,6 +131,24 @@ export function gamejamIssues(
     }
     if (request.implement && !shared.htmlResultFolders)
       add('connection', 'HTML 구현에는 협업 서버 v0.8.1 이상이 필요합니다.');
+    if (
+      request.organize &&
+      request.documentResult?.structure === 'custom' &&
+      !shared.documentOutputFormats
+    )
+      add(
+        'connection',
+        '문서 출력 구성을 편집하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+      );
+    if (
+      request.organize &&
+      request.documentResult?.structure === 'systems' &&
+      !shared.documentBundles
+    )
+      add(
+        'connection',
+        '시스템별 문서 생성을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+      );
     if (
       (request.sourceMode === 'html-compose' ||
         (request.sourceMode === 'html' && request.implement)) &&
@@ -188,6 +220,7 @@ export const gamejamFieldId = (field: GamejamField) =>
     organize: 'ai-task-instructions-organize',
     implement: 'ai-task-instructions-implement',
     'html-result': 'ai-html-result',
+    'document-format': 'ai-document-format',
     connection: 'ai-request-connection',
     model: 'ai-model-custom',
     status: 'ai-request-status',

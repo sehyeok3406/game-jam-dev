@@ -6,6 +6,7 @@ import {
 } from './preview-output.ts';
 import type { Snapshot } from './project-store.ts';
 import type { AiFileLock } from './shared.ts';
+import { documentBundleContract } from './document-bundle.ts';
 
 export const AI_FILE_LOCK_MESSAGE =
   '현재 AI 작업에 사용 중인 파일은 수정·삭제·이동할 수 없습니다. 관련 없는 문서는 계속 편집할 수 있습니다.';
@@ -15,8 +16,11 @@ const key = (relative: string) => relative.replaceAll('\\', '/').toLowerCase();
 export function taskFileLock(files: Snapshot, taskPath: string): AiFileLock {
   const paths = new Set<string>([taskPath]);
   const folders = new Set<string>();
+  const prefixes = new Set<string>();
   const addTask = (raw: string, depth = 0) => {
     const data = matter(raw).data;
+    const bundle = documentBundleContract(raw);
+    if (bundle) prefixes.add(bundle.systemPrefix);
     for (const value of [
       ...(Array.isArray(data.inputs) ? data.inputs : []),
       ...(Array.isArray(data.expected_outputs) ? data.expected_outputs : []),
@@ -51,7 +55,11 @@ export function taskFileLock(files: Snapshot, taskPath: string): AiFileLock {
       for (const member of Array.isArray(data.members) ? data.members : [])
         if (typeof member?.path === 'string') paths.add(member.path);
   }
-  return { paths: [...paths].sort(), folders: [...folders].sort() };
+  return {
+    paths: [...paths].sort(),
+    folders: [...folders].sort(),
+    ...(prefixes.size ? { prefixes: [...prefixes].sort() } : {}),
+  };
 }
 
 export function isAiFileLocked(
@@ -62,6 +70,7 @@ export function isAiFileLocked(
   return (
     !!lock &&
     (lock.paths.some((path) => key(path) === candidate) ||
+      lock.prefixes?.some((prefix) => candidate.startsWith(key(prefix))) ||
       lock.folders.some(
         (folder) =>
           candidate === key(folder) || candidate.startsWith(`${key(folder)}/`),

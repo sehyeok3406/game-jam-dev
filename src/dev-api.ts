@@ -22,6 +22,7 @@ import {
   type DocumentSaveState,
 } from './document-save-queue';
 import { resolveDocumentOutputs } from './document-output';
+import type { DocumentOutputTemplate } from './document-format';
 import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
 import { cardColor } from './card-colors';
@@ -135,7 +136,15 @@ let previews: PreviewResult[] = [initialPreview];
 const taskOutputs = new Map<string, { output: string; base?: string }>();
 const taskDocumentOutputs = new Map<
   string,
-  { outputs: string[]; inputs: string[]; x: number; y: number }
+  {
+    outputs: string[];
+    inputs: string[];
+    x: number;
+    y: number;
+    systems?: boolean;
+    bundleId?: string;
+    templates?: DocumentOutputTemplate[];
+  }
 >();
 
 const listeners = new Set<() => void>();
@@ -558,6 +567,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         taskInstructionsEditable: true,
         taskResultNaming: true,
         gamejamWorkflow: true,
+        documentBundles: true,
+        documentOutputFormats: true,
         htmlImportAnalysis: true,
         htmlComposition: true,
         canvasSheets: true,
@@ -593,6 +604,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         taskInstructionsEditable: true,
         taskResultNaming: true,
         gamejamWorkflow: true,
+        documentBundles: true,
+        documentOutputFormats: true,
         htmlImportAnalysis: true,
         htmlComposition: true,
         canvasSheets: true,
@@ -1144,8 +1157,18 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         taskDocumentOutputs.set(document.relativePath, {
           outputs,
           inputs: inputPaths,
+          templates:
+            documentResult?.structure === 'custom'
+              ? documentResult.documents
+              : undefined,
           x,
           y,
+          systems:
+            (outputs.length === 1 && documentResult?.structure === 'systems') ||
+            outputs.some((path) => /-?system-[a-z0-9-]+\.md$/.test(path)),
+          bundleId:
+            documents.find((doc) => doc.relativePath === outputs[0])
+              ?.documentBundleId ?? `bundle-${id}`,
         });
       }
       documents = [...documents, document];
@@ -1260,6 +1283,17 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         const target = taskOutputs.get(taskPath);
         const docTarget = taskDocumentOutputs.get(taskPath);
         if (docTarget) {
+          const systems = docTarget.systems;
+          if (systems && docTarget.outputs.length === 1) {
+            const prefix =
+              docTarget.outputs[0].slice(0, -'game-overview.md'.length) +
+              'system-';
+            docTarget.outputs.push(
+              ...['play', 'progression', 'rewards'].map(
+                (key) => `${prefix}${key}.md`,
+              ),
+            );
+          }
           const sources = [
             ...documents
               .filter((doc) => docTarget.inputs.includes(doc.relativePath))
@@ -1286,8 +1320,49 @@ export function createDevGameCanvasApi(): GameCanvasApi {
                     ?.canvasId,
                 id: previous?.id ?? `${runId}-doc-${index}`,
                 relativePath,
-                title: ['게임 개요', '핵심 게임 루프', '미결정 사항'][index],
-                type: index === 2 ? 'question' : 'system',
+                ...(docTarget.templates
+                  ? {
+                      documentBundleId: docTarget.bundleId,
+                      outputKey: docTarget.templates[index].key,
+                      outputInstructions:
+                        docTarget.templates[index].instructions,
+                      ...(docTarget.templates[index].type === 'system'
+                        ? {
+                            systemId: `${docTarget.bundleId}:${docTarget.templates[index].key}`,
+                          }
+                        : {}),
+                    }
+                  : {}),
+                title: docTarget.templates
+                  ? docTarget.templates[index].title
+                  : systems
+                    ? index === 0
+                      ? '게임 개요'
+                      : (['플레이 시스템', '성장 시스템', '보상 시스템'][
+                          index - 1
+                        ] ??
+                        previous?.title ??
+                        '시스템 문서')
+                    : ['게임 개요', '핵심 게임 루프', '미결정 사항'][index],
+                type: docTarget.templates
+                  ? docTarget.templates[index].type
+                  : index === 0
+                    ? 'overview'
+                    : systems
+                      ? 'system'
+                      : index === 2
+                        ? 'question'
+                        : 'system',
+                ...(systems
+                  ? {
+                      documentBundleId: docTarget.bundleId,
+                      ...(index
+                        ? {
+                            systemId: `${docTarget.bundleId}:${relativePath.split('system-').at(-1)!.replace(/\.md$/, '')}`,
+                          }
+                        : {}),
+                    }
+                  : {}),
                 status: 'draft',
                 body: `## 정리 결과\n\n선택한 원본 메모 ${sources.length}개를 정리했습니다.`,
                 sources,

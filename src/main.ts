@@ -131,6 +131,7 @@ import {
   localFileAuthorship,
 } from './project-store';
 import { expectedArtifacts, validateArtifacts } from './ai-artifacts';
+import { resolveTaskArtifacts } from './document-bundle';
 import { taskHistoryRecord } from './ai-task-history';
 import { validateHtml } from './html-validation';
 import { presentWindow } from './window-presentation';
@@ -1078,6 +1079,22 @@ const parseDocument = async (absolutePath: string): Promise<CanvasDocument> => {
     backgroundColor: cardColor(data.background_color),
     sources: normalizeSources(data.sources),
     asset,
+    systemId: typeof data.system_id === 'string' ? data.system_id : undefined,
+    outputKey:
+      typeof (data.document_output as { key?: unknown })?.key === 'string'
+        ? (data.document_output as { key: string }).key
+        : undefined,
+    outputInstructions:
+      typeof (data.document_output as { instructions?: unknown })
+        ?.instructions === 'string'
+        ? (data.document_output as { instructions: string }).instructions
+        : undefined,
+    documentBundleId:
+      typeof data.document_bundle_id === 'string'
+        ? data.document_bundle_id
+        : typeof (data.document_bundle as { id?: unknown })?.id === 'string'
+          ? (data.document_bundle as { id: string }).id
+          : undefined,
     htmlSource:
       typeof data.html_source === 'string' && isPreviewPath(data.html_source)
         ? data.html_source
@@ -1436,7 +1453,7 @@ const startCodexRun = async (
   if (preparationCancelled) throw new Error('작업 준비를 중지했습니다.');
   const baseline = await captureProject(root);
   assertCanvas(baseline, matter(baseline[input.taskPath]).data.canvas_id);
-  const outputs = expectedArtifacts(baseline[input.taskPath]);
+  let outputs = expectedArtifacts(baseline[input.taskPath]);
   validateHtmlAnalysis(baseline[input.taskPath], baseline);
   if (newOutputsAlreadyExist(baseline[input.taskPath], baseline))
     throw new CanvasError(
@@ -1491,7 +1508,7 @@ const startCodexRun = async (
     'Preserve existing output document IDs. Every output Markdown must have YAML frontmatter: id, title, type (overview/system/question), status, sources (array of source IDs or objects with id/path). Record real input IDs, never invent source IDs.',
     'New-version Markdown outputs must use new globally unique IDs, not IDs from older versions. Update outputs must preserve their existing IDs.',
     'HTML output must be an actual standalone HTML document, not a Markdown code fence or explanation. Prefer explicit <!doctype html>, <html>, <head>, <body> tags. Verify JavaScript startup, not only file existence.',
-    'Do not modify input documents. Only generate the expected_outputs listed in the task. The application validates and publishes these outputs after you finish.',
+    'Do not modify input documents. Only generate expected_outputs and, when document_bundle is specified, its indexed system Markdown files within the exact reserved namespace. Write the overview index first, then every indexed document. The application validates and publishes the complete bundle after you finish.',
     ...(input.providerId === 'codex-cli'
       ? []
       : [
@@ -1686,6 +1703,14 @@ const startCodexRun = async (
           );
           staged = { ...staged, [input.taskPath]: baseline[input.taskPath] };
         }
+        outputs = resolveTaskArtifacts(
+          baseline[input.taskPath],
+          staged,
+          baseline,
+        );
+        currentRun.outputs = outputs;
+        if (initialMeta.aiTask)
+          initialMeta.aiTask = { ...initialMeta.aiTask, outputs };
         const changedInputs = Object.keys({ ...baseline, ...staged }).filter(
           (relative) =>
             !outputs.includes(relative) &&
@@ -1942,10 +1967,20 @@ const startCodexRun = async (
             'gamejam! · 정리 문서를 검증하고 있습니다. 아직 결과는 반영하지 않습니다.',
           );
           const staged = await captureProject(stage);
-          const docOutputs = expectedArtifacts(stages[0]);
+          const docOutputs = resolveTaskArtifacts(
+            stages[0],
+            staged,
+            phaseBaseline,
+          );
           assertStageInputs(phaseBaseline, staged, docOutputs);
           validateArtifacts(phaseBaseline, staged, docOutputs);
           validateHtmlAnalysis(stages[0], staged, docOutputs);
+          const next = matter(stages[1]);
+          next.data.inputs = [...new Set([...next.data.inputs, ...docOutputs])];
+          stages[1] = matter.stringify(
+            `${next.content}\n## 이번에 생성한 문서 전체\n\n${docOutputs.map((path) => `- \`${path}\``).join('\n')}\n`,
+            next.data,
+          );
           if (run.cancelRequested) return await finalize(null);
           stageIndex = 1;
           await preparePhase();

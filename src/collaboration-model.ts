@@ -216,6 +216,22 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
             )
           : [],
         asset: imageAsset(data.asset),
+        systemId:
+          typeof data.system_id === 'string' ? data.system_id : undefined,
+        outputKey:
+          typeof data.document_output?.key === 'string'
+            ? data.document_output.key
+            : undefined,
+        outputInstructions:
+          typeof data.document_output?.instructions === 'string'
+            ? data.document_output.instructions
+            : undefined,
+        documentBundleId:
+          typeof data.document_bundle_id === 'string'
+            ? data.document_bundle_id
+            : typeof data.document_bundle?.id === 'string'
+              ? data.document_bundle.id
+              : undefined,
         htmlSource:
           typeof data.html_source === 'string' &&
           isPreviewPath(data.html_source)

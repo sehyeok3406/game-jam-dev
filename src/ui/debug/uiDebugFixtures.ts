@@ -188,6 +188,8 @@ export function sampleCollaboration(
     offlineSync: true,
     editorAi: true,
     gamejamWorkflow: true,
+    documentBundles: true,
+    documentOutputFormats: true,
     canvasSheets: true,
     taskInstructionsEditable: true,
     taskResultNaming: true,

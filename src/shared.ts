@@ -47,6 +47,10 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  systemId?: string;
+  documentBundleId?: string;
+  outputKey?: string;
+  outputInstructions?: string;
   structureRevision?: number;
   contentRevision?: number;
   canvasId?: string;
@@ -253,7 +257,11 @@ export type CodexRunStatus =
   | 'failed'
   | 'cancelled';
 
-export type AiFileLock = { paths: string[]; folders: string[] };
+export type AiFileLock = {
+  paths: string[];
+  folders: string[];
+  prefixes?: string[];
+};
 
 export type CodexRunEvent = {
   fileLock?: AiFileLock;
@@ -624,6 +632,8 @@ export type CollaborationState = {
   taskInstructionsEditable?: boolean;
   taskResultNaming?: boolean;
   gamejamWorkflow?: boolean;
+  documentBundles?: boolean;
+  documentOutputFormats?: boolean;
   htmlImportAnalysis?: boolean;
 };
 

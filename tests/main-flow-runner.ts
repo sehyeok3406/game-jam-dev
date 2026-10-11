@@ -7,6 +7,7 @@ import { CollaborationClient } from '../src/collaboration-client';
 import { isImportedPreviewPath } from '../src/preview-output';
 import '../src/main';
 import { executionStarts, executionSpecs } from './mocks/process';
+import { defaultDocumentTemplates } from '../src/document-format';
 import {
   handlers,
   events,
@@ -1061,6 +1062,281 @@ try {
   assert.equal(failedHistory.failure.code, 'GC-HTML-001');
   console.log(
     'PASS: five fresh ideas organize into versioned Markdown and implement implicit-body HTML; selective updates preserve IDs and other games; failures persist structured diagnostics',
+  );
+  const customTemplates = [
+    {
+      key: 'd1',
+      title: '카드 데이터',
+      type: 'system',
+      instructions: '카드 ID/비용/효과를 표로 정리한다.',
+    },
+    {
+      key: 'd2',
+      title: '변경 검토',
+      type: 'question',
+      instructions: '## 검토 목록\n체크리스트를 만든다.',
+    },
+  ];
+  const customInput = {
+    kind: 'organize',
+    inputPaths: [idea.relativePath],
+    x: 900,
+    y: 100,
+    resultName: '자유 출력',
+    documentResult: {
+      mode: 'new',
+      structure: 'custom',
+      documents: customTemplates,
+    },
+  };
+  for (const [modelId, status] of [
+    ['fixture-format-valid', 'completed'],
+    ['fixture-format-missing', 'failed'],
+    ['fixture-format-wrong-title', 'failed'],
+  ] as const) {
+    const task = await call('tasks:create', customInput);
+    const spec = matter(
+      await fs.readFile(path.join(root, task.relativePath), 'utf8'),
+    ).data;
+    assert.equal(spec.expected_outputs.length, 2);
+    const run = await call('codex:start', {
+      taskPath: task.relativePath,
+      modelId,
+      providerId: 'codex-cli',
+    });
+    const end = await terminal(run.runId);
+    assert.equal(end.status, status, end.message);
+    if (status === 'completed') {
+      const docs = (await call('documents:list')).filter((doc: any) =>
+        spec.expected_outputs.includes(doc.relativePath),
+      );
+      assert.deepEqual(
+        docs.map((doc: any) => doc.title).sort(),
+        customTemplates.map((doc) => doc.title).sort(),
+      );
+      assert.ok(
+        docs.every((doc: any) => doc.outputKey && doc.outputInstructions),
+      );
+      const update = await call('tasks:create', {
+        ...customInput,
+        documentResult: {
+          mode: 'update',
+          baseDir: spec.expected_outputs[0].split('/').slice(0, -1).join('/'),
+          structure: 'custom',
+          documents: [
+            ...customTemplates.map((doc) => ({
+              ...doc,
+              title: `${doc.title} 수정`,
+            })),
+            {
+              key: 'd3',
+              title: '경제 시스템',
+              type: 'system',
+              instructions: '재화와 가격표',
+            },
+          ],
+        },
+      });
+      const updateRun = await call('codex:start', {
+        taskPath: update.relativePath,
+        modelId: 'fixture-format-update',
+        providerId: 'codex-cli',
+      });
+      const updateEnd = await terminal(updateRun.runId);
+      assert.equal(updateEnd.status, 'completed', updateEnd.message);
+      for (const doc of docs)
+        assert.equal(
+          (await call('documents:list')).find(
+            (item: any) => item.relativePath === doc.relativePath,
+          ).id,
+          doc.id,
+        );
+    } else
+      for (const relative of spec.expected_outputs)
+        await assert.rejects(fs.access(path.join(root, relative)));
+  }
+  const customWorkflow = await call('tasks:create', {
+    ...customInput,
+    thenImplement: { htmlResult: { mode: 'new' } },
+  });
+  const customWorkflowRun = await call('codex:start', {
+    taskPath: customWorkflow.relativePath,
+    modelId: 'fixture-format-workflow',
+    providerId: 'codex-cli',
+  });
+  const customWorkflowEnd = await terminal(customWorkflowRun.runId);
+  assert.equal(
+    customWorkflowEnd.status,
+    'completed',
+    customWorkflowEnd.message,
+  );
+  const customExecutions = executionSpecs.filter(
+    (item) => item.model === 'fixture-format-workflow',
+  );
+  assert.equal(customExecutions.length, 2);
+  assert.deepEqual(customExecutions[1].inputs, customExecutions[0].outputs);
+  assert.equal(
+    (await call('history:list')).find(
+      (entry: any) => entry.id === customWorkflowRun.runId,
+    ).aiTask.outputs.length,
+    3,
+  );
+  const defaultFormatTask = await call('tasks:create', {
+    ...analysisInput,
+    documentResult: {
+      mode: 'new',
+      structure: 'custom',
+      documents: defaultDocumentTemplates(),
+    },
+  });
+  const defaultFormatSpec = matter(
+    await fs.readFile(path.join(root, defaultFormatTask.relativePath), 'utf8'),
+  ).data;
+  const defaultFormatRun = await call('codex:start', {
+    taskPath: defaultFormatTask.relativePath,
+    modelId: 'fixture-format-analysis',
+    providerId: 'codex-cli',
+  });
+  const defaultFormatEnd = await terminal(defaultFormatRun.runId);
+  assert.equal(defaultFormatEnd.status, 'completed', defaultFormatEnd.message);
+  for (const relative of defaultFormatSpec.expected_outputs)
+    assert.deepEqual(
+      matter(await fs.readFile(path.join(root, relative), 'utf8')).data
+        .analyzed_html,
+      defaultFormatSpec.html_analysis_source,
+    );
+  console.log(
+    'PASS: editable custom document formats generate arbitrary titles without an overview, preserve IDs on update/add, bind all files into HTML, retain analysis provenance and reject missing or substituted results atomically',
+  );
+  // Variable bundles use the production IPC, validation, history and staged CLI.
+  const bundleInput = {
+    kind: 'organize',
+    inputPaths: [idea.relativePath],
+    x: 900,
+    y: 100,
+    documentResult: { mode: 'new', structure: 'systems' },
+    resultName: '시스템 묶음',
+  };
+  for (const [modelId, count] of [
+    ['fixture-bundle-one', 2],
+    ['fixture-bundle-many', 5],
+  ] as const) {
+    const task = await call('tasks:create', bundleInput);
+    const spec = matter(
+      await fs.readFile(path.join(root, task.relativePath), 'utf8'),
+    ).data;
+    assert.equal(spec.expected_outputs.length, 1);
+    const run = await call('codex:start', {
+      taskPath: task.relativePath,
+      modelId,
+      providerId: 'codex-cli',
+    });
+    const end = await terminal(run.runId);
+    assert.equal(end.status, 'completed', end.message);
+    const history = (await call('history:list')).find(
+      (entry: any) => entry.id === run.runId,
+    );
+    assert.equal(history.aiTask.outputs.length, count);
+    const docs = (await call('documents:list')).filter((doc: any) =>
+      history.aiTask.outputs.includes(doc.relativePath),
+    );
+    assert.equal(docs.length, count);
+    assert.equal(
+      docs.filter(
+        (doc: any) =>
+          doc.systemId && doc.documentBundleId === spec.document_bundle.id,
+      ).length,
+      count - 1,
+    );
+    await call('history:restore', run.runId, undefined, 'before');
+    for (const relative of history.aiTask.outputs)
+      await assert.rejects(fs.access(path.join(root, relative)));
+    await call('history:restore', run.runId, undefined, 'after');
+    for (const relative of history.aiTask.outputs)
+      assert.ok(await fs.readFile(path.join(root, relative), 'utf8'));
+  }
+  const variableAnalysis = await call('tasks:create', {
+    ...analysisInput,
+    documentResult: { mode: 'new', structure: 'systems' },
+  });
+  const variableAnalysisSpec = matter(
+    await fs.readFile(path.join(root, variableAnalysis.relativePath), 'utf8'),
+  ).data;
+  const analysisRun = await call('codex:start', {
+    taskPath: variableAnalysis.relativePath,
+    modelId: 'fixture-bundle-analysis',
+    providerId: 'codex-cli',
+  });
+  const analysisEnd = await terminal(analysisRun.runId);
+  assert.equal(analysisEnd.status, 'completed', analysisEnd.message);
+  const analysisHistory = (await call('history:list')).find(
+    (entry: any) => entry.id === analysisRun.runId,
+  );
+  assert.equal(analysisHistory.aiTask.outputs.length, 5);
+  for (const relative of analysisHistory.aiTask.outputs)
+    assert.deepEqual(
+      matter(await fs.readFile(path.join(root, relative), 'utf8')).data
+        .analyzed_html,
+      variableAnalysisSpec.html_analysis_source,
+    );
+  const variableWorkflow = {
+    ...bundleInput,
+    thenImplement: { htmlResult: { mode: 'new' }, resultName: '시스템 묶음' },
+  };
+  for (const [modelId, expected] of [
+    ['fixture-bundle-workflow', 'completed'],
+    ['fixture-bundle-missing', 'failed'],
+    ['fixture-bundle-tamper', 'failed'],
+  ] as const) {
+    const task = await call('tasks:create', variableWorkflow);
+    const spec = matter(
+      await fs.readFile(path.join(root, task.relativePath), 'utf8'),
+    ).data;
+    const run = await call('codex:start', {
+      taskPath: task.relativePath,
+      modelId,
+      providerId: 'codex-cli',
+    });
+    if (expected === 'completed') {
+      for (
+        let attempt = 0;
+        attempt < 150 &&
+        !events.some(
+          (item) => item.runId === run.runId && item.message.includes('2/2'),
+        );
+        attempt++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.ok(
+        events.some(
+          (item) => item.runId === run.runId && item.message.includes('2/2'),
+        ),
+      );
+      for (const relative of spec.expected_outputs)
+        await assert.rejects(fs.access(path.join(root, relative)));
+    }
+    const end = await terminal(run.runId);
+    assert.equal(end.status, expected, end.message);
+    const executions = executionSpecs.filter((item) => item.model === modelId);
+    if (expected === 'completed') {
+      assert.equal(executions.length, 2);
+      assert.equal(executions[0].outputs.length, 5);
+      assert.deepEqual(executions[1].inputs, executions[0].outputs);
+      const history = (await call('history:list')).find(
+        (entry: any) => entry.id === run.runId,
+      );
+      assert.equal(history.aiTask.outputs.length, 6);
+    } else {
+      for (const relative of executions[0].outputs)
+        await assert.rejects(fs.access(path.join(root, relative)));
+      assert.equal(
+        end.failure.code,
+        modelId === 'fixture-bundle-missing' ? 'GC-AI-004' : 'GC-AI-003',
+      );
+    }
+  }
+  console.log(
+    'PASS: variable document bundles generate 1 or 4 systems, retain all history/restore metadata, preserve HTML provenance, pass every document to HTML and reject partial or tampered results atomically',
   );
   const workflowInput = {
     kind: 'organize',

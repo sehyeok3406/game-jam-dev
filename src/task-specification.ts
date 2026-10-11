@@ -9,6 +9,14 @@ import {
 import type { CreateTaskInput } from './shared.ts';
 import { resultName } from './result-name.ts';
 import type { HtmlInputSource } from './html-inputs.ts';
+import {
+  documentFormatRules,
+  type DocumentOutputFormat,
+} from './document-format.ts';
+import {
+  documentBundleRules,
+  type DocumentBundleContract,
+} from './document-bundle.ts';
 
 /** The local IPC and collaboration server build exactly the same AI contract. */
 export function createTaskSpecification(
@@ -17,6 +25,8 @@ export function createTaskSpecification(
   outputs: string[],
   htmlSource?: { id: string; path: string; sha256: string },
   htmlInputs?: HtmlInputSource[],
+  documentBundle?: DocumentBundleContract,
+  documentFormat?: DocumentOutputFormat,
 ) {
   const instructions = taskInstructions(
     input.kind,
@@ -68,8 +78,17 @@ export function createTaskSpecification(
     '- 입력 범위 밖의 문서나 다른 게임의 자료를 구현 명세로 사용하지 않는다.',
     '- sections/*.md의 멤버 문서를 하나의 의미 단위로 취급하고 다른 섹션과 임의로 섞지 않는다.',
     versionRule,
-    '- expected_outputs에 지정된 파일만 작성한다. 다른 결과 파일을 변경하거나 삭제하지 않는다.',
-    ...(name
+    documentFormat
+      ? documentFormatRules(documentFormat)
+      : documentBundle
+        ? documentBundleRules(documentBundle)
+        : '- expected_outputs에 지정된 파일만 작성한다. 다른 결과 파일을 변경하거나 삭제하지 않는다.',
+    ...(organize && !documentBundle && !documentFormat
+      ? [
+          '- 이 작업은 기존 세 문서 형식이다. 게임 개요, 핵심 플레이 흐름, 확인 필요 사항을 지정된 세 출력에 각각 작성한다.',
+        ]
+      : []),
+    ...(name && !(organize && documentFormat)
       ? [
           organize
             ? `- 정리 문서의 제목에 문서 묶음 이름 ${JSON.stringify(name)}을 반영한다.`
@@ -97,6 +116,8 @@ export function createTaskSpecification(
       expected_outputs: outputs,
       sources: [],
       instruction_template_version: 1,
+      ...(documentBundle ? { document_bundle: documentBundle } : {}),
+      ...(documentFormat ? { document_output_format: documentFormat } : {}),
       ...(name ? { result_name: name } : {}),
       instructions_source:
         instructions === DEFAULT_TASK_INSTRUCTIONS[input.kind] ||

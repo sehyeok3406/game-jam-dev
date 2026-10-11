@@ -2,7 +2,7 @@ import { CanvasError } from './app-errors.ts';
 
 export const MAX_TASK_INSTRUCTIONS = 20_000;
 export const HTML_ANALYSIS_INSTRUCTIONS = [
-  '- 선택한 HTML의 화면 구조, CSS, JavaScript를 읽어 게임 개요, 핵심 플레이 흐름, 확인 필요 사항을 각각 Markdown으로 정리한다.',
+  '- 선택한 HTML의 화면 구조, CSS, JavaScript를 읽어 선택한 문서 출력 구성에 맞춰 Markdown 문서를 정리한다. 문서별 제목과 포함할 내용을 따른다.',
   '- 조작, 목표, 시작·플레이·종료, 점수·승패 조건과 코드에서 확인되는 주요 시스템을 설명한다.',
   '- 확인된 구현 / AI의 추정 / 확인 불가를 구분한다. 코드에 없는 기획 의도를 사실로 쓰지 않는다.',
   '- 게임을 실행하거나 외부 파일·URL을 다운로드하지 않는다. 소스 코드 분석만 수행한다.',
@@ -31,7 +31,7 @@ export const DEFAULT_TASK_INSTRUCTIONS = {
     '- 원본 메모를 수정하지 않는다.',
     '- 생성 문서 frontmatter의 sources에 참고한 모든 실제 입력 메모 ID를 기록한다.',
     '- 원본에 없는 내용은 AI 가정으로 표시한다.',
-    '- 게임 개요, 핵심 플레이 흐름, 미결정 사항을 각각 정리한다.',
+    '- 선택한 문서 출력 구성에 맞춰 문서별 제목과 포함할 내용을 따른다. 원본에 없는 시스템이나 기획 의도를 사실로 만들지 않는다.',
   ].join('\n'),
   implement: [
     '- 선택된 Markdown·HTML·이미지를 재료로 실행 가능한 웹 게임을 만든다. HTML만 선택해도 구현한다.',
