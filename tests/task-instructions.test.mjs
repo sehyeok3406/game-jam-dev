@@ -113,13 +113,17 @@ test('collaboration task generation uses the same instructions contract, does no
         parsed = matter(raw);
       const expected = matter(
         createTaskSpecification(
-          input,
+          { ...input, requestSnapshot: parsed.data.gamejam_request },
           parsed.data.id,
           parsed.data.expected_outputs,
         ),
       );
       const { updated_at: updatedAt, ...metadata } = parsed.data;
       assert.equal(typeof updatedAt, 'number');
+      assert.equal(
+        parsed.data.gamejam_request.request.instructions[kind],
+        instructions ?? DEFAULT_TASK_INSTRUCTIONS[kind],
+      );
       assert.deepEqual(metadata, expected.data);
       assert.equal(parsed.content.trim(), expected.content.trim());
       assert.ok(

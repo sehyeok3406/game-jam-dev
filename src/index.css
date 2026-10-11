@@ -1981,6 +1981,35 @@ button:disabled {
   gap: 6px;
   margin-top: 12px;
 }
+
+.ai-task-details__reuse,
+.gamejam-request-history {
+  display: grid;
+  gap: 8px;
+}
+.ai-task-details__reuse {
+  margin-bottom: 12px;
+  justify-items: start;
+}
+.gamejam-request-history {
+  flex-shrink: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.gamejam-request-history__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gamejam-request-history small,
+.ai-task-details__reuse small {
+  color: var(--text-muted);
+}
+.gamejam-missing-inputs {
+  display: grid;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
 .history-panel--has-detail {
   width: min(960px, calc(100vw - 40px));
 }

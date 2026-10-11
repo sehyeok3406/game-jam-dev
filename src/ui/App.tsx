@@ -127,6 +127,14 @@ import {
 import { PREVIEW_SANDBOX } from '../preview-permissions';
 import { gamejamTaskInput, type GamejamRequest } from '../gamejam-request';
 import {
+  clearGamejamDraft,
+  entryRequest,
+  loadGamejamDraft,
+  saveGamejamDraft,
+  type GamejamDraft,
+  type GamejamSavedRequest,
+} from '../gamejam-history';
+import {
   defaultDocumentTemplates,
   MAX_FORMAT_DOCUMENTS,
   type DocumentOutputTemplate,
@@ -1760,6 +1768,15 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     'organize' | 'implement'
   >('organize');
   const [aiRequestSubmitError, setAiRequestSubmitError] = useState('');
+  const [savedAiDraft, setSavedAiDraft] = useState<GamejamDraft | null>(null);
+  const [aiDraftStatus, setAiDraftStatus] = useState('');
+  const [aiRequestRetryOf, setAiRequestRetryOf] = useState<
+    string | undefined
+  >();
+  const [loadingAiRequest, setLoadingAiRequest] = useState(false);
+  const aiRequestProjectRef = useRef<string | null>(null);
+  const aiDraftSignatureRef = useRef('');
+  const aiRequestLoadRef = useRef(0);
   const aiRequestDialogRef = useRef<HTMLElement>(null);
   const [aiResultPaths, setAiResultPaths] = useState<string[]>([]);
   const [sectionRename, setSectionRename] = useState<{
@@ -2037,6 +2054,44 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [selectedAiProvider, setSelectedAiProvider] =
     useState<AiProviderId>('codex-cli');
   const [selectedAiModel, setSelectedAiModel] = useState('');
+  useEffect(() => {
+    if (
+      !aiRequest ||
+      !noticeProject ||
+      home ||
+      aiRequestProjectRef.current !== noticeProject
+    )
+      return;
+    const draft: GamejamDraft = {
+      version: 1,
+      request: aiRequest,
+      providerId: selectedAiProvider,
+      modelId: selectedAiModel,
+      retryOf: aiRequestRetryOf,
+      page: aiRequestPage,
+      instructionPage: aiInstructionPage,
+      updatedAt: Date.now(),
+    };
+    const signature = JSON.stringify({ ...draft, updatedAt: 0 });
+    if (aiDraftSignatureRef.current === signature) return;
+    if (saveGamejamDraft(localStorage, noticeProject, draft)) {
+      aiDraftSignatureRef.current = signature;
+      setAiDraftStatus('작성 내용 자동 저장됨 · 이 기기에 보관');
+    } else {
+      setAiDraftStatus(
+        '작성 내용을 저장하지 못했습니다. 창을 닫기 전에 지시를 복사해주세요.',
+      );
+    }
+  }, [
+    aiRequest,
+    aiRequestPage,
+    aiInstructionPage,
+    selectedAiProvider,
+    selectedAiModel,
+    aiRequestRetryOf,
+    noticeProject,
+    home,
+  ]);
   const [checkingCodex, setCheckingCodex] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('game-canvas-theme');
@@ -2145,6 +2200,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         aiBusy,
         locked,
         updateRestarting,
+        availableInputs: [
+          ...documents.map((doc) => doc.relativePath),
+          ...sections.map((section) => section.relativePath),
+          ...previews.map((preview) => preview.relativePath),
+        ],
       })
     : [];
   const aiFieldProps = (field: GamejamField) => ({
@@ -2210,7 +2270,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
     }
     target.focus({ preventScroll: true });
-    target.scrollIntoView({
+    const scrollTarget =
+      target instanceof HTMLDetailsElement
+        ? (target.querySelector('summary') ?? target)
+        : target;
+    scrollTarget.scrollIntoView({
       block: 'center',
       behavior: 'instant',
     });
@@ -3755,6 +3819,106 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     }
   };
 
+  const initializeAiRequest = (
+    request: GamejamRequest,
+    saved?: GamejamSavedRequest,
+    draft?: GamejamDraft,
+  ) => {
+    if (!noticeProject) return;
+    aiRequestLoadRef.current += 1;
+    const providerId = saved?.providerId ?? selectedAiProvider;
+    const modelId = saved?.modelId ?? selectedAiModel;
+    const page = draft?.page ?? 1;
+    const instructionPage = draft?.instructionPage ?? 'organize';
+    const restored = structuredClone(request);
+    if (!canvasSheets.canvases.some((sheet) => sheet.id === restored.canvasId))
+      restored.canvasId = activeCanvasRef.current;
+    aiRequestProjectRef.current = noticeProject;
+    aiDraftSignatureRef.current = JSON.stringify({
+      version: 1,
+      request: restored,
+      providerId,
+      modelId,
+      retryOf: saved?.retryOf,
+      page,
+      instructionPage,
+      updatedAt: 0,
+    });
+    setSavedAiDraft(loadGamejamDraft(localStorage, noticeProject) ?? null);
+    setAiDraftStatus(
+      saved
+        ? '이전 요청을 불러왔습니다. 입력 자료와 결과 설정을 확인해주세요.'
+        : '변경한 작성 내용은 이 기기에 자동 저장됩니다.',
+    );
+    setAiRequestRetryOf(saved?.retryOf);
+    setAiRequestPage(page);
+    setAiRequestVisited(page);
+    setAiInstructionPage(instructionPage);
+    setAiRequestSubmitError('');
+    if (providerId !== selectedAiProvider) setCodexStatus(null);
+    setSelectedAiProvider(providerId);
+    setSelectedAiModel(modelId);
+    setHistoryOpen(false);
+    setAiRequest(restored);
+    // A reused request also survives closing the dialog before editing anything.
+    if (saved) {
+      const value: GamejamDraft = {
+        ...saved,
+        request: restored,
+        page,
+        instructionPage,
+        updatedAt: Date.now(),
+      };
+      if (!saveGamejamDraft(localStorage, noticeProject, value))
+        setAiDraftStatus('이전 요청을 불러왔지만 임시 저장에 실패했습니다.');
+    }
+    requestAnimationFrame(() => {
+      const fields =
+        aiRequestDialogRef.current?.querySelector('.ai-request-fields');
+      if (fields) fields.scrollTop = 0;
+      aiRequestDialogRef.current
+        ?.querySelector<HTMLElement>(
+          `[data-gamejam-page="${page}"] .ai-step-heading`,
+        )
+        ?.focus({ preventScroll: true });
+    });
+  };
+  const closeAiRequest = () => {
+    aiRequestLoadRef.current += 1;
+    setAiRequest(null);
+  };
+  const reuseAiEntry = (entry: HistoryEntry) => {
+    const saved = entryRequest(entry);
+    if (!saved) return;
+    initializeAiRequest(saved.request, saved);
+  };
+  const loadRecentAiRequest = async () => {
+    const project = noticeProject,
+      version = ++aiRequestLoadRef.current;
+    setLoadingAiRequest(true);
+    try {
+      const entries = await window.gameCanvas.listHistory();
+      if (
+        runScopeRef.current.project !== project ||
+        aiRequestLoadRef.current !== version
+      )
+        return;
+      const latest = entries.find((entry) => entryRequest(entry));
+      if (latest) reuseAiEntry(latest);
+      else setAiDraftStatus('불러올 작업 기록이 없습니다.');
+    } catch (error) {
+      if (
+        runScopeRef.current.project === project &&
+        aiRequestLoadRef.current === version
+      )
+        setAiDraftStatus(
+          `최근 요청을 불러오지 못했습니다: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    } finally {
+      setLoadingAiRequest(false);
+    }
+  };
+
   const createTask = async (
     kind: 'organize' | 'implement' | 'both' = 'both',
     htmlResult?: HtmlResultChoice,
@@ -3813,20 +3977,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         : htmlInput
           ? ('html' as const)
           : undefined;
-    if (
-      selected.length === 0 &&
-      selectedSections.length === 0 &&
-      !htmlPreviews.length
-    ) {
-      setNotice('문서, 섹션 또는 HTML 게임을 하나 이상 선택하세요.');
-      return;
-    }
     const maxX = Math.max(
+      ...(selected.length || selectedSections.length || htmlLayouts.length
+        ? []
+        : [20]),
       ...selected.map((document) => document.x + document.width),
       ...selectedSections.map((section) => section.x + section.width),
       ...htmlLayouts.map((layout) => layout.x + layout.width),
     );
     const minY = Math.min(
+      ...(selected.length || selectedSections.length || htmlLayouts.length
+        ? []
+        : [120]),
       ...selected.map((document) => document.y),
       ...selectedSections.map((section) => section.y),
       ...htmlLayouts.map((layout) => layout.y),
@@ -3856,10 +4018,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             window.y + (window.collapsed ? 38 : window.height) + NEW_FILE_GAP,
         ),
     );
-    setAiRequestPage(1);
-    setAiRequestVisited(1);
-    setAiInstructionPage('organize');
-    setAiRequest({
+    initializeAiRequest({
       canvasId: activeCanvasRef.current,
       organize:
         sourceMode === 'html-compose'
@@ -3911,8 +4070,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           'AI 연결 설정에서 선택한 제공자의 연결을 먼저 확인해주세요.',
         );
       const task = await window.gameCanvas.createTask(
-        gamejamTaskInput(aiRequest),
+        gamejamTaskInput(aiRequest, {
+          providerId: selectedAiProvider,
+          modelId: selectedAiModel,
+          retryOf: aiRequestRetryOf,
+        }),
       );
+      if (noticeProject) clearGamejamDraft(localStorage, noticeProject);
+      setSavedAiDraft(null);
       setAiResultPaths([
         ...(aiRequest.organize
           ? [...task.body.matchAll(/`(docs\/[^`\r\n]+\.md)`/g)]
@@ -4980,8 +5145,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       : '서버 연결 필요'
     : aiBusy
       ? 'AI 작업 진행 중'
-      : !hasTaskSelection
-        ? '문서·섹션·HTML 게임을 먼저 선택해주세요'
+      : locked
+        ? '프로젝트 편집 잠김'
         : '';
   const canvasItems: CanvasItem[] = [];
   const listed = new Set<string>();
@@ -5179,7 +5344,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       id: 'gamejam',
       title: 'gamejam! · 문서 정리 / HTML 구현',
       shortcut: 'Ctrl+Enter',
-      disabled: !hasTaskSelection || aiBusy,
+      disabled: locked || !canRunAi || aiBusy,
       reason: aiDisabledReason,
       run: () => void createTask(),
     },
@@ -6039,11 +6204,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               type="button"
               className="header-ai-action header-ai-action--primary"
               aria-label="gamejam!"
-              disabled={!hasTaskSelection || aiBusy}
+              disabled={locked || !canRunAi || aiBusy}
               onClick={() => void createTask()}
               title={
                 aiDisabledReason ||
-                `선택 자료 · 문서 정리 / HTML 구현 선택 (Ctrl+Enter)`
+                `문서 정리 / HTML 구현 · 이전 요청 불러오기 (Ctrl+Enter)`
               }
             >
               <Sparkles size={15} /> <span>gamejam!</span>
@@ -7181,6 +7346,15 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   record={entryTaskRecord(aiHistorySelection, taskDocuments)}
                   statusLabel={CODEX_STATUS_LABELS[aiHistorySelection.status]}
                   onOpenPath={focusResultPath}
+                  onReuse={() => reuseAiEntry(aiHistorySelection)}
+                  reuseDisabled={creatingTask || aiBusy || locked || !canRunAi}
+                  onOpenRetry={(id) => {
+                    const previous = historyEntries.find(
+                      (entry) => entry.id === id,
+                    );
+                    if (previous) setAiHistorySelection(previous);
+                    else setNotice('이전 요청 기록을 찾을 수 없습니다.');
+                  }}
                 />
               </div>
             )}
@@ -8057,7 +8231,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           className="dialog-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !creatingTask)
-              setAiRequest(null);
+              closeAiRequest();
           }}
         >
           <section
@@ -8069,7 +8243,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             onKeyDown={(event) => {
               if (event.key === 'Escape' && !creatingTask) {
                 event.stopPropagation();
-                setAiRequest(null);
+                closeAiRequest();
               }
             }}
           >
@@ -8082,11 +8256,56 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 className="icon-button"
                 title="AI 실행창 닫기"
                 disabled={creatingTask}
-                onClick={() => setAiRequest(null)}
+                onClick={closeAiRequest}
               >
                 <X size={18} />
               </button>
             </header>
+            <div
+              className="gamejam-request-history"
+              aria-label="작업 요청 불러오기"
+            >
+              <div className="gamejam-request-history__actions">
+                <button
+                  type="button"
+                  disabled={creatingTask || loadingAiRequest || !savedAiDraft}
+                  onClick={() =>
+                    savedAiDraft &&
+                    initializeAiRequest(
+                      savedAiDraft.request,
+                      savedAiDraft,
+                      savedAiDraft,
+                    )
+                  }
+                >
+                  작성 중 요청 불러오기
+                </button>
+                <button
+                  type="button"
+                  disabled={creatingTask || loadingAiRequest}
+                  onClick={() => void loadRecentAiRequest()}
+                >
+                  {loadingAiRequest ? '불러오는 중…' : '최근 작업 불러오기'}
+                </button>
+                <button
+                  type="button"
+                  disabled={creatingTask || loadingAiRequest}
+                  onClick={() => {
+                    aiRequestLoadRef.current += 1;
+                    setAiRequest(null);
+                    openHistory(null, true);
+                  }}
+                >
+                  작업 기록
+                </button>
+              </div>
+              <small role="status">
+                {aiDraftStatus}
+                {savedAiDraft
+                  ? ` · 저장된 초안 ${new Date(savedAiDraft.updatedAt).toLocaleString('ko-KR')}`
+                  : ''}
+              </small>
+            </div>
             <GamejamProgress
               page={aiRequestPage}
               visited={aiRequestVisited}
@@ -8102,6 +8321,45 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 <h3 className="ai-step-heading" tabIndex={-1}>
                   <span>1</span> 무엇을 만들까요?
                 </h3>
+                {aiRequestIssues.filter(
+                  (issue) =>
+                    issue.field === 'steps' &&
+                    issue.message.includes('이전 입력'),
+                ).length > 0 && (
+                  <div className="gamejam-missing-inputs">
+                    <p>
+                      찾을 수 없는 이전 입력을 제외한 뒤 필요한 자료를 다시
+                      선택해주세요.
+                    </p>
+                    {aiRequest.inputPaths
+                      .filter(
+                        (path) =>
+                          !documents.some((doc) => doc.relativePath === path) &&
+                          !sections.some(
+                            (section) => section.relativePath === path,
+                          ) &&
+                          !previews.some(
+                            (preview) => preview.relativePath === path,
+                          ),
+                      )
+                      .map((path) => (
+                        <button
+                          type="button"
+                          key={path}
+                          onClick={() =>
+                            setAiRequest({
+                              ...aiRequest,
+                              inputPaths: aiRequest.inputPaths.filter(
+                                (input) => input !== path,
+                              ),
+                            })
+                          }
+                        >
+                          {path} · 입력에서 제외
+                        </button>
+                      ))}
+                  </div>
+                )}
                 <div
                   id="ai-request-steps"
                   tabIndex={-1}
@@ -9068,10 +9326,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 submitError={aiRequestPage === 5 ? aiRequestSubmitError : ''}
                 focusIssue={focusAiIssue}
               />
-              <button
-                disabled={creatingTask}
-                onClick={() => setAiRequest(null)}
-              >
+              <button disabled={creatingTask} onClick={closeAiRequest}>
                 취소
               </button>
               <span className="gamejam-page-count">{aiRequestPage} / 5</span>

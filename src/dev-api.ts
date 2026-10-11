@@ -25,6 +25,10 @@ import { resolveDocumentOutputs } from './document-output';
 import type { DocumentOutputTemplate } from './document-format';
 import { taskInstructions } from './task-instructions';
 import { legacyTaskRecord } from './ai-task-records';
+import {
+  gamejamSnapshotFromInput,
+  type GamejamSavedRequest,
+} from './gamejam-history';
 import { cardColor } from './card-colors';
 import { assertAiFilesUnlocked } from './ai-file-lock';
 import { verticalLayouts, NEW_FILE_GAP } from './canvas-placement';
@@ -134,6 +138,7 @@ const initialPreview: PreviewResult = {
 };
 let previews: PreviewResult[] = [initialPreview];
 const taskOutputs = new Map<string, { output: string; base?: string }>();
+const taskRequests = new Map<string, GamejamSavedRequest>();
 const taskDocumentOutputs = new Map<
   string,
   {
@@ -216,7 +221,12 @@ const recordDevHistory = (
         entry.files.some((file) => file.relativePath === doc.relativePath) &&
         doc.type === 'ai-task',
     );
-  if (task) entry.aiTask = { ...legacyTaskRecord(task), origin: 'snapshot' };
+  if (task)
+    entry.aiTask = {
+      ...legacyTaskRecord(task),
+      origin: 'snapshot',
+      requestSnapshot: taskRequests.get(task.relativePath),
+    };
   histories.unshift(entry);
   if (status === 'completed') {
     const actor = {
@@ -1100,6 +1110,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       instructions,
       resultName,
       thenImplement,
+      requestSnapshot,
     }) => {
       const id = `${thenImplement ? 'gamejam' : kind}-task-${Date.now()}`;
       const commandText = taskInstructions(kind, instructions);
@@ -1138,6 +1149,23 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         sources: [],
         modifiedAt: Date.now(),
       };
+      taskRequests.set(
+        document.relativePath,
+        gamejamSnapshotFromInput({
+          canvasId: selectedCanvas,
+          kind,
+          sourceMode,
+          inputPaths,
+          x,
+          y,
+          htmlResult,
+          documentResult,
+          instructions,
+          resultName,
+          thenImplement,
+          requestSnapshot,
+        }),
+      );
       if (kind === 'organize') {
         const outputs = resolveDocumentOutputs(
           [

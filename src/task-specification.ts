@@ -116,6 +116,9 @@ export function createTaskSpecification(
       expected_outputs: outputs,
       sources: [],
       instruction_template_version: 1,
+      ...(input.requestSnapshot
+        ? { gamejam_request: JSON.parse(JSON.stringify(input.requestSnapshot)) }
+        : {}),
       ...(documentBundle ? { document_bundle: documentBundle } : {}),
       ...(documentFormat ? { document_output_format: documentFormat } : {}),
       ...(name ? { result_name: name } : {}),

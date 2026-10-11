@@ -9,11 +9,17 @@ export function AiTaskDetails({
   record,
   statusLabel,
   onOpenPath,
+  onReuse,
+  onOpenRetry,
+  reuseDisabled,
 }: {
   entry: HistoryEntry;
   record?: AiTaskRecord;
   statusLabel: string;
   onOpenPath: (path: string) => void;
+  onReuse?: () => void;
+  onOpenRetry?: (id: string) => void;
+  reuseDisabled?: boolean;
 }) {
   return (
     <section className="ai-task-details" aria-label="AI 작업 상세 기록">
@@ -33,14 +39,42 @@ export function AiTaskDetails({
         <dd>{entry.kind === 'ai' ? statusLabel : '요청 저장'}</dd>
         <dt>AI 모델</dt>
         <dd>
-          {aiProvider(entry.providerId ?? 'codex-cli').label} ·{' '}
-          {entry.modelId ?? '자동 선택 / 기존 기록에 모델 정보 없음'}
+          {
+            aiProvider(
+              entry.providerId ??
+                record?.requestSnapshot?.providerId ??
+                'codex-cli',
+            ).label
+          }{' '}
+          ·{' '}
+          {entry.modelId ||
+            record?.requestSnapshot?.modelId ||
+            '자동 선택 / 기존 기록에 모델 정보 없음'}
         </dd>
         <dt>기록 ID</dt>
         <dd>
           <code>{entry.id}</code>
         </dd>
       </dl>
+      {record?.requestSnapshot && onReuse && (
+        <div className="ai-task-details__reuse">
+          <button type="button" disabled={reuseDisabled} onClick={onReuse}>
+            이 지시로 다시 준비
+          </button>
+          <small>
+            현재 입력 자료로 새 작업을 준비합니다. 설정을 확인한 뒤
+            실행해주세요.
+          </small>
+        </div>
+      )}
+      {record?.requestSnapshot?.retryOf && onOpenRetry && (
+        <button
+          type="button"
+          onClick={() => onOpenRetry(record.requestSnapshot!.retryOf!)}
+        >
+          이전 요청 기록 보기
+        </button>
+      )}
       {(entry.error || entry.failure) && (
         <p className="history-error">
           {entry.failure?.code ? `[${entry.failure.code}] ` : ''}

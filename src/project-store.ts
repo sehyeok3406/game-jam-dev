@@ -309,7 +309,7 @@ export async function listHistory(root: string): Promise<HistoryEntry[]> {
         ),
       ) as HistoryEntry;
       const taskPath = historyTaskPath(entry);
-      if (!entry.aiTask && taskPath) {
+      if (!entry.aiTask?.requestSnapshot && taskPath) {
         for (const version of ['input', 'after', 'before']) {
           try {
             const raw = await fs.readFile(
@@ -318,7 +318,12 @@ export async function listHistory(root: string): Promise<HistoryEntry[]> {
             );
             const aiTask = taskHistoryRecord(raw);
             if (aiTask) {
-              entry = { ...entry, aiTask };
+              entry = {
+                ...entry,
+                aiTask: entry.aiTask
+                  ? { ...entry.aiTask, requestSnapshot: aiTask.requestSnapshot }
+                  : aiTask,
+              };
               break;
             }
           } catch {

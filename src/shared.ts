@@ -201,6 +201,7 @@ export type MoveDocumentSectionInput = {
 };
 
 export type CreateTaskInput = {
+  requestSnapshot?: import('./gamejam-history').GamejamSavedRequest;
   canvasId?: string;
   sourceMode?: 'html' | 'html-compose';
   kind: 'organize' | 'implement';
@@ -538,6 +539,7 @@ export type PreviewWindowState = {
 };
 
 export type AiTaskRecord = {
+  requestSnapshot?: import('./gamejam-history').GamejamSavedRequest;
   title: string;
   specification: string;
   inputs: string[];

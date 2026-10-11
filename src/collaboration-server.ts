@@ -1280,11 +1280,26 @@ export async function createCollaborationServer(options: Options) {
                 record.after,
               );
               const taskPath = historyTaskPath(entry);
-              const aiTask =
-                !entry.aiTask && taskPath
-                  ? taskHistoryRecord(project.files[taskPath], 'legacy')
-                  : undefined;
-              return aiTask ? { ...entry, aiTask } : entry;
+              if (taskPath && !entry.aiTask?.requestSnapshot) {
+                const frozen = project.history.find(
+                  (item) => item.after[taskPath],
+                )?.after[taskPath];
+                const aiTask = taskHistoryRecord(
+                  frozen ?? project.files[taskPath],
+                  frozen ? 'snapshot' : 'legacy',
+                );
+                if (aiTask)
+                  return {
+                    ...entry,
+                    aiTask: entry.aiTask
+                      ? {
+                          ...entry.aiTask,
+                          requestSnapshot: aiTask.requestSnapshot,
+                        }
+                      : aiTask,
+                  };
+              }
+              return entry;
             })
             .reverse();
         if (action === 'history-read') {

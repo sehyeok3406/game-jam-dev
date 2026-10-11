@@ -28,6 +28,7 @@ export type GamejamValidationContext = {
   aiBusy: boolean;
   locked: boolean;
   updateRestarting: boolean;
+  availableInputs?: string[];
 };
 
 /** The execution guard and visible feedback use the same conditions. */
@@ -40,6 +41,18 @@ export function gamejamIssues(
     issues.push({ field, message });
   if (!request.organize && !request.implement)
     add('steps', '문서 정리 또는 HTML 구현을 하나 이상 선택해주세요.');
+  if (!request.inputPaths.length)
+    add('steps', '입력 자료를 하나 이상 선택해주세요.');
+  if (context.availableInputs) {
+    const missing = request.inputPaths.filter(
+      (path) => !context.availableInputs!.includes(path),
+    );
+    if (missing.length)
+      add(
+        'steps',
+        `이전 입력 자료를 찾을 수 없습니다. 입력 자료를 다시 선택해주세요: ${missing.join(', ')}`,
+      );
+  }
   try {
     resultName(request.resultName);
   } catch (error) {

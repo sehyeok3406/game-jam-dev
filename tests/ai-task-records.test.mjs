@@ -151,7 +151,7 @@ test('task creation history captures the specification without rewriting the wor
 test('legacy local history prefers immutable input snapshots and labels current-file fallback', async (t) => {
   const root = await temporary(t);
   await materialize(root, {
-    [taskPath]: raw.replace('이동 속도를 2로', '이동 속도를 999로'),
+    [taskPath]: raw.replaceAll('이동 속도를 2로', '이동 속도를 999로'),
   });
   const old = await saveHistory(root, {}, {}, meta());
   await fs.mkdir(path.join(root, '.history', old.id, 'input'), {

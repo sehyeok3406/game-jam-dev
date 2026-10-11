@@ -2,6 +2,7 @@ import { CanvasError } from './app-errors.ts';
 import { taskInstructions } from './task-instructions.ts';
 import type { CreateTaskInput, HtmlResultChoice } from './shared.ts';
 import type { DocumentResultChoice } from './document-output.ts';
+import type { GamejamSavedRequest } from './gamejam-history.ts';
 
 export type GamejamRequest = {
   canvasId?: string;
@@ -18,7 +19,10 @@ export type GamejamRequest = {
 };
 
 /** Checkbox changes never replace edited instructions or output choices. */
-export function gamejamTaskInput(request: GamejamRequest): CreateTaskInput {
+export function gamejamTaskInput(
+  request: GamejamRequest,
+  settings?: Pick<GamejamSavedRequest, 'providerId' | 'modelId' | 'retryOf'>,
+): CreateTaskInput {
   if (!request.organize && !request.implement)
     throw new CanvasError(
       'GC-AI-001',
@@ -26,6 +30,15 @@ export function gamejamTaskInput(request: GamejamRequest): CreateTaskInput {
     );
   const kind = request.organize ? 'organize' : 'implement';
   return {
+    ...(settings
+      ? {
+          requestSnapshot: {
+            version: 1 as const,
+            request: structuredClone(request),
+            ...settings,
+          },
+        }
+      : {}),
     kind,
     canvasId: request.canvasId,
     sourceMode:

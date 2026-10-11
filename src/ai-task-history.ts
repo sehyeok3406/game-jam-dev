@@ -2,6 +2,7 @@ import matter from './markdown.ts';
 import type { AiTaskRecord, HistoryEntry } from './shared';
 import { historyTaskPath } from './ai-task-records.ts';
 import { resolveTaskArtifacts } from './document-bundle.ts';
+import { requestSnapshotFromTask } from './gamejam-history.ts';
 
 /** Store a small read-only execution specification, not another canvas object. */
 export function taskHistoryRecord(
@@ -17,6 +18,7 @@ export function taskHistoryRecord(
         ? value.filter((path): path is string => typeof path === 'string')
         : [];
     return {
+      requestSnapshot: requestSnapshotFromTask(raw),
       title: typeof data.title === 'string' ? data.title : 'AI 작업',
       specification: content,
       inputs: paths(data.inputs),
@@ -34,8 +36,17 @@ export function withTaskHistory(
   before: Record<string, string>,
   after: Record<string, string>,
 ): HistoryEntry {
-  if (entry.aiTask) return entry;
   const taskPath = historyTaskPath(entry);
+  if (entry.aiTask) {
+    const raw = taskPath ? (after[taskPath] ?? before[taskPath]) : undefined;
+    const requestSnapshot =
+      !entry.aiTask.requestSnapshot && raw
+        ? requestSnapshotFromTask(raw)
+        : undefined;
+    return requestSnapshot
+      ? { ...entry, aiTask: { ...entry.aiTask, requestSnapshot } }
+      : entry;
+  }
   const aiTask = taskPath
     ? taskHistoryRecord(after[taskPath] ?? before[taskPath])
     : undefined;

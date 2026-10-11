@@ -6,6 +6,7 @@ import { isPreviewPath, resolvePreviewOutput } from './preview-output.ts';
 import { createTaskSpecification } from './task-specification.ts';
 import { expectedArtifacts } from './ai-artifacts.ts';
 import { taskInstructions } from './task-instructions.ts';
+import { gamejamSnapshotFromInput } from './gamejam-history.ts';
 import type { CreateTaskInput } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
 import { prepareHtmlSource, htmlSourcePath } from './html-source.ts';
@@ -44,6 +45,7 @@ export function createTaskPlan(
   id: string,
   files: Snapshot,
 ) {
+  input = { ...input, requestSnapshot: gamejamSnapshotFromInput(input) };
   if (
     input.sourceMode !== undefined &&
     !['html', 'html-compose'].includes(input.sourceMode)
