@@ -376,6 +376,37 @@ export type GameCanvasApi = {
   }) => Promise<{ published: number; errors: string[] }>;
   openWebViewer: () => Promise<void>;
   listProjects: (refreshShared?: boolean) => Promise<ProjectEntry[]>;
+  prepareProjectTrash: (id: string) => Promise<{
+    token: string;
+    entry: { id: string; name: string; kind: 'local' | 'shared'; root: string };
+    missing: boolean;
+  }>;
+  trashProject: (
+    token: string,
+    storage: Record<string, string>,
+  ) => Promise<string>;
+  listProjectTrash: () => Promise<ProjectTrashEntry[]>;
+  restoreProjectTrash: (id: string) => Promise<Record<string, string>>;
+  acknowledgeProjectRestore: (id: string) => Promise<void>;
+  purgeProjectTrash: (
+    id: string,
+    name: string,
+    discard: boolean,
+  ) => Promise<void>;
+  retryProjectTrash: () => Promise<void>;
+  getSharedProjectLifecycle: (id: string) => Promise<SharedProjectLifecycle>;
+  trashSharedProject: (
+    id: string,
+    name: string,
+    confirm: boolean,
+    version: number,
+  ) => Promise<SharedProjectLifecycle>;
+  restoreSharedProject: (id: string) => Promise<SharedProjectLifecycle>;
+  purgeSharedProject: (
+    id: string,
+    name: string,
+  ) => Promise<SharedProjectLifecycle>;
+  resumeRestoredProject: () => Promise<CollaborationState>;
   listProjectFolders: () => Promise<ProjectFolder[]>;
   renameProject: (
     id: string,
@@ -609,6 +640,11 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  projectTrash?: boolean;
+  lifecycleVersion?: number;
+  projectDeleted?: boolean;
+  projectPurged?: boolean;
+  awaitingResume?: boolean;
   drawingsVersion?: number;
   propertySync?: boolean;
   deltaSync?: boolean;
@@ -652,6 +688,7 @@ export type CollaborationState = {
 };
 
 export type ProjectEntry = {
+  lifecycle?: SharedProjectLifecycle;
   id: string;
   name: string;
   kind: 'local' | 'shared';
@@ -670,6 +707,33 @@ export type ProjectEntry = {
 
 /** Home-only grouping; never a filesystem or server directory. */
 export type ProjectFolder = { id: string; name: string };
+export type SharedProjectLifecycle = {
+  projectId: string;
+  name?: string;
+  status:
+    | 'active'
+    | 'trashing'
+    | 'trashed'
+    | 'restoring'
+    | 'purging'
+    | 'purged';
+  version: number;
+  expiresAt?: number;
+  error?: string;
+};
+export type ProjectTrashEntry = {
+  trashId: string;
+  projectId: string;
+  name: string;
+  kind: 'local' | 'shared';
+  originalPath: string;
+  trashedAt?: number;
+  expiresAt?: number;
+  stage: 'moving' | 'retained' | 'restoring' | 'purging';
+  error?: string;
+  pendingWork: boolean;
+  storage: Record<string, string>;
+};
 
 export type OfflineConflict = {
   id: string;

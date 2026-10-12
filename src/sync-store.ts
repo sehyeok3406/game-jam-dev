@@ -85,6 +85,46 @@ export class SyncStore<T extends Stored> {
         } as T;
       });
   }
+  tombstone(id: string) {
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS project_tombstones(id TEXT PRIMARY KEY, version INTEGER NOT NULL)',
+    );
+    return this.db
+      .prepare('SELECT version FROM project_tombstones WHERE id=?')
+      .get(id)?.version as number | undefined;
+  }
+  purge(id: string, version: number) {
+    this.tombstone(id);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db
+        .prepare('INSERT OR REPLACE INTO project_tombstones VALUES (?, ?)')
+        .run(id, version);
+      this.db.prepare('DELETE FROM projects WHERE id=?').run(id);
+      const referenced = new Set<string>();
+      for (const row of this.db.prepare('SELECT value FROM projects').all()) {
+        const value = JSON.parse(String(row.value));
+        for (const files of [
+          value.files,
+          ...value.history.flatMap(
+            (h: { before: Snapshot; after: Snapshot }) => [h.before, h.after],
+          ),
+        ])
+          for (const hash of Object.values(files)) referenced.add(String(hash));
+      }
+      for (const row of this.db.prepare('SELECT hash FROM blobs').all())
+        if (!referenced.has(String(row.hash)))
+          this.db
+            .prepare('DELETE FROM blobs WHERE hash=?')
+            .run(String(row.hash));
+      this.db.exec('COMMIT');
+      this.hashes.clear();
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   close() {
     this.db.close();
   }
@@ -100,6 +140,7 @@ export function readSyncFiles(
     const row = db.prepare('SELECT value FROM projects WHERE id=?').get(id);
     if (!row) return null;
     const project = JSON.parse(String(row.value));
+    if (project.lifecycle && project.lifecycle.status !== 'active') return null;
     const files: Snapshot = {};
     for (const [relative, hash] of Object.entries(project.files)) {
       const blob = db

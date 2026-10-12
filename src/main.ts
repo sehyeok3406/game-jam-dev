@@ -70,6 +70,12 @@ import { WebViewerService } from './web-viewer-service';
 import { startWebViewerSync } from './web-viewer-sync';
 import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
+import { ProjectTrash } from './project-trash';
+import { projectStorageKey } from './project-trash-keys';
+import { canonical } from './trash-files';
+import { invalidateClientCache } from './client-cache';
+import type { DocumentSaveRecord } from './document-save-queue';
+import type { EditorDraft } from './editor-drafts';
 import { parseConnectionInfo } from './connection-info';
 import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import {
@@ -395,6 +401,7 @@ const SECTION_FOLDER = 'sections';
 const SETTINGS_FILE = 'settings.json';
 let workspaceRoot: string | null = null;
 let projectLibrary: ProjectLibrary;
+let projectTrash: ProjectTrash;
 let selfHost: import('./features/self-host/service').SelfHostService | null =
   null;
 let selfHostLifecycle:
@@ -548,6 +555,8 @@ const saveCollaborationSession = async () => {
   );
 };
 const attachCollaboration = async (credentials: CollaborationCredentials) => {
+  if (projectTrash?.hasProject(`shared:${credentials.projectId}`))
+    throw Error('이 PC의 사본이 휴지통에 있습니다. 먼저 복원해주세요.');
   if (!/^[a-f0-9-]{36}$/.test(credentials.projectId))
     throw new Error('공동 프로젝트 ID가 올바르지 않습니다.');
   await workspaceWatcher?.close();
@@ -1310,6 +1319,7 @@ const moveWorkspaceResults = async (before: Snapshot, after: Snapshot) => {
 };
 
 const setWorkspace = async (root: string) => {
+  if (projectTrash?.hasRoot(root)) throw Error('휴지통에서 먼저 복원해주세요.');
   workspaceRoot = await fs.realpath(root);
   await ensureWorkspace();
   await recoverInterruptedHistory(workspaceRoot);
@@ -2089,6 +2099,14 @@ const handle = (
   listener: Parameters<typeof ipcMain.handle>[1],
 ) => {
   const invoke: Parameters<typeof ipcMain.handle>[1] = (event, ...args) => {
+    if (
+      (channel.startsWith('projects:trash') ||
+        channel.startsWith('projects:shared-')) &&
+      (!mainWindow ||
+        event.sender !== mainWindow.webContents ||
+        event.senderFrame !== mainWindow.webContents.mainFrame)
+    )
+      throw Error('앱의 홈 화면에서만 휴지통을 조작할 수 있습니다.');
     if (updateRestartPrepared)
       throw new Error('[GC-UPD-004] 업데이트 재시작을 준비하고 있습니다.');
     pendingAppOperations += 1;
@@ -2497,7 +2515,20 @@ const registerIpc = () => {
       key: string,
       draft: import('./editor-drafts.ts').EditorDraft | null,
       sequence: number,
-    ) => draftStore.set(key, draft, sequence),
+    ) => {
+      if (
+        projectTrash
+          ?.list()
+          .some((r) =>
+            projectStorageKey(key, [
+              r.originalPath,
+              r.projectId.replace(/^shared:/, ''),
+            ]),
+          )
+      )
+        throw Error('휴지통에 있는 프로젝트에는 초안을 저장할 수 없습니다.');
+      return draftStore.set(key, draft, sequence);
+    },
   );
   handle('canvas:changes', () => null);
   const readQueuedDocument = handle(
@@ -2885,6 +2916,105 @@ const registerIpc = () => {
     personalCollapsed.clear();
     collaborationChanged(noCollaboration(), true);
   };
+  handle('projects:trash-prepare', (_event, id: string) =>
+    projectTrash.prepare(id),
+  );
+  handle('projects:trash-list', () => projectTrash.list());
+  handle(
+    'projects:trash',
+    async (_event, token: string, storage: Record<string, string>) => {
+      stopWebViewerSync();
+      try {
+        await new WebViewerService(
+          app.getPath('userData'),
+          safeStorage,
+        ).drain();
+        await suspendProject();
+        await documentSaveQueue.pauseProject(() => true);
+        await sharedCacheQueue;
+        return await projectTrash.trash(token, storage);
+      } finally {
+        stopWebViewerSync = startWebViewerSync(
+          new WebViewerService(app.getPath('userData'), safeStorage),
+        );
+      }
+    },
+  );
+  handle('projects:trash-restore', (_event, id: string) =>
+    projectTrash.restore(id),
+  );
+  handle('projects:trash-restore-ack', (_event, id: string) =>
+    projectTrash.acknowledgeRestore(id),
+  );
+  handle(
+    'projects:trash-purge',
+    (_event, id: string, name: string, discard: boolean) =>
+      projectTrash.purge(id, name, discard),
+  );
+  handle('projects:trash-retry', () => projectTrash.maintain());
+  handle('collaboration:resume-restored', async () => {
+    await collaboration?.resumeAfterRestore();
+    return collaboration?.state ?? noCollaboration();
+  });
+  const sharedLifecycle = async (
+    id: string,
+    action: string,
+    input: object = {},
+  ) => {
+    const entry = projectLibrary.get(id);
+    if (!entry.credentials) throw Error('공동 프로젝트를 선택해주세요.');
+    if (entry.credentials.internalServer && !localCollaborationServer) {
+      localCollaborationServer = await createCollaborationServer({
+        dataDirectory: path.join(
+          app.getPath('userData'),
+          'collaboration-server',
+        ),
+        creationKey: localCollaborationKey,
+      });
+    }
+    const url = entry.credentials.internalServer
+      ? `http://127.0.0.1:${localCollaborationServer!.port}`
+      : entry.credentials.serverUrl;
+    try {
+      const result = (await CollaborationClient.fetch(
+        url,
+        `/projects/${entry.projectId}/${action}`,
+        input,
+        entry.credentials.token,
+      )) as import('./shared').SharedProjectLifecycle;
+      await projectLibrary.updateLifecycle(id, result);
+      return result;
+    } catch (error) {
+      const lifecycle = (
+        error as { lifecycle?: import('./shared').SharedProjectLifecycle }
+      ).lifecycle;
+      if (action === 'lifecycle' && lifecycle) {
+        await projectLibrary.updateLifecycle(id, lifecycle);
+        return lifecycle;
+      }
+      throw error;
+    }
+  };
+  handle('projects:shared-lifecycle', (_event, id: string) =>
+    sharedLifecycle(id, 'lifecycle'),
+  );
+  handle(
+    'projects:shared-trash',
+    (
+      _event,
+      id: string,
+      typedName: string,
+      confirmTeam: boolean,
+      expectedVersion: number,
+    ) =>
+      sharedLifecycle(id, 'trash', { typedName, confirmTeam, expectedVersion }),
+  );
+  handle('projects:shared-restore', (_event, id: string) =>
+    sharedLifecycle(id, 'trash-restore'),
+  );
+  handle('projects:shared-purge', (_event, id: string, typedName: string) =>
+    sharedLifecycle(id, 'trash-purge', { typedName }),
+  );
   handle('projects:list', async (_event, refreshShared = false) => {
     const entries = projectLibrary.list();
     return Promise.all(
@@ -2918,6 +3048,8 @@ const registerIpc = () => {
           }
           if (refreshShared === true) {
             try {
+              entry.lifecycle = await sharedLifecycle(entry.id, 'lifecycle');
+              if (entry.lifecycle.status !== 'active') return entry;
               const saved = projectLibrary.get(entry.id);
               const result = (await CollaborationClient.fetch(
                 saved.credentials!.serverUrl,
@@ -3112,6 +3244,8 @@ const registerIpc = () => {
     shell.showItemInFolder(root);
   });
   handle('projects:open', async (_event, id: string) => {
+    if (projectTrash.hasProject(id))
+      throw Error('휴지통에서 먼저 복원해주세요.');
     const entry = projectLibrary.get(id);
     if (
       (entry.kind === 'shared' &&
@@ -4032,9 +4166,6 @@ app.whenReady().then(async () => {
   }
   await registerUpdates();
   projectLibrary = new ProjectLibrary(app.getPath('userData'), safeStorage);
-  stopWebViewerSync = startWebViewerSync(
-    new WebViewerService(app.getPath('userData'), safeStorage),
-  );
   await projectLibrary.load();
   if (
     SELF_HOST_ENABLED &&
@@ -4055,7 +4186,175 @@ app.whenReady().then(async () => {
     selfHostLifecycle = feature.lifecycle;
   }
   registerIpc();
+  const scopeMatches = (
+    entry: import('./project-library').SavedProject,
+    scope: string,
+  ) =>
+    entry.kind === 'shared'
+      ? scope.startsWith(`shared:${entry.projectId}:`)
+      : scope.startsWith('local:') &&
+        canonical(scope.slice(6)) === canonical(entry.root!);
+  type TrashData = {
+    queue: DocumentSaveRecord[];
+    drafts: Record<string, EditorDraft>;
+  };
+  projectTrash = new ProjectTrash(
+    app.getPath('userData'),
+    projectLibrary,
+    safeStorage,
+    {
+      capture: async (entry, keys) => {
+        const queue = await documentSaveQueue.pauseProject((scope) =>
+          scopeMatches(entry, scope),
+        );
+        const root =
+          entry.kind === 'local'
+            ? entry.root!
+            : path.join(
+                app.getPath('userData'),
+                'shared-workspaces',
+                entry.projectId!,
+              );
+        const identities = [root, entry.projectId ?? ''].filter(Boolean);
+        const known = [...keys, ...queue.map((r) => r.request.key)];
+        if (entry.kind === 'local') {
+          const snapshot = await captureProject(root).catch(
+            () => ({}) as Record<string, string>,
+          );
+          for (const [file, raw] of Object.entries(snapshot))
+            if (file.endsWith('.md')) {
+              const id = matter(raw).data.id;
+              if (id)
+                known.push(
+                  `game-canvas-draft:${root}:${id}`,
+                  `game-canvas-draft:${root}:${id}:conflict`,
+                );
+            }
+        }
+        return {
+          queue,
+          drafts: await draftStore.projectData(
+            (key) => projectStorageKey(key, identities),
+            known,
+          ),
+        } satisfies TrashData;
+      },
+      remove: async (entry, raw) => {
+        const data = raw as TrashData;
+        await documentSaveQueue.removeProject((scope) =>
+          scopeMatches(entry, scope),
+        );
+        for (const key of Object.keys(data.drafts))
+          await draftStore.set(key, null, Number.MAX_SAFE_INTEGER);
+        const root =
+          entry.kind === 'local'
+            ? entry.root!
+            : path.join(
+                app.getPath('userData'),
+                'shared-workspaces',
+                entry.projectId!,
+              );
+        invalidateClientCache(root);
+        const settings = await fs
+          .readFile(settingsPath(), 'utf8')
+          .then(JSON.parse)
+          .catch(() => null);
+        if (
+          settings?.workspaceRoot &&
+          canonical(settings.workspaceRoot) === canonical(root)
+        )
+          await fs.writeFile(
+            settingsPath(),
+            JSON.stringify({ workspaceRoot: null }),
+          );
+        try {
+          const session = JSON.parse(
+            safeStorage.decryptString(
+              await fs.readFile(collaborationSessionFile()),
+            ),
+          );
+          if (
+            (entry.projectId &&
+              session.credentials?.projectId === entry.projectId) ||
+            (session.localRoot &&
+              canonical(session.localRoot) === canonical(root))
+          ) {
+            if (
+              entry.projectId &&
+              session.credentials?.projectId === entry.projectId
+            )
+              session.credentials = null;
+            if (
+              session.localRoot &&
+              canonical(session.localRoot) === canonical(root)
+            )
+              session.localRoot = null;
+            await fs.writeFile(
+              collaborationSessionFile(),
+              safeStorage.encryptString(JSON.stringify(session)),
+            );
+          }
+        } catch (error) {
+          if (
+            (error as NodeJS.ErrnoException).code !== 'ENOENT' &&
+            safeStorage.isEncryptionAvailable()
+          )
+            throw error;
+        }
+        const viewer = new WebViewerService(
+            app.getPath('userData'),
+            safeStorage,
+          ),
+          config = await viewer.settings();
+        if (config?.projects.includes(entry.id))
+          await viewer.save({
+            ...config,
+            projects: config.projects.filter((id) => id !== entry.id),
+          });
+      },
+      restore: async (entry, raw) => {
+        const data = raw as TrashData;
+        await documentSaveQueue.restoreProject(data.queue);
+        for (const [key, value] of Object.entries(data.drafts))
+          await draftStore.set(key, value, value.sequence);
+        if (entry.projectId)
+          invalidateClientCache(
+            path.join(
+              app.getPath('userData'),
+              'shared-workspaces',
+              entry.projectId,
+            ),
+          );
+      },
+    },
+    [
+      app.getPath('desktop'),
+      app.getPath('documents'),
+      typeof app.getAppPath === 'function' ? app.getAppPath() : '',
+      process.env.WINDIR ?? '',
+      process.env.ProgramFiles ?? '',
+      path.join(app.getPath('userData'), 'collaboration-server'),
+      path.resolve('tools/internet-host'),
+      path.join(
+        process.env.LOCALAPPDATA ?? app.getPath('userData'),
+        'GameCanvas-InternetHost',
+      ),
+    ],
+  );
+  await projectTrash.load();
+  await projectTrash.maintain();
+  const trashTimer = setInterval(() => {
+    void enqueueMutation(() => projectTrash.maintain()).catch((error) =>
+      console.error('휴지통 정리 실패', error),
+    );
+  }, 30_000);
+  trashTimer.unref();
+  stopWebViewerSync = startWebViewerSync(
+    new WebViewerService(app.getPath('userData'), safeStorage),
+  );
   await loadSettings();
+  if (workspaceRoot && projectTrash.hasRoot(workspaceRoot))
+    workspaceRoot = null;
   if (workspaceRoot) {
     await projectLibrary.rememberLocal(
       workspaceRoot,
@@ -4085,6 +4384,10 @@ app.whenReady().then(async () => {
         credentials: CollaborationCredentials | null;
         localRoot: string | null;
       };
+      if (saved.credentials) {
+        if (projectTrash.hasProject(`shared:${saved.credentials.projectId}`))
+          saved.credentials = null;
+      }
       if (saved.credentials) {
         if (testProfile && saved.credentials.internalServer) {
           try {

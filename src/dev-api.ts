@@ -488,6 +488,30 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         home,
       ),
     listProjectFolders: async () => structuredClone(home.folders),
+    prepareProjectTrash: async () => {
+      throw Error('프로젝트 휴지통은 데스크톱 앱에서 사용해주세요.');
+    },
+    trashProject: async () => {
+      throw Error('프로젝트 휴지통은 데스크톱 앱에서 사용해주세요.');
+    },
+    listProjectTrash: async () => [],
+    restoreProjectTrash: async () => ({}),
+    acknowledgeProjectRestore: async () => {},
+    purgeProjectTrash: async () => {},
+    retryProjectTrash: async () => {},
+    getSharedProjectLifecycle: async () => {
+      throw Error('협업 서버에 연결해주세요.');
+    },
+    trashSharedProject: async () => {
+      throw Error('협업 서버에 연결해주세요.');
+    },
+    restoreSharedProject: async () => {
+      throw Error('협업 서버에 연결해주세요.');
+    },
+    purgeSharedProject: async () => {
+      throw Error('협업 서버에 연결해주세요.');
+    },
+    resumeRestoredProject: async () => structuredClone(collab),
     renameProject: async (id, inputName, expectedName) => {
       if (id !== 'demo-local') throw new Error('프로젝트를 찾을 수 없습니다.');
       const name = homeName(inputName);

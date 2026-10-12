@@ -399,5 +399,33 @@ export class DocumentSaveQueue {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);
   }
+  async pauseProject(matches: (scope: string) => boolean) {
+    await this.ready;
+    if (this.adapter && matches(this.adapter.scope)) this.adapter = undefined;
+    await Promise.all(this.running.values());
+    await this.storage.flush();
+    return [...this.entries.values()]
+      .filter((e) => matches(e.request.scope))
+      .map((e) => structuredClone(e));
+  }
+  async removeProject(matches: (scope: string) => boolean) {
+    const records = await this.pauseProject(matches);
+    for (const record of records) {
+      await this.storage.remove(record.request.scope, record.request.key);
+      const id = identity(record.request.scope, record.request.key);
+      this.entries.delete(id);
+      this.documents.delete(id);
+    }
+  }
+  async restoreProject(records: DocumentSaveRecord[]) {
+    await this.ready;
+    for (const record of records) {
+      validateDocumentSave(record.request);
+      const id = identity(record.request.scope, record.request.key);
+      if (this.entries.has(id)) continue;
+      await this.storage.put(record);
+      this.entries.set(id, structuredClone(record));
+    }
+  }
 }
 class SaveConflict extends Error {}

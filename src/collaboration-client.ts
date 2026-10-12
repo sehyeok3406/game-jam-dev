@@ -240,7 +240,11 @@ export class CollaborationClient {
           status: 429,
         },
       );
-    let value: { error?: string };
+    let value: {
+      error?: string;
+      code?: string;
+      lifecycle?: import('./shared.ts').SharedProjectLifecycle;
+    };
     try {
       value = (await response.json()) as typeof value;
       if (
@@ -284,7 +288,11 @@ export class CollaborationClient {
       else
         throw Object.assign(
           new Error(value.error ?? `협업 서버 오류 (${response.status})`),
-          { status: response.status },
+          {
+            status: response.status,
+            code: value.code,
+            lifecycle: value.lifecycle,
+          },
         );
     return value;
   }
@@ -507,6 +515,7 @@ export class CollaborationClient {
       {
         ...(input as object),
         syncClientVersion: 1,
+        lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
@@ -523,6 +532,7 @@ export class CollaborationClient {
   async refresh() {
     return this.serial(async () => {
       if (this.stopped) return;
+      const previousVersion = this.state.lifecycleVersion ?? 0;
       try {
         if (this.lease)
           await this.request('ai-heartbeat', { lease: this.lease }).catch(
@@ -538,6 +548,25 @@ export class CollaborationClient {
             token,
           })),
         })) as CollaborationEnvelope;
+        if (
+          (result.state.lifecycleVersion ?? 0) !== previousVersion &&
+          (this.offline || this.outgoing)
+        ) {
+          this.state = {
+            ...this.state,
+            lifecycleVersion: result.state.lifecycleVersion,
+            projectDeleted: false,
+            awaitingResume: true,
+            connected: false,
+            accessDenied: true,
+            message:
+              '프로젝트가 복원되었습니다. 미반영 작업 재개를 선택해주세요.',
+          };
+          this.onUpdate(this.state, true);
+          await this.persist();
+          return;
+        }
+        if (this.state.awaitingResume) return;
         if (this.outgoing) {
           const serverState = result;
           const attempted = this.outgoing;
@@ -584,6 +613,24 @@ export class CollaborationClient {
         this.nextPollAt = 0;
       } catch (error) {
         if (this.stopped) return;
+        const code = (error as { code?: string }).code;
+        if (code === 'PROJECT_TRASHED' || code === 'PROJECT_PURGED') {
+          this.state = {
+            ...this.state,
+            projectDeleted: true,
+            projectPurged: code === 'PROJECT_PURGED',
+            accessDenied: true,
+            connected: false,
+            message:
+              code === 'PROJECT_PURGED'
+                ? '서버 프로젝트가 영구 삭제되었습니다. 내 사본과 미반영 작업은 보관됩니다.'
+                : '관리자가 공동 프로젝트를 삭제했습니다. 내 사본과 미반영 작업은 보관됩니다.',
+          };
+          this.heldLocks.clear();
+          this.onUpdate(this.state, true);
+          await this.persist();
+          throw error;
+        }
         if ((error as { status?: number }).status === 403) this.stream?.abort();
         this.failures++;
         this.nextPollAt =
@@ -601,6 +648,10 @@ export class CollaborationClient {
       }
     });
   }
+  async resumeAfterRestore() {
+    this.state = { ...this.state, awaitingResume: false, accessDenied: false };
+    await this.refresh();
+  }
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => {
@@ -608,6 +659,7 @@ export class CollaborationClient {
         this.polling ||
         this.busy ||
         this.stopped ||
+        this.state.projectPurged ||
         Date.now() < this.nextPollAt
       )
         return;
@@ -742,6 +794,10 @@ export class CollaborationClient {
     return next;
   }
   async command(channel: string, input: unknown) {
+    if (this.state.projectDeleted || this.state.awaitingResume)
+      throw Error(
+        this.state.message ?? '삭제된 공동 프로젝트는 편집할 수 없습니다.',
+      );
     return this.serial(async () => {
       if (
         (channel === 'drawings:apply' || channel === 'canvas:batch') &&

@@ -46,6 +46,7 @@ import { SAMPLE_PROJECTS } from './debug/uiDebugFixtures';
 import { ConnectionInfoDialog } from './ConnectionInfoDialog';
 import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
 import { MAX_PROJECT_NAME } from '../project-name';
+import { ProjectTrashDialog, ProjectTrashPanel } from './ProjectTrashControls';
 
 export function ProjectHome({
   opened,
@@ -65,6 +66,12 @@ export function ProjectHome({
   theme: 'dark' | 'light';
 }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [trash, setTrash] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
+  const [trashDialog, setTrashDialog] = useState<{
+    project: ProjectEntry;
+    team: boolean;
+  } | null>(null);
   const [connectionDialog, setConnectionDialog] = useState(false);
   const [webViewer, setWebViewer] = useState(!!previewState('web-viewer'));
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
@@ -181,11 +188,17 @@ export function ProjectHome({
   }, [create, server, busy]);
   const refresh = async (refreshShared = false) => {
     try {
-      const [entries, groups] = await Promise.all([
+      const [entries, groups, trashEntries] = await Promise.all([
         window.gameCanvas.listProjects(refreshShared),
         window.gameCanvas.listProjectFolders(),
+        window.gameCanvas.listProjectTrash(),
       ]);
       setProjects(entries);
+      setTrashCount(trashEntries.length);
+      for (const item of trashEntries)
+        if (item.stage === 'retained')
+          for (const key of Object.keys(item.storage))
+            localStorage.removeItem(key);
       setFolders(groups);
       setSelectedFolder((id) =>
         groups.some((folder) => folder.id === id) ? id : null,
@@ -330,6 +343,9 @@ export function ProjectHome({
           )}
         </div>
         <div className="home-sidebar-bottom">
+          <button onClick={() => setTrash(true)}>
+            휴지통 {trashCount > 0 && <span>{trashCount}</span>}
+          </button>
           <button onClick={() => setWebViewer(true)}>
             <Globe2 size={16} /> 웹 뷰어
           </button>
@@ -345,6 +361,20 @@ export function ProjectHome({
           </p>
         </div>
       </aside>
+      {trash && (
+        <ProjectTrashPanel
+          projects={projects}
+          close={() => setTrash(false)}
+          changed={() => refresh(true)}
+        />
+      )}
+      {trashDialog && (
+        <ProjectTrashDialog
+          {...trashDialog}
+          close={() => setTrashDialog(null)}
+          changed={() => refresh(true)}
+        />
+      )}
       {webViewer && (
         <WebViewerDialog
           projects={projects}
@@ -627,6 +657,15 @@ export function ProjectHome({
                   </div>
                   <div className="home-project-details">
                     <h3>{entry.name}</h3>
+                    {entry.lifecycle && entry.lifecycle.status !== 'active' && (
+                      <p className="home-pending">
+                        팀 프로젝트{' '}
+                        {entry.lifecycle.status === 'purged'
+                          ? '영구 삭제됨'
+                          : '삭제됨'}{' '}
+                        · 내 사본 보관
+                      </p>
+                    )}
                     {entry.folderId && (
                       <p className="home-project-folder">
                         <Folder size={12} />
@@ -767,6 +806,30 @@ export function ProjectHome({
                       });
                     },
                   },
+                  {
+                    label:
+                      menu.project.kind === 'shared'
+                        ? '이 PC의 사본을 휴지통으로 이동…'
+                        : '휴지통으로 이동…',
+                    action: () =>
+                      setTrashDialog({ project: menu.project!, team: false }),
+                  },
+                  ...(menu.project.kind === 'shared' &&
+                  menu.project.role === 'admin'
+                    ? [
+                        {
+                          label: '공동 프로젝트 삭제 — 팀 전체…',
+                          disabled:
+                            !!menu.project.lifecycle &&
+                            menu.project.lifecycle.status !== 'active',
+                          action: () =>
+                            setTrashDialog({
+                              project: menu.project!,
+                              team: true,
+                            }),
+                        },
+                      ]
+                    : []),
                   menu.project.kind === 'local'
                     ? {
                         label: '저장 위치 보기',

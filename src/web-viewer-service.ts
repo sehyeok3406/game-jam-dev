@@ -22,6 +22,19 @@ type Encryption = {
   decryptString(value: Buffer): string;
 };
 export class WebViewerService {
+  private static queues = new Map<string, Promise<unknown>>();
+  private serial<T>(operation: () => Promise<T>) {
+    const pending = (
+      WebViewerService.queues.get(this.directory) ?? Promise.resolve()
+    )
+      .catch(() => undefined)
+      .then(operation);
+    WebViewerService.queues.set(this.directory, pending);
+    return pending;
+  }
+  async drain() {
+    await WebViewerService.queues.get(this.directory)?.catch(() => undefined);
+  }
   private hashes = new Map<string, string>();
   private running: Promise<{ published: number; errors: string[] }> | null =
     null;
@@ -49,6 +62,9 @@ export class WebViewerService {
     }
   }
   async save(settings: ViewerSettings) {
+    return this.serial(() => this.saveNow(settings));
+  }
+  private async saveNow(settings: ViewerSettings) {
     if (!this.encryption.isEncryptionAvailable())
       throw new Error('Windows 암호화 저장소를 사용할 수 없습니다.');
     const destination = path.join(this.directory, 'web-viewer.enc');
@@ -78,7 +94,7 @@ export class WebViewerService {
   }
   async publish(force = false) {
     if (this.running) return this.running;
-    this.running = this.publishNow(force).finally(() => {
+    this.running = this.serial(() => this.publishNow(force)).finally(() => {
       this.running = null;
     });
     return this.running;

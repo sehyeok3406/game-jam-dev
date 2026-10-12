@@ -12,7 +12,7 @@ import {
   type HomeOrganization,
 } from './home-organization.ts';
 
-type SavedProject = ProjectEntry & {
+export type SavedProject = ProjectEntry & {
   credentials?: CollaborationCredentials;
   localRoot?: string | null;
 };
@@ -91,6 +91,9 @@ export class ProjectLibrary {
       name: homeName(name),
       ...(entry.kind === 'shared' && role ? { role } : {}),
     });
+  }
+  async updateLifecycle(id: string, lifecycle: ProjectEntry['lifecycle']) {
+    await this.upsert({ ...this.get(id), lifecycle });
   }
   moveProject(id: string, folderId: string | null) {
     this.get(id);
@@ -176,6 +179,20 @@ export class ProjectLibrary {
       this.entries.filter((entry) => entry.projectId !== projectId),
     );
   }
+  async removeProject(id: string) {
+    await this.modifyEntries(() =>
+      this.entries.filter((entry) => entry.id !== id),
+    );
+    await this.editHome({ type: 'remove-project', id });
+  }
+  async restoreEntry(entry: SavedProject) {
+    await this.upsert(entry);
+    if (
+      entry.folderId &&
+      this.home.folders.some((f) => f.id === entry.folderId)
+    )
+      await this.moveProject(entry.id, entry.folderId);
+  }
   private async upsert(item: SavedProject) {
     return this.modifyEntries(() => [
       ...this.entries.filter((entry) => entry.id !== item.id),
@@ -217,6 +234,14 @@ export class ProjectLibrary {
         try {
           await fs.writeFile(temporary, secured ?? locals, { mode: 0o600 });
           await fs.rename(temporary, target);
+          if (secured) {
+            const localTarget = path.join(
+              this.directory,
+              'local-projects.json',
+            );
+            await fs.writeFile(`${localTarget}.tmp`, locals, { mode: 0o600 });
+            await fs.rename(`${localTarget}.tmp`, localTarget);
+          }
         } finally {
           await fs.rm(temporary, { force: true }).catch(() => undefined);
         }

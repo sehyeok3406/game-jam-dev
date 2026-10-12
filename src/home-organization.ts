@@ -5,6 +5,7 @@ export type HomeOrganization = {
   projects: { id: string; folderId?: string }[];
 };
 export type HomeEdit =
+  | { type: 'remove-project'; id: string }
   | { type: 'move-project'; id: string; folderId: string | null }
   | { type: 'create-folder' | 'rename-folder'; id: string; name: string }
   | { type: 'remove-folder'; id: string };
@@ -70,6 +71,10 @@ export function editHomeOrganization(
   edit: HomeEdit,
 ): HomeOrganization {
   const next = structuredClone(home);
+  if (edit.type === 'remove-project') {
+    next.projects = next.projects.filter((item) => item.id !== edit.id);
+    return next;
+  }
   if (edit.type === 'move-project') {
     let project = next.projects.find((item) => item.id === edit.id);
     if (!project) {

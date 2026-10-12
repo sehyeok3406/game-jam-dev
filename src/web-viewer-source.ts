@@ -43,6 +43,7 @@ async function hostedSnapshot(
       ),
     );
     if (
+      (saved.lifecycle && saved.lifecycle.status !== 'active') ||
       saved.id !== projectId ||
       typeof saved.name !== 'string' ||
       !Number.isSafeInteger(saved.revision) ||

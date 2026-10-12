@@ -5823,3 +5823,52 @@ kbd {
 .canvas-material-picker input {
   width: auto;
 }
+.project-trash-modal {
+  padding: 24px;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.project-trash-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.project-trash-modal p {
+  line-height: 1.6;
+}
+.project-trash-path {
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-size: 12px;
+  opacity: 0.8;
+}
+.project-trash-modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+.project-trash-modal .project-trash-check {
+  flex-direction: row;
+  align-items: center;
+}
+.project-trash-check input {
+  width: auto;
+}
+.project-trash-list article,
+.project-trash-confirm {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.button-danger {
+  color: #fff;
+  background: #b42336;
+  border-color: #b42336;
+}
+.button-danger:disabled {
+  opacity: 0.5;
+}

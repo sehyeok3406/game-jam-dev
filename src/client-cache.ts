@@ -10,6 +10,11 @@ export type ClientCache = CollaborationEnvelope & {
 };
 const hashes = new Map<string, string>();
 const stored = new Set<string>();
+export function invalidateClientCache(directory: string) {
+  for (const filename of stored)
+    if (filename.startsWith(path.join(directory, '.sync-blobs') + path.sep))
+      stored.delete(filename);
+}
 export async function writeClientCache(directory: string, cache: ClientCache) {
   const blobs = path.join(directory, '.sync-blobs');
   await fs.mkdir(blobs, { recursive: true });

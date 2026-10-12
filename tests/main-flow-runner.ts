@@ -2320,6 +2320,11 @@ try {
   console.log(
     'PASS: production mixed deletion moves files to recycle bin once, deletes drawings in the same edit and restores/redoes both on disk',
   );
+  assert.throws(
+    () => handlers.get('projects:trash-list')!({ sender: {}, senderFrame: {} }),
+    /홈 화면/,
+  );
+  console.log('PASS: project trash IPC rejects foreign windows and frames');
 } finally {
   if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = originalGeminiKey;

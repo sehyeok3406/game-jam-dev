@@ -1,4 +1,11 @@
 import { SyncStore } from './sync-store.ts';
+import {
+  TRASH_RETENTION,
+  moveChecked,
+  purgeChecked,
+  statDirectory,
+  atomicJson,
+} from './trash-files.ts';
 import { isDrawingPath, drawingDelta } from './drawing-model.ts';
 import {
   advanceProperties,
@@ -87,6 +94,15 @@ type Job = {
   event: CodexRunEvent;
 };
 type Project = {
+  lifecycle?: {
+    status: 'active' | 'trashing' | 'trashed' | 'restoring' | 'purging';
+    version: number;
+    trashId: string;
+    identity: string | null;
+    trashedAt?: number;
+    expiresAt?: number;
+    error?: string;
+  };
   propertyVersions?: PropertyVersions;
   propertySync?: boolean;
   sequences?: Record<string, number>;
@@ -144,6 +160,8 @@ type Options = {
   publicAccess?: boolean;
 };
 class ApiError extends Error {
+  code?: string;
+  lifecycle?: unknown;
   readonly status: number;
   constructor(message: string, status = 409) {
     super(message);
@@ -205,6 +223,34 @@ export async function createCollaborationServer(options: Options) {
   const root = path.resolve(options.dataDirectory);
   await fs.mkdir(root, { recursive: true });
   const projects = new Map<string, Project>();
+  const lifecycleMarkers = new Map<
+    string,
+    { status: string; version: number }
+  >();
+  for (const file of await fs
+    .readdir(path.join(root, '.project-lifecycle'))
+    .catch(() => [] as string[])) {
+    if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
+    lifecycleMarkers.set(
+      file.slice(0, -5),
+      JSON.parse(
+        await fs.readFile(path.join(root, '.project-lifecycle', file), 'utf8'),
+      ),
+    );
+  }
+  const saveLifecycleMarker = async (
+    id: string,
+    status: string,
+    version: number,
+  ) => {
+    if (!/^[a-f0-9-]{36}$/.test(id))
+      throw Error('프로젝트 ID가 올바르지 않습니다.');
+    await atomicJson(path.join(root, '.project-lifecycle', `${id}.json`), {
+      status,
+      version,
+    });
+    lifecycleMarkers.set(id, { status, version });
+  };
   const store = new SyncStore<Project>(path.join(root, 'sync.sqlite'));
   const streams = new Map<string, Set<ServerResponse>>();
   const dirtyCheckpoints = new Set<string>();
@@ -222,6 +268,7 @@ export async function createCollaborationServer(options: Options) {
     return next;
   };
   const checkpoint = async (project: Project) => {
+    if (project.lifecycle && project.lifecycle.status !== 'active') return;
     const folder = path.join(root, project.id),
       checkpoint = randomUUID();
     const target = path.join(folder, 'checkpoints', checkpoint);
@@ -258,14 +305,25 @@ export async function createCollaborationServer(options: Options) {
     for (const response of streams.get(id) ?? []) {
       if (!response.writableNeedDrain)
         response.write(
-          `data: ${JSON.stringify({ revision: projects.get(id)?.revision })}\n\n`,
+          `data: ${JSON.stringify({ revision: projects.get(id)?.revision, lifecycle: projects.get(id)?.lifecycle })}\n\n`,
         );
       else response.end();
     }
   };
   const persist = async (project: Project) => {
     store.save(project);
+    if (project.lifecycle)
+      await saveLifecycleMarker(
+        project.id,
+        project.lifecycle.status,
+        project.lifecycle.version,
+      );
     projects.set(project.id, project);
+    if (project.lifecycle && project.lifecycle.status !== 'active') {
+      dirtyCheckpoints.delete(project.id);
+      announce(project.id);
+      return;
+    }
     dirtyCheckpoints.add(project.id);
     const folder = path.join(root, project.id);
     await fs.mkdir(folder, { recursive: true });
@@ -295,7 +353,10 @@ export async function createCollaborationServer(options: Options) {
     if (
       !entry.isDirectory() ||
       !/^[a-f0-9-]{36}$/.test(entry.name) ||
-      projects.has(entry.name)
+      projects.has(entry.name) ||
+      store.tombstone(entry.name) ||
+      (lifecycleMarkers.has(entry.name) &&
+        lifecycleMarkers.get(entry.name)!.status !== 'active')
     )
       continue;
     try {
@@ -381,6 +442,8 @@ export async function createCollaborationServer(options: Options) {
     state: {
       active: true,
       connected: true,
+      projectTrash: true,
+      lifecycleVersion: project.lifecycle?.version ?? 0,
       propertySync: true,
       deltaSync: true,
       eventStream: true,
@@ -649,6 +712,150 @@ export async function createCollaborationServer(options: Options) {
     });
     response.end(JSON.stringify(value));
   };
+  const lifecycle = (project: Project) => ({
+    projectId: project.id,
+    name: project.name,
+    status: project.lifecycle?.status ?? 'active',
+    version: project.lifecycle?.version ?? 0,
+    expiresAt: project.lifecycle?.expiresAt,
+    error: project.lifecycle?.error,
+  });
+  const assertActive = (project: Project) => {
+    if (!project.lifecycle || project.lifecycle.status === 'active') return;
+    const error = new ApiError(
+      '관리자가 공동 프로젝트를 삭제했습니다. 이 PC의 작업은 보관됩니다.',
+      410,
+    );
+    error.code = 'PROJECT_TRASHED';
+    error.lifecycle = lifecycle(project);
+    throw error;
+  };
+  const unavailable = (id: string): never => {
+    const marker = lifecycleMarkers.get(id);
+    const removed = store.tombstone(id) || marker?.status === 'purged';
+    const error = new ApiError(
+      '프로젝트를 찾을 수 없습니다.',
+      removed ? 410 : 404,
+    );
+    if (removed) {
+      error.code = 'PROJECT_PURGED';
+      error.lifecycle = {
+        projectId: id,
+        status: 'purged',
+        version: store.tombstone(id) ?? marker?.version,
+      };
+    }
+    throw error;
+  };
+  const retainedPath = (project: Project) => {
+    if (
+      !/^[a-f0-9-]{36}$/.test(project.id) ||
+      !/^[a-f0-9-]{36}$/.test(project.lifecycle!.trashId)
+    )
+      throw Error('서버 휴지통 경로가 올바르지 않습니다.');
+    return path.join(
+      root,
+      '.project-trash',
+      project.lifecycle!.trashId,
+      'project',
+    );
+  };
+  const finishTrash = async (project: Project) => {
+    await checkpointJobs.get(project.id);
+    await moveChecked(
+      path.join(root, project.id),
+      retainedPath(project),
+      project.lifecycle!.identity,
+    );
+    project.lifecycle = {
+      ...project.lifecycle!,
+      status: 'trashed',
+      trashedAt: Date.now(),
+      expiresAt: Date.now() + TRASH_RETENTION,
+      error: undefined,
+    };
+    await persist(project);
+    return lifecycle(project);
+  };
+  const purgeProject = async (project: Project) => {
+    project.lifecycle!.status = 'purging';
+    await persist(project);
+    await checkpointJobs.get(project.id);
+    await purgeChecked(
+      retainedPath(project),
+      retainedPath(project),
+      project.lifecycle!.identity,
+    );
+    store.purge(project.id, project.lifecycle!.version + 1);
+    await saveLifecycleMarker(
+      project.id,
+      'purged',
+      project.lifecycle!.version + 1,
+    );
+    projects.delete(project.id);
+    dirtyCheckpoints.delete(project.id);
+    for (const stream of streams.get(project.id) ?? []) {
+      stream.write('data: {"lifecycle":{"status":"purged"}}\n\n');
+      stream.end();
+    }
+    streams.delete(project.id);
+    return { projectId: project.id, status: 'purged' };
+  };
+  const restoreProject = async (project: Project) => {
+    if (
+      !project.lifecycle ||
+      project.lifecycle.status === 'active' ||
+      project.lifecycle.status === 'purging'
+    )
+      throw new ApiError('복원 가능한 휴지통 항목을 선택해주세요.');
+    if (
+      project.lifecycle!.status !== 'restoring' &&
+      (project.lifecycle!.expiresAt ?? 0) <= Date.now()
+    )
+      throw new ApiError('보관 기간이 만료되었습니다.', 410);
+    project.lifecycle!.status = 'restoring';
+    await persist(project);
+    await moveChecked(
+      retainedPath(project),
+      path.join(root, project.id),
+      project.lifecycle!.identity,
+    );
+    project.lifecycle = {
+      ...project.lifecycle!,
+      status: 'active',
+      version: project.lifecycle!.version + 1,
+      error: undefined,
+    };
+    project.inviteExpiresAt = 0;
+    project.revision++;
+    await persist(project);
+    return lifecycle(project);
+  };
+  const maintainTrash = async () => {
+    for (const project of Array.from(projects.values())) {
+      if (!project.lifecycle || project.lifecycle.status === 'active') continue;
+      await queue(project.id, async () => {
+        if (!projects.has(project.id) || project.lifecycle!.status === 'active')
+          return;
+        try {
+          if (project.lifecycle!.status === 'trashing')
+            await finishTrash(project);
+          else if (project.lifecycle!.status === 'restoring')
+            await restoreProject(project);
+          else if (
+            project.lifecycle!.status === 'purging' ||
+            (project.lifecycle!.expiresAt ?? Infinity) <= Date.now()
+          )
+            await purgeProject(project);
+        } catch (error) {
+          project.lifecycle!.error =
+            error instanceof Error ? error.message : String(error);
+          await persist(project);
+        }
+      });
+    }
+  };
+  await maintainTrash();
   const server = http.createServer(async (request, response) => {
     try {
       // Desktop transport only: reject browser cross-origin requests, including form POSTs.
@@ -674,7 +881,8 @@ export async function createCollaborationServer(options: Options) {
           propertySync: true,
           deltaSync: true,
           eventStream: true,
-          version: '0.14.0',
+          projectTrash: true,
+          version: '0.15.0',
         });
         return;
       }
@@ -683,11 +891,12 @@ export async function createCollaborationServer(options: Options) {
       );
       if (request.method === 'GET' && streamMatch) {
         const project = projects.get(streamMatch[1]);
-        if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+        if (!project) return unavailable(streamMatch[1]);
         const member = authenticate(
           project,
           String(request.headers.authorization ?? '').replace(/^Bearer /, ''),
         );
+        assertActive(project);
         limit(`${project.id}:${member.id}`, 'stream', 30);
         const set = streams.get(project.id) ?? new Set<ServerResponse>();
         if (set.size >= 80) throw new ApiError('연결 수가 너무 많습니다.', 429);
@@ -741,7 +950,7 @@ export async function createCollaborationServer(options: Options) {
         // Aggregate ingress protection leaves room for 20 members at 0.9s polls.
         limit(peer, 'project-ingress', 2400);
         const project = projects.get(match[1]);
-        if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+        if (!project) return unavailable(match[1]);
         const member = authenticate(
           project,
           String(request.headers.authorization ?? '').replace(/^Bearer /, ''),
@@ -804,15 +1013,17 @@ export async function createCollaborationServer(options: Options) {
         const code = String(input.code ?? '')
           .replace(/[\s-]/g, '')
           .toUpperCase();
-        const found = [...projects.values()].find(
+        const found = Array.from(projects.values()).find(
           (project) =>
             project.inviteExpiresAt > Date.now() &&
+            (!project.lifecycle || project.lifecycle.status === 'active') &&
             same(code, project.inviteHash),
         );
         if (!found)
           throw new ApiError('초대 코드가 없거나 만료되었습니다.', 403);
         const result = await queue(found.id, async () => {
           const project = structuredClone(projects.get(found.id)!);
+          assertActive(project);
           if (
             project.inviteExpiresAt < Date.now() ||
             !same(code, project.inviteHash)
@@ -857,6 +1068,20 @@ export async function createCollaborationServer(options: Options) {
           owner.role = 'admin';
           project.recoveryHash = digest(recoveryKey);
           await persist(project);
+          if (project.lifecycle && project.lifecycle.status !== 'active')
+            return {
+              lifecycle: lifecycle(project),
+              files: {},
+              revisions: {},
+              state: {
+                ...envelope(project, owner).state,
+                connected: false,
+                accessDenied: true,
+                projectDeleted: true,
+              },
+              token,
+              recoveryKey,
+            };
           return { ...envelope(project, owner), token, recoveryKey };
         });
         reply(response, 200, result);
@@ -866,11 +1091,63 @@ export async function createCollaborationServer(options: Options) {
       const [, id, action] = match;
       const result = await queue(id, async () => {
         let project = projects.get(id);
-        if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+        if (!project) return unavailable(id);
         const member = authenticate(
           project,
           String(request.headers.authorization ?? '').replace(/^Bearer /, ''),
         );
+        if (action === 'lifecycle') return lifecycle(project);
+        if (action.startsWith('trash')) {
+          admin(member);
+          if (action === 'trash-status') return lifecycle(project);
+          if (action === 'trash-restore') return restoreProject(project);
+          if (input.typedName !== project.name)
+            throw new ApiError('프로젝트 이름을 정확히 입력해주세요.', 400);
+          if (action === 'trash-purge') {
+            if (!project.lifecycle || project.lifecycle.status === 'active')
+              throw new ApiError('휴지통 항목을 선택해주세요.', 409);
+            if (project.lifecycle.status === 'trashing')
+              await finishTrash(project);
+            if (project.lifecycle.status === 'restoring')
+              throw new ApiError('복원을 먼저 완료해주세요.');
+            return purgeProject(project);
+          }
+          if (action === 'trash') {
+            if (project.lifecycle && project.lifecycle.status !== 'active')
+              return lifecycle(project);
+            if (input.expectedVersion !== (project.lifecycle?.version ?? 0))
+              throw new ApiError(
+                '프로젝트 상태가 바뀌었습니다. 다시 확인해주세요.',
+              );
+            if (input.confirmTeam !== true)
+              throw new ApiError('팀 전체 접근 중단을 확인해주세요.', 400);
+            if (project.job || activeEvent(project.lastRun))
+              throw new ApiError('AI 작업을 먼저 중지해주세요.');
+            project.lifecycle = {
+              status: 'trashing',
+              version: (project.lifecycle?.version ?? 0) + 1,
+              trashId: randomUUID(),
+              identity: await statDirectory(path.join(root, id)),
+            };
+            locks.delete(id);
+            online.delete(id);
+            await persist(project);
+            return finishTrash(project);
+          }
+          throw new ApiError('지원하지 않는 휴지통 작업입니다.', 404);
+        }
+        assertActive(project);
+        if (
+          action !== 'state' &&
+          (project.lifecycle?.version ?? 0) > 0 &&
+          input.lifecycleVersion !== project.lifecycle!.version
+        ) {
+          const error = new ApiError(
+            '프로젝트가 복원되었습니다. 최신 상태를 확인한 뒤 작업을 재개해주세요.',
+          );
+          error.code = 'PROJECT_LIFECYCLE_CHANGED';
+          throw error;
+        }
         project = await expireJob(project);
         if (['rename', 'role', 'invite', 'restore'].includes(action))
           admin(member);
@@ -1795,10 +2072,13 @@ export async function createCollaborationServer(options: Options) {
       reply(response, error instanceof ApiError ? error.status : 400, {
         error: errorText(failure),
         failure,
+        code: (error as ApiError).code,
+        lifecycle: (error as ApiError).lifecycle,
       });
     }
   });
   const checkpointTimer = setInterval(() => {
+    void maintainTrash().catch(() => undefined);
     // Export an immutable committed reference without holding the mutation or lease queue.
     for (const id of dirtyCheckpoints) {
       const project = projects.get(id);

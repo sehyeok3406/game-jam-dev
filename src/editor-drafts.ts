@@ -56,10 +56,14 @@ export class EditorDraftStore {
           return;
         }
         const temporary = filename + '-' + randomUUID() + '.tmp';
-        await fs.writeFile(temporary, JSON.stringify({ ...draft, sequence }), {
-          mode: 0o600,
-          flush: true,
-        });
+        await fs.writeFile(
+          temporary,
+          JSON.stringify({ ...draft, sequence, key }),
+          {
+            mode: 0o600,
+            flush: true,
+          },
+        );
         await fs.rename(temporary, filename);
       });
     this.queues.set(key, next);
@@ -67,5 +71,27 @@ export class EditorDraftStore {
   }
   async flush() {
     await Promise.all(this.queues.values());
+  }
+  async projectData(
+    matches: (key: string) => boolean,
+    knownKeys: string[] = [],
+  ) {
+    await this.flush();
+    const result: Record<string, EditorDraft> = {};
+    for (const key of knownKeys) {
+      const value = await this.get(key);
+      if (value && matches(key)) result[key] = value;
+    }
+    for (const file of await fs
+      .readdir(this.directory)
+      .catch(() => [] as string[])) {
+      if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
+      const value = JSON.parse(
+        await fs.readFile(path.join(this.directory, file), 'utf8'),
+      );
+      if (typeof value.key === 'string' && matches(value.key))
+        result[value.key] = value;
+    }
+    return result;
   }
 }

@@ -85,17 +85,31 @@ export function OfflineStatus({
       <div className="offline-status floating-surface" role="status">
         {state.connected ? <GitMerge size={16} /> : <CloudOff size={16} />}
         <span>
-          {state.accessDenied
-            ? '참여 세션 만료 · 내 작업 보관됨'
-            : !state.connected
-              ? state.offlineSync
-                ? `오프라인 · 이 PC에 저장 · 동기화 대기 ${state.pendingChanges ?? 0}개`
-                : '연결 끊김 · 편집 일시 중지'
-              : state.conflicts?.length
-                ? `충돌 ${state.conflicts.length}건 · 선택 필요`
-                : `동기화 대기 ${state.pendingChanges ?? 0}개`}
+          {state.projectDeleted || state.awaitingResume
+            ? state.message
+            : state.accessDenied
+              ? '참여 세션 만료 · 내 작업 보관됨'
+              : !state.connected
+                ? state.offlineSync
+                  ? `오프라인 · 이 PC에 저장 · 동기화 대기 ${state.pendingChanges ?? 0}개`
+                  : '연결 끊김 · 편집 일시 중지'
+                : state.conflicts?.length
+                  ? `충돌 ${state.conflicts.length}건 · 선택 필요`
+                  : `동기화 대기 ${state.pendingChanges ?? 0}개`}
         </span>
         {state.syncMessage && <small>{state.syncMessage}</small>}
+        {state.awaitingResume && (
+          <button
+            onClick={() => {
+              void window.gameCanvas
+                .resumeRestoredProject()
+                .then(changed)
+                .catch((e) => setError(String(e)));
+            }}
+          >
+            미반영 작업 재개
+          </button>
+        )}
         {!!state.conflicts?.length && (
           <button onClick={() => setOpen(true)}>충돌 해결</button>
         )}

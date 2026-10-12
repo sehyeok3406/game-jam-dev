@@ -65,7 +65,10 @@ export async function readHostedProject(directory: string, projectId: string) {
         .prepare('SELECT value FROM projects WHERE id=?')
         .get(projectId);
       if (!row) throw new Error('Unknown project');
-      return JSON.parse(String(row.value)) as {
+      const stored = JSON.parse(String(row.value));
+      if (stored.lifecycle && stored.lifecycle.status !== 'active')
+        throw Error('Project is in server trash');
+      return stored as {
         members: { tokenHash: string; removed?: boolean }[];
       };
     } finally {

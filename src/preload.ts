@@ -53,6 +53,26 @@ const api: GameCanvasApi = {
   openWebViewer: () => ipcRenderer.invoke('web-viewer:open'),
   listProjects: (refreshShared) =>
     ipcRenderer.invoke('projects:list', refreshShared),
+  prepareProjectTrash: (id) => ipcRenderer.invoke('projects:trash-prepare', id),
+  trashProject: (token, storage) =>
+    ipcRenderer.invoke('projects:trash', token, storage),
+  listProjectTrash: () => ipcRenderer.invoke('projects:trash-list'),
+  restoreProjectTrash: (id) => ipcRenderer.invoke('projects:trash-restore', id),
+  acknowledgeProjectRestore: (id) =>
+    ipcRenderer.invoke('projects:trash-restore-ack', id),
+  purgeProjectTrash: (id, name, discard) =>
+    ipcRenderer.invoke('projects:trash-purge', id, name, discard),
+  retryProjectTrash: () => ipcRenderer.invoke('projects:trash-retry'),
+  getSharedProjectLifecycle: (id) =>
+    ipcRenderer.invoke('projects:shared-lifecycle', id),
+  trashSharedProject: (id, name, confirm, version) =>
+    ipcRenderer.invoke('projects:shared-trash', id, name, confirm, version),
+  restoreSharedProject: (id) =>
+    ipcRenderer.invoke('projects:shared-restore', id),
+  purgeSharedProject: (id, name) =>
+    ipcRenderer.invoke('projects:shared-purge', id, name),
+  resumeRestoredProject: () =>
+    ipcRenderer.invoke('collaboration:resume-restored'),
   listProjectFolders: () => ipcRenderer.invoke('projects:folders'),
   renameProject: (id, name, expectedName) =>
     ipcRenderer.invoke('projects:rename', id, name, expectedName),
