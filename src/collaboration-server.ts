@@ -1,3 +1,8 @@
+import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
+import {
+  initializeWorkflows,
+  assertWorkflowReferences,
+} from './document-workflow.ts';
 import { SyncStore } from './sync-store.ts';
 import {
   TRASH_RETENTION,
@@ -133,6 +138,7 @@ export type CollaborationCommand = {
   knownRevision?: number;
   deltaVersion?: number;
   canvasSheetsVersion?: number;
+  documentStatusesVersion?: number;
   id: string;
   channel: string;
   input: unknown;
@@ -455,6 +461,7 @@ export async function createCollaborationServer(options: Options) {
       documentBundles: true,
       documentOutputFormats: true,
       drawingsVersion: 1,
+      documentStatusesVersion: 1,
       htmlImportAnalysis: true,
       htmlResultFolders: true,
       structuredResults: true,
@@ -500,6 +507,9 @@ export async function createCollaborationServer(options: Options) {
     kind: HistoryEntry['kind'] = 'user',
     extra: Partial<HistoryEntry> = {},
   ) => {
+    after = initializeWorkflows(project.files, after, kind === 'ai');
+    if (after[DOCUMENT_STATUSES_PATH])
+      assertWorkflowReferences(after, project.files);
     const touched = Object.keys({ ...project.files, ...after }).filter(
       (relative) => project.files[relative] !== after[relative],
     );
@@ -582,6 +592,7 @@ export async function createCollaborationServer(options: Options) {
         [
           'documents:save',
           'documents:set-color',
+          'documents:set-workflow',
           'documents:update-layout',
           'sections:update-layout',
           'layouts:update',
@@ -597,13 +608,16 @@ export async function createCollaborationServer(options: Options) {
           throw new ApiError(
             `객체 소속이나 생성 버전이 변경되었습니다: ${relative}`,
           );
-        if (command.objects?.[relative] !== objectId(before[relative]))
+        if (
+          command.objects?.[relative] !==
+          (objectId(before[relative]) || relative)
+        )
           throw new ApiError(`객체가 변경되었거나 삭제되었습니다: ${relative}`);
         for (const group of groups) {
           if (
-            group === 'content' &&
-            (command.properties?.[relative]?.content ?? 0) !==
-              (project.propertyVersions?.[relative]?.content ?? 0)
+            (group === 'content' || group === 'workflow') &&
+            (command.properties?.[relative]?.[group] ?? 0) !==
+              (project.propertyVersions?.[relative]?.[group] ?? 0)
           )
             throw new ApiError(
               `문서 내용이 변경되었습니다. 초안은 보관됩니다: ${relative}`,
@@ -872,6 +886,7 @@ export async function createCollaborationServer(options: Options) {
           documentBundles: true,
           documentOutputFormats: true,
           drawingsVersion: 1,
+          documentStatusesVersion: 1,
           htmlImportAnalysis: true,
           htmlResultFolders: true,
           structuredResults: true,
@@ -882,7 +897,7 @@ export async function createCollaborationServer(options: Options) {
           deltaSync: true,
           eventStream: true,
           projectTrash: true,
-          version: '0.15.0',
+          version: '0.16.0',
         });
         return;
       }
@@ -1189,6 +1204,24 @@ export async function createCollaborationServer(options: Options) {
         )
           throw new ApiError(
             '속성별 동기화를 사용하는 프로젝트입니다. 앱을 v0.12.0 이상으로 업데이트해주세요.',
+          );
+        if (
+          project.files[DOCUMENT_STATUSES_PATH] &&
+          ![
+            'state',
+            'leave',
+            'history',
+            'history-read',
+            'unlock',
+            'ai-heartbeat',
+            'ai-event',
+            'ai-cancel',
+          ].includes(action) &&
+          input.documentStatusesVersion !== 1
+        )
+          throw new ApiError(
+            '문서 상태가 있는 프로젝트입니다. 앱을 업데이트해주세요.',
+            409,
           );
         if (action === 'state') {
           for (const item of Array.isArray(input.renewLocks)

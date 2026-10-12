@@ -9,6 +9,7 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
         kind?: 'document' | 'section' | 'preview' | 'drawing';
         object?: import('../drawing-types').DrawingObject;
         document?: CanvasDocument;
+        sectionHidden?: boolean;
         section?: CanvasSection;
         preview?: PreviewResult;
       }
@@ -17,6 +18,7 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
     data?.document?.backgroundColor ?? data?.preview?.backgroundColor,
   );
   const kind = data?.kind ?? 'document';
+  if (data?.sectionHidden) return null;
   return (
     <rect
       className={`react-flow__minimap-node canvas-minimap-node canvas-minimap-node--${kind}${props.selected ? ' is-selected' : ''}`}

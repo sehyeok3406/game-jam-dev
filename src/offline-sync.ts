@@ -1,3 +1,5 @@
+import { assertWorkflowReferences } from './document-statuses-storage.ts';
+import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { mergeProperties, changedGroups } from './sync-properties.ts';
 import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
 import { createHash } from 'node:crypto';
@@ -109,6 +111,13 @@ function relatedPaths(initial: string[], snapshots: Snapshot[]) {
   const paths = new Set(initial);
   const groups: string[][] = [];
   for (const files of snapshots) {
+    if (files[DOCUMENT_STATUSES_PATH])
+      groups.push([
+        DOCUMENT_STATUSES_PATH,
+        ...Object.keys(files).filter(
+          (p) => p.endsWith('.md') && !p.startsWith('.ai/'),
+        ),
+      ]);
     for (const section of snapshotSections(files))
       groups.push([
         section.relativePath,
@@ -160,6 +169,7 @@ export function planOfflineMerge(
   }
   try {
     checkSnapshot(merged);
+    if (merged[DOCUMENT_STATUSES_PATH]) assertWorkflowReferences(merged);
   } catch {
     const paths = relatedPaths(touched, [base, local, server]);
     // All dependent changes must be resolved as one transaction.

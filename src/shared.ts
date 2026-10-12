@@ -47,6 +47,9 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  workflowStatusId?: string;
+  workflowOrder?: number;
+  workflowRevision?: number;
   systemId?: string;
   documentBundleId?: string;
   outputKey?: string;
@@ -227,6 +230,8 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  workflowStatusId?: string;
+  workflowOrder?: number;
   canvasId?: string;
   previousPaths?: string[];
   revision?: number;
@@ -316,6 +321,16 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  getDocumentStatuses: () => Promise<{
+    value: import('./document-statuses').DocumentStatuses;
+    raw: string | null;
+  }>;
+  saveDocumentStatuses: (
+    input: import('./document-statuses').StatusesInput,
+  ) => Promise<void>;
+  setDocumentWorkflow: (
+    input: import('./document-statuses').WorkflowInput,
+  ) => Promise<void>;
   selfHost?: import('./features/self-host/types').SelfHostApi;
   inspectConnectionInfo: (text: string) => Promise<{
     id: string;
@@ -640,6 +655,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  documentStatusesVersion?: number;
   projectTrash?: boolean;
   lifecycleVersion?: number;
   projectDeleted?: boolean;

@@ -1,3 +1,10 @@
+import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses.ts';
+import {
+  applyWorkflow,
+  saveStatuses,
+  initializeWorkflows,
+} from './document-workflow.ts';
+import type { WorkflowInput, StatusesInput } from './document-statuses.ts';
 import {
   CANVAS_SHEETS_PATH,
   canvasId,
@@ -63,6 +70,7 @@ export function collaborationPath(relative: unknown): string {
       relative === 'output/README.md' ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
+      relative === DOCUMENT_STATUSES_PATH ||
       isDrawingPath(relative) ||
       isAssetPath(relative)
     ) ||
@@ -77,7 +85,11 @@ export function collaborationPath(relative: unknown): string {
           (segment.startsWith('.') &&
             segment !== '.ai' &&
             !(
-              ([RESULT_CATALOG_PATH, CANVAS_SHEETS_PATH].includes(relative) ||
+              ([
+                RESULT_CATALOG_PATH,
+                CANVAS_SHEETS_PATH,
+                DOCUMENT_STATUSES_PATH,
+              ].includes(relative) ||
                 isDrawingPath(relative)) &&
               segment === '.canvas'
             )) ||
@@ -91,6 +103,8 @@ export function collaborationPath(relative: unknown): string {
 export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
+  if ((files as Snapshot)[DOCUMENT_STATUSES_PATH])
+    readStatuses((files as Snapshot)[DOCUMENT_STATUSES_PATH]);
   validateCanvasMembership(files as Snapshot);
   const sheets = readCanvasSheets((files as Snapshot)[CANVAS_SHEETS_PATH]);
   for (const path of Object.keys(files).filter(isDrawingPath)) {
@@ -219,6 +233,13 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
           ? data.type
           : 'idea',
         status: typeof data.status === 'string' ? data.status : 'draft',
+        workflowStatusId:
+          typeof data.workflow_status_id === 'string'
+            ? data.workflow_status_id
+            : undefined,
+        workflowOrder: Number.isFinite(data.workflow_order)
+          ? data.workflow_order
+          : undefined,
         relativePath,
         body: content.trim(),
         x: number('x', 120),
@@ -286,6 +307,8 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
 }
 
 export const commandLabels: Record<string, string> = {
+  'documents:set-workflow': '문서 진행 상태 변경',
+  'document-statuses:save': '문서 상태 설정 변경',
   'drawings:apply': '도형 · 그림 편집',
   'canvas:batch': '선택 항목 함께 편집',
   'canvases:change': '캔버스 구성 변경',
@@ -342,8 +365,19 @@ export function reduceCollaboration(
 ): { files: Snapshot; result: unknown } {
   if (!commandLabels[channel])
     throw new Error('허용되지 않은 공동 작업입니다.');
-  const next = { ...files };
+  let next = { ...files };
   const input = record(value);
+  if (
+    channel === 'documents:set-workflow' ||
+    channel === 'document-statuses:save'
+  ) {
+    const changed =
+      channel === 'documents:set-workflow'
+        ? applyWorkflow(files, input as unknown as WorkflowInput)
+        : saveStatuses(files, input as unknown as StatusesInput);
+    checkSnapshot(changed);
+    return { files: changed, result: undefined };
+  }
   if (channel === 'canvas:batch') {
     const commands = array(input.commands);
     if (!commands.length || commands.length > 10)
@@ -764,6 +798,12 @@ export function reduceCollaboration(
       (doc) => doc.relativePath === relative,
     );
   }
+  next = initializeWorkflows(files, next);
   checkSnapshot(next);
+  if (result && typeof result === 'object' && 'relativePath' in result)
+    result =
+      snapshotDocuments(next).find(
+        (d) => d.relativePath === (result as CanvasDocument).relativePath,
+      ) ?? result;
   return { files: next, result };
 }

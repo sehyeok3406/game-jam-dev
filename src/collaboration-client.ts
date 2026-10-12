@@ -517,6 +517,7 @@ export class CollaborationClient {
         syncClientVersion: 1,
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
+        documentStatusesVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
         action !== 'ai-start' &&
@@ -800,6 +801,22 @@ export class CollaborationClient {
       );
     return this.serial(async () => {
       if (
+        (channel === 'documents:set-workflow' ||
+          channel === 'document-statuses:save') &&
+        this.state.documentStatusesVersion !== 1
+      )
+        throw Error('문서 상태를 사용하려면 협업 서버를 업데이트해주세요.');
+      if (
+        (channel === 'document-statuses:save' ||
+          (channel === 'documents:set-workflow' &&
+            ((input as { beforeId?: string; afterId?: string }).beforeId ||
+              (input as { afterId?: string }).afterId))) &&
+        (this.offline || !this.state.connected || this.state.pendingChanges)
+      )
+        throw Error(
+          '상태 설정과 순서 변경은 온라인 동기화 완료 후 진행해주세요.',
+        );
+      if (
         (channel === 'drawings:apply' || channel === 'canvas:batch') &&
         this.state.drawingsVersion !== 1
       )
@@ -1020,7 +1037,7 @@ export class CollaborationClient {
               objects: Object.fromEntries(
                 Object.entries(this.files)
                   .filter(([key]) => key.endsWith('.md'))
-                  .map(([key, raw]) => [key, objectId(raw)!]),
+                  .map(([key, raw]) => [key, objectId(raw) || key]),
               ),
               properties: structuredClone(this.properties),
               deltaVersion: 1,
@@ -1028,6 +1045,7 @@ export class CollaborationClient {
             }
           : {}),
         canvasSheetsVersion: 1,
+        documentStatusesVersion: 1,
         channel,
         input,
         revisions: { ...this.revisions },
@@ -1060,6 +1078,19 @@ export class CollaborationClient {
           command.properties[sourcePath] = {
             ...command.properties[sourcePath],
             content: contentRevision,
+          };
+      }
+      if (
+        channel === 'documents:set-workflow' &&
+        sourcePath &&
+        command.properties
+      ) {
+        const revision = (input as { workflowRevision?: number })
+          .workflowRevision;
+        if (revision !== undefined)
+          command.properties[sourcePath] = {
+            ...command.properties[sourcePath],
+            workflow: revision,
           };
       }
       const setIdentity = (

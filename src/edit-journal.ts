@@ -1,3 +1,5 @@
+import { assertWorkflowReferences } from './document-statuses-storage.ts';
+import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { mergeProperties } from './sync-properties.ts';
 import type { Snapshot } from './project-store.ts';
 
@@ -66,5 +68,7 @@ export function invertEdit(
     if (value === undefined) delete next[relative];
     else next[relative] = value;
   }
+  if (next[DOCUMENT_STATUSES_PATH] || current[DOCUMENT_STATUSES_PATH])
+    assertWorkflowReferences(next);
   return next;
 }

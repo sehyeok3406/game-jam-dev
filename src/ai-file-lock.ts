@@ -1,3 +1,5 @@
+import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses.ts';
+import { workflowDocuments } from './document-statuses-storage.ts';
 import matter from './markdown.ts';
 import {
   isPreviewPath,
@@ -124,6 +126,22 @@ export function assertAiMutation(
   )
     for (const item of matter(before[input.relativePath]).data.members ?? [])
       paths.push(item.path);
+  if (before[DOCUMENT_STATUSES_PATH] !== after[DOCUMENT_STATUSES_PATH]) {
+    const old = readStatuses(before[DOCUMENT_STATUSES_PATH]);
+    const next = readStatuses(after[DOCUMENT_STATUSES_PATH]);
+    const changed = new Set(
+      old.statuses
+        .filter(
+          (s) =>
+            JSON.stringify(s) !==
+            JSON.stringify(next.statuses.find((n) => n.id === s.id)),
+        )
+        .map((s) => s.id),
+    );
+    for (const doc of workflowDocuments(before))
+      if (changed.has(doc.workflowStatusId ?? 'not-started'))
+        paths.push(doc.path);
+  }
   assertAiFilesUnlocked(lock, paths);
 }
 

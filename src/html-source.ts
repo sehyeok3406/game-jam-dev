@@ -93,6 +93,13 @@ export function describePreview(
   }
   return {
     canvasId: typeof data.canvas_id === 'string' ? data.canvas_id : 'default',
+    workflowStatusId:
+      typeof data.workflow_status_id === 'string'
+        ? data.workflow_status_id
+        : undefined,
+    workflowOrder: Number.isFinite(data.workflow_order)
+      ? data.workflow_order
+      : undefined,
     exists: files[relative] !== undefined,
     relativePath: relative,
     previousPaths: resultPreviousPaths(files, relative),

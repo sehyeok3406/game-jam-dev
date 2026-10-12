@@ -83,6 +83,7 @@ export class CanvasView {
           document.revision = revisions[relative];
           document.structureRevision = properties[relative]?.structure ?? 0;
           document.contentRevision = properties[relative]?.content ?? 0;
+          document.workflowRevision = properties[relative]?.workflow ?? 0;
           document.assetVersion = document.asset
             ? revisions[document.asset.path]
             : undefined;

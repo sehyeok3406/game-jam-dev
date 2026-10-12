@@ -4,6 +4,11 @@ import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import { selfHostPreload } from './features/self-host/preload';
 
 const api: GameCanvasApi = {
+  getDocumentStatuses: () => ipcRenderer.invoke('document-statuses:get'),
+  saveDocumentStatuses: (input) =>
+    ipcRenderer.invoke('document-statuses:save', input),
+  setDocumentWorkflow: (input) =>
+    ipcRenderer.invoke('documents:set-workflow', input),
   ...(SELF_HOST_ENABLED ? { selfHost: selfHostPreload() } : {}),
   inspectConnectionInfo: (text) =>
     ipcRenderer.invoke('projects:connection-inspect', text),

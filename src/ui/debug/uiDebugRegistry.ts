@@ -41,6 +41,44 @@ const entry = (
 // Every preview uses the production component. Inline surfaces retain their
 // actual state identifier; never invent a component name for an inline view.
 export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
+  {
+    id: 'kanban',
+    label: '칸반 보드',
+    code: 'KanbanPanel',
+    source: 'src/features/kanban/KanbanPanel.tsx',
+    group: '패널',
+    scopes: project,
+    selector: '.kanban-panel, .canvas-settings',
+    states: ['default', 'minimized', 'disabled', 'empty'],
+  },
+  entry(
+    'document-status',
+    '문서 상태 배지',
+    'DocumentStatusBadge',
+    'DocumentStatusBadge',
+    '캔버스',
+    project,
+    '.workflow-badge',
+  ),
+  entry(
+    'status-manager',
+    '문서 상태 관리',
+    'DocumentStatusManager',
+    'DocumentStatusManager',
+    '팝업',
+    project,
+    '.workflow-manager',
+  ),
+  entry(
+    'section-collapse',
+    '섹션 접기',
+    'SectionCard',
+    'App',
+    '캔버스',
+    project,
+    '.section-card',
+    ['default', 'collapsed'],
+  ),
   entry(
     'drawing-tools',
     '도형 · 펜 · 지우개',

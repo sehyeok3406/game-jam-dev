@@ -1,3 +1,4 @@
+import { defaultStatuses } from '../../document-statuses.ts';
 import type {
   CanvasDocument,
   CanvasSection,
@@ -266,7 +267,10 @@ export function sampleCollaboration(
 export function sampleDocuments(selection: UiDebugSelection): CanvasDocument[] {
   const { id, state } = selection;
   if (
-    (id === 'canvas' || id === 'navigator' || id === 'command') &&
+    (id === 'canvas' ||
+      id === 'navigator' ||
+      id === 'command' ||
+      id === 'kanban') &&
     state === 'empty'
   )
     return [];
@@ -314,7 +318,8 @@ export function createUiPreviewApi(
   const drawingPreview = selection.id.startsWith('drawing-');
   const documents = drawingPreview ? [] : sampleDocuments(selection);
   const empty =
-    ['canvas', 'compare'].includes(selection.id) && selection.state === 'empty';
+    ['canvas', 'compare', 'kanban'].includes(selection.id) &&
+    selection.state === 'empty';
   let previews =
     empty ||
     drawingPreview ||
@@ -382,6 +387,7 @@ export function createUiPreviewApi(
     // Optional API namespaces must be absent, rather than resolved by the
     // function fallback. The isolated preview never connects a real host.
     selfHost: undefined,
+    getDocumentStatuses: async () => ({ value: defaultStatuses(), raw: null }),
     getWorkspace: async () => ({
       root: 'ui-preview',
       name: '전투 시스템 연구',
@@ -396,6 +402,7 @@ export function createUiPreviewApi(
         ? []
         : structuredClone(SAMPLE_PROJECTS);
     },
+    listProjectTrash: async () => [],
     listProjectFolders: async () => [{ id: 'ui-folder', name: '게임잼 기획' }],
     getCanvasChanges: async () => null,
     getCanvasSheets: async () => ({

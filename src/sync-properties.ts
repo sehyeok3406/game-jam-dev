@@ -1,3 +1,5 @@
+import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
+import { mergeStatuses } from './document-statuses-storage.ts';
 import matter from './markdown.ts';
 import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
 import type { Snapshot } from './project-store.ts';
@@ -7,6 +9,7 @@ export const propertyKeys = {
   position: ['x', 'y'],
   size: ['width', 'height', 'collapsed'],
   color: ['background_color'],
+  workflow: ['workflow_status_id', 'workflow_order'],
 } as const;
 export type PropertyGroup = keyof typeof propertyKeys | 'structure';
 export type PropertyVersions = Record<
@@ -27,6 +30,7 @@ export function propertyValues(raw: string) {
     position: [parsed.data.x, parsed.data.y],
     size: [parsed.data.width, parsed.data.height, parsed.data.collapsed],
     color: [parsed.data.background_color],
+    workflow: [parsed.data.workflow_status_id, parsed.data.workflow_order],
     structure,
   };
 }
@@ -53,6 +57,8 @@ export function mergeProperties(
   desired?: string,
   current?: string,
 ) {
+  if (relative === DOCUMENT_STATUSES_PATH)
+    return mergeStatuses(expected, desired, current);
   if (isDrawingPath(relative))
     return mergeDrawingFile(relative, expected, desired, current, true);
   if (current === expected) return desired;

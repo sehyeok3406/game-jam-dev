@@ -1,3 +1,5 @@
+import { assertWorkflowReferences } from './document-statuses-storage.ts';
+import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
 import { DRAWING_DIRECTORY, isDrawingPath } from './drawing-model.ts';
 import { randomUUID } from 'node:crypto';
@@ -81,6 +83,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       isPreviewPath(relative) ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
+      relative === DOCUMENT_STATUSES_PATH ||
       isDrawingPath(relative) ||
       isAssetPath(relative)
     ) {
@@ -95,6 +98,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     '.ai/tasks',
     RESULT_CATALOG_PATH,
     CANVAS_SHEETS_PATH,
+    DOCUMENT_STATUSES_PATH,
     DRAWING_DIRECTORY,
     'output',
     'assets/images',
@@ -483,6 +487,8 @@ export async function restoreHistory(
   }
   const { moveResultFiles, resultFileBaseline, removeEmptyResultParents } =
     await import('./result-file-moves.ts');
+  if (after[DOCUMENT_STATUSES_PATH] || before[DOCUMENT_STATUSES_PATH])
+    assertWorkflowReferences(after);
   const rollbackMoves = await moveResultFiles(root, before, after);
   try {
     await applyChanges(root, resultFileBaseline(before, after), remapped);

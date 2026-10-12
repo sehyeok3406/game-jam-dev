@@ -1,3 +1,4 @@
+import { readStatuses, DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { createHash } from 'node:crypto';
 import { snapshotDrawings } from './drawing-model.ts';
 import { drawingBounds, drawingSvg } from './drawing-geometry.ts';
@@ -33,6 +34,7 @@ export type WebProject = {
     kind: 'idea' | 'document' | 'image' | 'html';
     section: string;
     summary: string;
+    workflow?: { name: string; color: string };
     body: string;
     position: { x: number; y: number };
     width: number;
@@ -57,6 +59,7 @@ export function projectForWeb(input: {
   revision?: number;
   folder?: string;
 }): WebProject {
+  const statuses = readStatuses(input.files[DOCUMENT_STATUSES_PATH]);
   const sections = snapshotSections(input.files);
   const documents: (WebProject['documents'][number] & {
     modifiedAt: number;
@@ -65,6 +68,9 @@ export function projectForWeb(input: {
       (doc) => !doc.relativePath.startsWith('.ai/') && doc.type !== 'ai-task',
     )
     .map((doc) => {
+      const status = statuses.statuses.find(
+        (s) => s.id === (doc.workflowStatusId ?? 'not-started'),
+      );
       const html = doc.htmlSource ? input.files[doc.htmlSource] : undefined;
       const image = doc.asset ? input.files[doc.asset.path] : undefined;
       const section = sections.find((group) =>
@@ -90,10 +96,16 @@ export function projectForWeb(input: {
               ? ('idea' as const)
               : ('document' as const),
         section: section?.title ?? '분류 없음',
-        summary: doc.body
-          .replace(/[#*_`>[\]]/g, '')
-          .replace(/\s+/g, ' ')
-          .slice(0, 140),
+        workflow: {
+          name: status?.name ?? '알 수 없는 상태',
+          color: status?.badgeColor ?? '#6B7280',
+        },
+        summary:
+          `[${status?.name ?? '알 수 없는 상태'}] ` +
+          doc.body
+            .replace(/[#*_`>[\]]/g, '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 140),
         body: doc.body,
         position: { x: doc.x, y: doc.y },
         width: doc.width,

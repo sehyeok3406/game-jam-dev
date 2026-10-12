@@ -1,3 +1,19 @@
+import { DocumentStatusBadge } from './DocumentStatusBadge';
+import { DocumentStatusManager } from './DocumentStatusManager';
+import {
+  defaultStatuses,
+  type DocumentStatuses,
+  type WorkflowInput,
+} from '../document-statuses';
+import {
+  KanbanPanel,
+  type KanbanDocument,
+} from '../features/kanban/KanbanPanel';
+import {
+  usePersonalValue,
+  defaultKanban,
+} from '../features/kanban/preferences';
+import '../features/kanban/kanban.css';
 import { ArrowRight } from 'lucide-react';
 import './drawing/drawing.css';
 import { useDrawing } from './drawing/useDrawing';
@@ -325,6 +341,11 @@ const CODEX_STATUS_LABELS: Record<CodexRunEvent['status'], string> = {
 };
 
 type DocumentNodeData = {
+  statuses: DocumentStatuses;
+  workflowDisabled: boolean;
+  onWorkflow: (id: string) => void;
+  onManageWorkflow: () => void;
+  sectionHidden?: boolean;
   kind: 'document';
   locked: boolean;
   onBlocked: () => void;
@@ -372,6 +393,11 @@ function pendingDocument(document: CanvasDocument, state?: DocumentSaveState) {
 }
 
 type PreviewNodeData = {
+  sectionHidden?: boolean;
+  statuses: DocumentStatuses;
+  workflowDisabled: boolean;
+  onWorkflow: (id: string) => void;
+  onManageWorkflow: () => void;
   kind: 'preview';
   locked: boolean;
   preview: PreviewResult;
@@ -383,6 +409,8 @@ type PreviewNodeData = {
 };
 
 type SectionNodeData = {
+  collapsed: boolean;
+  onCollapse: () => void;
   kind: 'section';
   locked: boolean;
   section: CanvasSection;
@@ -979,6 +1007,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
       )}
       <article
         ref={cardRef}
+        inert={data.sectionHidden || undefined}
         data-find-document={document.id}
         data-card-color={cardColor(document.backgroundColor)}
         className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}`}
@@ -990,12 +1019,17 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
               {document.title}
             </strong>
           )}
-          <span
-            className={`document-status document-status--${document.status}`}
-          >
-            {statusLabel(document.status)}
-          </span>
+
           <div className="document-header-actions nodrag">
+            {document.type !== 'ai-task' && (
+              <DocumentStatusBadge
+                document={document}
+                statuses={data.statuses}
+                disabled={data.workflowDisabled}
+                change={data.onWorkflow}
+                manage={data.onManageWorkflow}
+              />
+            )}
             <button
               className="icon-button"
               title={document.collapsed ? '메모 펼치기' : '메모 최소화'}
@@ -1315,10 +1349,12 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
 function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
   const { section } = data;
   return (
-    <section className="section-card">
+    <section
+      className={`section-card${data.collapsed ? ' section-card--collapsed' : ''}`}
+    >
       <NodeResizer
         color="var(--selection)"
-        isVisible={selected && !data.locked}
+        isVisible={selected && !data.locked && !data.collapsed}
         lineClassName="window-resize-edge"
         handleClassName="window-resize-handle"
         minWidth={420}
@@ -1343,6 +1379,15 @@ function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
           <span>{section.members.length}개 파일</span>
         </div>
         <div className="section-card__file">
+          <button
+            type="button"
+            className="nodrag"
+            aria-expanded={!data.collapsed}
+            title={data.collapsed ? '섹션 펼치기' : '섹션 최소화'}
+            onClick={data.onCollapse}
+          >
+            {data.collapsed ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+          </button>
           <code>{section.relativePath}</code>
           <button
             type="button"
@@ -1471,6 +1516,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
       )}
       <section
         ref={cardRef}
+        inert={data.sectionHidden || undefined}
         data-card-color={cardColor(data.preview.backgroundColor)}
         className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${!collapsed && data.preview.warnings?.length ? ' preview-card--warning' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
       >
@@ -1548,6 +1594,13 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
             >
               <Columns2 size={14} />
             </button>
+            <DocumentStatusBadge
+              document={data.preview}
+              statuses={data.statuses}
+              disabled={data.workflowDisabled}
+              change={data.onWorkflow}
+              manage={data.onManageWorkflow}
+            />
             <button
               type="button"
               className="icon-button"
@@ -1842,6 +1895,25 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const firstCanvasView = useRef<string | null>(null);
   const navigateCanvasItem = useRef<((id: string) => void) | null>(null);
   const [documents, setDocuments] = useState<CanvasDocument[]>([]);
+  const [statusSettings, setStatusSettings] = useState<{
+    value: DocumentStatuses;
+    raw: string | null;
+  }>({ value: defaultStatuses(), raw: null });
+  const [statusError, setStatusError] = useState('');
+  const [statusManagerOpen, setStatusManagerOpen] = useState(false);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const workflowPending = useRef(false);
+  const personalScope = collaboration.projectId
+    ? `${collaboration.projectId}:${collaboration.memberId}`
+    : (workspace.root ?? 'none');
+  const [kanbanPreferences, updateKanbanPreferences] = usePersonalValue(
+    `builtin.kanban:${personalScope}`,
+    defaultKanban,
+  );
+  const [sectionViews, updateSectionViews] = usePersonalValue<
+    Record<string, boolean>
+  >(`section-view:${personalScope}`, {});
+  const [temporarySections, setTemporarySections] = useState<string[]>([]);
   const [newFileNodes, setNewFileNodes] = useState<Set<string>>(new Set());
   const newFileIndicatorsRef = useRef<{
     root: string | null;
@@ -1912,6 +1984,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
+  useEffect(() => {
+    setTemporarySections((current) => {
+      const next = current.filter((id) =>
+        sections
+          .find((s) => s.id === id)
+          ?.members.some((m) => selectedIds.includes(m.id)),
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [selectedIds, sections]);
   const selectionBeforeClick = useRef(new Set<string>());
   const selectionPointer = useRef<{
     pane: HTMLElement;
@@ -2938,6 +3020,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           ? current
           : new Set(indicators.unread),
       );
+      const workflowSettings = await window.gameCanvas
+        .getDocumentStatuses?.()
+        .catch((error) => {
+          setStatusError(
+            error instanceof Error ? error.message : String(error),
+          );
+          return null;
+        });
+      if (request !== projectLoadRef.current) return;
+      if (workflowSettings) {
+        setStatusSettings((old) =>
+          JSON.stringify(old) === JSON.stringify(workflowSettings)
+            ? old
+            : workflowSettings,
+        );
+        setStatusError('');
+      }
       setDocuments((current) => reconcile(current, canvasDocuments));
       setTaskDocuments((current) =>
         reconcile(
@@ -2986,7 +3085,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         /* Optional preference. */
       }
       if (fit && !hasSavedViewport)
-        setTimeout(() => void flowRef.current?.fitView({ padding: 0.16 }), 60);
+        setTimeout(
+          () =>
+            void flowRef.current?.fitView({
+              nodes: flowRef.current
+                ?.getNodes()
+                .filter((n) => !n.className?.includes('section-member-hidden')),
+              padding: 0.16,
+            }),
+          60,
+        );
       else if (
         addedResult &&
         previous.root === state.root &&
@@ -3504,6 +3612,72 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   );
   const geometrySequence = useRef(0);
   const [geometryEpoch, setGeometryEpoch] = useState(0);
+  const workflowEditable =
+    !statusError &&
+    (!collaboration.active ||
+      (['admin', 'editor'].includes(collaboration.role ?? '') &&
+        collaboration.documentStatusesVersion === 1));
+  const workflowChange = useCallback(
+    async (input: WorkflowInput) => {
+      if (workflowPending.current)
+        throw Error('이전 상태 저장이 끝난 뒤 다시 선택해주세요.');
+      if (!workflowEditable)
+        throw Error('상태 편집 권한이 없거나 협업 서버 업데이트가 필요합니다.');
+      workflowPending.current = true;
+      setWorkflowBusy(true);
+      try {
+        await window.gameCanvas.setDocumentWorkflow(input);
+        await loadProject(false);
+      } finally {
+        workflowPending.current = false;
+        setWorkflowBusy(false);
+      }
+    },
+    [workflowEditable, loadProject],
+  );
+  const setWorkflow = useCallback(
+    (doc: CanvasDocument, id: string) => {
+      void workflowChange({
+        relativePath: doc.relativePath,
+        objectId: doc.id,
+        expectedStatus: doc.workflowStatusId,
+        expectedOrder: doc.workflowOrder,
+        workflowRevision: doc.workflowRevision,
+        structureRevision: doc.structureRevision,
+        statusId: id,
+      }).catch(showError);
+    },
+    [workflowChange],
+  );
+  const sectionCollapsed = (section: CanvasSection) =>
+    !!sectionViews[section.id] &&
+    !findOpen &&
+    !temporarySections.includes(section.id);
+  const toggleSection = async (section: CanvasSection) => {
+    if (
+      blockAiFiles([
+        section.relativePath,
+        ...section.members.map((m) => m.path),
+      ])
+    )
+      return;
+    try {
+      await Promise.all(
+        [...editorsRef.current.values()].map((flush) => flush()),
+      );
+      const collapsed = !sectionCollapsed(section);
+      updateSectionViews({ ...sectionViews, [section.id]: collapsed });
+      setTemporarySections((v) => v.filter((id) => id !== section.id));
+      if (collapsed) {
+        const memberIds = new Set(section.members.map((m) => m.id));
+        setSelectedIds((v) => v.filter((id) => !memberIds.has(id)));
+        setSelectedSectionIds([section.id]);
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+    } catch (error) {
+      showError(error);
+    }
+  };
   useEffect(() => {
     const sectionByMember = new Map<string, CanvasSection>();
     sections.forEach((section) => {
@@ -3518,11 +3692,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         id: sectionNodeId(section.id),
         type: 'section',
         position: { x: section.x, y: section.y },
-        style: { width: section.width, height: section.height },
+        style: {
+          width: section.width,
+          height: sectionCollapsed(section) ? 44 : section.height,
+        },
         zIndex: 0,
         draggable: !sectionLocked(section),
         data: {
           kind: 'section',
+          collapsed: sectionCollapsed(section),
+          onCollapse: () => void toggleSection(section),
           locked: sectionLocked(section),
           section,
           onResize: resizeSection,
@@ -3553,9 +3732,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         return {
           id: document.id,
           type: 'document',
-          className: newFileNodes.has(document.id)
-            ? 'new-file-node'
-            : undefined,
+          className: `${newFileNodes.has(document.id) ? 'new-file-node' : ''}${parent && sectionCollapsed(parent) ? ' section-member-hidden' : ''}`,
+          selectable: !(parent && sectionCollapsed(parent)),
           position: parent
             ? { x: document.x - parent.x, y: document.y - parent.y }
             : { x: document.x, y: document.y },
@@ -3569,6 +3747,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           draggable: !layoutLocked,
           data: {
             kind: 'document',
+            sectionHidden: !!(parent && sectionCollapsed(parent)),
+            statuses: statusSettings.value,
+            workflowDisabled:
+              workflowBusy ||
+              !workflowEditable ||
+              pathLocked(document.relativePath),
+            onWorkflow: (id) => setWorkflow(document, id),
+            onManageWorkflow: () => setStatusManagerOpen(true),
             layoutLocked,
             locked: nodeLocked,
             onBlocked: isAiFileLocked(aiFileLock, document.relativePath)
@@ -3629,6 +3815,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     const previewNodes: PreviewCanvasNode[] = previews
       .filter((preview) => canvasId(preview.canvasId) === activeCanvas)
       .map((preview, index) => {
+        const parentSection = sections.find((s) =>
+          s.members.some(
+            (m) => m.id === preview.sourceId || m.path === preview.sourcePath,
+          ),
+        );
+        const sectionHidden = !!(
+          parentSection && sectionCollapsed(parentSection)
+        );
         const previewWindow = previewWindows[preview.relativePath] ?? {
           x: previewX,
           y: previewY + index * (520 + NEW_FILE_GAP),
@@ -3639,9 +3833,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         return {
           id: previewNodeId(preview.relativePath),
           type: 'preview',
-          className: newFileNodes.has(previewNodeId(preview.relativePath))
-            ? 'new-file-node'
-            : undefined,
+          selectable: !sectionHidden,
+          className: sectionHidden
+            ? 'section-member-hidden'
+            : newFileNodes.has(previewNodeId(preview.relativePath))
+              ? 'new-file-node'
+              : undefined,
           position: {
             x: previewWindow.x,
             y: previewWindow.y,
@@ -3655,6 +3852,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           zIndex: 3,
           data: {
             kind: 'preview',
+            sectionHidden,
+            statuses: statusSettings.value,
+            workflowDisabled:
+              workflowBusy ||
+              !workflowEditable ||
+              pathLocked(preview.relativePath) ||
+              pathLocked(preview.sourcePath ?? ''),
+            onWorkflow: (id) =>
+              void workflowChange({
+                relativePath: preview.relativePath,
+                objectId: preview.sourceId!,
+                expectedStatus: preview.workflowStatusId,
+                expectedOrder: preview.workflowOrder,
+                statusId: id,
+              }).catch(showError),
+            onManageWorkflow: () => setStatusManagerOpen(true),
             locked: pathLocked(preview.relativePath),
             preview,
             windowState: previewWindow,
@@ -3719,14 +3932,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           // React Flow temporarily hides nodes without measured dimensions.
           // Dropping this on a save/heartbeat blurs the still-mounted editor.
           measured: old?.measured,
-          selected: createdDrawingSelection.current
-            ? node.id === `drawing:${createdDrawingSelection.current}`
-            : node.data.kind === 'drawing' &&
-                ['drawing-object', 'drawing-inspector'].includes(
-                  preview?.id ?? '',
-                )
-              ? true
-              : (old?.selected ?? false),
+          selected: node.className?.includes('section-member-hidden')
+            ? false
+            : createdDrawingSelection.current
+              ? node.id === `drawing:${createdDrawingSelection.current}`
+              : node.data.kind === 'drawing' &&
+                  ['drawing-object', 'drawing-inspector'].includes(
+                    preview?.id ?? '',
+                  )
+                ? true
+                : (old?.selected ?? false),
           ...(old?.dragging && !geometryLocked
             ? { position: old.position, dragging: true }
             : pending
@@ -3756,6 +3971,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         : next;
     });
   }, [
+    statusSettings,
+    workflowBusy,
+    workflowEditable,
+    setWorkflow,
+    workflowChange,
+    sectionViews,
+    temporarySections,
     geometryEpoch,
     drawing.items,
     submitDrawing,
@@ -4636,7 +4858,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             x: sectionNode.position.x,
             y: sectionNode.position.y,
             width: sectionNode.measured?.width ?? section.width,
-            height: sectionNode.measured?.height ?? section.height,
+            height: sectionCollapsed(section)
+              ? section.height
+              : (sectionNode.measured?.height ?? section.height),
             moveMembers: true,
           });
         }
@@ -4980,6 +5204,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     setPreviewContextMenu(null);
   };
   const jumpTo = (id: string) => {
+    const section = sections.find((s) => s.members.some((m) => m.id === id));
+    if (section && sectionViews[section.id])
+      setTemporarySections((v) => [...new Set([...v, section.id])]);
     const itemCanvas =
       documents.find((item) => item.id === id)?.canvasId ??
       sections.find((item) => sectionNodeId(item.id) === id)?.canvasId ??
@@ -5017,7 +5244,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (firstCanvasView.current !== activeCanvas || !nodes.length) return;
     firstCanvasView.current = null;
     requestAnimationFrame(() => {
-      void flowRef.current?.fitView({ padding: 0.16, maxZoom: 1, duration: 0 });
+      void flowRef.current?.fitView({
+        nodes: flowRef.current
+          ?.getNodes()
+          .filter((n) => !n.className?.includes('section-member-hidden')),
+        padding: 0.16,
+        maxZoom: 1,
+        duration: 0,
+      });
     });
   }, [activeCanvas, nodes]);
   useEffect(() => {
@@ -5130,9 +5364,32 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           ? node.data.document.collapsed
           : node.data.kind === 'preview'
             ? node.data.windowState.collapsed
-            : false,
+            : node.data.kind === 'section'
+              ? node.data.collapsed
+              : false,
       );
       for (const node of selected) {
+        if (node.data.kind === 'section') {
+          if (
+            blockAiFiles([
+              node.data.section.relativePath,
+              ...node.data.section.members.map((m) => m.path),
+            ])
+          )
+            return;
+          updateSectionViews({
+            ...sectionViews,
+            ...Object.fromEntries(
+              selected
+                .filter((n) => n.data.kind === 'section')
+                .map((n) => [
+                  n.data.kind === 'section' ? n.data.section.id : '',
+                  !expand,
+                ]),
+            ),
+          });
+          setTemporarySections([]);
+        }
         if (node.data.kind === 'document')
           await window.gameCanvas.setDocumentCollapsed({
             relativePath: node.data.document.relativePath,
@@ -5276,7 +5533,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         if (action === 'delete') requestDelete();
         if (action === 'minimize') void minimizeSelection();
         if (action === 'fit')
-          void flowRef.current?.fitView({ padding: 0.16, duration: 250 });
+          void flowRef.current?.fitView({
+            nodes: flowRef.current
+              ?.getNodes()
+              .filter((n) => !n.className?.includes('section-member-hidden')),
+            padding: 0.16,
+            duration: 250,
+          });
         if (action === 'selection-fit')
           void flowRef.current?.fitView({
             nodes: nodes
@@ -5761,7 +6024,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       title: '캔버스 전체 보기',
       shortcut: 'Shift+1',
       run: () =>
-        void flowRef.current?.fitView({ padding: 0.16, duration: 250 }),
+        void flowRef.current?.fitView({
+          nodes: flowRef.current
+            ?.getNodes()
+            .filter((n) => !n.className?.includes('section-member-hidden')),
+          padding: 0.16,
+          duration: 250,
+        }),
     },
     {
       id: 'navigator',
@@ -6082,6 +6351,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setMoveCanvasTarget('combat');
       setCanvasOperationBusy(state === 'busy');
     }
+    if (id === 'status-manager') setStatusManagerOpen(true);
+    if (id === 'kanban' && state === 'disabled') setSettingsOpen(true);
+    if (id === 'kanban')
+      updateKanbanPreferences({
+        ...defaultKanban,
+        enabled: state !== 'disabled',
+        minimized: state === 'minimized',
+      });
+    if (id === 'section-collapse')
+      updateSectionViews({ [section.id]: state === 'collapsed' });
     if (id === 'section-create') setSectionDialogOpen(true);
     if (id === 'section-rename')
       setSectionRename({ section, title: section.title });
@@ -6228,6 +6507,86 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           close={() => setCompareFirst(null)}
         />
       )}
+      {!home && kanbanPreferences.enabled && (
+        <KanbanPanel
+          documents={[
+            ...documents
+              .filter((d) => d.type !== 'ai-task')
+              .map((d) => ({
+                id: d.id,
+                title: d.title,
+                kind: TYPE_LABELS[d.type],
+                canvasId: d.canvasId,
+                canvasName:
+                  canvasSheets.canvases.find(
+                    (c) => c.id === canvasId(d.canvasId),
+                  )?.name ?? '',
+                sectionName: sections.find((s) =>
+                  s.members.some((m) => m.id === d.id),
+                )?.title,
+                workflowStatusId: d.workflowStatusId,
+                workflowOrder: d.workflowOrder,
+                locked: pathLocked(d.relativePath),
+              })),
+            ...previews.map((p) => ({
+              id: previewNodeId(p.relativePath),
+              title: p.title ?? previewLabel(p.relativePath),
+              kind: 'HTML 실행',
+              canvasId: p.canvasId,
+              canvasName:
+                canvasSheets.canvases.find((c) => c.id === canvasId(p.canvasId))
+                  ?.name ?? '',
+              workflowStatusId: p.workflowStatusId,
+              workflowOrder: p.workflowOrder,
+              locked:
+                pathLocked(p.relativePath) || pathLocked(p.sourcePath ?? ''),
+            })),
+          ]}
+          statuses={statusSettings.value}
+          activeCanvas={activeCanvas}
+          preferences={kanbanPreferences}
+          update={updateKanbanPreferences}
+          editable={workflowEditable}
+          busy={workflowBusy}
+          open={jumpTo}
+          manage={() => setStatusManagerOpen(true)}
+          move={async (item: KanbanDocument, statusId, beforeId, afterId) => {
+            const doc = documents.find((d) => d.id === item.id),
+              p = previews.find(
+                (p) => previewNodeId(p.relativePath) === item.id,
+              );
+            const resolveId = (id?: string) => {
+              const preview = previews.find(
+                (p) => previewNodeId(p.relativePath) === id,
+              );
+              return preview?.sourceId ?? id;
+            };
+            await workflowChange({
+              relativePath: doc?.relativePath ?? p!.relativePath,
+              objectId: doc?.id ?? p!.sourceId!,
+              expectedStatus: item.workflowStatusId,
+              expectedOrder: item.workflowOrder,
+              workflowRevision: doc?.workflowRevision,
+              structureRevision: doc?.structureRevision,
+              statusId,
+              beforeId: resolveId(beforeId),
+              afterId: resolveId(afterId),
+            });
+          }}
+        />
+      )}
+      {statusManagerOpen && (
+        <DocumentStatusManager
+          value={statusSettings.value}
+          raw={statusSettings.raw}
+          documents={[...documents, ...previews]}
+          close={() => setStatusManagerOpen(false)}
+          save={async (input) => {
+            await window.gameCanvas.saveDocumentStatuses(input);
+            await loadProject(false);
+          }}
+        />
+      )}
       {settingsOpen && (
         <aside
           className="canvas-settings floating-surface"
@@ -6243,6 +6602,33 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               <X size={16} />
             </button>
           </header>
+          <label className="workflow-replacement">
+            <input
+              type="checkbox"
+              checked={kanbanPreferences.enabled}
+              onChange={(e) =>
+                updateKanbanPreferences({
+                  ...kanbanPreferences,
+                  enabled: e.target.checked,
+                })
+              }
+            />
+            기본 기능 · 칸반 보드
+          </label>
+          <button
+            disabled={!workflowEditable || workflowBusy}
+            onClick={() => {
+              setSettingsOpen(false);
+              setStatusManagerOpen(true);
+            }}
+          >
+            문서 상태 관리
+          </button>
+          {statusError && (
+            <p className="workflow-error" role="alert">
+              {statusError}
+            </p>
+          )}
           <button
             onClick={() => {
               setSettingsOpen(false);
@@ -6540,6 +6926,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               <Home size={16} />
             </button>
             <span className="toolbar-divider" />
+            {kanbanPreferences.enabled && (
+              <button
+                className="kanban-toolbar-button"
+                title="칸반 보드 펼치기"
+                onClick={() =>
+                  updateKanbanPreferences({
+                    ...kanbanPreferences,
+                    minimized: false,
+                  })
+                }
+              >
+                칸반
+              </button>
+            )}
             <button
               className="icon-button"
               title="문서 목록 (L)"
@@ -7099,7 +7499,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         <button
           title="캔버스 전체 보기 (Shift+1)"
           onClick={() =>
-            void flowRef.current?.fitView({ padding: 0.16, duration: 250 })
+            void flowRef.current?.fitView({
+              nodes: flowRef.current
+                ?.getNodes()
+                .filter((n) => !n.className?.includes('section-member-hidden')),
+              padding: 0.16,
+              duration: 250,
+            })
           }
         >
           {Math.round(viewZoom * 100)}%
@@ -8270,6 +8676,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           <div className="context-menu-title">
             {sectionContextMenu.section.title}
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void toggleSection(sectionContextMenu.section);
+              setSectionContextMenu(null);
+            }}
+          >
+            {sectionCollapsed(sectionContextMenu.section)
+              ? '섹션 펼치기'
+              : '섹션 최소화'}
+          </button>
           <button
             type="button"
             role="menuitem"

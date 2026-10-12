@@ -1,3 +1,5 @@
+import { defaultStatuses, validateStatuses } from './document-statuses';
+let statusesRaw: string | null = null;
 import {
   CANVAS_SHEETS_PATH,
   readCanvasSheets,
@@ -429,6 +431,51 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     });
   };
   const api: GameCanvasApi = {
+    getDocumentStatuses: async () => ({
+      value: statusesRaw
+        ? validateStatuses(JSON.parse(statusesRaw))
+        : defaultStatuses(),
+      raw: statusesRaw,
+    }),
+    saveDocumentStatuses: async (input) => {
+      if (input.expected !== statusesRaw)
+        throw Error('상태 설정이 변경되었습니다.');
+      const value = validateStatuses(input.value);
+      for (const d of documents)
+        if (
+          d.type !== 'ai-task' &&
+          !value.statuses.some(
+            (s) => s.id === (d.workflowStatusId ?? 'not-started'),
+          )
+        ) {
+          const target =
+            input.replacements?.[d.workflowStatusId ?? 'not-started'];
+          if (!value.statuses.some((s) => s.id === target))
+            throw Error('대체 상태를 지정해주세요.');
+          d.workflowStatusId = target;
+        }
+      statusesRaw = JSON.stringify(value, null, 2);
+      notify();
+    },
+    setDocumentWorkflow: async (input) => {
+      const d = documents.find((d) => d.relativePath === input.relativePath);
+      if (
+        !d ||
+        d.id !== input.objectId ||
+        d.workflowStatusId !== input.expectedStatus ||
+        d.workflowOrder !== input.expectedOrder
+      )
+        throw Error('문서 상태가 변경되었습니다.');
+      const value = statusesRaw
+        ? validateStatuses(JSON.parse(statusesRaw))
+        : defaultStatuses();
+      if (!value.statuses.some((s) => s.id === input.statusId))
+        throw Error('상태를 찾을 수 없습니다.');
+      d.workflowStatusId = input.statusId;
+      d.workflowOrder = Date.now();
+      statusesRaw ??= JSON.stringify(value, null, 2);
+      notify();
+    },
     getCanvasChanges: async () => null,
     getDocument: async (relative) =>
       structuredClone(

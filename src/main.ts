@@ -6,6 +6,8 @@ import {
 } from './drawing-model.ts';
 import type { DrawingCommand } from './drawing-types.ts';
 import { installUiDebugShortcut } from './ui-debug-shortcut';
+import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses';
+import { initializeWorkflows } from './document-workflow';
 import { CanvasView } from './canvas-view.ts';
 import { writeClientCache, readClientCache } from './client-cache.ts';
 import { EditorDraftStore } from './editor-drafts.ts';
@@ -1091,6 +1093,15 @@ const parseDocument = async (absolutePath: string): Promise<CanvasDocument> => {
         ? data.type
         : 'idea',
     status: typeof data.status === 'string' ? data.status : 'draft',
+    workflowStatusId:
+      typeof data.workflow_status_id === 'string'
+        ? data.workflow_status_id
+        : undefined,
+    workflowOrder:
+      typeof data.workflow_order === 'number' &&
+      Number.isFinite(data.workflow_order)
+        ? data.workflow_order
+        : undefined,
     relativePath,
     body: parsed.content.trim(),
     x: number('x', 120),
@@ -1260,7 +1271,11 @@ const startWatcher = async () => {
       const relative = path
         .relative(workspaceRoot!, target)
         .replaceAll('\\', '/');
-      if (relative === '.canvas' || relative === CANVAS_SHEETS_PATH)
+      if (
+        relative === '.canvas' ||
+        relative === CANVAS_SHEETS_PATH ||
+        relative === DOCUMENT_STATUSES_PATH
+      )
         return false;
       if (relative === DRAWING_DIRECTORY || isDrawingPath(relative))
         return false;
@@ -1770,13 +1785,24 @@ const startCodexRun = async (
             outputs.map((relative) => [relative, staged[relative]]),
           );
           const taskData = matter(baseline[input.taskPath]).data;
-          const changes = collaboration?.lease
+          let changes = collaboration?.lease
             ? artifacts
             : layoutNewDocuments(current, artifacts, {
                 x: Number.isFinite(taskData.x) ? taskData.x : 120,
                 y: Number.isFinite(taskData.y) ? taskData.y : 120,
                 canvasId: canvasId(taskData.canvas_id),
               });
+          const initializedOutputs = initializeWorkflows(
+            current,
+            { ...current, ...changes },
+            true,
+          );
+          changes = Object.fromEntries(
+            Object.keys(changes).map((path) => [
+              path,
+              initializedOutputs[path],
+            ]),
+          );
           validateArtifacts(current, { ...current, ...changes }, outputs);
           const previous = Object.fromEntries(
             outputs
@@ -2048,6 +2074,8 @@ const startCodexRun = async (
 };
 
 const mutationLabels: Record<string, string> = {
+  'documents:set-workflow': '문서 진행 상태 변경',
+  'document-statuses:save': '문서 상태 설정 변경',
   'drawings:apply': '도형 · 그림 편집',
   'canvas:batch': '선택 항목 함께 편집',
   'canvases:change': '캔버스 구성 변경',
@@ -2113,6 +2141,10 @@ const handle = (
     const dispatch = async () => {
       if (collaboration) {
         const client = collaboration;
+        if (channel === 'document-statuses:get') {
+          const raw = client.files[DOCUMENT_STATUSES_PATH] ?? null;
+          return { value: readStatuses(raw), raw };
+        }
         if (channel === 'files:authorship') {
           const relative = collaborationPath(args[0]);
           if (client.files[relative] === undefined)
@@ -2168,6 +2200,7 @@ const handle = (
                 ...doc,
                 revision: client.revisions[relative],
                 contentRevision: client.properties[relative]?.content ?? 0,
+                workflowRevision: client.properties[relative]?.workflow ?? 0,
                 structureRevision: client.properties[relative]?.structure ?? 0,
                 assetVersion: doc.asset
                   ? client.revisions[doc.asset.path]
@@ -2226,6 +2259,7 @@ const handle = (
                   personalCollapsed.get(relative) ?? document.collapsed,
                 revision: client.revisions[relative],
                 contentRevision: client.properties[relative]?.content ?? 0,
+                workflowRevision: client.properties[relative]?.workflow ?? 0,
                 structureRevision: client.properties[relative]?.structure ?? 0,
               }
             : null;
@@ -2448,7 +2482,17 @@ const handle = (
         const before = label ? await capture() : null;
         const result = await listener(event, ...args);
         if (before) {
-          const after = await capture();
+          let after = await capture();
+          const initialized = initializeWorkflows(before, after);
+          const workflowUpdates = Object.fromEntries(
+            Object.entries(initialized).filter(
+              ([path, raw]) => raw !== after[path],
+            ),
+          );
+          if (Object.keys(workflowUpdates).length) {
+            await applyChanges(root, after, workflowUpdates);
+            after = initialized;
+          }
           if (
             Object.keys({ ...before, ...after }).some(
               (relative) => before[relative] !== after[relative],
@@ -2530,6 +2574,28 @@ const registerIpc = () => {
       return draftStore.set(key, draft, sequence);
     },
   );
+  handle('document-statuses:get', async () => {
+    const raw = await fs
+      .readFile(
+        await projectPath(requireWorkspace(), DOCUMENT_STATUSES_PATH),
+        'utf8',
+      )
+      .catch((error) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+    return { value: readStatuses(raw), raw };
+  });
+  for (const channel of ['documents:set-workflow', 'document-statuses:save'])
+    handle(channel, async (_event, input) => {
+      const root = requireWorkspace(),
+        before = await captureProject(root);
+      const after = reduceCollaboration(before, channel, input).files;
+      const changes = Object.fromEntries(
+        Object.entries(after).filter(([path, raw]) => raw !== before[path]),
+      );
+      await applyChanges(root, before, changes);
+    });
   handle('canvas:changes', () => null);
   const readQueuedDocument = handle(
     'documents:get',
