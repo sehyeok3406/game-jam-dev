@@ -20,8 +20,21 @@ const game = path.join(root, 'game'),
 await fs.mkdir(game, { recursive: true });
 await fs.mkdir(path.join(game, '.git'));
 await fs.writeFile(path.join(game, '.git', 'all.bin'), 'unknown files');
-await fs.writeFile(path.join(game, 'project.md'), '# 휴지통 패키지 검증');
+await fs.writeFile(
+  path.join(game, 'project.md'),
+  '---\nid: project\ntitle: project\ntype: reference\nx: 1040\ny: 80\nwidth: 340\nheight: 300\n---\n# 일반 Markdown 상태 검증',
+);
 await fs.mkdir(path.join(game, '.canvas'));
+await fs.writeFile(
+  path.join(game, '.canvas', 'canvases.json'),
+  JSON.stringify({
+    version: 1,
+    canvases: [
+      { id: 'default', name: '기본 캔버스' },
+      { id: 'second', name: '두 번째 캔버스' },
+    ],
+  }),
+);
 await fs.writeFile(
   path.join(game, '.canvas', 'project.json'),
   JSON.stringify({ name: '상태 칸반 패키지 검증' }),
@@ -137,37 +150,169 @@ try {
     );
   };
 
+  const rect = (selector) =>
+    js(
+      `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing control');const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})()`,
+    );
+  const mouse = (type, x, y, buttons = 0) =>
+    send('Input.dispatchMouseEvent', {
+      type,
+      x,
+      y,
+      button: type === 'mouseMoved' ? 'none' : 'left',
+      buttons,
+      clickCount: type === 'mouseMoved' ? 0 : 1,
+    });
+  const click = async (selector) => {
+    const r = await rect(selector),
+      x = r.x + r.width / 2,
+      y = r.y + r.height / 2;
+    await mouse('mousePressed', x, y, 1);
+    await mouse('mouseReleased', x, y);
+    await sleep(100);
+  };
+  const drag = async (selector, dx, dy, corner = false) => {
+    const r = await rect(selector),
+      x = corner ? r.x + r.width - 3 : r.x + r.width / 2,
+      y = corner ? r.y + r.height - 3 : r.y + r.height / 2;
+    await mouse('mousePressed', x, y, 1);
+    for (let step = 1; step <= 8; step++) {
+      await mouse('mouseMoved', x + (dx * step) / 8, y + (dy * step) / 8, 1);
+      await sleep(30);
+    }
+    await mouse('mouseReleased', x + dx, y + dy);
+    await sleep(250);
+  };
+  const prefs = () =>
+    js(
+      `JSON.parse(localStorage.getItem(${JSON.stringify('builtin.kanban.canvas:' + game)}))?.canvases.default`,
+    );
   await wait('!!document.querySelector(".home-project-open")');
   assert.equal(
     await js('window.gameCanvas.getUpdateState().then(s=>s.currentVersion)'),
-    '0.16.0',
+    JSON.parse(await fs.readFile('package.json', 'utf8')).version,
   );
   await js('document.querySelector(".home-project-open").click()');
-  await wait('document.querySelectorAll(".workflow-badge").length === 3');
-  await wait('!!document.querySelector(".kanban-panel--minimized")');
+  await wait(
+    'document.querySelectorAll(".document-header-actions .workflow-badge").length === 3',
+  );
+  await sleep(500); // Initial canvas fit animates after node measurement.
+  await js(
+    '[...document.querySelectorAll(".bottom-toolbar button")].find(b=>b.title==="선택 도구 (V)").click()',
+  );
+  assert.equal(
+    await js('!!document.querySelector(".kanban-canvas-node")'),
+    false,
+  );
   assert.equal(
     await js(
       'document.querySelector(".document-header-actions .workflow-badge").nextElementSibling.title',
     ),
     '메모 최소화',
   );
-  await js(
-    '(()=>{const s=document.querySelector("[data-id=a] .workflow-badge");s.value="in-progress";s.dispatchEvent(new Event("change",{bubbles:true}));})()',
+  // Real mouse input proves that the dropdown actually opens; a synthetic change event did not prove this.
+  await screenshot('workflow-before-badge.png');
+  await click('[data-id="a"] .workflow-badge');
+  await screenshot('workflow-after-badge.png');
+  await wait('!!document.querySelector(".workflow-status-menu:popover-open")');
+  await click(
+    '.workflow-status-menu:popover-open [role="option"]:nth-child(2)',
   );
   await wait(
     '(async()=> (await window.gameCanvas.listDocuments()).find(d=>d.id==="a").workflowStatusId === "in-progress")()',
   );
-  await js(
-    '[...document.querySelectorAll("button")].find(b=>b.title==="칸반 보드 펼치기").click()',
+  await click('[data-plugin-launcher]');
+  await wait(
+    `!!document.querySelector('.plugin-control-panel[aria-label="플러그인 관리"]')`,
   );
+  const dock = await rect('.bottom-toolbar'),
+    firstPanel = await rect('.plugin-control-panel');
+  assert.ok(
+    firstPanel.y + firstPanel.height < dock.y,
+    'Panel starts above toolbar',
+  );
+  await drag('.plugin-control-header', -90, -60);
+  await drag('.plugin-panel-resize', 80, 40);
+  const panelBox = await rect('.plugin-control-panel');
+  assert.ok(panelBox.x < firstPanel.x - 60, 'Panel is movable');
+  assert.ok(panelBox.width > firstPanel.width + 40, 'Panel is resizable');
+  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await wait('!!document.querySelector(".kanban-controls")');
+  assert.deepEqual(
+    await rect('.plugin-control-panel'),
+    panelBox,
+    'Opening controls preserves geometry',
+  );
+  await click('[aria-label="플러그인 관리로 뒤로가기"]');
+  await wait('!!document.querySelector(".builtin-feature-row")');
+  assert.deepEqual(
+    await rect('.plugin-control-panel'),
+    panelBox,
+    'Back preserves geometry',
+  );
+  await click('.plugin-control-panel [aria-label="칸반 보드 활성화"]');
   await wait('document.querySelectorAll(".kanban-column").length === 3');
   await wait(
     '[...document.querySelectorAll(".kanban-column")].find(c=>c.querySelector("h3").textContent.includes("진행 중")).textContent.includes("개발 문서 A")',
   );
+  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await click('[aria-label="플러그인 패널 닫기"]');
+  assert.equal(
+    await js('!!document.querySelector(".kanban-canvas-node")'),
+    true,
+    'Close only closes controls',
+  );
+  await sleep(300);
+  const worldBefore = await prefs();
+  // Header movement is a canvas-space move, not a fixed overlay move.
+  await drag('.kanban-drag-handle strong', -60, -60);
+  await wait(
+    `JSON.parse(localStorage.getItem(${JSON.stringify('builtin.kanban.canvas:' + game)})).canvases.default.x !== ${worldBefore.x}`,
+  );
+  const worldMoved = await prefs();
+  assert.ok(worldMoved.x < worldBefore.x - 40);
+  assert.ok(worldMoved.y < worldBefore.y - 40);
+  await click('.kanban-drag-handle strong');
+  await wait(
+    '!!document.querySelector(".react-flow__node-kanban.selected .react-flow__resize-control.bottom.right")',
+  );
+  await drag(
+    '.react-flow__node-kanban.selected .react-flow__resize-control.bottom.right',
+    60,
+    40,
+  );
+  const worldResized = await prefs();
+  assert.ok(
+    worldResized.width > worldBefore.width + 30,
+    'Canvas board resizes',
+  );
+  // Canvas zoom scales the board, while plugin controls retain screen-space dimensions.
+  await click('[data-plugin-launcher]');
+  const stablePanel = await rect('.plugin-control-panel');
+  const beforeZoom = await rect('.kanban-canvas-node');
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: 80,
+    y: 440,
+    deltaX: 0,
+    deltaY: 180,
+    modifiers: 2,
+  });
+  await sleep(400);
+  assert.ok(
+    (await rect('.kanban-canvas-node')).width < beforeZoom.width - 20,
+    'Canvas zoom scales the board',
+  );
+  assert.deepEqual(await rect('.plugin-control-panel'), stablePanel);
+  await screenshot('workflow-plugin-management.png');
+  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await screenshot('workflow-plugin-kanban-controls.png');
   await js('document.documentElement.dataset.theme="dark"');
+  await click('[aria-label="플러그인 패널 닫기"]');
   await screenshot('workflow-kanban-dark.png');
+  await click('.kanban-node-actions [aria-label="칸반 컨트롤 열기"]');
   await js(
-    '[...document.querySelectorAll(".kanban-header button")].find(b=>b.textContent==="상태 관리").click()',
+    '[...document.querySelectorAll(".kanban-controls button")].find(b=>b.textContent.includes("열 배경 관리")).click()',
   );
   await wait('!!document.querySelector(".workflow-manager")');
   await js(
@@ -185,33 +330,25 @@ try {
   assert.equal(settings.value.statuses.length, 4);
   assert.equal(settings.value.statuses[1].badgeColor, '#A855F7');
   assert.equal(settings.value.statuses[1].boardBackground.mode, 'none');
-  await js(
-    '[...document.querySelectorAll(".kanban-header button")].find(b=>b.textContent==="비활성화").click()',
-  );
-  await wait('!document.querySelector(".kanban-panel")');
+  await click('[aria-label="칸반 보드 최소화"]');
+  await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
+  const minimized = await prefs();
   assert.equal(
-    await js('document.querySelectorAll(".workflow-badge").length'),
-    3,
+    minimized.height,
+    worldResized.height,
+    'Minimize preserves expanded size',
   );
-  await js(
-    '[...document.querySelectorAll("button")].find(b=>b.title==="설정 및 도구")?.click()',
+  await click('[aria-label="플러그인 관리로 뒤로가기"]');
+  await click('.plugin-control-panel [aria-label="칸반 보드 활성화"]');
+  await wait('!document.querySelector(".kanban-canvas-node")');
+  await click('.plugin-control-panel [aria-label="칸반 보드 활성화"]');
+  await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
+  assert.deepEqual(
+    await prefs(),
+    minimized,
+    'Reactivation restores canvas geometry and minimized state',
   );
-  if (!(await js('!!document.querySelector(".canvas-settings")')))
-    await js(
-      '[...document.querySelectorAll("button")].find(b=>b.title.includes("설정") && b.title.includes("도구")).click()',
-    );
-  await wait('!!document.querySelector(".canvas-settings")');
-  await js(
-    'document.querySelector(".canvas-settings input[type=checkbox]").click()',
-  );
-  await wait('!!document.querySelector(".kanban-panel")');
-  await js(
-    '[...document.querySelectorAll("button")].find(b=>b.title==="설정 닫기").click()',
-  );
-  await js(
-    '[...document.querySelectorAll(".kanban-header button")].find(b=>b.textContent==="최소화").click()',
-  );
-  await wait('!!document.querySelector(".kanban-panel--minimized")');
+  await click('[aria-label="플러그인 패널 닫기"]');
   const beforeSection = await js(
     'window.gameCanvas.listSections().then(s=>s[0])',
   );
@@ -270,10 +407,25 @@ try {
   );
   await send('Page.reload');
   await wait(
-    '!!document.querySelector(".home-project-open") || document.querySelectorAll(".workflow-badge").length === 3',
+    '!!document.querySelector(".home-project-open") || document.querySelectorAll(".document-header-actions .workflow-badge").length === 3',
   );
   await js('document.querySelector(".home-project-open")?.click()');
-  await wait('document.querySelectorAll(".workflow-badge").length === 3');
+  await wait(
+    'document.querySelectorAll(".document-header-actions .workflow-badge").length === 3',
+  );
+  await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
+  assert.deepEqual(
+    await prefs(),
+    minimized,
+    'Reload restores canvas board preferences',
+  );
+  await click('[data-plugin-launcher]');
+  assert.deepEqual(
+    await rect('.plugin-control-panel'),
+    stablePanel,
+    'Reload restores plugin panel geometry',
+  );
+  await click('[aria-label="플러그인 패널 닫기"]');
   await wait(
     'document.querySelectorAll(".section-member-hidden").length === 2',
   );
@@ -296,12 +448,93 @@ try {
     'document.querySelectorAll(".section-member-hidden").length === 0',
   );
   await js(
-    '[...document.querySelectorAll("button")].find(b=>b.title==="칸반 보드 펼치기").click()',
+    '[...document.querySelectorAll("button")].find(b=>b.title==="칸반 펼치기").click()',
   );
   await js('document.documentElement.dataset.theme="light"');
   await screenshot('workflow-kanban-light.png');
+  // A plain Markdown document uses the same physical status selection.
+  await js(
+    '[...document.querySelectorAll(".kanban-card-title")].find(b=>b.textContent==="project").click()',
+  );
+  await sleep(400);
+  const projectDoc = await js(
+    'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.relativePath==="project.md"))',
+  );
+  await click(`[data-id="${projectDoc.id}"] .workflow-badge`);
+  await wait('!!document.querySelector(".workflow-status-menu:popover-open")');
+  await click(
+    '.workflow-status-menu:popover-open [role="option"]:nth-child(3)',
+  );
+  await wait(
+    'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.relativePath==="project.md").workflowStatusId==="done")',
+  );
+  const firstSaved = await prefs();
+  await click('.canvas-tabs__item:nth-child(2) [role="tab"]');
+  await wait(
+    'document.querySelectorAll(".document-header-actions .workflow-badge").length===0',
+  );
+  assert.equal(
+    await js('!!document.querySelector(".kanban-canvas-node")'),
+    false,
+    'Boards are isolated per canvas',
+  );
+  await click('[data-plugin-launcher]');
+  await click('.plugin-control-panel [aria-label="칸반 보드 활성화"]');
+  await wait('!!document.querySelector(".kanban-empty")');
+  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await js(
+    '(()=>{const s=document.querySelector(".kanban-controls select");s.value="project";s.dispatchEvent(new Event("change",{bubbles:true}));})()',
+  );
+  await wait('document.querySelectorAll(".kanban-card").length===3');
+  await click('[aria-label="플러그인 관리로 뒤로가기"]');
+  await click('.canvas-tabs__item:first-child [role="tab"]');
+  await wait(
+    'document.querySelectorAll(".document-header-actions .workflow-badge").length===3',
+  );
+  assert.deepEqual(
+    await prefs(),
+    firstSaved,
+    'Changing another canvas does not alter first board',
+  );
+  await click('[aria-label="플러그인 패널 닫기"]');
+  // Load a legacy HTML without a management record; status selection must create/update its anchor.
+  await fs.mkdir(path.join(game, 'output'), { recursive: true });
+  await fs.writeFile(
+    path.join(game, 'output', 'index.html'),
+    '<!doctype html><html><head><title>상태 검증</title></head><body>HTML 상태 검증</body></html>',
+  );
+  await wait(
+    '!!document.querySelector(".react-flow__node-preview .workflow-badge")',
+  );
+  await sleep(500);
+  await click('.react-flow__node-preview .workflow-badge');
+  await wait('!!document.querySelector(".workflow-status-menu:popover-open")');
+  await click(
+    '.workflow-status-menu:popover-open [role="option"]:nth-child(2)',
+  );
+  await wait(
+    'window.gameCanvas.listPreviews().then(ps=>ps[0].workflowStatusId==="in-progress")',
+  );
+  await screenshot('workflow-html-status.png');
+  await js(
+    `localStorage.removeItem(${JSON.stringify('builtin.kanban.canvas:' + game)});localStorage.setItem(${JSON.stringify('builtin.kanban:' + game)},JSON.stringify({enabled:true,minimized:true,scope:'project',x:80,y:100,width:800,height:400}));`,
+  );
+  await send('Page.reload');
+  await wait(
+    '!!document.querySelector(".home-project-open") || !!document.querySelector(".react-flow__node-preview")',
+  );
+  await js('document.querySelector(".home-project-open")?.click()');
+  await wait(
+    `JSON.parse(localStorage.getItem(${JSON.stringify('builtin.kanban.canvas:' + game)}))?.legacyMigrated===true`,
+  );
+  const migrated = await prefs();
+  assert.equal(migrated.scope, 'project');
+  assert.equal(migrated.minimized, true);
+  assert.equal(migrated.enabled, true);
+  assert.equal(migrated.placed, true);
+  await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
   console.log(
-    'PASS: packaged document badge, state edits, kanban linkage, activation/minimize, section geometry/movement and reload persistence',
+    'PASS: physical idea/Markdown/HTML dropdown, plugin management/back/close/move/resize, canvas board movement/resize/zoom, per-canvas scope, legacy migration, activation/minimize, state edits, section geometry and reload persistence',
   );
 } finally {
   ws?.close();

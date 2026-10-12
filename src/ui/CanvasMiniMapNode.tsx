@@ -6,7 +6,7 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
   const node = useNodesData(props.id);
   const data = node?.data as
     | {
-        kind?: 'document' | 'section' | 'preview' | 'drawing';
+        kind?: 'document' | 'section' | 'preview' | 'drawing' | 'kanban';
         object?: import('../drawing-types').DrawingObject;
         document?: CanvasDocument;
         sectionHidden?: boolean;

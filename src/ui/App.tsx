@@ -6,12 +6,26 @@ import {
   type WorkflowInput,
 } from '../document-statuses';
 import {
-  KanbanPanel,
-  type KanbanDocument,
-} from '../features/kanban/KanbanPanel';
+  KanbanNode,
+  type KanbanCanvasNode,
+} from '../features/kanban/KanbanCanvasNode';
+import type { KanbanDocument } from '../features/kanban/KanbanBoardContent';
+import { KanbanControls } from '../features/kanban/KanbanControls';
+import {
+  PluginControlPanel,
+  defaultPluginPanelGeometry,
+} from '../features/plugins/PluginControlPanel';
+import type { PluginPanelPage } from '../features/plugins/builtin-features';
+import { Puzzle } from 'lucide-react';
 import {
   usePersonalValue,
-  defaultKanban,
+  emptyKanbanLayouts,
+  defaultCanvasKanban,
+  readCanvasKanban,
+  migrateKanbanLayout,
+  blankBoardPosition,
+  type KanbanCanvasPreferences,
+  type KanbanLayouts,
 } from '../features/kanban/preferences';
 import '../features/kanban/kanban.css';
 import { ArrowRight } from 'lucide-react';
@@ -343,6 +357,7 @@ const CODEX_STATUS_LABELS: Record<CodexRunEvent['status'], string> = {
 type DocumentNodeData = {
   statuses: DocumentStatuses;
   workflowDisabled: boolean;
+  workflowReason?: string;
   onWorkflow: (id: string) => void;
   onManageWorkflow: () => void;
   sectionHidden?: boolean;
@@ -396,6 +411,7 @@ type PreviewNodeData = {
   sectionHidden?: boolean;
   statuses: DocumentStatuses;
   workflowDisabled: boolean;
+  workflowReason?: string;
   onWorkflow: (id: string) => void;
   onManageWorkflow: () => void;
   kind: 'preview';
@@ -431,7 +447,8 @@ type CanvasNode =
   | DocumentCanvasNode
   | PreviewCanvasNode
   | SectionCanvasNode
-  | DrawingCanvasNode;
+  | DrawingCanvasNode
+  | KanbanCanvasNode;
 
 function sameIds(left: string[], right: string[]) {
   return (
@@ -1026,6 +1043,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                 document={document}
                 statuses={data.statuses}
                 disabled={data.workflowDisabled}
+                reason={data.workflowReason}
                 change={data.onWorkflow}
                 manage={data.onManageWorkflow}
               />
@@ -1598,6 +1616,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
               document={data.preview}
               statuses={data.statuses}
               disabled={data.workflowDisabled}
+              reason={data.workflowReason}
               change={data.onWorkflow}
               manage={data.onManageWorkflow}
             />
@@ -1728,6 +1747,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
 }
 
 const nodeTypes: NodeTypes = {
+  kanban: KanbanNode,
   drawing: DrawingNode,
   document: DocumentCard,
   preview: PreviewCard,
@@ -1899,6 +1919,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     value: DocumentStatuses;
     raw: string | null;
   }>({ value: defaultStatuses(), raw: null });
+  const [loadedProjectRoot, setLoadedProjectRoot] = useState<string | null>(
+    null,
+  );
   const [statusError, setStatusError] = useState('');
   const [statusManagerOpen, setStatusManagerOpen] = useState(false);
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -1906,10 +1929,44 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const personalScope = collaboration.projectId
     ? `${collaboration.projectId}:${collaboration.memberId}`
     : (workspace.root ?? 'none');
-  const [kanbanPreferences, updateKanbanPreferences] = usePersonalValue(
-    `builtin.kanban:${personalScope}`,
-    defaultKanban,
+  const [kanbanLayouts, updateKanbanLayouts] = usePersonalValue<KanbanLayouts>(
+    `builtin.kanban.canvas:${personalScope}`,
+    emptyKanbanLayouts,
   );
+  const kanbanLayoutsRef = useRef(kanbanLayouts);
+  kanbanLayoutsRef.current = kanbanLayouts;
+  const kanbanPreferences = readCanvasKanban(
+    kanbanLayouts.canvases?.[activeCanvas] ?? defaultCanvasKanban,
+  );
+  const updateKanbanPreferences = (
+    value: KanbanCanvasPreferences,
+    canvas = activeCanvas,
+  ) => {
+    const current = kanbanLayoutsRef.current;
+    const next = {
+      ...current,
+      version: 2 as const,
+      canvases: { ...current.canvases, [canvas]: readCanvasKanban(value) },
+    };
+    kanbanLayoutsRef.current = next;
+    updateKanbanLayouts(next);
+  };
+  const [pluginPanelOpen, setPluginPanelOpen] = useState(false);
+  const [pluginPanelPage, setPluginPanelPage] =
+    useState<PluginPanelPage>('plugins');
+  const [pluginPanelGeometry, updatePluginPanelGeometry] = usePersonalValue(
+    `plugin-controls:${personalScope}`,
+    defaultPluginPanelGeometry,
+  );
+  const focusKanban = useRef(false);
+  useEffect(() => {
+    setPluginPanelOpen(false);
+    setPluginPanelPage('plugins');
+  }, [personalScope]);
+  const openKanbanControls = () => {
+    setPluginPanelPage('builtin.kanban');
+    setPluginPanelOpen(true);
+  };
   const [sectionViews, updateSectionViews] = usePersonalValue<
     Record<string, boolean>
   >(`section-view:${personalScope}`, {});
@@ -3037,6 +3094,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         );
         setStatusError('');
       }
+      setLoadedProjectRoot(state.root);
       setDocuments((current) => reconcile(current, canvasDocuments));
       setTaskDocuments((current) =>
         reconcile(
@@ -3617,6 +3675,138 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     (!collaboration.active ||
       (['admin', 'editor'].includes(collaboration.role ?? '') &&
         collaboration.documentStatusesVersion === 1));
+  const workflowReason = workflowBusy
+    ? '상태를 저장하고 있습니다. 잠시 후 다시 선택해주세요.'
+    : statusError ||
+      (collaboration.active &&
+      !['admin', 'editor'].includes(collaboration.role ?? '')
+        ? '보기 권한에서는 문서 상태를 변경할 수 없습니다.'
+        : collaboration.active && collaboration.documentStatusesVersion !== 1
+          ? '문서 상태를 변경하려면 협업 서버를 v0.16.0 이상으로 업데이트해주세요.'
+          : '');
+  useEffect(() => {
+    if (
+      home ||
+      loading ||
+      !workspace.root ||
+      !flowRef.current ||
+      kanbanLayoutsRef.current.legacyMigrated ||
+      loadedProjectRoot !== workspace.root
+    )
+      return;
+    const current = kanbanLayoutsRef.current;
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(`builtin.kanban:${personalScope}`);
+    } catch {
+      /* Personal storage may be unavailable. */
+    }
+    const migrated = migrateKanbanLayout(
+      raw,
+      (point) => flowRef.current!.screenToFlowPosition(point),
+      flowRef.current.getZoom(),
+    );
+    const next = {
+      ...current,
+      version: 2 as const,
+      legacyMigrated: true,
+      canvases: {
+        ...current.canvases,
+        ...(migrated && !current.canvases[activeCanvas]
+          ? { [activeCanvas]: migrated }
+          : {}),
+      },
+    };
+    kanbanLayoutsRef.current = next;
+    updateKanbanLayouts(next);
+  }, [
+    home,
+    loading,
+    personalScope,
+    activeCanvas,
+    workspace.root,
+    loadedProjectRoot,
+  ]);
+  const revealKanban = () => {
+    updateKanbanPreferences({ ...kanbanPreferences, minimized: false });
+    focusKanban.current = true;
+    setTool('select');
+  };
+  const toggleKanban = (enabled: boolean) => {
+    let p = { ...kanbanPreferences, enabled };
+    if (enabled && !p.placed && flowRef.current) {
+      const flow = flowRef.current,
+        origin = flow.screenToFlowPosition({
+          x: window.innerWidth / 2 - 280,
+          y: window.innerHeight / 2 - 160,
+        });
+      const scene = flow.getNodes(),
+        bounds = scene
+          .filter((n) => !n.className?.includes('section-member-hidden'))
+          .map((n) => {
+            const parent = scene.find((p) => p.id === n.parentId);
+            return {
+              x: n.position.x + (parent?.position.x ?? 0),
+              y: n.position.y + (parent?.position.y ?? 0),
+              width: Number(n.style?.width ?? n.measured?.width ?? 340),
+              height: Number(n.style?.height ?? n.measured?.height ?? 300),
+            };
+          });
+      p = {
+        ...p,
+        ...blankBoardPosition(origin, bounds, p.width, p.height),
+        placed: true,
+        minimized: false,
+      };
+    }
+    updateKanbanPreferences(p);
+    if (enabled) {
+      focusKanban.current = true;
+      setTool('select');
+    }
+  };
+  useEffect(() => {
+    if (!focusKanban.current) return;
+    const node = nodes.find((n) => n.data.kind === 'kanban');
+    if (!node) return;
+    focusKanban.current = false;
+    void flowRef.current?.fitView({
+      nodes: [{ id: node.id }],
+      padding: 0.24,
+      maxZoom: 1,
+      duration: 200,
+    });
+  }, [nodes]);
+  const kanbanDocuments: KanbanDocument[] = [
+    ...documents
+      .filter((d) => d.type !== 'ai-task')
+      .map((d) => ({
+        id: d.id,
+        title: d.title,
+        kind: TYPE_LABELS[d.type],
+        canvasId: d.canvasId,
+        canvasName:
+          canvasSheets.canvases.find((c) => c.id === canvasId(d.canvasId))
+            ?.name ?? '',
+        sectionName: sections.find((s) => s.members.some((m) => m.id === d.id))
+          ?.title,
+        workflowStatusId: d.workflowStatusId,
+        workflowOrder: d.workflowOrder,
+        locked: pathLocked(d.relativePath),
+      })),
+    ...previews.map((p) => ({
+      id: previewNodeId(p.relativePath),
+      title: p.title ?? previewLabel(p.relativePath),
+      kind: 'HTML 실행',
+      canvasId: p.canvasId,
+      canvasName:
+        canvasSheets.canvases.find((c) => c.id === canvasId(p.canvasId))
+          ?.name ?? '',
+      workflowStatusId: p.workflowStatusId,
+      workflowOrder: p.workflowOrder,
+      locked: pathLocked(p.relativePath) || pathLocked(p.sourcePath ?? ''),
+    })),
+  ];
   const workflowChange = useCallback(
     async (input: WorkflowInput) => {
       if (workflowPending.current)
@@ -3649,6 +3839,30 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     },
     [workflowChange],
   );
+  const moveKanbanCard = async (
+    item: KanbanDocument,
+    statusId: string,
+    beforeId?: string,
+    afterId?: string,
+  ) => {
+    const doc = documents.find((d) => d.id === item.id),
+      p = previews.find((p) => previewNodeId(p.relativePath) === item.id);
+    if (!doc && !p) throw Error('문서가 이동되거나 삭제되었습니다.');
+    const resolveId = (id?: string) =>
+      previews.find((p) => previewNodeId(p.relativePath) === id)?.sourceId ??
+      id;
+    await workflowChange({
+      relativePath: doc?.relativePath ?? p!.relativePath,
+      objectId: doc?.id ?? p!.sourceId!,
+      expectedStatus: item.workflowStatusId,
+      expectedOrder: item.workflowOrder,
+      workflowRevision: doc?.workflowRevision,
+      structureRevision: doc?.structureRevision,
+      statusId,
+      beforeId: resolveId(beforeId),
+      afterId: resolveId(afterId),
+    });
+  };
   const sectionCollapsed = (section: CanvasSection) =>
     !!sectionViews[section.id] &&
     !findOpen &&
@@ -3753,6 +3967,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               workflowBusy ||
               !workflowEditable ||
               pathLocked(document.relativePath),
+            workflowReason:
+              workflowReason ||
+              (pathLocked(document.relativePath)
+                ? 'AI 작업이 이 문서를 보호하고 있습니다.'
+                : undefined),
             onWorkflow: (id) => setWorkflow(document, id),
             onManageWorkflow: () => setStatusManagerOpen(true),
             layoutLocked,
@@ -3859,6 +4078,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               !workflowEditable ||
               pathLocked(preview.relativePath) ||
               pathLocked(preview.sourcePath ?? ''),
+            workflowReason:
+              workflowReason ||
+              (pathLocked(preview.relativePath) ||
+              pathLocked(preview.sourcePath ?? '')
+                ? 'AI 작업이 이 HTML을 보호하고 있습니다.'
+                : undefined),
             onWorkflow: (id) =>
               void workflowChange({
                 relativePath: preview.relativePath,
@@ -3915,7 +4140,46 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           },
         };
       });
+      const board: KanbanCanvasNode[] =
+        kanbanPreferences.enabled && kanbanPreferences.placed
+          ? [
+              {
+                id: `builtin.kanban:${activeCanvas}`,
+                type: 'kanban',
+                position: { x: kanbanPreferences.x, y: kanbanPreferences.y },
+                style: {
+                  width: kanbanPreferences.width,
+                  height: kanbanPreferences.minimized
+                    ? 44
+                    : kanbanPreferences.height,
+                },
+                zIndex: 2,
+                dragHandle: '.kanban-drag-handle',
+                draggable: true,
+                data: {
+                  kind: 'kanban',
+                  locked: false,
+                  canvasId: activeCanvas,
+                  activeCanvas,
+                  scope: kanbanPreferences.scope,
+                  preferences: kanbanPreferences,
+                  documents: kanbanDocuments,
+                  statuses: statusSettings.value,
+                  editable: workflowEditable,
+                  busy: workflowBusy,
+                  reason: workflowReason,
+                  controls: openKanbanControls,
+                  update: (value) =>
+                    updateKanbanPreferences(value, activeCanvas),
+                  move: moveKanbanCard,
+                  open: (id) => navigateCanvasItem.current?.(id),
+                  manage: () => setStatusManagerOpen(true),
+                },
+              },
+            ]
+          : [];
       const next = [
+        ...board,
         ...sectionNodes,
         ...drawingNodes,
         ...documentNodes,
@@ -3978,6 +4242,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     workflowChange,
     sectionViews,
     temporarySections,
+    kanbanLayouts,
+    pluginPanelOpen,
+    workflowReason,
+    canvasSheets,
     geometryEpoch,
     drawing.items,
     submitDrawing,
@@ -4776,7 +5044,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     requestAnimationFrame(() => setGeometryEpoch((epoch) => epoch + 1));
     try {
       await performPersistDraggedNodes(primary, dragged);
-      await loadProject(false);
+      if (moved.some((node) => node.data.kind !== 'kanban'))
+        await loadProject(false);
     } finally {
       for (const node of moved)
         if (pendingGeometry.current.get(node.id)?.sequence === sequence)
@@ -4788,7 +5057,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     primaryNode: CanvasNode,
     draggedNodes: CanvasNode[],
   ) => {
-    const movedNodes = draggedNodes.length > 0 ? draggedNodes : [primaryNode];
+    const allMovedNodes =
+      draggedNodes.length > 0 ? draggedNodes : [primaryNode];
+    for (const node of allMovedNodes)
+      if (node.data.kind === 'kanban')
+        node.data.update({
+          ...node.data.preferences,
+          x: node.position.x,
+          y: node.position.y,
+          placed: true,
+        });
+    const movedNodes = allMovedNodes.filter((n) => n.data.kind !== 'kanban');
+    if (!movedNodes.length) return;
     if (
       blockAiFiles(
         movedNodes.flatMap((node) =>
@@ -5366,9 +5646,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             ? node.data.windowState.collapsed
             : node.data.kind === 'section'
               ? node.data.collapsed
-              : false,
+              : node.data.kind === 'kanban'
+                ? node.data.preferences.minimized
+                : false,
       );
       for (const node of selected) {
+        if (node.data.kind === 'kanban')
+          node.data.update({ ...node.data.preferences, minimized: !expand });
         if (node.data.kind === 'section') {
           if (
             blockAiFiles([
@@ -5407,6 +5691,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     }
   };
   const requestDelete = () => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length && selected.every((n) => n.data.kind === 'kanban')) {
+      updateKanbanPreferences({ ...kanbanPreferences, enabled: false });
+      return;
+    }
     if (
       blockAiFiles([
         ...selectedDocuments.map((document) => document.relativePath),
@@ -5505,7 +5794,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       if (home || (findOpen && !!target?.closest('.canvas-find'))) return;
       const action = canvasShortcut(event, {
         editable: !!target?.closest(
-          'input, textarea, select, [contenteditable="true"], [data-editor-owner]',
+          'input, textarea, select, button, [role="listbox"], .plugin-control-panel, [contenteditable="true"], [data-editor-owner]',
         ),
         dialog,
         playing: document.activeElement?.tagName === 'IFRAME',
@@ -6352,13 +6641,24 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setCanvasOperationBusy(state === 'busy');
     }
     if (id === 'status-manager') setStatusManagerOpen(true);
-    if (id === 'kanban' && state === 'disabled') setSettingsOpen(true);
-    if (id === 'kanban')
+    if (id === 'plugin-controls') {
+      setPluginPanelOpen(true);
+      setPluginPanelPage(state === 'kanban' ? 'builtin.kanban' : 'plugins');
+    }
+    if (id === 'kanban') {
       updateKanbanPreferences({
-        ...defaultKanban,
+        ...defaultCanvasKanban,
         enabled: state !== 'disabled',
         minimized: state === 'minimized',
+        placed: true,
+        x: 80,
+        y: 80,
       });
+      if (state === 'disabled') {
+        setPluginPanelPage('builtin.kanban');
+        setPluginPanelOpen(true);
+      }
+    }
     if (id === 'section-collapse')
       updateSectionViews({ [section.id]: state === 'collapsed' });
     if (id === 'section-create') setSectionDialogOpen(true);
@@ -6507,73 +6807,30 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           close={() => setCompareFirst(null)}
         />
       )}
-      {!home && kanbanPreferences.enabled && (
-        <KanbanPanel
-          documents={[
-            ...documents
-              .filter((d) => d.type !== 'ai-task')
-              .map((d) => ({
-                id: d.id,
-                title: d.title,
-                kind: TYPE_LABELS[d.type],
-                canvasId: d.canvasId,
-                canvasName:
-                  canvasSheets.canvases.find(
-                    (c) => c.id === canvasId(d.canvasId),
-                  )?.name ?? '',
-                sectionName: sections.find((s) =>
-                  s.members.some((m) => m.id === d.id),
-                )?.title,
-                workflowStatusId: d.workflowStatusId,
-                workflowOrder: d.workflowOrder,
-                locked: pathLocked(d.relativePath),
-              })),
-            ...previews.map((p) => ({
-              id: previewNodeId(p.relativePath),
-              title: p.title ?? previewLabel(p.relativePath),
-              kind: 'HTML 실행',
-              canvasId: p.canvasId,
-              canvasName:
-                canvasSheets.canvases.find((c) => c.id === canvasId(p.canvasId))
-                  ?.name ?? '',
-              workflowStatusId: p.workflowStatusId,
-              workflowOrder: p.workflowOrder,
-              locked:
-                pathLocked(p.relativePath) || pathLocked(p.sourcePath ?? ''),
-            })),
-          ]}
-          statuses={statusSettings.value}
-          activeCanvas={activeCanvas}
-          preferences={kanbanPreferences}
-          update={updateKanbanPreferences}
-          editable={workflowEditable}
-          busy={workflowBusy}
-          open={jumpTo}
-          manage={() => setStatusManagerOpen(true)}
-          move={async (item: KanbanDocument, statusId, beforeId, afterId) => {
-            const doc = documents.find((d) => d.id === item.id),
-              p = previews.find(
-                (p) => previewNodeId(p.relativePath) === item.id,
-              );
-            const resolveId = (id?: string) => {
-              const preview = previews.find(
-                (p) => previewNodeId(p.relativePath) === id,
-              );
-              return preview?.sourceId ?? id;
-            };
-            await workflowChange({
-              relativePath: doc?.relativePath ?? p!.relativePath,
-              objectId: doc?.id ?? p!.sourceId!,
-              expectedStatus: item.workflowStatusId,
-              expectedOrder: item.workflowOrder,
-              workflowRevision: doc?.workflowRevision,
-              structureRevision: doc?.structureRevision,
-              statusId,
-              beforeId: resolveId(beforeId),
-              afterId: resolveId(afterId),
-            });
-          }}
-        />
+      {!home && pluginPanelOpen && (
+        <PluginControlPanel
+          page={pluginPanelPage}
+          navigate={setPluginPanelPage}
+          enabled={kanbanPreferences.enabled}
+          toggle={toggleKanban}
+          geometry={pluginPanelGeometry}
+          updateGeometry={updatePluginPanelGeometry}
+          canvasName={
+            canvasSheets.canvases.find((c) => c.id === activeCanvas)?.name ??
+            '현재 캔버스'
+          }
+          close={() => setPluginPanelOpen(false)}
+        >
+          <KanbanControls
+            preferences={kanbanPreferences}
+            update={updateKanbanPreferences}
+            toggle={toggleKanban}
+            focus={revealKanban}
+            manage={() => setStatusManagerOpen(true)}
+            manageDisabled={!workflowEditable || workflowBusy}
+            reason={workflowReason}
+          />
+        </PluginControlPanel>
       )}
       {statusManagerOpen && (
         <DocumentStatusManager
@@ -6602,19 +6859,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               <X size={16} />
             </button>
           </header>
-          <label className="workflow-replacement">
-            <input
-              type="checkbox"
-              checked={kanbanPreferences.enabled}
-              onChange={(e) =>
-                updateKanbanPreferences({
-                  ...kanbanPreferences,
-                  enabled: e.target.checked,
-                })
-              }
-            />
-            기본 기능 · 칸반 보드
-          </label>
           <button
             disabled={!workflowEditable || workflowBusy}
             onClick={() => {
@@ -6926,20 +7170,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               <Home size={16} />
             </button>
             <span className="toolbar-divider" />
-            {kanbanPreferences.enabled && (
-              <button
-                className="kanban-toolbar-button"
-                title="칸반 보드 펼치기"
-                onClick={() =>
-                  updateKanbanPreferences({
-                    ...kanbanPreferences,
-                    minimized: false,
-                  })
-                }
-              >
-                칸반
-              </button>
-            )}
+
             <button
               className="icon-button"
               title="문서 목록 (L)"
@@ -7039,6 +7270,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           if (id) acknowledgeNewFile(id);
         }}
         onPointerDownCapture={(event) => {
+          if (
+            (event.target as Element).closest(
+              'button, input, select, textarea, a, .nodrag, [contenteditable="true"]',
+            )
+          )
+            return;
           if (
             tool === 'note' &&
             event.button === 0 &&
@@ -7227,6 +7464,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             event.preventDefault();
             setContextMenu(null);
             setPreviewContextMenu(null);
+            if (node.data.kind === 'kanban') {
+              openKanbanControls();
+              return;
+            }
             if (node.data.kind === 'document') {
               setSectionContextMenu(null);
               setDocumentContextMenu({
@@ -7526,7 +7767,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         >
           <button
             title="선택 항목을 다른 캔버스로 이동"
-            disabled={selectionLocked || canvasSheets.canvases.length < 2}
+            disabled={
+              selectionLocked ||
+              canvasSheets.canvases.length < 2 ||
+              (!selectedDocuments.length &&
+                !selectedSections.length &&
+                !selectedPreviews.length &&
+                !selectedDrawings.length)
+            }
             onClick={() =>
               beginCanvasMove(
                 nodes
@@ -7553,13 +7801,19 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 ? `문서 ${selectedDocuments.length}개 선택`
                 : selectedDrawings.length
                   ? `그림 ${selectedDrawings.length}개 선택`
-                  : 'HTML 결과 선택'}
+                  : nodes.some(
+                        (node) => node.selected && node.data.kind === 'kanban',
+                      )
+                    ? '칸반 보드 선택'
+                    : 'HTML 결과 선택'}
           </span>
           <button
             title="선택 항목 상세 정보"
-            onClick={() =>
-              setInspectorId(nodes.find((node) => node.selected)!.id)
-            }
+            onClick={() => {
+              const node = nodes.find((node) => node.selected)!;
+              if (node.data.kind === 'kanban') openKanbanControls();
+              else setInspectorId(node.id);
+            }}
           >
             <Info size={14} />
           </button>
@@ -7678,6 +7932,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       )}
 
       <nav className="bottom-toolbar floating-surface" aria-label="캔버스 도구">
+        <button
+          type="button"
+          data-plugin-launcher
+          className={pluginPanelOpen ? 'active' : ''}
+          aria-expanded={pluginPanelOpen}
+          title="플러그인 관리"
+          onClick={() => {
+            setPluginPanelPage('plugins');
+            setPluginPanelOpen(!pluginPanelOpen);
+          }}
+        >
+          <Puzzle size={19} />
+          <span>플러그인</span>
+        </button>
+        <span className="toolbar-divider toolbar-divider--vertical" />
+
         <DrawingToolButtons
           active={tool === 'drawing'}
           tool={drawingTool}
@@ -8770,7 +9040,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   ? n.data.document.title
                   : n.data.kind === 'section'
                     ? n.data.section.title
-                    : (n.data.preview.title ?? 'HTML 결과');
+                    : n.data.kind === 'kanban'
+                      ? '칸반 보드'
+                      : (n.data.preview.title ?? 'HTML 결과');
             return (
               <button
                 key={id}
