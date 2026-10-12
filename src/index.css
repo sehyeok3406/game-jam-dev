@@ -5872,3 +5872,170 @@ kbd {
 .button-danger:disabled {
   opacity: 0.5;
 }
+
+/* The minimap uses its own stronger palette; card backgrounds stay independent. */
+.canvas-minimap-panel {
+  overflow: visible;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  --minimap-selected: #c026d3;
+  --minimap-node-stroke: #244061;
+  --minimap-node-fill: #2563eb;
+}
+.app-shell .canvas-minimap-panel {
+  right: 16px;
+  bottom: var(--canvas-tools-bottom);
+  margin: 0;
+  transform: translateY(var(--canvas-dock-shift));
+  transition: transform var(--canvas-dock-duration) var(--canvas-dock-easing);
+}
+.canvas-minimap-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.canvas-minimap-panel > header .icon-button {
+  width: 24px;
+  height: 22px;
+  padding: 3px;
+}
+.app-shell .canvas-minimap-panel .react-flow__minimap {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  margin: 0;
+  transform: none;
+  transition: none;
+  border: 0;
+  border-radius: 0 0 9px 9px;
+  box-shadow: none;
+}
+.canvas-minimap-node[data-minimap-kind='file'] {
+  --minimap-node-fill: #8b5cf6;
+}
+.canvas-minimap-node[data-minimap-kind='html'] {
+  --minimap-node-fill: #ea580c;
+}
+.canvas-minimap-node[data-minimap-kind='kanban'] {
+  --minimap-node-fill: #0891b2;
+}
+.canvas-minimap-node[data-minimap-kind='section'] {
+  --minimap-node-fill: #d3ddec;
+  --minimap-node-stroke: #64748b;
+  stroke-dasharray: 4 3;
+}
+:root[data-theme='dark'] .canvas-minimap-panel {
+  --minimap-selected: #fbbf24;
+  --minimap-node-stroke: #d6e2f7;
+  --minimap-node-fill: #60a5fa;
+}
+:root[data-theme='dark'] .canvas-minimap-node[data-minimap-kind='file'] {
+  --minimap-node-fill: #a78bfa;
+}
+:root[data-theme='dark'] .canvas-minimap-node[data-minimap-kind='html'] {
+  --minimap-node-fill: #fb923c;
+}
+:root[data-theme='dark'] .canvas-minimap-node[data-minimap-kind='kanban'] {
+  --minimap-node-fill: #22d3ee;
+}
+:root[data-theme='dark'] .canvas-minimap-node[data-minimap-kind='section'] {
+  --minimap-node-fill: #354458;
+  --minimap-node-stroke: #93a6c1;
+}
+.minimap-settings {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.minimap-settings > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.minimap-settings label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.minimap-settings output {
+  margin-left: auto;
+}
+.minimap-settings input {
+  width: 100%;
+}
+.minimap-settings small {
+  display: block;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.canvas-visibility-picker {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  max-width: 65%;
+  min-width: 150px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: 12px;
+}
+.canvas-visibility-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.canvas-visibility-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.canvas-visibility-menu label:focus-within,
+.canvas-visibility-menu label:hover {
+  background: var(--surface-hover);
+  border-radius: 5px;
+}
+.canvas-visibility-menu small {
+  display: block;
+  padding: 3px 6px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .canvas-minimap-panel {
+    transition: none;
+  }
+}

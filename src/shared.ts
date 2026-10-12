@@ -230,6 +230,7 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  placementId?: string;
   workflowStatusId?: string;
   workflowOrder?: number;
   canvasId?: string;
@@ -585,6 +586,7 @@ export type ImportBatchInput = ImportFilesInput & {
 };
 
 export type PreviewWindowState = {
+  placementId?: string;
   x: number;
   y: number;
   width: number;

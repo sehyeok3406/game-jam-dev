@@ -41,6 +41,15 @@ const entry = (
 // Every preview uses the production component. Inline surfaces retain their
 // actual state identifier; never invent a component name for an inline view.
 export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
+  entry(
+    'minimap-settings',
+    '미니맵 투명도·음영 설정',
+    'CanvasMiniMap',
+    'CanvasMiniMap',
+    '캔버스',
+    project,
+    '.minimap-settings',
+  ),
   {
     id: 'kanban',
     label: '칸반 보드',

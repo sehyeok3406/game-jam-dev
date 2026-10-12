@@ -5,6 +5,8 @@ import {
   migrateKanbanLayout,
   blankBoardPosition,
   defaultCanvasKanban,
+  kanbanVisibility,
+  boardVisible,
 } from '../src/features/kanban/preferences.ts';
 
 test('legacy screen board migrates to canvas coordinates with the viewport zoom', () => {
@@ -86,5 +88,49 @@ test('crowded canvas falls back below every occupied rectangle', () => {
     960,
     520,
   );
-  assert.deepEqual(p, { x: 0, y: 9940 });
+  assert.ok(
+    p.x + 960 + 40 <= -100 ||
+      p.x >= 9940 ||
+      p.y + 520 + 40 <= -100 ||
+      p.y >= 9940,
+  );
+});
+
+test('canvas visibility imports existing enabled boards and keeps global activation separate from targets', () => {
+  const old = {
+    version: 2,
+    legacyMigrated: true,
+    canvases: {
+      first: { ...defaultCanvasKanban, enabled: true },
+      second: defaultCanvasKanban,
+    },
+  };
+  assert.deepEqual(kanbanVisibility(old), {
+    enabled: true,
+    mode: 'selected',
+    canvasIds: ['first'],
+  });
+  assert.equal(boardVisible(old, 'second'), false);
+  const all = {
+    ...old,
+    visibility: { enabled: true, mode: 'all', canvasIds: [] },
+  };
+  assert.equal(boardVisible(all, 'future-canvas'), true);
+  assert.equal(
+    boardVisible(
+      { ...all, visibility: { ...all.visibility, enabled: false } },
+      'first',
+    ),
+    false,
+  );
+  assert.equal(
+    boardVisible(
+      {
+        ...all,
+        visibility: { enabled: true, mode: 'selected', canvasIds: ['second'] },
+      },
+      'first',
+    ),
+    false,
+  );
 });

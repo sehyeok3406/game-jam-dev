@@ -897,7 +897,7 @@ export async function createCollaborationServer(options: Options) {
           deltaSync: true,
           eventStream: true,
           projectTrash: true,
-          version: '0.16.0',
+          version: '0.17.0',
         });
         return;
       }

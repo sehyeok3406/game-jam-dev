@@ -45,10 +45,23 @@ export function KanbanNode({ data, selected }: NodeProps<KanbanCanvasNode>) {
       >
         <header className="kanban-drag-handle">
           <strong>칸반 보드</strong>
-          <span>
-            {p.scope === 'canvas' ? '현재 캔버스' : '프로젝트 전체'} · {count}개
-            문서
-          </span>
+          <select
+            className="kanban-scope-select nodrag nowheel"
+            aria-label="칸반 문서 범위"
+            title="보드에 표시할 문서 범위"
+            value={p.scope}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              data.update({
+                ...p,
+                scope: e.target.value as 'canvas' | 'project',
+              })
+            }
+          >
+            <option value="canvas">현재 캔버스 문서</option>
+            <option value="project">프로젝트 전체 문서</option>
+          </select>
+          <span>{count}개 문서</span>
           <div className="kanban-node-actions nodrag">
             <button
               className="icon-button"

@@ -1,4 +1,5 @@
 import matter from './markdown.ts';
+import { placeMovedDocuments } from './canvas-move-placement.ts';
 import {
   drawingPath,
   readDrawingFile,
@@ -143,6 +144,8 @@ export function changeCanvasSheets(
         if (path.startsWith('sections/') && next[path])
           for (const member of matter(next[path]).data.members ?? [])
             paths.add(member.path);
+      for (const path of paths)
+        if (isPreviewPath(path)) paths.add(htmlSourcePath(path));
       for (const [path, raw] of Object.entries(next)) {
         if (!path.startsWith('sections/') || paths.has(path)) continue;
         const parsed = matter(raw);
@@ -155,6 +158,8 @@ export function changeCanvasSheets(
           });
       }
     }
+    if (input.action === 'move')
+      placeMovedDocuments(files, next, paths, target);
     for (const path of paths) assign(path, target);
     if (input.action === 'delete') {
       const sourcePath = drawingPath(id),

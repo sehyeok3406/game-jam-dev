@@ -265,21 +265,21 @@ try {
   await sleep(300);
   const worldBefore = await prefs();
   // Header movement is a canvas-space move, not a fixed overlay move.
-  await drag('.kanban-drag-handle strong', -60, -60);
+  await drag('.kanban-drag-handle strong', -60, 30);
   await wait(
     `JSON.parse(localStorage.getItem(${JSON.stringify('builtin.kanban.canvas:' + game)})).canvases.default.x !== ${worldBefore.x}`,
   );
   const worldMoved = await prefs();
   assert.ok(worldMoved.x < worldBefore.x - 40);
-  assert.ok(worldMoved.y < worldBefore.y - 40);
+  assert.ok(worldMoved.y > worldBefore.y + 20);
   await click('.kanban-drag-handle strong');
   await wait(
-    '!!document.querySelector(".react-flow__node-kanban.selected .react-flow__resize-control.bottom.right")',
+    '!!document.querySelector(".react-flow__node-kanban.selected .react-flow__resize-control.top.left")',
   );
   await drag(
-    '.react-flow__node-kanban.selected .react-flow__resize-control.bottom.right',
-    60,
-    40,
+    '.react-flow__node-kanban.selected .react-flow__resize-control.top.left',
+    -60,
+    -40,
   );
   const worldResized = await prefs();
   assert.ok(
@@ -479,11 +479,24 @@ try {
     'Boards are isolated per canvas',
   );
   await click('[data-plugin-launcher]');
-  await click('.plugin-control-panel [aria-label="칸반 보드 활성화"]');
-  await wait('!!document.querySelector(".kanban-empty")');
   await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  assert.equal(
+    await js('!!document.querySelector(".kanban-controls select")'),
+    false,
+    'Document scope lives on canvas board',
+  );
+  await click('[aria-label="보드를 표시할 캔버스 선택"]');
+  await wait(
+    '!!document.querySelector(".canvas-visibility-menu:popover-open")',
+  );
+  await click(
+    '.canvas-visibility-menu:popover-open [aria-label="두 번째 캔버스에 칸반 표시"]',
+  );
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape' });
+  await wait('!!document.querySelector(".kanban-empty")');
   await js(
-    '(()=>{const s=document.querySelector(".kanban-controls select");s.value="project";s.dispatchEvent(new Event("change",{bubbles:true}));})()',
+    '(()=>{const s=document.querySelector(".kanban-scope-select");s.value="project";s.dispatchEvent(new Event("change",{bubbles:true}));})()',
   );
   await wait('document.querySelectorAll(".kanban-card").length===3');
   await click('[aria-label="플러그인 관리로 뒤로가기"]');
@@ -533,8 +546,153 @@ try {
   assert.equal(migrated.enabled, true);
   assert.equal(migrated.placed, true);
   await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
+  // Minimap controls are physically operable and persist through reload.
+  await click('[aria-label="미니맵 설정"]');
+  await wait('!!document.querySelector(".minimap-settings")');
+  await click('[aria-label="미니맵 투명도"]');
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Home' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Home' });
+  for (let i = 0; i < 7; i++) {
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'ArrowRight',
+    });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight' });
+  }
+  await wait(
+    'document.querySelector(".react-flow__minimap").style.opacity==="0.65"',
+  );
+  await screenshot('minimap-transparency-light.png');
+  await click('[aria-label="미니맵 화면 밖 음영"]');
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Home' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Home' });
+  for (let i = 0; i < 15; i++) {
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'ArrowRight',
+    });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight' });
+  }
+  await wait(
+    'document.querySelector(".react-flow__minimap").style.getPropertyValue("--xy-minimap-mask-background-color-props").includes("0.3")',
+  );
+  await click('[aria-label="미니맵 설정 닫기"]');
+  // All canvases includes newly added canvases, with independent board positions.
+  await click('[data-plugin-launcher]');
+  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await click('[aria-label="보드를 표시할 캔버스 선택"]');
+  await click(
+    '.canvas-visibility-menu:popover-open [aria-label="전체 캔버스에 칸반 표시"]',
+  );
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape' });
+  await click('[aria-label="플러그인 패널 닫기"]');
+  await js(
+    '(async()=>{const s=await window.gameCanvas.getCanvasSheets();await window.gameCanvas.changeCanvasSheets({action:"add",id:"future",name:"새 캔버스",expected:s.raw??null});})()',
+  );
+  await wait('document.querySelectorAll(".canvas-tabs__item").length===3');
+  await click('.canvas-tabs__item:nth-child(3) [role="tab"]');
+  await wait('!!document.querySelector(".kanban-canvas-node")');
+  await screenshot('kanban-all-canvases.png');
+  await click('.canvas-tabs__item:first-child [role="tab"]');
+  await wait('!!document.querySelector(".react-flow__node-preview")');
+  // An outlier and huge empty section must not influence destination placement.
+  for (const [id, x, y] of [
+    ['target-one', 100, 100],
+    ['target-two', 480, 100],
+    ['target-outlier', 30000, 40000],
+  ])
+    await fs.writeFile(
+      path.join(game, 'ideas', id + '.md'),
+      `---\nid: ${id}\ntitle: ${id}\ntype: idea\ncanvas_id: second\nx: ${x}\ny: ${y}\nwidth: 340\nheight: 300\n---\nbody`,
+    );
+  await fs.writeFile(
+    path.join(game, 'sections', 'empty.md'),
+    '---\nid: empty\ntitle: empty\ncanvas_id: second\nx: -100000\ny: -100000\nwidth: 200000\nheight: 200000\nmembers: []\n---\n',
+  );
+  await js(
+    '(async()=>{const d=(await window.gameCanvas.listDocuments()).find(d=>d.id==="b");await window.gameCanvas.updateDocumentLayout({...d,relativePath:d.relativePath,x:-50000,y:50000});await window.gameCanvas.savePreviewWindow({x:50000,y:50000,width:720,height:520,collapsed:false},"output/index.html");})()',
+  );
+  await send('Page.reload');
+  await wait(
+    '!!document.querySelector(".home-project-open")||!!document.querySelector(".react-flow__node-preview")',
+  );
+  await js('document.querySelector(".home-project-open")?.click()');
+  await wait('!!document.querySelector(".react-flow__node-preview")');
+  assert.equal(
+    await js('document.querySelector(".react-flow__minimap").style.opacity'),
+    '0.65',
+  );
+  const moveToSecond = async (paths) =>
+    js(
+      `(async()=>{const s=await window.gameCanvas.getCanvasSheets();await window.gameCanvas.changeCanvasSheets({action:"move",id:"default",targetId:"second",paths:${JSON.stringify(paths)},expected:s.raw??null});})()`,
+    );
+  await moveToSecond(['ideas/b.md']);
+  await moveToSecond(['project.md']);
+  await moveToSecond(['output/index.html']);
+  await wait(
+    'window.gameCanvas.getPreviewWindow("output/index.html").then(w=>!!w.placementId&&Math.abs(w.x)<4000&&Math.abs(w.y)<4000)',
+  );
+  const moved = await js(
+    'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="b"))',
+  );
+  assert.equal(moved.canvasId, 'second');
+  assert.ok(Math.abs(moved.x) < 4000 && Math.abs(moved.y) < 4000);
+  const movedWindow = await js(
+    'window.gameCanvas.getPreviewWindow("output/index.html")',
+  );
+  await click('.canvas-tabs__item:nth-child(2) [role="tab"]');
+  await wait('!!document.querySelector(".react-flow__node-preview")');
+  await wait(
+    'document.querySelectorAll(".document-header-actions .workflow-badge").length===5',
+  );
+  const colors = await js(
+    '["note","file","html","kanban"].map(k=>{const n=document.querySelector(`[data-minimap-kind="${k}"]`);return {kind:k,fill:n&&getComputedStyle(n).fill,stroke:n&&getComputedStyle(n).stroke,vector:n?.getAttribute("vector-effect")};})',
+  );
+  assert.ok(
+    colors.every(
+      (c) => c.fill && c.stroke && c.vector === 'non-scaling-stroke',
+    ),
+  );
+  assert.equal(
+    new Set(colors.map((c) => c.fill)).size,
+    4,
+    'Minimap distinguishes notes/files/HTML/kanban',
+  );
+  await fs.unlink(path.join(game, 'sections', 'empty.md'));
+  await fs.unlink(path.join(game, 'ideas', 'target-outlier.md'));
+  await wait(
+    'document.querySelectorAll(".document-header-actions .workflow-badge").length===4',
+  );
+  await js('localStorage.setItem("game-canvas-theme","light")');
+  await send('Page.reload');
+  await wait(
+    '!!document.querySelector(".home-project-open")||!!document.querySelector(".react-flow__node-preview")',
+  );
+  await js('document.querySelector(".home-project-open")?.click()');
+  await wait('!!document.querySelector(".react-flow__node-preview")');
+  await screenshot('minimap-visibility-light.png');
+  await js('localStorage.setItem("game-canvas-theme","dark")');
+  await send('Page.reload');
+  await wait(
+    '!!document.querySelector(".home-project-open")||!!document.querySelector(".react-flow__node-preview")',
+  );
+  await js('document.querySelector(".home-project-open")?.click()');
+  await wait('!!document.querySelector(".react-flow__node-preview")');
+  await screenshot('minimap-visibility-dark.png');
+  await send('Page.reload');
+  await wait(
+    '!!document.querySelector(".home-project-open")||!!document.querySelector(".react-flow__node-preview")',
+  );
+  await js('document.querySelector(".home-project-open")?.click()');
+  await wait('!!document.querySelector(".react-flow__node-preview")');
+  assert.deepEqual(
+    await js('window.gameCanvas.getPreviewWindow("output/index.html")'),
+    movedWindow,
+    'HTML window never restores its old canvas coordinates',
+  );
   console.log(
-    'PASS: physical idea/Markdown/HTML dropdown, plugin management/back/close/move/resize, canvas board movement/resize/zoom, per-canvas scope, legacy migration, activation/minimize, state edits, section geometry and reload persistence',
+    'PASS: physical status dropdowns; plugin back/move/resize; nearby canvas boards; checkbox visibility and future canvases; board-local document scope; physical minimap transparency and persistence; document/HTML destination placement and cached HTML reload; distinct minimap colors and non-scaling outlines',
   );
 } finally {
   ws?.close();

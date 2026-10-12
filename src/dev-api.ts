@@ -43,7 +43,12 @@ import {
 } from './gamejam-history';
 import { cardColor } from './card-colors';
 import { assertAiFilesUnlocked } from './ai-file-lock';
-import { verticalLayouts, NEW_FILE_GAP } from './canvas-placement';
+import {
+  verticalLayouts,
+  NEW_FILE_GAP,
+  enclosingRect,
+  nearDocumentPosition,
+} from './canvas-placement';
 import {
   moveDestination,
   legacyResultMoves,
@@ -921,6 +926,51 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           (input.action === 'delete' || paths.has(item.relativePath));
         for (const section of sections.filter(selected))
           for (const member of section.members) paths.add(member.path);
+        if (input.action === 'move') {
+          const rectOf = (
+            item: CanvasDocument | CanvasSection | PreviewResult,
+          ) =>
+            'x' in item
+              ? { x: item.x, y: item.y, width: item.width, height: item.height }
+              : (previewWindows.get(item.relativePath) ??
+                item.initialWindow ?? {
+                  x: 120,
+                  y: 120,
+                  width: 720,
+                  height: 520,
+                });
+          const items = [...documents, ...sections, ...previews].filter(
+            selected,
+          );
+          if (items.length) {
+            const bounds = enclosingRect(items.map(rectOf)),
+              occupied = [...documents, ...previews]
+                .filter(
+                  (d) =>
+                    canvasId(d.canvasId) === input.targetId &&
+                    (!('type' in d) || d.type !== 'ai-task'),
+                )
+                .map(rectOf);
+            const p = nearDocumentPosition(bounds, occupied),
+              dx = p.x - bounds.x,
+              dy = p.y - bounds.y;
+            for (const item of items) {
+              const r = rectOf(item);
+              if ('x' in item) {
+                item.x = r.x + dx;
+                item.y = r.y + dy;
+              } else {
+                item.placementId = crypto.randomUUID();
+                item.initialWindow = {
+                  ...r,
+                  x: r.x + dx,
+                  y: r.y + dy,
+                  collapsed: false,
+                };
+              }
+            }
+          }
+        }
         for (const item of [...documents, ...sections, ...previews])
           if (selected(item)) item.canvasId = input.targetId;
         for (const section of sections)

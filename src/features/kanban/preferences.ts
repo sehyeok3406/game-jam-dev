@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { nearDocumentPosition } from '../../canvas-placement.ts';
 export type KanbanPreferences = {
   enabled: boolean;
   minimized: boolean;
@@ -49,6 +50,11 @@ export type KanbanLayouts = {
   version: 2;
   legacyMigrated: boolean;
   canvases: Record<string, KanbanCanvasPreferences>;
+  visibility?: {
+    enabled: boolean;
+    mode: 'all' | 'selected';
+    canvasIds: string[];
+  };
 };
 export const emptyKanbanLayouts: KanbanLayouts = {
   version: 2,
@@ -111,23 +117,29 @@ export function blankBoardPosition(
   width: number,
   height: number,
 ) {
-  const overlaps = (p: { x: number; y: number }) =>
-    bounds.some(
-      (b) =>
-        p.x < b.x + b.width + 40 &&
-        p.x + width + 40 > b.x &&
-        p.y < b.y + b.height + 40 &&
-        p.y + height + 40 > b.y,
-    );
-  for (let ring = 0; ring < 8; ring++) {
-    const candidates = [
-      { x: origin.x + ring * (width + 40), y: origin.y },
-      { x: origin.x, y: origin.y + ring * (height + 40) },
-    ];
-    for (const p of candidates) if (!overlaps(p)) return p;
-  }
+  return nearDocumentPosition({ width, height }, bounds, origin);
+}
+
+export function kanbanVisibility(layouts: KanbanLayouts) {
+  const saved = layouts.visibility;
+  if (saved)
+    return {
+      enabled: saved.enabled === true,
+      mode: saved.mode === 'all' ? ('all' as const) : ('selected' as const),
+      canvasIds: Array.isArray(saved.canvasIds)
+        ? saved.canvasIds.filter((id): id is string => typeof id === 'string')
+        : [],
+    };
+  const canvasIds = Object.entries(layouts.canvases ?? {})
+    .filter(([, p]) => p.enabled)
+    .map(([id]) => id);
   return {
-    x: origin.x,
-    y: Math.max(origin.y, ...bounds.map((b) => b.y + b.height)) + 40,
+    enabled: canvasIds.length > 0,
+    mode: 'selected' as const,
+    canvasIds,
   };
+}
+export function boardVisible(layouts: KanbanLayouts, id: string) {
+  const v = kanbanVisibility(layouts);
+  return v.enabled && (v.mode === 'all' || v.canvasIds.includes(id));
 }

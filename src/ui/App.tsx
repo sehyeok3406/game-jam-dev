@@ -24,6 +24,8 @@ import {
   readCanvasKanban,
   migrateKanbanLayout,
   blankBoardPosition,
+  boardVisible,
+  kanbanVisibility,
   type KanbanCanvasPreferences,
   type KanbanLayouts,
 } from '../features/kanban/preferences';
@@ -64,7 +66,12 @@ import {
   sampleRun,
 } from './debug/uiDebugFixtures';
 import { CanvasTabs } from './CanvasTabs';
-import { CanvasMiniMapNode } from './CanvasMiniMapNode';
+import { CanvasMiniMap } from './CanvasMiniMap';
+import {
+  defaultMiniMapPreferences,
+  readMiniMapPreferences,
+} from './minimap-preferences';
+import { CanvasVisibilityPicker } from '../features/kanban/CanvasVisibilityPicker';
 import { noteDragBounds, type NoteBounds } from '../note-placement';
 import {
   completionDismissed,
@@ -77,7 +84,6 @@ import type { CanvasSheets, CanvasSheetCommand } from '../shared';
 import {
   Background,
   Controls,
-  MiniMap,
   NodeResizer,
   ReactFlow,
   ReactFlowProvider,
@@ -90,7 +96,12 @@ import {
 } from '@xyflow/react';
 import appIcon from '../../assets/icon.png';
 import { AI_FILE_LOCK_MESSAGE, isAiFileLocked } from '../ai-file-lock';
-import { verticalLayouts, NEW_FILE_GAP } from '../canvas-placement';
+import {
+  verticalLayouts,
+  NEW_FILE_GAP,
+  mainDocumentCluster,
+  rectDistance,
+} from '../canvas-placement';
 import {
   readNewFileIndicators,
   updateNewFileIndicators,
@@ -1935,9 +1946,25 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   );
   const kanbanLayoutsRef = useRef(kanbanLayouts);
   kanbanLayoutsRef.current = kanbanLayouts;
-  const kanbanPreferences = readCanvasKanban(
-    kanbanLayouts.canvases?.[activeCanvas] ?? defaultCanvasKanban,
+  const kanbanVisibilityValue = kanbanVisibility(kanbanLayouts);
+  const kanbanPreferences = {
+    ...readCanvasKanban(
+      kanbanLayouts.canvases?.[activeCanvas] ?? defaultCanvasKanban,
+    ),
+    enabled: boardVisible(kanbanLayouts, activeCanvas),
+  };
+  const updateKanbanVisibility = (
+    visibility: NonNullable<KanbanLayouts['visibility']>,
+  ) => {
+    const next = { ...kanbanLayoutsRef.current, visibility };
+    kanbanLayoutsRef.current = next;
+    updateKanbanLayouts(next);
+  };
+  const [minimapStored, updateMiniMapPreferences] = usePersonalValue(
+    `minimap-view:${personalScope}`,
+    defaultMiniMapPreferences,
   );
+  const minimapPreferences = readMiniMapPreferences(minimapStored);
   const updateKanbanPreferences = (
     value: KanbanCanvasPreferences,
     canvas = activeCanvas,
@@ -1959,6 +1986,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     defaultPluginPanelGeometry,
   );
   const focusKanban = useRef(false);
+  const lastBoardVisibility = useRef({ scope: '', canvas: '', visible: false });
   useEffect(() => {
     setPluginPanelOpen(false);
     setPluginPanelPage('plugins');
@@ -2997,7 +3025,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       ];
       let nextPreviewY = top;
       for (const [index, result] of nextPreviews.entries()) {
-        const saved = savedWindows[index];
+        const oldWindow = savedWindows[index];
+        const relocated = oldWindow?.placementId !== result.placementId;
+        const saved = relocated ? null : oldWindow;
         const initial = result.initialWindow;
         const localOccupied = [
           ...canvasDocuments.filter(
@@ -3022,12 +3052,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           height: item.collapsed ? 38 : item.height,
         }));
         const layout = saved ?? {
-          ...verticalLayouts(
-            [{ width: initial?.width ?? 720, height: initial?.height ?? 520 }],
-            localOccupied,
-            initial ?? { x: right, y: nextPreviewY },
-          )[0],
-          collapsed: false,
+          ...(relocated && initial
+            ? { ...(oldWindow ?? initial), x: initial.x, y: initial.y }
+            : verticalLayouts(
+                [
+                  {
+                    width: initial?.width ?? 720,
+                    height: initial?.height ?? 520,
+                  },
+                ],
+                localOccupied,
+                initial ?? { x: right, y: nextPreviewY },
+              )[0]),
+          collapsed: oldWindow?.collapsed ?? false,
+          ...(result.placementId
+            ? { placementId: result.placementId }
+            : { placementId: undefined }),
         };
         nextWindows[result.relativePath] = layout;
         if (!saved) {
@@ -3732,46 +3772,113 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     focusKanban.current = true;
     setTool('select');
   };
+  const boardPosition = (p: KanbanCanvasPreferences) => {
+    const bounds = [
+      ...documents
+        .filter(
+          (d) => canvasId(d.canvasId) === activeCanvas && d.type !== 'ai-task',
+        )
+        .map((d) => ({ ...d, height: d.collapsed ? 38 : d.height })),
+      ...previews
+        .filter((d) => canvasId(d.canvasId) === activeCanvas)
+        .map((d) => {
+          const w = previewWindows[d.relativePath] ??
+            d.initialWindow ?? { x: 120, y: 120, width: 720, height: 520 };
+          return {
+            ...w,
+            height: 'collapsed' in w && w.collapsed ? 38 : w.height,
+          };
+        }),
+    ];
+    const origin = flowRef.current?.screenToFlowPosition({
+      x: window.innerWidth / 2 - p.width / 2,
+      y: window.innerHeight / 2 - p.height / 2,
+    }) ?? { x: 120, y: 120 };
+    const cluster = mainDocumentCluster(bounds, origin);
+    const distant =
+      p.placed &&
+      cluster.length > 0 &&
+      Math.min(...cluster.map((b) => rectDistance(p, b))) > 1000;
+    return !p.placed || distant
+      ? {
+          ...p,
+          ...blankBoardPosition(origin, bounds, p.width, p.height),
+          placed: true,
+        }
+      : p;
+  };
   const toggleKanban = (enabled: boolean) => {
-    let p = { ...kanbanPreferences, enabled };
-    if (enabled && !p.placed && flowRef.current) {
-      const flow = flowRef.current,
-        origin = flow.screenToFlowPosition({
-          x: window.innerWidth / 2 - 280,
-          y: window.innerHeight / 2 - 160,
-        });
-      const scene = flow.getNodes(),
-        bounds = scene
-          .filter((n) => !n.className?.includes('section-member-hidden'))
-          .map((n) => {
-            const parent = scene.find((p) => p.id === n.parentId);
-            return {
-              x: n.position.x + (parent?.position.x ?? 0),
-              y: n.position.y + (parent?.position.y ?? 0),
-              width: Number(n.style?.width ?? n.measured?.width ?? 340),
-              height: Number(n.style?.height ?? n.measured?.height ?? 300),
-            };
-          });
-      p = {
-        ...p,
-        ...blankBoardPosition(origin, bounds, p.width, p.height),
-        placed: true,
-        minimized: false,
-      };
-    }
-    updateKanbanPreferences(p);
-    if (enabled) {
+    const value = kanbanVisibility(kanbanLayoutsRef.current);
+    updateKanbanVisibility({
+      ...value,
+      enabled,
+      canvasIds:
+        value.mode === 'all' || value.canvasIds.length
+          ? value.canvasIds
+          : [activeCanvas],
+    });
+    if (enabled && boardVisible(kanbanLayoutsRef.current, activeCanvas)) {
+      updateKanbanPreferences(
+        boardPosition({ ...kanbanPreferences, enabled: true }),
+      );
       focusKanban.current = true;
       setTool('select');
     }
   };
   useEffect(() => {
+    if (home || loading || loadedProjectRoot !== workspace.root) return;
+    const old = lastBoardVisibility.current;
+    lastBoardVisibility.current = {
+      scope: personalScope,
+      canvas: activeCanvas,
+      visible: kanbanPreferences.enabled,
+    };
+    if (!kanbanPreferences.enabled) return;
+    if (
+      !kanbanPreferences.placed ||
+      old.scope !== personalScope ||
+      old.canvas !== activeCanvas ||
+      !old.visible
+    ) {
+      const next = boardPosition(kanbanPreferences);
+      if (next !== kanbanPreferences) updateKanbanPreferences(next);
+    }
+  }, [
+    home,
+    loading,
+    loadedProjectRoot,
+    workspace.root,
+    activeCanvas,
+    personalScope,
+    kanbanLayouts,
+  ]);
+  useEffect(() => {
     if (!focusKanban.current) return;
     const node = nodes.find((n) => n.data.kind === 'kanban');
     if (!node) return;
     focusKanban.current = false;
+    const documents = nodes.filter(
+      (n) =>
+        (n.data.kind === 'document' || n.data.kind === 'preview') &&
+        !n.className?.includes('section-member-hidden'),
+    );
+    const boxes = documents.map((n) => {
+      const parent = nodes.find((p) => p.id === n.parentId);
+      return {
+        x: n.position.x + (parent?.position.x ?? 0),
+        y: n.position.y + (parent?.position.y ?? 0),
+        width: Number(n.style?.width ?? 340),
+        height: Number(n.style?.height ?? 300),
+      };
+    });
+    const group = mainDocumentCluster(boxes, node.position);
     void flowRef.current?.fitView({
-      nodes: [{ id: node.id }],
+      nodes: [
+        { id: node.id },
+        ...documents
+          .filter((_n, i) => group.includes(boxes[i]))
+          .map((n) => ({ id: n.id })),
+      ],
       padding: 0.24,
       maxZoom: 1,
       duration: 200,
@@ -5693,7 +5800,15 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const requestDelete = () => {
     const selected = nodes.filter((n) => n.selected);
     if (selected.length && selected.every((n) => n.data.kind === 'kanban')) {
-      updateKanbanPreferences({ ...kanbanPreferences, enabled: false });
+      const v = kanbanVisibility(kanbanLayoutsRef.current);
+      updateKanbanVisibility({
+        ...v,
+        mode: 'selected',
+        canvasIds: (v.mode === 'all'
+          ? canvasSheets.canvases.map((c) => c.id)
+          : v.canvasIds
+        ).filter((id) => id !== activeCanvas),
+      });
       return;
     }
     if (
@@ -6811,7 +6926,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         <PluginControlPanel
           page={pluginPanelPage}
           navigate={setPluginPanelPage}
-          enabled={kanbanPreferences.enabled}
+          enabled={kanbanVisibilityValue.enabled}
           toggle={toggleKanban}
           geometry={pluginPanelGeometry}
           updateGeometry={updatePluginPanelGeometry}
@@ -6823,6 +6938,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         >
           <KanbanControls
             preferences={kanbanPreferences}
+            activationEnabled={kanbanVisibilityValue.enabled}
+            visibilityPicker={
+              <CanvasVisibilityPicker
+                value={kanbanVisibilityValue}
+                canvases={canvasSheets.canvases}
+                change={updateKanbanVisibility}
+              />
+            }
             update={updateKanbanPreferences}
             toggle={toggleKanban}
             focus={revealKanban}
@@ -7638,17 +7761,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             size={1}
           />
           <Controls position="bottom-left" showInteractive={false} />
-          <MiniMap
-            ariaLabel="캔버스 미니맵"
-            position="bottom-right"
-            pannable
-            zoomable
-            nodeComponent={CanvasMiniMapNode}
-            maskColor={
-              theme === 'dark'
-                ? 'rgba(13, 15, 19, 0.72)'
-                : 'rgba(238, 240, 243, 0.72)'
-            }
+          <CanvasMiniMap
+            theme={theme}
+            preferences={minimapPreferences}
+            change={updateMiniMapPreferences}
+            previewOpen={preview?.id === 'minimap-settings'}
           />
           <DrawingInputLayer
             tool={drawingTool}

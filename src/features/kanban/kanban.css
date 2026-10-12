@@ -315,6 +315,15 @@
   align-items: center;
   gap: 4px;
 }
+.kanban-scope-select {
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  max-width: 180px;
+}
 .kanban-board-content {
   display: flex;
   flex-direction: column;

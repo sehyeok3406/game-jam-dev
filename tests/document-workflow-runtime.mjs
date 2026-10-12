@@ -5,6 +5,8 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { CollaborationClient } from '../src/collaboration-client.ts';
+import matter from '../src/markdown.ts';
+import { rectDistance } from '../src/canvas-placement.ts';
 const directory = await fs.mkdtemp(
   path.join(os.tmpdir(), 'gamejam-runtime-workflow-'),
 );
@@ -40,7 +42,7 @@ try {
   }
   assert.equal(health?.documentStatusesVersion, 1);
   assert.equal(health?.projectTrash, true);
-  assert.equal(health.version, '0.16.0');
+  assert.equal(health.version, '0.17.0');
   const created = await CollaborationClient.create(
     url,
     '',
@@ -62,10 +64,45 @@ try {
     objectId: 'project.md',
     statusId: 'in-progress',
   });
-  owner.stop();
   const state = await api('state');
   assert.ok(state.files['.canvas/document-statuses.json']);
   assert.match(state.files['project.md'], /workflow_status_id: in-progress/);
+  owner.accept(await api('state'));
+  await owner.command('canvases:change', {
+    action: 'add',
+    id: 'nearby',
+    name: 'nearby',
+    expected: owner.files['.canvas/canvases.json'] ?? null,
+  });
+  await owner.command('documents:create-idea', {
+    canvasId: 'nearby',
+    x: 100,
+    y: 100,
+  });
+  await owner.command('documents:create-idea', {
+    canvasId: 'nearby',
+    x: 480,
+    y: 100,
+  });
+  await owner.command('canvases:change', {
+    action: 'move',
+    id: 'default',
+    targetId: 'nearby',
+    paths: ['project.md'],
+    expected: owner.files['.canvas/canvases.json'] ?? null,
+  });
+  const moved = matter(owner.files['project.md']).data;
+  assert.equal(moved.canvas_id, 'nearby');
+  assert.equal(
+    Math.min(
+      ...[
+        { x: 100, y: 100, width: 340, height: 300 },
+        { x: 480, y: 100, width: 340, height: 300 },
+      ].map((r) => rectDistance({ ...moved, width: 340, height: 300 }, r)),
+    ),
+    40,
+  );
+  owner.stop();
   assert.equal(
     (
       await api('trash', {
@@ -83,7 +120,7 @@ try {
     /workflow_status_id: in-progress/,
   );
   console.log(
-    'PASS packaged Node/server runtime: document workflow capability, status transaction, project retention and restored metadata',
+    'PASS packaged Node/server runtime: status transaction, project retention/restore and shared destination cluster placement',
   );
 } finally {
   child.kill();

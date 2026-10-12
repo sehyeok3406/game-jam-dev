@@ -92,6 +92,10 @@ export function describePreview(
     }
   }
   return {
+    placementId:
+      typeof data.canvas_placement_id === 'string'
+        ? data.canvas_placement_id
+        : undefined,
     canvasId: typeof data.canvas_id === 'string' ? data.canvas_id : 'default',
     workflowStatusId:
       typeof data.workflow_status_id === 'string'
