@@ -56,6 +56,7 @@ import {
   type NodeTypes,
   type ReactFlowInstance,
   useNodesState,
+  useStoreApi,
 } from '@xyflow/react';
 import appIcon from '../../assets/icon.png';
 import { AI_FILE_LOCK_MESSAGE, isAiFileLocked } from '../ai-file-lock';
@@ -1681,6 +1682,7 @@ const nodeTypes: NodeTypes = {
 };
 
 function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
+  const flowStore = useStoreApi<CanvasNode>();
   const [home, setHome] = useState(preview ? preview.scope === 'home' : true);
   const [selfHostOpen, setSelfHostOpen] = useState(false);
   useEffect(
@@ -1911,6 +1913,38 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const selectionBeforeClick = useRef(new Set<string>());
+  const selectionPointer = useRef<{
+    pane: HTMLElement;
+    pointerId: number;
+  } | null>(null);
+  const cancelSelectionDrag = () => {
+    if (!flowStore.getState().userSelectionRect) return;
+    const pointer = selectionPointer.current;
+    // Changing tools alone leaves React Flow's selection rectangle and auto-pan
+    // alive. Cancel the pointer before disabling its selection event handlers.
+    if (pointer) {
+      pointer.pane.dispatchEvent(
+        new PointerEvent('pointercancel', {
+          bubbles: true,
+          pointerId: pointer.pointerId,
+        }),
+      );
+      if (pointer.pane.hasPointerCapture(pointer.pointerId))
+        pointer.pane.releasePointerCapture(pointer.pointerId);
+    }
+    flowStore.setState({
+      userSelectionRect: null,
+      userSelectionActive: false,
+      nodesSelectionActive: selectionBeforeClick.current.size > 0,
+    });
+    setNodes((current) =>
+      current.map((node) => ({
+        ...node,
+        selected: selectionBeforeClick.current.has(node.id),
+      })),
+    );
+    selectionPointer.current = null;
+  };
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
   const [sectionTitle, setSectionTitle] = useState('새 섹션');
   const [notice, setNotice] = useState('프로젝트 폴더를 열어 시작하세요.');
@@ -5285,6 +5319,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         }
         if (action === 'pan') {
           if (drawingGesture) return;
+          cancelSelectionDrag();
           panPrevious.current = tool;
           setTool('hand');
         }
@@ -6630,6 +6665,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           selectionBeforeClick.current = new Set(
             nodes.filter((node) => node.selected).map((node) => node.id),
           );
+          const target = event.target as HTMLElement;
+          const pane = target.closest<HTMLElement>('.react-flow__pane');
+          selectionPointer.current =
+            pane && event.button === 0 && (target === pane || event.shiftKey)
+              ? { pane, pointerId: event.pointerId }
+              : null;
         }}
         onPointerMoveCapture={(event) => {
           const gesture = noteGesture.current;
@@ -6642,6 +6683,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           });
         }}
         onPointerUpCapture={(event) => {
+          selectionPointer.current = null;
           const gesture = noteGesture.current;
           if (!gesture || gesture.pointerId !== event.pointerId) return;
           event.preventDefault();
@@ -6665,7 +6707,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           } else void addIdeaAt(gesture.flowStart.x, gesture.flowStart.y);
           setTool('select');
         }}
-        onPointerCancel={cancelNoteDrawing}
+        onPointerCancel={() => {
+          selectionPointer.current = null;
+          cancelNoteDrawing();
+        }}
         onLostPointerCapture={cancelNoteDrawing}
         onContextMenuCapture={(event) => {
           if (!event.altKey || tool !== 'select') return;
