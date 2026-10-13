@@ -6,7 +6,10 @@ import {
   type DocumentStatuses,
 } from '../../document-statuses';
 import { DocumentStatusBadge } from '../../ui/DocumentStatusBadge';
+import { statusPropertyApplied } from '../../file-properties';
+import { defaultKanbanView, kanbanBackground, type KanbanView } from './view';
 export type KanbanDocument = {
+  statusPropertyEnabled?: boolean;
   id: string;
   title: string;
   kind: string;
@@ -18,6 +21,7 @@ export type KanbanDocument = {
   locked: boolean;
 };
 export type KanbanBoardProps = {
+  view?: KanbanView;
   documents: KanbanDocument[];
   statuses: DocumentStatuses;
   activeCanvas: string;
@@ -35,6 +39,7 @@ export type KanbanBoardProps = {
   reason?: string;
 };
 export function KanbanBoardContent({
+  view = defaultKanbanView(),
   documents,
   statuses,
   activeCanvas,
@@ -63,7 +68,9 @@ export function KanbanBoardContent({
     }
   };
   const scoped = documents.filter(
-    (d) => scope === 'project' || (d.canvasId ?? 'default') === activeCanvas,
+    (d) =>
+      statusPropertyApplied(d) &&
+      (scope === 'project' || (d.canvasId ?? 'default') === activeCanvas),
   );
   const visible = scoped.filter((d) =>
     d.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
@@ -96,7 +103,8 @@ export function KanbanBoardContent({
         />
         {!scoped.length && (
           <p className="kanban-empty">
-            이 범위에 문서가 없습니다. 메모를 만들거나 파일을 불러오세요.
+            상태 속성을 적용한 파일이 없습니다. 파일의 상세 정보에서 상태를
+            적용하세요.
           </p>
         )}
         <div className="kanban-columns">
@@ -107,10 +115,12 @@ export function KanbanBoardContent({
                 : workflowId(d) === s.id;
             const cards = visible.filter(matches).sort(workflowCompare),
               all = scoped.filter(matches).length;
+            const background =
+              s.id === '__unknown__'
+                ? { mode: 'none' as const }
+                : kanbanBackground(view, s);
             const custom =
-              s.boardBackground.mode === 'custom'
-                ? s.boardBackground.color
-                : undefined;
+              background.mode === 'custom' ? background.color : undefined;
             return (
               <div
                 key={s.id}
@@ -126,7 +136,7 @@ export function KanbanBoardContent({
                       : {}),
                   } as CSSProperties
                 }
-                data-background={s.boardBackground.mode}
+                data-background={background.mode}
                 onDragOver={(e) => {
                   if (editable && !busy && s.id !== '__unknown__') {
                     e.preventDefault();

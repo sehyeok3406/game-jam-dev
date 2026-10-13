@@ -97,6 +97,10 @@ export function describePreview(
         ? data.canvas_placement_id
         : undefined,
     canvasId: typeof data.canvas_id === 'string' ? data.canvas_id : 'default',
+    statusPropertyEnabled:
+      typeof data.status_property_enabled === 'boolean'
+        ? data.status_property_enabled
+        : undefined,
     workflowStatusId:
       typeof data.workflow_status_id === 'string'
         ? data.workflow_status_id
@@ -107,6 +111,7 @@ export function describePreview(
     exists: files[relative] !== undefined,
     relativePath: relative,
     previousPaths: resultPreviousPaths(files, relative),
+    propertyPreviousIds: resultPreviousPaths(files, relative).map(htmlSourceId),
     content,
     backgroundColor: cardColor(data.background_color),
     sourceId: htmlSourceId(relative),

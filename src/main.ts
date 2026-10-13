@@ -8,6 +8,7 @@ import type { DrawingCommand } from './drawing-types.ts';
 import { installUiDebugShortcut } from './ui-debug-shortcut';
 import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses';
 import { initializeWorkflows } from './document-workflow';
+import { KANBAN_VIEW_PATH, readKanbanView } from './features/kanban/view';
 import { CanvasView } from './canvas-view.ts';
 import { writeClientCache, readClientCache } from './client-cache.ts';
 import { EditorDraftStore } from './editor-drafts.ts';
@@ -1142,6 +1143,10 @@ const parseDocument = async (absolutePath: string): Promise<CanvasDocument> => {
         ? data.type
         : 'idea',
     status: typeof data.status === 'string' ? data.status : 'draft',
+    statusPropertyEnabled:
+      typeof data.status_property_enabled === 'boolean'
+        ? data.status_property_enabled
+        : undefined,
     workflowStatusId:
       typeof data.workflow_status_id === 'string'
         ? data.workflow_status_id
@@ -2124,6 +2129,9 @@ const startCodexRun = async (
 };
 
 const mutationLabels: Record<string, string> = {
+  'kanban:move-card': '칸반 카드 이동',
+  'kanban:save-view': '칸반 보기 설정 변경',
+  'files:set-status-property': '파일 상태 속성 변경',
   'documents:set-workflow': '문서 진행 상태 변경',
   'document-statuses:save': '문서 상태 설정 변경',
   'drawings:apply': '도형 · 그림 편집',
@@ -2249,6 +2257,16 @@ const handle = (
         if (channel === 'document-statuses:get') {
           const raw = client.files[DOCUMENT_STATUSES_PATH] ?? null;
           return { value: readStatuses(raw), raw };
+        }
+        if (channel === 'kanban:get-view') {
+          const raw = client.files[KANBAN_VIEW_PATH] ?? null;
+          return {
+            value: readKanbanView(
+              raw,
+              readStatuses(client.files[DOCUMENT_STATUSES_PATH]),
+            ),
+            raw,
+          };
         }
         if (channel === 'files:authorship') {
           const relative = collaborationPath(args[0]);
@@ -2600,7 +2618,15 @@ const handle = (
         );
         if (before) {
           let after = await capture();
-          const initialized = initializeWorkflows(before, after);
+          const initialized = [
+            'documents:create-idea',
+            'documents:duplicate',
+            'files:import',
+            'clipboard:canvas-paste',
+            'tasks:create',
+          ].includes(channel)
+            ? initializeWorkflows(before, after)
+            : after;
           const workflowUpdates = Object.fromEntries(
             Object.entries(initialized).filter(
               ([path, raw]) => raw !== after[path],
@@ -2850,7 +2876,29 @@ const registerIpc = () => {
       });
     return { value: readStatuses(raw), raw };
   });
-  for (const channel of ['documents:set-workflow', 'document-statuses:save'])
+  handle('kanban:get-view', async () => {
+    const root = requireWorkspace();
+    const read = async (relative: string) =>
+      fs.readFile(await projectPath(root, relative), 'utf8').catch((error) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+    const [raw, statuses] = await Promise.all([
+      read(KANBAN_VIEW_PATH),
+      read(DOCUMENT_STATUSES_PATH),
+    ]);
+    return {
+      value: readKanbanView(raw, readStatuses(statuses)),
+      raw,
+    };
+  });
+  for (const channel of [
+    'kanban:move-card',
+    'kanban:save-view',
+    'files:set-status-property',
+    'documents:set-workflow',
+    'document-statuses:save',
+  ])
     handle(channel, async (_event, input) => {
       const root = requireWorkspace(),
         before = await captureProject(root);

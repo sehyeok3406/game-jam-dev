@@ -1,5 +1,6 @@
 import { assertWorkflowReferences } from './document-statuses-storage.ts';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
+import { KANBAN_VIEW_PATH } from './features/kanban/view.ts';
 import { CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
 import { DRAWING_DIRECTORY, isDrawingPath } from './drawing-model.ts';
 import { randomUUID } from 'node:crypto';
@@ -84,6 +85,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
       relative === DOCUMENT_STATUSES_PATH ||
+      relative === KANBAN_VIEW_PATH ||
       isDrawingPath(relative) ||
       isAssetPath(relative)
     ) {
@@ -99,6 +101,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     RESULT_CATALOG_PATH,
     CANVAS_SHEETS_PATH,
     DOCUMENT_STATUSES_PATH,
+    KANBAN_VIEW_PATH,
     DRAWING_DIRECTORY,
     'output',
     'assets/images',
@@ -411,7 +414,36 @@ export async function applyChanges(
             snapshotBytes(relative, content),
             'utf8',
           );
-          await fs.rename(temporary, absolute);
+          for (let attempt = 0; ; attempt++) {
+            if (shouldCancel()) throw new Error('결과 반영을 중지했습니다.');
+            try {
+              await fs.rename(temporary, absolute);
+              break;
+            } catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (
+                process.platform !== 'win32' ||
+                !['EPERM', 'EBUSY', 'EACCES'].includes(code ?? '') ||
+                attempt >= 4
+              )
+                throw error;
+              // A watcher/virus scanner can briefly hold the old file open on Windows.
+              // Recheck the baseline rather than overwriting an external edit after waiting.
+              await new Promise((resolve) =>
+                setTimeout(resolve, 20 * 2 ** attempt),
+              );
+              const current = await readSnapshotFile(absolute, relative).catch(
+                (readError) => {
+                  if (readError.code === 'ENOENT') return undefined;
+                  throw readError;
+                },
+              );
+              if (current !== baseline[relative])
+                throw new Error(
+                  `외부 변경을 발견했습니다. 덮어쓰기를 보류합니다: ${relative}`,
+                );
+            }
+          }
         } finally {
           await fs.rm(temporary, { force: true });
         }

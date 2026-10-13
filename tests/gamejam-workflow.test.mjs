@@ -306,7 +306,10 @@ test('workflow server gates old executors, enforces admins and one lease, and pu
         const actual = matter(editor.files[relative]);
         const expected = matter(artifacts[relative]);
         const { x, y, width, height, collapsed, ...metadata } = actual.data;
-        assert.deepEqual(metadata, expected.data);
+        assert.deepEqual(metadata, {
+          ...expected.data,
+          status_property_enabled: false,
+        });
         assert.equal(actual.content, expected.content);
         assert.ok([x, y, width, height].every(Number.isFinite));
         assert.equal(collapsed, false);

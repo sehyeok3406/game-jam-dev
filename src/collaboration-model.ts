@@ -1,6 +1,15 @@
 import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses.ts';
 import {
+  KANBAN_VIEW_PATH,
+  validateKanbanView,
+} from './features/kanban/view.ts';
+import {
+  moveKanbanCard,
+  saveKanbanView,
+} from './features/kanban/view-storage.ts';
+import {
   applyWorkflow,
+  applyStatusProperty,
   saveStatuses,
   initializeWorkflows,
 } from './document-workflow.ts';
@@ -71,6 +80,7 @@ export function collaborationPath(relative: unknown): string {
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
       relative === DOCUMENT_STATUSES_PATH ||
+      relative === KANBAN_VIEW_PATH ||
       isDrawingPath(relative) ||
       isAssetPath(relative)
     ) ||
@@ -89,6 +99,7 @@ export function collaborationPath(relative: unknown): string {
                 RESULT_CATALOG_PATH,
                 CANVAS_SHEETS_PATH,
                 DOCUMENT_STATUSES_PATH,
+                KANBAN_VIEW_PATH,
               ].includes(relative) ||
                 isDrawingPath(relative)) &&
               segment === '.canvas'
@@ -106,6 +117,8 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if ((files as Snapshot)[DOCUMENT_STATUSES_PATH])
     readStatuses((files as Snapshot)[DOCUMENT_STATUSES_PATH]);
   validateCanvasMembership(files as Snapshot);
+  if ((files as Snapshot)[KANBAN_VIEW_PATH])
+    validateKanbanView(JSON.parse((files as Snapshot)[KANBAN_VIEW_PATH]));
   const sheets = readCanvasSheets((files as Snapshot)[CANVAS_SHEETS_PATH]);
   for (const path of Object.keys(files).filter(isDrawingPath)) {
     const id = path.slice(DRAWING_DIRECTORY.length + 1, -5);
@@ -234,6 +247,10 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
           ? data.type
           : 'idea',
         status: typeof data.status === 'string' ? data.status : 'draft',
+        statusPropertyEnabled:
+          typeof data.status_property_enabled === 'boolean'
+            ? data.status_property_enabled
+            : undefined,
         workflowStatusId:
           typeof data.workflow_status_id === 'string'
             ? data.workflow_status_id
@@ -308,6 +325,9 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
 }
 
 export const commandLabels: Record<string, string> = {
+  'kanban:move-card': '칸반 카드 이동',
+  'kanban:save-view': '칸반 보기 설정 변경',
+  'files:set-status-property': '파일 상태 속성 변경',
   'documents:set-workflow': '문서 진행 상태 변경',
   'document-statuses:save': '문서 상태 설정 변경',
   'drawings:apply': '도형 · 그림 편집',
@@ -368,14 +388,34 @@ export function reduceCollaboration(
     throw new Error('허용되지 않은 공동 작업입니다.');
   let next = { ...files };
   const input = record(value);
+  if (channel === 'kanban:move-card' || channel === 'kanban:save-view') {
+    const changed =
+      channel === 'kanban:move-card'
+        ? moveKanbanCard(
+            files,
+            input as unknown as import('./features/kanban/view-storage').KanbanMoveInput,
+          )
+        : saveKanbanView(
+            files,
+            input as unknown as import('./features/kanban/view').KanbanViewInput,
+          );
+    checkSnapshot(changed);
+    return { files: changed, result: undefined };
+  }
   if (
+    channel === 'files:set-status-property' ||
     channel === 'documents:set-workflow' ||
     channel === 'document-statuses:save'
   ) {
     const changed =
-      channel === 'documents:set-workflow'
-        ? applyWorkflow(files, input as unknown as WorkflowInput)
-        : saveStatuses(files, input as unknown as StatusesInput);
+      channel === 'files:set-status-property'
+        ? applyStatusProperty(
+            files,
+            input as unknown as import('./file-properties').StatusPropertyInput,
+          )
+        : channel === 'documents:set-workflow'
+          ? applyWorkflow(files, input as unknown as WorkflowInput)
+          : saveStatuses(files, input as unknown as StatusesInput);
     checkSnapshot(changed);
     return { files: changed, result: undefined };
   }
@@ -642,6 +682,8 @@ export function reduceCollaboration(
               ? assertCanvas(files, input.canvasId)
               : canvasId(parsed.data.canvas_id),
           id: `copy-${suffix}`,
+          status_property_enabled:
+            parsed.data.status_property_enabled !== false,
           title: `${parsed.data.title ?? '문서'} 복사본`,
           x: number(parsed.data.x ?? 120) + number(input.offsetX),
           y: number(parsed.data.y ?? 120) + number(input.offsetY),
@@ -799,7 +841,15 @@ export function reduceCollaboration(
       (doc) => doc.relativePath === relative,
     );
   }
-  next = initializeWorkflows(files, next);
+  if (
+    [
+      'documents:create-idea',
+      'documents:duplicate',
+      'files:import-batch',
+      'tasks:create',
+    ].includes(channel)
+  )
+    next = initializeWorkflows(files, next);
   checkSnapshot(next);
   if (result && typeof result === 'object' && 'relativePath' in result)
     result =

@@ -125,7 +125,7 @@ test('used status deletion requires replacement and rewrites implicit legacy use
   );
   assertWorkflowReferences(after);
 });
-test('changing new-document default leaves legacy documents unchanged and applies only to creations', () => {
+test('changing status default leaves legacy documents unchanged and new files start unapplied', () => {
   const f = legacy(),
     value = defaultStatuses();
   value.defaultStatusId = 'done';
@@ -135,14 +135,16 @@ test('changing new-document default leaves legacy documents unchanged and applie
     'ideas/c.md': raw('c'),
   });
   assert.equal(after['ideas/a.md'], f['ideas/a.md']);
-  assert.equal(matter(after['ideas/c.md']).data.workflow_status_id, 'done');
+  assert.equal(matter(after['ideas/c.md']).data.workflow_status_id, undefined);
+  assert.equal(matter(after['ideas/c.md']).data.status_property_enabled, false);
   const created = reduceCollaboration(settings, 'documents:create-idea', {
     x: 10,
     y: 10,
   });
-  assert.equal(created.result.workflowStatusId, 'done');
+  assert.equal(created.result.workflowStatusId, undefined);
+  assert.equal(created.result.statusPropertyEnabled, false);
 });
-test('AI publication preserves latest workflow and assigns current default to new outputs', () => {
+test('AI publication preserves latest file properties and leaves new outputs unapplied', () => {
   const f = applyWorkflow(legacy(), input(legacy(), 'a', 'in-progress'));
   const after = initializeWorkflows(
     f,
@@ -157,9 +159,10 @@ test('AI publication preserves latest workflow and assigns current default to ne
     matter(after['ideas/a.md']).data.workflow_status_id,
     'in-progress',
   );
+  assert.equal(matter(after['docs/new.md']).data.workflow_status_id, undefined);
   assert.equal(
-    matter(after['docs/new.md']).data.workflow_status_id,
-    'not-started',
+    matter(after['docs/new.md']).data.status_property_enabled,
+    false,
   );
 });
 test('body and status changes merge; undo preserves teammate text', () => {

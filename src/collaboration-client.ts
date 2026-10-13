@@ -1,4 +1,8 @@
-import { objectId, type PropertyVersions } from './sync-properties.ts';
+import {
+  objectId,
+  workflowOnlyChange,
+  type PropertyVersions,
+} from './sync-properties.ts';
 import { randomUUID } from 'node:crypto';
 import type {
   CollaborationState,
@@ -518,6 +522,7 @@ export class CollaborationClient {
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
         documentStatusesVersion: 1,
+        filePropertiesVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
         action !== 'ai-start' &&
@@ -801,13 +806,20 @@ export class CollaborationClient {
       );
     return this.serial(async () => {
       if (
+        (channel === 'files:set-status-property' ||
+          channel.startsWith('kanban:')) &&
+        this.state.filePropertiesVersion !== 1
+      )
+        throw Error('파일 속성을 편집하려면 협업 서버를 업데이트해주세요.');
+      if (
         (channel === 'documents:set-workflow' ||
           channel === 'document-statuses:save') &&
         this.state.documentStatusesVersion !== 1
       )
         throw Error('문서 상태를 사용하려면 협업 서버를 업데이트해주세요.');
       if (
-        (channel === 'document-statuses:save' ||
+        (channel.startsWith('kanban:') ||
+          channel === 'document-statuses:save' ||
           (channel === 'documents:set-workflow' &&
             ((input as { beforeId?: string; afterId?: string }).beforeId ||
               (input as { afterId?: string }).afterId))) &&
@@ -874,7 +886,11 @@ export class CollaborationClient {
             (path) =>
               path.startsWith('.ai/') ||
               path.startsWith('output/') ||
-              path.startsWith('docs/html-sources/'),
+              (path.startsWith('docs/html-sources/') &&
+                !(
+                  channel === 'files:set-status-property' &&
+                  workflowOnlyChange(path, before[path], reduced.files[path])
+                )),
           )
         )
           throw new Error(
@@ -1046,6 +1062,7 @@ export class CollaborationClient {
           : {}),
         canvasSheetsVersion: 1,
         documentStatusesVersion: 1,
+        filePropertiesVersion: 1,
         channel,
         input,
         revisions: { ...this.revisions },
@@ -1081,7 +1098,9 @@ export class CollaborationClient {
           };
       }
       if (
-        channel === 'documents:set-workflow' &&
+        (channel === 'documents:set-workflow' ||
+          channel === 'files:set-status-property' ||
+          channel === 'kanban:move-card') &&
         sourcePath &&
         command.properties
       ) {
@@ -1174,7 +1193,11 @@ export class CollaborationClient {
             !changedPaths(this.files, preview).some(
               (path) =>
                 path.startsWith('.ai/') ||
-                path.startsWith('docs/html-sources/'),
+                (path.startsWith('docs/html-sources/') &&
+                  !(
+                    channel === 'files:set-status-property' &&
+                    workflowOnlyChange(path, this.files[path], preview[path])
+                  )),
             )
           ) {
             this.offline = { base: { ...this.files }, local: preview };

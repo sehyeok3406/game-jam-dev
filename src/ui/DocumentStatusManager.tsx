@@ -1,3 +1,7 @@
+import {
+  statusPropertyApplied,
+  type FilePropertyDocument,
+} from '../file-properties';
 import { useEffect, useRef, useState } from 'react';
 import {
   validateStatuses,
@@ -14,7 +18,7 @@ export function DocumentStatusManager({
 }: {
   value: DocumentStatuses;
   raw: string | null;
-  documents: { workflowStatusId?: string }[];
+  documents: FilePropertyDocument[];
   save: (input: StatusesInput) => Promise<void>;
   close: () => void;
 }) {
@@ -93,10 +97,10 @@ export function DocumentStatusManager({
           }
         }}
       >
-        <h2 id="workflow-manager-title">문서 상태 관리</h2>
+        <h2 id="workflow-manager-title">상태 속성 옵션 관리</h2>
         <p>
-          프로젝트의 모든 캔버스에 적용됩니다. 상태 색과 열 배경을 따로 지정할
-          수 있습니다.
+          상태 속성을 적용한 파일에서 사용하는 이름·색·옵션입니다. 칸반 열
+          배경은 보드 컨트롤에서 설정합니다.
         </p>
         <fieldset disabled={busy}>
           {draft.statuses.map((s, index) => (
@@ -131,56 +135,6 @@ export function DocumentStatusManager({
                   />
                 </div>
               </label>
-              <label>
-                열 배경
-                <select
-                  value={s.boardBackground.mode}
-                  onChange={(e) =>
-                    patch(s.id, {
-                      boardBackground:
-                        e.target.value === 'custom'
-                          ? { mode: 'custom', color: s.badgeColor }
-                          : { mode: e.target.value as 'none' | 'status' },
-                    })
-                  }
-                >
-                  <option value="status">상태 색 사용</option>
-                  <option value="custom">직접 지정</option>
-                  <option value="none">배경색 해제</option>
-                </select>
-              </label>
-              {s.boardBackground.mode === 'custom' && (
-                <label>
-                  배경 색
-                  <div className="workflow-color-input">
-                    <input
-                      type="color"
-                      value={s.boardBackground.color}
-                      onChange={(e) =>
-                        patch(s.id, {
-                          boardBackground: {
-                            mode: 'custom',
-                            color: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <input
-                      aria-label={`${s.name} 배경 HEX 색`}
-                      value={s.boardBackground.color}
-                      maxLength={7}
-                      onChange={(e) =>
-                        patch(s.id, {
-                          boardBackground: {
-                            mode: 'custom',
-                            color: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                </label>
-              )}
               <label className="workflow-default">
                 <input
                   type="radio"
@@ -190,10 +144,15 @@ export function DocumentStatusManager({
                     setDraft((d) => ({ ...d, defaultStatusId: s.id }))
                   }
                 />
-                새 문서 기본값
+                상태 적용 시 기본값
               </label>
               <span>
-                {documents.filter((d) => workflowId(d) === s.id).length}개 문서
+                {
+                  documents.filter(
+                    (d) => statusPropertyApplied(d) && workflowId(d) === s.id,
+                  ).length
+                }
+                개 문서
               </span>
               <div className="workflow-row-actions">
                 <button
@@ -235,8 +194,13 @@ export function DocumentStatusManager({
           {Object.keys(replacements).map((id) => (
             <label className="workflow-replacement" key={id}>
               삭제할 {value.statuses.find((s) => s.id === id)?.name ?? id}의
-              문서 {documents.filter((d) => workflowId(d) === id).length}개를
-              이동할 상태
+              문서{' '}
+              {
+                documents.filter(
+                  (d) => statusPropertyApplied(d) && workflowId(d) === id,
+                ).length
+              }
+              개를 이동할 상태
               <select
                 aria-label={`${id} 대체 상태`}
                 value={replacements[id]}

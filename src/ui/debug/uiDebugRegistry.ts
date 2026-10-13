@@ -88,6 +88,30 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
     project,
     '.workflow-manager',
   ),
+  {
+    ...entry(
+      'file-properties',
+      '파일 속성',
+      'FilePropertiesEditor',
+      'FileProperties',
+      '패널',
+      project,
+      '.file-properties-editor',
+    ),
+    states: ['default', 'unapplied', 'html'],
+  },
+  {
+    ...entry(
+      'kanban-appearance',
+      '칸반 열 배경',
+      'KanbanAppearanceManager',
+      'KanbanAppearanceManager',
+      '팝업',
+      project,
+      '.kanban-appearance-manager',
+    ),
+    source: 'src/features/kanban/KanbanAppearanceManager.tsx',
+  },
   entry(
     'section-collapse',
     '섹션 접기',

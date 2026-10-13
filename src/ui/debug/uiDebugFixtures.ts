@@ -1,4 +1,5 @@
 import { defaultStatuses } from '../../document-statuses.ts';
+import { defaultKanbanView } from '../../features/kanban/view.ts';
 import type {
   CanvasDocument,
   CanvasSection,
@@ -405,6 +406,7 @@ export function createUiPreviewApi(
     // function fallback. The isolated preview never connects a real host.
     selfHost: undefined,
     getDocumentStatuses: async () => ({ value: defaultStatuses(), raw: null }),
+    getKanbanView: async () => ({ value: defaultKanbanView(), raw: null }),
     getWorkspace: async () => ({
       root: 'ui-preview',
       name: '전투 시스템 연구',

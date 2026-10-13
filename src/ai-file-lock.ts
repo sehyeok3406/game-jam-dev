@@ -100,7 +100,9 @@ export function assertAiMutation(
     (path) => before[path] !== after[path],
   );
   if (
-    channel.startsWith('documents:') &&
+    (channel.startsWith('documents:') ||
+      channel === 'files:set-status-property' ||
+      channel === 'kanban:move-card') &&
     channel !== 'documents:duplicate' &&
     typeof input.relativePath === 'string'
   )

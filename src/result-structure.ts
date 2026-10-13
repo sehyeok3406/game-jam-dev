@@ -8,6 +8,21 @@ export {
 import type { Snapshot } from './project-store.ts';
 import { htmlSourceId, htmlSourcePath } from './html-source.ts';
 import {
+  KANBAN_VIEW_PATH,
+  validateKanbanView,
+} from './features/kanban/view.ts';
+
+function remapKanbanOrders(raw: string, replacements: Map<string, string>) {
+  const view = validateKanbanView(JSON.parse(raw));
+  view.orders = Object.fromEntries(
+    Object.entries(view.orders).map(([id, order]) => [
+      replacements.get(id) ?? id,
+      order,
+    ]),
+  );
+  return JSON.stringify(view, null, 2);
+}
+import {
   isPreviewPath,
   previewDeletionTarget,
   resultLocation,
@@ -108,12 +123,14 @@ export function remapResultChanges(
         target = `${previewDeletionTarget(to)}${key.slice(owned.length)}`;
     }
     remapped[target] =
-      typeof value === 'string' && key.endsWith('.md') && pattern
-        ? value.replace(
-            new RegExp(pattern, 'g'),
-            (original) => replacements.get(original)!,
-          )
-        : value;
+      typeof value === 'string' && key === KANBAN_VIEW_PATH
+        ? remapKanbanOrders(value, replacements)
+        : typeof value === 'string' && key.endsWith('.md') && pattern
+          ? value.replace(
+              new RegExp(pattern, 'g'),
+              (original) => replacements.get(original)!,
+            )
+          : value;
   }
   return remapped;
 }
@@ -196,6 +213,11 @@ export function relocateResults(
         (value) => replacements.get(value)!,
       );
   }
+  if (next[KANBAN_VIEW_PATH])
+    next[KANBAN_VIEW_PATH] = remapKanbanOrders(
+      next[KANBAN_VIEW_PATH],
+      replacements,
+    );
   if (moves.some(({ from, to }) => from !== to))
     next[CATALOG] = JSON.stringify(
       { schemaVersion: 1, results: entries },

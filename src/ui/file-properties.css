@@ -1,0 +1,95 @@
+.file-property-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 210px;
+}
+.file-property-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 110px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: 10px;
+}
+.file-property-badge span {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.file-property-badge strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.file-property-more {
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-subtle);
+  font-size: 11px;
+}
+.file-properties-editor {
+  margin: 14px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.object-inspector:has(.file-properties-editor) {
+  width: min(370px, calc(100vw - 32px));
+}
+.file-properties-editor header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.file-properties-editor small,
+.file-properties-editor p {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.file-property-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.file-property-row strong {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.file-property-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.file-property-row select {
+  min-width: 0;
+  max-width: 130px;
+  color: var(--text);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.file-property-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.file-properties-editor > button {
+  margin-top: 10px;
+}

@@ -41,9 +41,9 @@ try {
     await new Promise((r) => setTimeout(r, 50));
   }
   assert.equal(health?.documentStatusesVersion, 1);
+  assert.equal(health?.filePropertiesVersion, 1);
   assert.equal(health?.projectTrash, true);
-  // UI-only releases retain the compatible collaboration server version.
-  assert.equal(health.version, '0.17.0');
+  assert.equal(health.version, '0.20.0');
   const created = await CollaborationClient.create(
     url,
     '',
@@ -55,7 +55,12 @@ try {
     CollaborationClient.fetch(
       url,
       `/projects/${created.credentials.projectId}/${action}`,
-      { documentStatusesVersion: 1, syncClientVersion: 1, ...input },
+      {
+        filePropertiesVersion: 1,
+        documentStatusesVersion: 1,
+        syncClientVersion: 1,
+        ...input,
+      },
       created.credentials.token,
     );
   const owner = new CollaborationClient(created.credentials, () => {});
@@ -69,6 +74,39 @@ try {
   assert.ok(state.files['.canvas/document-statuses.json']);
   assert.match(state.files['project.md'], /workflow_status_id: in-progress/);
   owner.accept(await api('state'));
+  await owner.command('files:set-status-property', {
+    relativePath: 'project.md',
+    objectId: 'project.md',
+    expectedEnabled: true,
+    expectedStatus: 'in-progress',
+    enabled: false,
+  });
+  const propertyHistory = owner.lastCommandHistoryId;
+  assert.equal(
+    matter(owner.files['project.md']).data.status_property_enabled,
+    false,
+  );
+  await owner.changeHistory(propertyHistory, 'undo');
+  assert.equal(
+    matter(owner.files['project.md']).data.workflow_status_id,
+    'in-progress',
+  );
+  const projectBytes = owner.files['project.md'];
+  await owner.command('kanban:move-card', {
+    relativePath: 'project.md',
+    objectId: 'project.md',
+    expectedEnabled: true,
+    expectedStatus: 'in-progress',
+    statusId: 'in-progress',
+    expectedView: null,
+  });
+  assert.equal(owner.files['project.md'], projectBytes);
+  assert.equal(
+    typeof JSON.parse(owner.files['.canvas/kanban-view.json']).orders[
+      'project.md'
+    ],
+    'number',
+  );
   await owner.command('canvases:change', {
     action: 'add',
     id: 'nearby',

@@ -7,6 +7,7 @@ import {
 } from '@xyflow/react';
 import { GripHorizontal, Maximize2, Minimize2, Settings2 } from 'lucide-react';
 import { kanbanSizeLimits, type KanbanCanvasPreferences } from './preferences';
+import { statusPropertyApplied } from '../../file-properties';
 import {
   KanbanBoardContent,
   type KanbanBoardProps,
@@ -23,7 +24,9 @@ export type KanbanCanvasNode = Node<KanbanCanvasData, 'kanban'>;
 export function KanbanNode({ data, selected }: NodeProps<KanbanCanvasNode>) {
   const p = data.preferences;
   const count = data.documents.filter(
-    (d) => p.scope === 'project' || (d.canvasId ?? 'default') === data.canvasId,
+    (d) =>
+      statusPropertyApplied(d) &&
+      (p.scope === 'project' || (d.canvasId ?? 'default') === data.canvasId),
   ).length;
   const saveSize: OnResizeEnd = (_event, bounds) =>
     data.update({

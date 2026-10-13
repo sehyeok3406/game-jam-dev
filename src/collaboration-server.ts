@@ -1,4 +1,6 @@
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
+import { workflowDocuments } from './document-statuses-storage.ts';
+import { KANBAN_VIEW_PATH } from './features/kanban/view.ts';
 import {
   initializeWorkflows,
   assertWorkflowReferences,
@@ -15,6 +17,7 @@ import { isDrawingPath, drawingDelta } from './drawing-model.ts';
 import {
   advanceProperties,
   changedGroups,
+  workflowOnlyChange,
   objectId,
   type PropertyVersions,
 } from './sync-properties.ts';
@@ -139,6 +142,7 @@ export type CollaborationCommand = {
   deltaVersion?: number;
   canvasSheetsVersion?: number;
   documentStatusesVersion?: number;
+  filePropertiesVersion?: number;
   id: string;
   channel: string;
   input: unknown;
@@ -462,6 +466,7 @@ export async function createCollaborationServer(options: Options) {
       documentOutputFormats: true,
       drawingsVersion: 1,
       documentStatusesVersion: 1,
+      filePropertiesVersion: 1,
       htmlImportAnalysis: true,
       htmlResultFolders: true,
       structuredResults: true,
@@ -507,9 +512,9 @@ export async function createCollaborationServer(options: Options) {
     kind: HistoryEntry['kind'] = 'user',
     extra: Partial<HistoryEntry> = {},
   ) => {
-    after = initializeWorkflows(project.files, after, kind === 'ai');
-    if (after[DOCUMENT_STATUSES_PATH])
-      assertWorkflowReferences(after, project.files);
+    // Reducers initialize explicit creations. Undo/restore must reproduce exact stored metadata.
+    if (kind === 'ai') after = initializeWorkflows(project.files, after, true);
+    assertWorkflowReferences(after, project.files);
     const touched = Object.keys({ ...project.files, ...after }).filter(
       (relative) => project.files[relative] !== after[relative],
     );
@@ -887,6 +892,7 @@ export async function createCollaborationServer(options: Options) {
           documentOutputFormats: true,
           drawingsVersion: 1,
           documentStatusesVersion: 1,
+          filePropertiesVersion: 1,
           htmlImportAnalysis: true,
           htmlResultFolders: true,
           structuredResults: true,
@@ -897,7 +903,7 @@ export async function createCollaborationServer(options: Options) {
           deltaSync: true,
           eventStream: true,
           projectTrash: true,
-          version: '0.17.0',
+          version: '0.20.0',
         });
         return;
       }
@@ -1223,6 +1229,27 @@ export async function createCollaborationServer(options: Options) {
             '문서 상태가 있는 프로젝트입니다. 앱을 업데이트해주세요.',
             409,
           );
+        if (
+          (project.files[KANBAN_VIEW_PATH] ||
+            workflowDocuments(project.files).some(
+              (d) => d.statusPropertyEnabled !== undefined,
+            )) &&
+          ![
+            'state',
+            'leave',
+            'history',
+            'history-read',
+            'unlock',
+            'ai-heartbeat',
+            'ai-event',
+            'ai-cancel',
+          ].includes(action) &&
+          input.filePropertiesVersion !== 1
+        )
+          throw new ApiError(
+            '파일 속성이 있는 프로젝트입니다. 앱을 업데이트해주세요.',
+            409,
+          );
         if (action === 'state') {
           for (const item of Array.isArray(input.renewLocks)
             ? input.renewLocks
@@ -1317,7 +1344,11 @@ export async function createCollaborationServer(options: Options) {
               relative === CANVAS_SHEETS_PATH ||
               relative.startsWith('.ai/tasks/') ||
               relative.startsWith('output/') ||
-              relative.startsWith('docs/html-sources/')
+              (relative.startsWith('docs/html-sources/') &&
+                !(
+                  typeof value === 'string' &&
+                  workflowOnlyChange(relative, project.files[relative], value)
+                ))
             )
               throw new ApiError(
                 'AI 실행 및 HTML 결과는 온라인에서만 변경할 수 있습니다.',

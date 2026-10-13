@@ -47,6 +47,7 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  statusPropertyEnabled?: boolean;
   /** Derived from frontmatter; never persisted by link insertion. */
   identitySource?: 'frontmatter' | 'path';
   workflowStatusId?: string;
@@ -236,6 +237,8 @@ export type HtmlResultChoice = {
 };
 
 export type PreviewResult = {
+  propertyPreviousIds?: string[];
+  statusPropertyEnabled?: boolean;
   placementId?: string;
   workflowStatusId?: string;
   workflowOrder?: number;
@@ -337,6 +340,19 @@ export type GameCanvasApi = {
   ) => Promise<void>;
   setDocumentWorkflow: (
     input: import('./document-statuses').WorkflowInput,
+  ) => Promise<void>;
+  setFileStatusProperty: (
+    input: import('./file-properties').StatusPropertyInput,
+  ) => Promise<void>;
+  getKanbanView: () => Promise<{
+    value: import('./features/kanban/view').KanbanView;
+    raw: string | null;
+  }>;
+  saveKanbanView: (
+    input: import('./features/kanban/view').KanbanViewInput,
+  ) => Promise<void>;
+  moveKanbanCard: (
+    input: import('./features/kanban/view-storage').KanbanMoveInput,
   ) => Promise<void>;
   selfHost?: import('./features/self-host/types').SelfHostApi;
   inspectConnectionInfo: (text: string) => Promise<{
@@ -684,6 +700,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  filePropertiesVersion?: number;
   documentStatusesVersion?: number;
   projectTrash?: boolean;
   lifecycleVersion?: number;

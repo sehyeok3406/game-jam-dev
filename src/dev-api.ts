@@ -1,4 +1,7 @@
 import { defaultStatuses, validateStatuses } from './document-statuses';
+import { statusPropertyApplied } from './file-properties';
+import { readKanbanView, validateKanbanView } from './features/kanban/view';
+let kanbanViewRaw: string | null = null;
 let statusesRaw: string | null = null;
 import {
   CANVAS_SHEETS_PATH,
@@ -450,6 +453,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       for (const d of documents)
         if (
           d.type !== 'ai-task' &&
+          statusPropertyApplied(d) &&
           !value.statuses.some(
             (s) => s.id === (d.workflowStatusId ?? 'not-started'),
           )
@@ -461,6 +465,77 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           d.workflowStatusId = target;
         }
       statusesRaw = JSON.stringify(value, null, 2);
+      notify();
+    },
+    getKanbanView: async () => ({
+      value: readKanbanView(
+        kanbanViewRaw,
+        statusesRaw
+          ? validateStatuses(JSON.parse(statusesRaw))
+          : defaultStatuses(),
+      ),
+      raw: kanbanViewRaw,
+    }),
+    saveKanbanView: async (input) => {
+      if (input.expected !== kanbanViewRaw)
+        throw Error('칸반 설정이 변경되었습니다.');
+      kanbanViewRaw = JSON.stringify(validateKanbanView(input.value));
+      notify();
+    },
+    moveKanbanCard: async (input) => {
+      const d =
+        documents.find((d) => d.id === input.objectId) ??
+        previews.find((p) => p.sourceId === input.objectId);
+      if (
+        !d ||
+        !statusPropertyApplied(d) ||
+        d.workflowStatusId !== input.expectedStatus ||
+        input.expectedView !== kanbanViewRaw
+      )
+        throw Error('파일 속성 또는 칸반 설정이 변경되었습니다.');
+      const statuses = statusesRaw
+        ? validateStatuses(JSON.parse(statusesRaw))
+        : defaultStatuses();
+      if (!statuses.statuses.some((s) => s.id === input.statusId))
+        throw Error('상태가 삭제되었습니다.');
+      d.workflowStatusId = input.statusId;
+      const view = readKanbanView(kanbanViewRaw, statuses);
+      view.orders[input.objectId] = Date.now();
+      kanbanViewRaw = JSON.stringify(view);
+      notify();
+    },
+    setFileStatusProperty: async (input) => {
+      const d =
+        documents.find(
+          (d) =>
+            d.id === input.objectId && d.relativePath === input.relativePath,
+        ) ??
+        previews.find(
+          (p) =>
+            p.sourceId === input.objectId &&
+            p.relativePath === input.relativePath,
+        );
+      if (
+        !d ||
+        statusPropertyApplied(d) !== input.expectedEnabled ||
+        d.workflowStatusId !== input.expectedStatus
+      )
+        throw Error('파일 속성이 변경되었습니다.');
+      const statuses = statusesRaw
+        ? validateStatuses(JSON.parse(statusesRaw))
+        : defaultStatuses();
+      const applied = input.enabled ?? statusPropertyApplied(d);
+      if (applied) {
+        const id =
+          input.statusId ??
+          (statuses.statuses.some((s) => s.id === d.workflowStatusId)
+            ? d.workflowStatusId
+            : statuses.defaultStatusId);
+        if (!statuses.statuses.some((s) => s.id === id))
+          throw Error('상태가 삭제되었습니다.');
+        d.workflowStatusId = id;
+      }
+      d.statusPropertyEnabled = applied;
       notify();
     },
     setDocumentWorkflow: async (input) => {
@@ -479,6 +554,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         throw Error('상태를 찾을 수 없습니다.');
       d.workflowStatusId = input.statusId;
       d.workflowOrder = Date.now();
+      d.statusPropertyEnabled = true;
       statusesRaw ??= JSON.stringify(value, null, 2);
       notify();
     },
@@ -1123,6 +1199,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           );
       const layout = explicit ? { x, y, width, height } : automatic;
       const document: CanvasDocument = {
+        statusPropertyEnabled: false,
         canvasId: canvasId(selectedCanvas),
         id,
         title: '새 아이디어',

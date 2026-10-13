@@ -5,6 +5,11 @@ import { selfHostPreload } from './features/self-host/preload';
 
 const api: GameCanvasApi = {
   getDocumentStatuses: () => ipcRenderer.invoke('document-statuses:get'),
+  setFileStatusProperty: (input) =>
+    ipcRenderer.invoke('files:set-status-property', input),
+  getKanbanView: () => ipcRenderer.invoke('kanban:get-view'),
+  saveKanbanView: (input) => ipcRenderer.invoke('kanban:save-view', input),
+  moveKanbanCard: (input) => ipcRenderer.invoke('kanban:move-card', input),
   saveDocumentStatuses: (input) =>
     ipcRenderer.invoke('document-statuses:save', input),
   setDocumentWorkflow: (input) =>

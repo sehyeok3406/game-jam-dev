@@ -6,6 +6,7 @@ export function KanbanControls({
   toggle,
   focus,
   manage,
+  appearance,
   manageDisabled,
   reason,
   activationEnabled,
@@ -16,6 +17,7 @@ export function KanbanControls({
   toggle: (enabled: boolean) => void;
   focus: () => void;
   manage: () => void;
+  appearance: () => void;
   manageDisabled: boolean;
   reason?: string;
   activationEnabled: boolean;
@@ -58,7 +60,10 @@ export function KanbanControls({
             캔버스의 보드로 이동
           </button>
           <button disabled={manageDisabled} title={reason} onClick={manage}>
-            상태·색·열 배경 관리
+            상태 옵션·색 관리
+          </button>
+          <button disabled={manageDisabled} title={reason} onClick={appearance}>
+            열 배경 관리
           </button>
           {reason && (
             <p role="status" className="plugin-control-description">

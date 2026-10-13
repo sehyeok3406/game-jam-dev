@@ -9,7 +9,7 @@ export const propertyKeys = {
   position: ['x', 'y'],
   size: ['width', 'height', 'collapsed'],
   color: ['background_color'],
-  workflow: ['workflow_status_id', 'workflow_order'],
+  workflow: ['workflow_status_id', 'workflow_order', 'status_property_enabled'],
 } as const;
 export type PropertyGroup = keyof typeof propertyKeys | 'structure';
 export type PropertyVersions = Record<
@@ -30,7 +30,11 @@ export function propertyValues(raw: string) {
     position: [parsed.data.x, parsed.data.y],
     size: [parsed.data.width, parsed.data.height, parsed.data.collapsed],
     color: [parsed.data.background_color],
-    workflow: [parsed.data.workflow_status_id, parsed.data.workflow_order],
+    workflow: [
+      parsed.data.workflow_status_id,
+      parsed.data.workflow_order,
+      parsed.data.status_property_enabled,
+    ],
     structure,
   };
 }
@@ -46,6 +50,16 @@ export function changedGroups(
   return (Object.keys(b) as PropertyGroup[]).filter(
     (key) => !same(b[key], a[key]),
   );
+}
+/** Existing HTML metadata may sync its status property, but never source/identity/body changes. */
+export function workflowOnlyChange(
+  relative: string,
+  before?: string,
+  after?: string,
+) {
+  if (before === undefined || after === undefined) return false;
+  const groups = changedGroups(relative, before, after);
+  return groups.length > 0 && groups.every((group) => group === 'workflow');
 }
 export function objectId(raw?: string): string | undefined {
   return raw === undefined ? undefined : String(matter(raw).data.id ?? '');

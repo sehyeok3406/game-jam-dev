@@ -206,7 +206,7 @@ try {
   );
   assert.equal(
     await js(
-      'document.querySelector(".document-header-actions .workflow-badge").nextElementSibling.title',
+      'document.querySelector(".document-header-actions .file-property-badges").nextElementSibling.title',
     ),
     '메모 최소화',
   );
@@ -355,11 +355,11 @@ try {
   await screenshot('workflow-kanban-dark.png');
   await click('.kanban-node-actions [aria-label="칸반 컨트롤 열기"]');
   await js(
-    '[...document.querySelectorAll(".kanban-controls button")].find(b=>b.textContent.includes("열 배경 관리")).click()',
+    '[...document.querySelectorAll(".kanban-controls button")].find(b=>b.textContent.includes("상태 옵션")).click()',
   );
   await wait('!!document.querySelector(".workflow-manager")');
   await js(
-    '(()=>{const r=document.querySelectorAll(".workflow-status-row")[1],color=r.querySelector("input[type=color]");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(color,"#a855f7");color.dispatchEvent(new Event("input",{bubbles:true}));color.dispatchEvent(new Event("change",{bubbles:true}));const sel=r.querySelector("select");sel.value="none";sel.dispatchEvent(new Event("change",{bubbles:true}));})()',
+    '(()=>{const r=document.querySelectorAll(".workflow-status-row")[1],color=r.querySelector("input[type=color]");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(color,"#a855f7");color.dispatchEvent(new Event("input",{bubbles:true}));color.dispatchEvent(new Event("change",{bubbles:true}));})()',
   );
   await js(
     '[...document.querySelectorAll(".workflow-manager button")].find(b=>b.textContent==="+ 상태 추가").click()',
@@ -372,7 +372,51 @@ try {
   const settings = await js('window.gameCanvas.getDocumentStatuses()');
   assert.equal(settings.value.statuses.length, 4);
   assert.equal(settings.value.statuses[1].badgeColor, '#A855F7');
-  assert.equal(settings.value.statuses[1].boardBackground.mode, 'none');
+  assert.equal(settings.value.statuses[1].boardBackground.mode, 'status');
+  await js(
+    '[...document.querySelectorAll(".kanban-controls button")].find(b=>b.textContent.trim()==="열 배경 관리").click()',
+  );
+  await wait('!!document.querySelector(".kanban-appearance-manager")');
+  await js(
+    '(()=>{const s=document.querySelectorAll(".kanban-appearance-manager select")[1];s.value="none";s.dispatchEvent(new Event("change",{bubbles:true}));})()',
+  );
+  await click('[aria-label="완료 열 배경"]');
+  for (const key of ['ArrowDown', 'Enter']) {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key });
+  }
+  await wait(
+    `!!document.querySelector('.kanban-appearance-manager [aria-label="완료 열 배경 HEX 색"]')`,
+  );
+  await click('[aria-label="완료 열 배경 HEX 색"]');
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'a',
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+  });
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'a',
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+  });
+  await send('Input.insertText', { text: '#224466' });
+  await js(
+    '[...document.querySelectorAll(".kanban-appearance-manager footer button")].find(b=>b.textContent==="저장").click()',
+  );
+  await wait('!document.querySelector(".kanban-appearance-manager")');
+  assert.equal(
+    (await js('window.gameCanvas.getKanbanView()')).value.backgrounds[
+      'in-progress'
+    ].mode,
+    'none',
+  );
+  assert.equal(
+    (await js('window.gameCanvas.getKanbanView()')).value.backgrounds.done
+      .color,
+    '#224466',
+  );
   await click('[aria-label="칸반 보드 최소화"]');
   await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
   assert.equal(
@@ -745,6 +789,147 @@ try {
     await js('window.gameCanvas.getPreviewWindow("output/index.html")'),
     movedWindow,
     'HTML window never restores its old canvas coordinates',
+  );
+  // Properties belong to files; hiding a badge never removes its board card.
+  await click('.canvas-tabs__item:nth-child(2) [role="tab"]');
+  await wait('!!document.querySelector("[data-id=b]")');
+  await js(
+    '[...document.querySelectorAll("button")].find(b=>b.title==="칸반 펼치기")?.click()',
+  );
+  await wait(
+    '[...document.querySelectorAll(".kanban-card-title")].some(b=>b.textContent==="개발 문서 B")',
+  );
+  await js(
+    `[...document.querySelectorAll('.kanban-card-title')].find(b=>b.textContent==='개발 문서 B').click()`,
+  );
+  await sleep(300);
+  await js(
+    `document.querySelector('[data-id=b] .document-header-actions [title="문서 상세 정보"]').click()`,
+  );
+  await wait('!!document.querySelector(".file-properties-editor")');
+  const beforeProperties = await js(
+    'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="b"))',
+  );
+  await click('[aria-label="상태 속성 적용"]');
+  await wait(
+    'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="b").statusPropertyEnabled===false)',
+  );
+  await wait('!document.querySelector("[data-id=b] .workflow-badge")');
+  assert.equal(
+    (
+      await js(
+        'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="b"))',
+      )
+    ).workflowStatusId,
+    beforeProperties.workflowStatusId ?? 'not-started',
+  );
+  assert.equal(
+    await js(
+      '[...document.querySelectorAll(".kanban-card-title")].some(b=>b.textContent==="개발 문서 B")',
+    ),
+    false,
+  );
+  await click('[aria-label="상태 속성 적용"]');
+  await wait(
+    'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="b").statusPropertyEnabled===true)',
+  );
+  await wait('!!document.querySelector("[data-id=b] .workflow-badge")');
+  assert.equal(
+    (
+      await js(
+        'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="b"))',
+      )
+    ).workflowStatusId,
+    beforeProperties.workflowStatusId ?? 'not-started',
+  );
+  const bytesBeforeHide = await fs.readFile(
+    path.join(game, 'ideas/b.md'),
+    'utf8',
+  );
+  await click('[aria-label="상태 우측 상단 표시"]');
+  await wait('!document.querySelector("[data-id=b] .workflow-badge")');
+  assert.equal(
+    await fs.readFile(path.join(game, 'ideas/b.md'), 'utf8'),
+    bytesBeforeHide,
+    'Personal display changes never rewrite shared files',
+  );
+  assert.equal(
+    await js(
+      '[...document.querySelectorAll(".kanban-card-title")].some(b=>b.textContent==="개발 문서 B")',
+    ),
+    true,
+    'Hidden properties remain on the board',
+  );
+  await click('[aria-label="생성자 우측 상단 표시"]');
+  await click('[aria-label="생성일 우측 상단 표시"]');
+  await click('[aria-label="마지막 편집자 우측 상단 표시"]');
+  await wait('!!document.querySelector("[data-id=b] .file-property-more")');
+  await screenshot('file-properties-detail-dark.png');
+  const createdFile = await js(
+    'window.gameCanvas.createIdea({x:100,y:100,canvasId:"second"})',
+  );
+  assert.equal(
+    createdFile.statusPropertyEnabled,
+    false,
+    'New files start with optional status unapplied',
+  );
+  await send('Page.reload');
+  await wait(
+    '!!document.querySelector(".home-project-open")||!!document.querySelector("[data-id=b]")',
+  );
+  await js('document.querySelector(".home-project-open")?.click()');
+  await wait('!!document.querySelector("[data-id=b] .file-property-badges")');
+  assert.equal(
+    await js('!!document.querySelector("[data-id=b] .workflow-badge")'),
+    false,
+    'Property visibility survives reload',
+  );
+  assert.equal(
+    await js(
+      '[...document.querySelectorAll(".kanban-card-title")].some(b=>b.textContent==="개발 문서 B")',
+    ),
+    true,
+  );
+  await js(
+    `document.querySelector('[data-id=b] .document-header-actions [title="문서 상세 정보"]').click()`,
+  );
+  await wait('!!document.querySelector(".file-properties-editor")');
+  assert.equal(
+    await js(
+      `document.querySelector('[aria-label="생성자 우측 상단 표시"]').checked`,
+    ),
+    true,
+  );
+  await screenshot('file-properties-detail-restored.png');
+  await js(
+    `document.querySelector('.react-flow__node-preview [title="문서 상세 정보"]').click()`,
+  );
+  await wait('!!document.querySelector(".file-properties-editor")');
+  const htmlBeforeProperties = await fs.readFile(
+    path.join(game, 'output/index.html'),
+    'utf8',
+  );
+  await click('[aria-label="상태 속성 적용"]');
+  await wait(
+    'window.gameCanvas.listPreviews().then(ps=>ps[0].statusPropertyEnabled===false)',
+  );
+  await wait(
+    '!document.querySelector(".react-flow__node-preview .workflow-badge")',
+  );
+  assert.equal(
+    await fs.readFile(path.join(game, 'output/index.html'), 'utf8'),
+    htmlBeforeProperties,
+  );
+  await click('[aria-label="상태 속성 적용"]');
+  await wait(
+    'window.gameCanvas.listPreviews().then(ps=>ps[0].statusPropertyEnabled===true)',
+  );
+  await wait(
+    '!!document.querySelector(".react-flow__node-preview .workflow-badge")',
+  );
+  await screenshot('file-properties-html-detail.png');
+  console.log(
+    'PASS: physical property apply/unapply/restore; personal visibility preserves shared bytes and board inclusion; system-property display/overflow; optional new files and reload',
   );
   console.log(
     'PASS: unselected kanban grip resize at canvas zoom, minimum bounds, stable origin/viewport and minimized/reloaded dimensions; physical status dropdowns; plugin back/move/resize; nearby canvas boards; checkbox visibility and future canvases; board-local document scope; physical minimap transparency and persistence; document/HTML destination placement and cached HTML reload; distinct minimap colors and non-scaling outlines',

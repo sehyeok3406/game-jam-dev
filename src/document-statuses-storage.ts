@@ -1,6 +1,7 @@
 import matter from './markdown.ts';
 import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses.ts';
 import type { Snapshot } from './project-store.ts';
+import { statusPropertyApplied } from './file-properties.ts';
 export function workflowDocuments(files: Snapshot) {
   return Object.entries(files).flatMap(([path, raw]) => {
     if (
@@ -16,6 +17,9 @@ export function workflowDocuments(files: Snapshot) {
       {
         id: String(data.id ?? path),
         path,
+        statusPropertyEnabled: data.status_property_enabled as
+          | boolean
+          | undefined,
         workflowStatusId: data.workflow_status_id as string | undefined,
         workflowOrder: data.workflow_order as number | undefined,
       },
@@ -27,6 +31,12 @@ export function assertWorkflowReferences(files: Snapshot, previous?: Snapshot) {
   const ids = new Set(statuses.statuses.map((s) => s.id));
   for (const d of workflowDocuments(files)) {
     if (
+      d.statusPropertyEnabled !== undefined &&
+      typeof d.statusPropertyEnabled !== 'boolean'
+    )
+      throw Error('상태 속성 적용 여부가 올바르지 않습니다.');
+    if (
+      statusPropertyApplied(d) &&
       !ids.has(d.workflowStatusId ?? 'not-started') &&
       (!previous || previous[d.path] !== files[d.path])
     )

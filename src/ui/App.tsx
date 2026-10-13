@@ -1,4 +1,18 @@
-import { DocumentStatusBadge } from './DocumentStatusBadge';
+import { FilePropertyBadges, FilePropertiesEditor } from './FileProperties';
+import {
+  emptyFilePropertyViews,
+  readFilePropertyViews,
+  statusPropertyApplied,
+  type FilePropertyViews,
+  type FilePropertyVisibility,
+  type StatusPropertyInput,
+} from '../file-properties';
+import {
+  defaultKanbanView,
+  kanbanOrder,
+  type KanbanView,
+} from '../features/kanban/view';
+import { KanbanAppearanceManager } from '../features/kanban/KanbanAppearanceManager';
 import {
   DocumentLinksProvider,
   useDocumentLinks,
@@ -6,11 +20,7 @@ import {
 import { DocumentBacklinks } from './DocumentBacklinks';
 import { resolveDocumentLink, linkStatusText } from '../document-links';
 import { DocumentStatusManager } from './DocumentStatusManager';
-import {
-  defaultStatuses,
-  type DocumentStatuses,
-  type WorkflowInput,
-} from '../document-statuses';
+import { defaultStatuses, type DocumentStatuses } from '../document-statuses';
 import {
   KanbanNode,
   type KanbanCanvasNode,
@@ -372,6 +382,8 @@ const CODEX_STATUS_LABELS: Record<CodexRunEvent['status'], string> = {
 };
 
 type DocumentNodeData = {
+  propertyVisibility: FilePropertyVisibility;
+  authorshipKey: string;
   statuses: DocumentStatuses;
   workflowDisabled: boolean;
   workflowReason?: string;
@@ -425,6 +437,9 @@ function pendingDocument(document: CanvasDocument, state?: DocumentSaveState) {
 }
 
 type PreviewNodeData = {
+  propertyVisibility: FilePropertyVisibility;
+  authorshipKey: string;
+  onDetails: () => void;
   sectionHidden?: boolean;
   statuses: DocumentStatuses;
   workflowDisabled: boolean;
@@ -1058,8 +1073,12 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
 
           <div className="document-header-actions nodrag">
             {document.type !== 'ai-task' && (
-              <DocumentStatusBadge
+              <FilePropertyBadges
                 document={document}
+                relativePath={document.relativePath}
+                authorshipKey={data.authorshipKey}
+                visibility={data.propertyVisibility}
+                details={data.onDetails}
                 statuses={data.statuses}
                 disabled={data.workflowDisabled}
                 reason={data.workflowReason}
@@ -1637,8 +1656,12 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
             >
               <Columns2 size={14} />
             </button>
-            <DocumentStatusBadge
+            <FilePropertyBadges
               document={data.preview}
+              relativePath={data.preview.relativePath}
+              authorshipKey={data.authorshipKey}
+              visibility={data.propertyVisibility}
+              details={data.onDetails}
               statuses={data.statuses}
               disabled={data.workflowDisabled}
               reason={data.workflowReason}
@@ -1662,6 +1685,13 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
               ) : (
                 <Minimize2 size={14} />
               )}
+            </button>
+            <button
+              className="icon-button"
+              title="문서 상세 정보"
+              onClick={data.onDetails}
+            >
+              <Info size={14} />
             </button>
           </div>
         </header>
@@ -1988,11 +2018,30 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   );
   const [statusError, setStatusError] = useState('');
   const [statusManagerOpen, setStatusManagerOpen] = useState(false);
+  const [kanbanView, setKanbanView] = useState<{
+    value: KanbanView;
+    raw: string | null;
+  }>({ value: defaultKanbanView(), raw: null });
+  const [kanbanAppearanceOpen, setKanbanAppearanceOpen] = useState(false);
+  const [kanbanViewError, setKanbanViewError] = useState('');
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const workflowPending = useRef(false);
   const personalScope = collaboration.projectId
     ? `${collaboration.projectId}:${collaboration.memberId}`
     : (workspace.root ?? 'none');
+  const [storedFilePropertyViews, updateFilePropertyViews] =
+    usePersonalValue<FilePropertyViews>(
+      `file-property-views:${personalScope}`,
+      emptyFilePropertyViews,
+    );
+  const filePropertyViews = useMemo(
+    () => readFilePropertyViews(storedFilePropertyViews),
+    [storedFilePropertyViews],
+  );
+  const propertyVisibilityFor = (id: string, previousIds: string[] = []) =>
+    [id, ...previousIds]
+      .filter((key) => Object.hasOwn(filePropertyViews.files, key))
+      .map((key) => filePropertyViews.files[key])[0] ?? {};
   const [kanbanLayouts, updateKanbanLayouts] = usePersonalValue<KanbanLayouts>(
     `builtin.kanban.canvas:${personalScope}`,
     emptyKanbanLayouts,
@@ -3192,6 +3241,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           ? current
           : new Set(indicators.unread),
       );
+      let boardError = '';
+      const boardSettings = await window.gameCanvas
+        .getKanbanView?.()
+        .catch((error) => {
+          boardError = error instanceof Error ? error.message : String(error);
+          return null;
+        });
       const workflowSettings = await window.gameCanvas
         .getDocumentStatuses?.()
         .catch((error) => {
@@ -3201,6 +3257,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           return null;
         });
       if (request !== projectLoadRef.current) return;
+      setKanbanViewError(boardError);
+      if (boardSettings)
+        setKanbanView((old) =>
+          JSON.stringify(old) === JSON.stringify(boardSettings)
+            ? old
+            : boardSettings,
+        );
       if (workflowSettings) {
         setStatusSettings((old) =>
           JSON.stringify(old) === JSON.stringify(workflowSettings)
@@ -3796,15 +3859,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     !statusError &&
     (!collaboration.active ||
       (['admin', 'editor'].includes(collaboration.role ?? '') &&
-        collaboration.documentStatusesVersion === 1));
+        collaboration.documentStatusesVersion === 1 &&
+        collaboration.filePropertiesVersion === 1));
   const workflowReason = workflowBusy
     ? '상태를 저장하고 있습니다. 잠시 후 다시 선택해주세요.'
     : statusError ||
       (collaboration.active &&
       !['admin', 'editor'].includes(collaboration.role ?? '')
         ? '보기 권한에서는 문서 상태를 변경할 수 없습니다.'
-        : collaboration.active && collaboration.documentStatusesVersion !== 1
-          ? '문서 상태를 변경하려면 협업 서버를 v0.16.0 이상으로 업데이트해주세요.'
+        : collaboration.active &&
+            (collaboration.documentStatusesVersion !== 1 ||
+              collaboration.filePropertiesVersion !== 1)
+          ? '파일 속성을 변경하려면 협업 서버를 업데이트해주세요.'
           : '');
   useEffect(() => {
     if (
@@ -3979,8 +4045,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             ?.name ?? '',
         sectionName: sections.find((s) => s.members.some((m) => m.id === d.id))
           ?.title,
+        statusPropertyEnabled: d.statusPropertyEnabled,
         workflowStatusId: d.workflowStatusId,
-        workflowOrder: d.workflowOrder,
+        workflowOrder: kanbanOrder(kanbanView.value, d.id, d.workflowOrder),
         locked: pathLocked(d.relativePath),
       })),
     ...previews.map((p) => ({
@@ -3991,13 +4058,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       canvasName:
         canvasSheets.canvases.find((c) => c.id === canvasId(p.canvasId))
           ?.name ?? '',
+      statusPropertyEnabled: p.statusPropertyEnabled,
       workflowStatusId: p.workflowStatusId,
-      workflowOrder: p.workflowOrder,
+      workflowOrder: kanbanOrder(
+        kanbanView.value,
+        p.sourceId!,
+        p.workflowOrder,
+      ),
       locked: pathLocked(p.relativePath) || pathLocked(p.sourcePath ?? ''),
     })),
   ];
   const workflowChange = useCallback(
-    async (input: WorkflowInput) => {
+    async (input: StatusPropertyInput) => {
       if (workflowPending.current)
         throw Error('이전 상태 저장이 끝난 뒤 다시 선택해주세요.');
       if (!workflowEditable)
@@ -4005,7 +4077,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       workflowPending.current = true;
       setWorkflowBusy(true);
       try {
-        await window.gameCanvas.setDocumentWorkflow(input);
+        await window.gameCanvas.setFileStatusProperty(input);
         await loadProject(false);
       } finally {
         workflowPending.current = false;
@@ -4019,6 +4091,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       void workflowChange({
         relativePath: doc.relativePath,
         objectId: doc.id,
+        expectedEnabled: statusPropertyApplied(doc),
         expectedStatus: doc.workflowStatusId,
         expectedOrder: doc.workflowOrder,
         workflowRevision: doc.workflowRevision,
@@ -4040,17 +4113,29 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     const resolveId = (id?: string) =>
       previews.find((p) => previewNodeId(p.relativePath) === id)?.sourceId ??
       id;
-    await workflowChange({
-      relativePath: doc?.relativePath ?? p!.relativePath,
-      objectId: doc?.id ?? p!.sourceId!,
-      expectedStatus: item.workflowStatusId,
-      expectedOrder: item.workflowOrder,
-      workflowRevision: doc?.workflowRevision,
-      structureRevision: doc?.structureRevision,
-      statusId,
-      beforeId: resolveId(beforeId),
-      afterId: resolveId(afterId),
-    });
+    if (workflowPending.current)
+      throw Error('이전 속성 저장이 끝난 뒤 다시 시도해주세요.');
+    workflowPending.current = true;
+    setWorkflowBusy(true);
+    try {
+      await window.gameCanvas.moveKanbanCard({
+        expectedView: kanbanView.raw,
+        expectedEnabled: statusPropertyApplied(item),
+        relativePath: doc?.relativePath ?? p!.relativePath,
+        objectId: doc?.id ?? p!.sourceId!,
+        expectedStatus: item.workflowStatusId,
+        expectedOrder: item.workflowOrder,
+        workflowRevision: doc?.workflowRevision,
+        structureRevision: doc?.structureRevision,
+        statusId,
+        beforeId: resolveId(beforeId),
+        afterId: resolveId(afterId),
+      });
+      await loadProject(false);
+    } finally {
+      workflowPending.current = false;
+      setWorkflowBusy(false);
+    }
   };
   const sectionCollapsed = (section: CanvasSection) =>
     !!sectionViews[section.id] &&
@@ -4155,6 +4240,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           draggable: !layoutLocked,
           data: {
             kind: 'document',
+            propertyVisibility: propertyVisibilityFor(document.id),
+            authorshipKey: `${personalScope}:${document.id}:${document.modifiedAt}`,
             sectionHidden: !!(parent && sectionCollapsed(parent)),
             statuses: statusSettings.value,
             workflowDisabled:
@@ -4272,6 +4359,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           zIndex: 3,
           data: {
             kind: 'preview',
+            propertyVisibility: propertyVisibilityFor(
+              preview.sourceId!,
+              preview.propertyPreviousIds ?? [],
+            ),
+            authorshipKey: `${personalScope}:${preview.sourceId}:${preview.revision ?? preview.content}`,
+            onDetails: () =>
+              setInspectorId(previewNodeId(preview.relativePath)),
             sectionHidden,
             statuses: statusSettings.value,
             workflowDisabled:
@@ -4289,6 +4383,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               void workflowChange({
                 relativePath: preview.relativePath,
                 objectId: preview.sourceId!,
+                expectedEnabled: statusPropertyApplied(preview),
                 expectedStatus: preview.workflowStatusId,
                 expectedOrder: preview.workflowOrder,
                 statusId: id,
@@ -4366,9 +4461,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   preferences: kanbanPreferences,
                   documents: kanbanDocuments,
                   statuses: statusSettings.value,
-                  editable: workflowEditable,
+                  view: kanbanView.value,
+                  editable: workflowEditable && !kanbanViewError,
                   busy: workflowBusy,
-                  reason: workflowReason,
+                  reason: kanbanViewError || workflowReason,
                   controls: openKanbanControls,
                   update: (value) =>
                     updateKanbanPreferences(value, activeCanvas),
@@ -4437,6 +4533,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     });
   }, [
     statusSettings,
+    kanbanView,
+    kanbanViewError,
+    filePropertyViews,
+    personalScope,
     workflowBusy,
     workflowEditable,
     setWorkflow,
@@ -6844,13 +6944,19 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (id === 'compare') setCompareFirst('');
     if (id === 'settings') setSettingsOpen(true);
     if (id === 'ui-hidden') setUiHidden(true);
-    if (id === 'inspector')
+    if (id === 'inspector' || id === 'file-properties')
       setInspectorId(
         state === 'section'
           ? sectionNodeId(section.id)
           : state === 'html'
             ? previewNodeId(result.relativePath)
             : doc.id,
+      );
+    if (id === 'file-properties' && state === 'unapplied')
+      setDocuments((current) =>
+        current.map((item) =>
+          item.id === doc.id ? { ...item, statusPropertyEnabled: false } : item,
+        ),
       );
     if (id === 'selection' || (id === 'section' && state === 'selected')) {
       const ids =
@@ -6973,6 +7079,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       setCanvasOperationBusy(state === 'busy');
     }
     if (id === 'status-manager') setStatusManagerOpen(true);
+    if (id === 'kanban-appearance') setKanbanAppearanceOpen(true);
     if (id === 'plugin-controls') {
       setPluginPanelOpen(true);
       setPluginPanelPage(state === 'kanban' ? 'builtin.kanban' : 'plugins');
@@ -7167,10 +7274,27 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             toggle={toggleKanban}
             focus={revealKanban}
             manage={() => setStatusManagerOpen(true)}
-            manageDisabled={!workflowEditable || workflowBusy}
+            appearance={() => setKanbanAppearanceOpen(true)}
+            manageDisabled={
+              !workflowEditable || workflowBusy || !!kanbanViewError
+            }
             reason={workflowReason}
           />
         </PluginControlPanel>
+      )}
+      {kanbanAppearanceOpen && (
+        <KanbanAppearanceManager
+          value={kanbanView.value}
+          statuses={statusSettings.value}
+          close={() => setKanbanAppearanceOpen(false)}
+          save={async (value) => {
+            await window.gameCanvas.saveKanbanView({
+              expected: kanbanView.raw,
+              value,
+            });
+            await loadProject(false);
+          }}
+        />
       )}
       {statusManagerOpen && (
         <DocumentStatusManager
@@ -7206,7 +7330,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               setStatusManagerOpen(true);
             }}
           >
-            문서 상태 관리
+            상태 속성 옵션 관리
           </button>
           {statusError && (
             <p className="workflow-error" role="alert">
@@ -7323,46 +7447,107 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   </>
                 )}
               </dl>
-              <dl className="inspector-authorship">
-                <dt>생성한 사람</dt>
-                <dd>
-                  {inspectorAuthorship?.path === item.path &&
-                  inspectorAuthorship.value
-                    ? authorLabel(inspectorAuthorship.value.createdBy)
-                    : inspectorAuthorship?.path === item.path &&
-                        inspectorAuthorship.error
-                      ? '정보를 불러오지 못했습니다'
-                      : '기록 불러오는 중…'}
-                  {inspectorAuthorship?.path === item.path &&
-                    inspectorAuthorship.value?.createdAt && (
-                      <small>
-                        {new Date(
-                          inspectorAuthorship.value.createdAt,
-                        ).toLocaleString('ko-KR')}
-                      </small>
-                    )}
-                </dd>
-                <dt title="본문·제목·위치·크기·섹션 등 파일 변경을 포함합니다">
-                  마지막으로 편집한 사람
-                </dt>
-                <dd>
-                  {inspectorAuthorship?.path === item.path &&
-                  inspectorAuthorship.value
-                    ? authorLabel(inspectorAuthorship.value.lastEditedBy)
-                    : inspectorAuthorship?.path === item.path &&
-                        inspectorAuthorship.error
-                      ? '정보를 불러오지 못했습니다'
-                      : '기록 불러오는 중…'}
-                  {inspectorAuthorship?.path === item.path &&
-                    inspectorAuthorship.value?.lastEditedAt && (
-                      <small>
-                        {new Date(
-                          inspectorAuthorship.value.lastEditedAt,
-                        ).toLocaleString('ko-KR')}
-                      </small>
-                    )}
-                </dd>
-              </dl>
+              {((doc && doc.type !== 'ai-task') || preview) && (
+                <FilePropertiesEditor
+                  key={doc?.id ?? preview!.sourceId}
+                  document={doc ?? preview!}
+                  statuses={statusSettings.value}
+                  authorship={
+                    inspectorAuthorship?.path === item.path
+                      ? inspectorAuthorship.value
+                      : undefined
+                  }
+                  visibility={propertyVisibilityFor(
+                    doc?.id ?? preview!.sourceId!,
+                    preview?.propertyPreviousIds ?? [],
+                  )}
+                  disabled={
+                    !workflowEditable ||
+                    workflowBusy ||
+                    pathLocked(item.path) ||
+                    pathLocked(preview?.sourcePath ?? '')
+                  }
+                  reason={
+                    workflowReason ||
+                    (pathLocked(item.path) ||
+                    pathLocked(preview?.sourcePath ?? '')
+                      ? 'AI 작업이 이 파일을 보호하고 있습니다.'
+                      : undefined)
+                  }
+                  change={async (value) => {
+                    const file = doc ?? preview!;
+                    await workflowChange({
+                      relativePath: item.path,
+                      objectId: doc?.id ?? preview!.sourceId!,
+                      expectedEnabled: statusPropertyApplied(file),
+                      expectedStatus: file.workflowStatusId,
+                      workflowRevision: doc?.workflowRevision,
+                      structureRevision: doc?.structureRevision,
+                      ...value,
+                    });
+                  }}
+                  display={(id, visible) => {
+                    const key = doc?.id ?? preview!.sourceId!;
+                    const aliases = preview?.propertyPreviousIds ?? [];
+                    const value = {
+                      ...propertyVisibilityFor(key, aliases),
+                      [id]: visible,
+                    };
+                    updateFilePropertyViews({
+                      version: 1,
+                      files: {
+                        ...filePropertyViews.files,
+                        ...Object.fromEntries(
+                          [key, ...aliases].map((alias) => [alias, value]),
+                        ),
+                      },
+                    });
+                  }}
+                  manage={() => setStatusManagerOpen(true)}
+                />
+              )}
+              {!((doc && doc.type !== 'ai-task') || preview) && (
+                <dl className="inspector-authorship">
+                  <dt>생성한 사람</dt>
+                  <dd>
+                    {inspectorAuthorship?.path === item.path &&
+                    inspectorAuthorship.value
+                      ? authorLabel(inspectorAuthorship.value.createdBy)
+                      : inspectorAuthorship?.path === item.path &&
+                          inspectorAuthorship.error
+                        ? '정보를 불러오지 못했습니다'
+                        : '기록 불러오는 중…'}
+                    {inspectorAuthorship?.path === item.path &&
+                      inspectorAuthorship.value?.createdAt && (
+                        <small>
+                          {new Date(
+                            inspectorAuthorship.value.createdAt,
+                          ).toLocaleString('ko-KR')}
+                        </small>
+                      )}
+                  </dd>
+                  <dt title="본문·제목·위치·크기·섹션 등 파일 변경을 포함합니다">
+                    마지막으로 편집한 사람
+                  </dt>
+                  <dd>
+                    {inspectorAuthorship?.path === item.path &&
+                    inspectorAuthorship.value
+                      ? authorLabel(inspectorAuthorship.value.lastEditedBy)
+                      : inspectorAuthorship?.path === item.path &&
+                          inspectorAuthorship.error
+                        ? '정보를 불러오지 못했습니다'
+                        : '기록 불러오는 중…'}
+                    {inspectorAuthorship?.path === item.path &&
+                      inspectorAuthorship.value?.lastEditedAt && (
+                        <small>
+                          {new Date(
+                            inspectorAuthorship.value.lastEditedAt,
+                          ).toLocaleString('ko-KR')}
+                        </small>
+                      )}
+                  </dd>
+                </dl>
+              )}
               {doc?.sources.length ? (
                 <div className="inspector-sources">
                   <strong>참고한 원본 자료 {doc.sources.length}개</strong>

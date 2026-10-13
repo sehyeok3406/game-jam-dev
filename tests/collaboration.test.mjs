@@ -423,7 +423,10 @@ test('shared document versions reserve separately, preserve IDs and propagate fa
     const actual = matter(owner.files[path]);
     const expected = matter(artifacts[path]);
     const { x, y, width, height, collapsed, ...metadata } = actual.data;
-    assert.deepEqual(metadata, expected.data);
+    assert.deepEqual(metadata, {
+      ...expected.data,
+      status_property_enabled: false,
+    });
     assert.equal(actual.content, expected.content);
     assert.ok([x, y, width, height].every(Number.isFinite));
     assert.equal(collapsed, false);

@@ -3,6 +3,7 @@ export type WorkflowStatus = {
   id: string;
   name: string;
   badgeColor: string;
+  /** Legacy compatibility only. New board appearance is owned by KanbanView. */
   boardBackground:
     | { mode: 'status' | 'none' }
     | { mode: 'custom'; color: string };
