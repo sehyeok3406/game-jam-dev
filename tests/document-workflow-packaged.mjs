@@ -281,7 +281,7 @@ try {
     -60,
     -40,
   );
-  const worldResized = await prefs();
+  let worldResized = await prefs();
   assert.ok(
     worldResized.width > worldBefore.width + 30,
     'Canvas board resizes',
@@ -309,6 +309,49 @@ try {
   await screenshot('workflow-plugin-kanban-controls.png');
   await js('document.documentElement.dataset.theme="dark"');
   await click('[aria-label="플러그인 패널 닫기"]');
+  await mouse('mousePressed', 16, 250, 1);
+  await mouse('mouseReleased', 16, 250);
+  await wait('!document.querySelector(".react-flow__node-kanban.selected")');
+  const grip = await rect('.kanban-resize-grip');
+  assert.ok(
+    grip.width >= 24,
+    'Grip stays usable when the canvas is zoomed out',
+  );
+  assert.equal(
+    await js(
+      `!!document.elementFromPoint(${grip.x + grip.width / 2},${grip.y + grip.height / 2})?.closest('.kanban-resize-grip')`,
+    ),
+    true,
+    'The unselected board exposes a directly usable resize grip',
+  );
+  const originBeforeResize = await prefs();
+  await drag('.kanban-resize-grip', -1000, -1000);
+  const minimumSize = await prefs();
+  assert.equal(minimumSize.width, 520, 'Resize respects minimum width');
+  assert.equal(minimumSize.height, 260, 'Resize respects minimum height');
+  const screenBeforeResize = await rect('.kanban-canvas-node');
+  const resizeZoom = screenBeforeResize.width / minimumSize.width;
+  await drag('.kanban-resize-grip', 90, 70);
+  worldResized = await prefs();
+  assert.ok(
+    Math.abs(worldResized.width - minimumSize.width - 90 / resizeZoom) < 3,
+  );
+  assert.ok(
+    Math.abs(worldResized.height - minimumSize.height - 70 / resizeZoom) < 3,
+  );
+  assert.equal(
+    worldResized.x,
+    originBeforeResize.x,
+    'Resize never moves the board origin',
+  );
+  assert.equal(worldResized.y, originBeforeResize.y);
+  const screenAfterResize = await rect('.kanban-canvas-node');
+  assert.ok(
+    Math.abs(screenAfterResize.x - screenBeforeResize.x) < 1,
+    'Resize does not pan the canvas',
+  );
+  assert.ok(Math.abs(screenAfterResize.y - screenBeforeResize.y) < 1);
+  await screenshot('kanban-resize-grip-dark.png');
   await screenshot('workflow-kanban-dark.png');
   await click('.kanban-node-actions [aria-label="칸반 컨트롤 열기"]');
   await js(
@@ -332,6 +375,11 @@ try {
   assert.equal(settings.value.statuses[1].boardBackground.mode, 'none');
   await click('[aria-label="칸반 보드 최소화"]');
   await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
+  assert.equal(
+    await js('!!document.querySelector(".kanban-resize-grip")'),
+    false,
+    'Minimized boards have no resize grip',
+  );
   const minimized = await prefs();
   assert.equal(
     minimized.height,
@@ -451,6 +499,13 @@ try {
     '[...document.querySelectorAll("button")].find(b=>b.title==="칸반 펼치기").click()',
   );
   await js('document.documentElement.dataset.theme="light"');
+  assert.ok(
+    Math.abs(
+      (await rect('.kanban-canvas-node')).width / (await prefs()).width -
+        (await rect('.kanban-canvas-node')).height / (await prefs()).height,
+    ) < 0.01,
+    'Expanding restores both saved dimensions',
+  );
   await screenshot('workflow-kanban-light.png');
   // A plain Markdown document uses the same physical status selection.
   await js(
@@ -692,7 +747,7 @@ try {
     'HTML window never restores its old canvas coordinates',
   );
   console.log(
-    'PASS: physical status dropdowns; plugin back/move/resize; nearby canvas boards; checkbox visibility and future canvases; board-local document scope; physical minimap transparency and persistence; document/HTML destination placement and cached HTML reload; distinct minimap colors and non-scaling outlines',
+    'PASS: unselected kanban grip resize at canvas zoom, minimum bounds, stable origin/viewport and minimized/reloaded dimensions; physical status dropdowns; plugin back/move/resize; nearby canvas boards; checkbox visibility and future canvases; board-local document scope; physical minimap transparency and persistence; document/HTML destination placement and cached HTML reload; distinct minimap colors and non-scaling outlines',
   );
 } finally {
   ws?.close();

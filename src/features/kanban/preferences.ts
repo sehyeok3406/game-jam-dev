@@ -70,6 +70,12 @@ export const defaultCanvasKanban: KanbanCanvasPreferences = {
   height: 520,
   placed: false,
 };
+export const kanbanSizeLimits = {
+  minWidth: 520,
+  minHeight: 260,
+  maxWidth: 4000,
+  maxHeight: 3000,
+};
 export function readCanvasKanban(value: unknown): KanbanCanvasPreferences {
   const v =
     value && typeof value === 'object'
@@ -83,8 +89,14 @@ export function readCanvasKanban(value: unknown): KanbanCanvasPreferences {
     scope: v.scope === 'project' ? 'project' : 'canvas',
     x: finite(v.x, 0),
     y: finite(v.y, 0),
-    width: Math.max(520, Math.min(4000, finite(v.width, 960))),
-    height: Math.max(260, Math.min(3000, finite(v.height, 520))),
+    width: Math.max(
+      kanbanSizeLimits.minWidth,
+      Math.min(kanbanSizeLimits.maxWidth, finite(v.width, 960)),
+    ),
+    height: Math.max(
+      kanbanSizeLimits.minHeight,
+      Math.min(kanbanSizeLimits.maxHeight, finite(v.height, 520)),
+    ),
     placed: v.placed === true,
   };
 }

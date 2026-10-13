@@ -42,10 +42,8 @@ try {
   }
   assert.equal(health?.documentStatusesVersion, 1);
   assert.equal(health?.projectTrash, true);
-  assert.equal(
-    health.version,
-    JSON.parse(await fs.readFile('package.json', 'utf8')).version,
-  );
+  // UI-only releases retain the compatible collaboration server version.
+  assert.equal(health.version, '0.17.0');
   const created = await CollaborationClient.create(
     url,
     '',

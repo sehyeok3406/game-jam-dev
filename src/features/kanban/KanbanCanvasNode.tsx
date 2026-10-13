@@ -1,6 +1,12 @@
-import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
-import { Maximize2, Minimize2, Settings2 } from 'lucide-react';
-import type { KanbanCanvasPreferences } from './preferences';
+import {
+  NodeResizeControl,
+  NodeResizer,
+  type Node,
+  type NodeProps,
+  type OnResizeEnd,
+} from '@xyflow/react';
+import { GripHorizontal, Maximize2, Minimize2, Settings2 } from 'lucide-react';
+import { kanbanSizeLimits, type KanbanCanvasPreferences } from './preferences';
 import {
   KanbanBoardContent,
   type KanbanBoardProps,
@@ -19,26 +25,40 @@ export function KanbanNode({ data, selected }: NodeProps<KanbanCanvasNode>) {
   const count = data.documents.filter(
     (d) => p.scope === 'project' || (d.canvasId ?? 'default') === data.canvasId,
   ).length;
+  const saveSize: OnResizeEnd = (_event, bounds) =>
+    data.update({
+      ...p,
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      placed: true,
+    });
   return (
     <>
       <NodeResizer
         isVisible={selected && !p.minimized}
-        minWidth={520}
-        minHeight={260}
+        {...kanbanSizeLimits}
         color="var(--selection)"
         lineClassName="window-resize-edge"
         handleClassName="window-resize-handle"
-        onResizeEnd={(_event, bounds) =>
-          data.update({
-            ...p,
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-            placed: true,
-          })
-        }
+        onResizeEnd={saveSize}
       />
+      {!p.minimized && (
+        <NodeResizeControl
+          position="bottom-right"
+          className="kanban-resize-grip nowheel"
+          {...kanbanSizeLimits}
+          onResizeEnd={saveSize}
+        >
+          <span
+            title="드래그하여 칸반 보드 크기 조절"
+            aria-label="칸반 크기 조절"
+          >
+            <GripHorizontal size={18} aria-hidden="true" />
+          </span>
+        </NodeResizeControl>
+      )}
       <section
         className={`kanban-canvas-node${p.minimized ? ' kanban-canvas-node--minimized' : ''}`}
         aria-label="캔버스 칸반 보드"
