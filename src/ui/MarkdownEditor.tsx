@@ -2,6 +2,19 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { previewState } from './debug/uiDebugPreviewState';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
+import { getMarkRange } from '@tiptap/core';
+import {
+  documentLinkHref,
+  documentLinkMarkdown,
+  extractDocumentLinks,
+  parseDocumentLink,
+  searchLinkDocuments,
+  sourceLinkQuery,
+  type LinkDocument,
+} from '../document-links';
+import { refreshDocumentLinkViews } from '../document-link-node';
+import { useDocumentLinks } from './DocumentLinksContext';
+import { DocumentLinkPicker } from './DocumentLinkPicker';
 import {
   Bold,
   Italic,
@@ -14,6 +27,7 @@ import {
   X,
   HelpCircle,
   Code2,
+  Link2,
 } from 'lucide-react';
 import { markdownExtensions } from '../markdown-extensions';
 import { canEditMarkdownVisually, MARKDOWN_HELP } from '../markdown-editing';
@@ -38,6 +52,7 @@ type Props = {
   onSave: () => void;
   onCompositionChange?: (value: boolean) => void;
   initialFocus?: { title: boolean; point?: { x: number; y: number } };
+  currentCanvas?: string;
 };
 export function MarkdownEditor({
   value,
@@ -51,7 +66,27 @@ export function MarkdownEditor({
   onSave,
   onCompositionChange,
   initialFocus,
+  currentCanvas,
 }: Props) {
+  const links = useDocumentLinks();
+  const linksRef = useRef(links);
+  linksRef.current = links;
+  type LinkRange = {
+    mode: 'source' | 'visual';
+    from: number;
+    to: number;
+    query: string;
+    label: string;
+    automatic: boolean;
+    href?: string;
+    trigger: boolean;
+    body?: string;
+  };
+  const [linkRange, setLinkRange] = useState<LinkRange | null>(null);
+  const [linkIndex, setLinkIndex] = useState(0);
+  const linkRangeRef = useRef(linkRange);
+  linkRangeRef.current = linkRange;
+  const dismissedLink = useRef<number | null>(null);
   const [source, setSource] = useState(previewState('editor') === 'source'),
     [warning, setWarning] = useState(
       previewState('editor') === 'warning'
@@ -86,7 +121,14 @@ export function MarkdownEditor({
   slashRef.current = slash;
   const keyHandler = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const sourceHistory = useRef(new SourceHistory());
-  const extensions = useMemo(() => markdownExtensions(), []);
+  const extensions = useMemo(
+    () =>
+      markdownExtensions({
+        resolve: (href) => linksRef.current.resolve(href),
+        open: (href) => linksRef.current.open(href),
+      }),
+    [],
+  );
   const editorProps = useMemo(
     () => ({
       attributes: {
@@ -99,6 +141,22 @@ export function MarkdownEditor({
         _view: import('@tiptap/pm/view').EditorView,
         event: KeyboardEvent,
       ) => keyHandler.current(event),
+      handleClick: (
+        _view: import('@tiptap/pm/view').EditorView,
+        _pos: number,
+        event: MouseEvent,
+      ) => {
+        const anchor = (event.target as Element)?.closest('a[href]');
+        const href = anchor?.getAttribute('href') ?? '';
+        if (!parseDocumentLink(href)) return false;
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          event.stopPropagation();
+          linksRef.current.open(href);
+          return true;
+        }
+        return false;
+      },
     }),
     [],
   );
@@ -116,6 +174,333 @@ export function MarkdownEditor({
       callbacks.current.onChange(next);
     },
   });
+  useEffect(() => {
+    if (editor) refreshDocumentLinkViews(editor);
+  }, [editor, links]);
+  const cancelLink = () => {
+    if (linkRangeRef.current?.trigger)
+      dismissedLink.current = linkRangeRef.current.from;
+    setLinkRange(null);
+    requestAnimationFrame(() =>
+      source ? areaRef.current?.focus() : editor?.commands.focus(),
+    );
+  };
+  const updateLinkTrigger = (body?: string, caret?: number) => {
+    if (
+      locked ||
+      composing.current ||
+      editor?.view.composing ||
+      (linkRangeRef.current && !linkRangeRef.current.trigger)
+    )
+      return;
+    let range: { query: string; from: number; to: number } | null = null;
+    if (source) {
+      const area = areaRef.current;
+      if (area && area.selectionStart === area.selectionEnd)
+        range = sourceLinkQuery(
+          body ?? callbacks.current.value,
+          caret ?? area.selectionStart,
+        );
+    } else if (editor) {
+      const selection = editor.state.selection;
+      if (
+        selection.empty &&
+        !editor.isActive('code') &&
+        !editor.isActive('codeBlock') &&
+        !editor.isActive('link')
+      ) {
+        const text = selection.$from.parent.textBetween(
+          0,
+          selection.$from.parentOffset,
+          '',
+          '\ufffc',
+        );
+        const match = /(?<![\\[])\[\[([^\]\r\n[]{0,80})$/.exec(text);
+        if (match)
+          range = {
+            query: match[1],
+            from: selection.from - match[0].length,
+            to: selection.from,
+          };
+      }
+    }
+    if (!range || dismissedLink.current === range.from) {
+      if (linkRangeRef.current?.trigger) setLinkRange(null);
+      return;
+    }
+    setSlash(null);
+    setMenu(null);
+    setLinkIndex(0);
+    setLinkRange({
+      ...range,
+      mode: source ? 'source' : 'visual',
+      label: '',
+      automatic: true,
+      trigger: true,
+      body: source ? (body ?? callbacks.current.value) : undefined,
+    });
+  };
+  const openLinkPicker = () => {
+    if (locked || composing.current || editor?.view.composing) return;
+    setSlash(null);
+    setMenu(null);
+    setLinkIndex(0);
+    if (source) {
+      const area = areaRef.current;
+      if (!area) return;
+      const existing = extractDocumentLinks(value).find(
+        (link) =>
+          link.from <= area.selectionStart && link.to >= area.selectionEnd,
+      );
+      const label =
+        existing?.label ?? value.slice(area.selectionStart, area.selectionEnd);
+      if (/\r|\n/.test(label)) {
+        setWarning('링크로 연결할 문구는 한 줄로 선택해주세요.');
+        return;
+      }
+      setLinkRange({
+        mode: 'source',
+        from: existing?.from ?? area.selectionStart,
+        to: existing?.to ?? area.selectionEnd,
+        href: existing?.href,
+        label,
+        automatic: existing?.automatic ?? !label,
+        query: '',
+        trigger: false,
+        body: value,
+      });
+    } else if (editor) {
+      const selection = editor.state.selection;
+      if (editor.isActive('code') || editor.isActive('codeBlock')) return;
+      const selectedNode =
+        'node' in selection
+          ? (selection.node as import('@tiptap/pm/model').Node)
+          : null;
+      const after = selection.$from.nodeAfter,
+        before = selection.$from.nodeBefore;
+      const node =
+        selectedNode?.type.name === 'documentLink'
+          ? selectedNode
+          : after?.type.name === 'documentLink' &&
+              (selection.empty ||
+                selection.to === selection.from + after.nodeSize)
+            ? after
+            : selection.empty && before?.type.name === 'documentLink'
+              ? before
+              : null;
+      const mark = getMarkRange(selection.$from, editor.schema.marks.link);
+      const from =
+          node && node === before
+            ? selection.from - node.nodeSize
+            : (mark?.from ?? selection.from),
+        to = node ? from + node.nodeSize : (mark?.to ?? selection.to);
+      const href =
+        node?.type.name === 'documentLink'
+          ? node.attrs.href
+          : editor.getAttributes('link').href;
+      const resolved = href ? linksRef.current.resolve(href) : null;
+      const label =
+        node?.type.name === 'documentLink'
+          ? resolved?.status === 'found'
+            ? resolved.document.title
+            : node.attrs.label
+          : editor.state.doc.textBetween(from, to, '\n');
+      if (/\r|\n/.test(label)) {
+        setWarning('링크로 연결할 문구는 한 줄로 선택해주세요.');
+        return;
+      }
+      setLinkRange({
+        mode: 'visual',
+        from,
+        to,
+        label,
+        automatic: node?.type.name === 'documentLink' || !label,
+        href: parseDocumentLink(href ?? '') ? href : undefined,
+        query: '',
+        trigger: false,
+      });
+    }
+  };
+  const applyLink = (doc?: LinkDocument) => {
+    const range = linkRangeRef.current;
+    if (!range || locked || composing.current || editor?.view.composing) return;
+    const href = doc ? documentLinkHref(doc) : range.href;
+    if (doc && (!href || linksRef.current.resolve(href).status !== 'found')) {
+      setWarning('연결 대상이 변경되었습니다. 다시 검색해주세요.');
+      return;
+    }
+    const label =
+      doc && (range.automatic || !range.label) ? doc.title : range.label;
+    if (!label.trim()) {
+      setWarning('링크 표시 문구를 입력해주세요.');
+      return;
+    }
+    if (range.mode === 'source') {
+      const body = callbacks.current.value;
+      if (body !== range.body) {
+        setWarning('본문이 변경되었습니다. 링크를 다시 선택해주세요.');
+        cancelLink();
+        return;
+      }
+      const area = areaRef.current!;
+      const replacement = doc
+        ? documentLinkMarkdown(href!, label, range.automatic)
+        : label;
+      sourceHistory.current.record({
+        value: body,
+        start: range.from,
+        end: range.to,
+      });
+      const next =
+        body.slice(0, range.from) + replacement + body.slice(range.to);
+      lastEmitted.current = next;
+      onChange(next);
+      requestAnimationFrame(() => {
+        area.focus();
+        area.setSelectionRange(
+          range.from + replacement.length,
+          range.from + replacement.length,
+        );
+      });
+    } else if (editor) {
+      // Clear menu first: our own transaction must not remap its replacement range.
+      linkRangeRef.current = null;
+      const plainRange =
+        editor.state.doc.textBetween(range.from, range.to, '\n') === label &&
+        !range.trigger &&
+        range.from !== range.to;
+      if (!doc && plainRange)
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: range.from, to: range.to })
+          .unsetLink()
+          .run();
+      else if (!doc)
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(
+            { from: range.from, to: range.to },
+            { type: 'text', text: label },
+          )
+          .run();
+      else if (range.automatic)
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(
+            { from: range.from, to: range.to },
+            { type: 'documentLink', attrs: { href, label } },
+          )
+          .run();
+      else if (plainRange)
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: range.from, to: range.to })
+          .setLink({ href: href!, title: null })
+          .run();
+      else
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(
+            { from: range.from, to: range.to },
+            {
+              type: 'text',
+              text: label,
+              marks: [{ type: 'link', attrs: { href, title: null } }],
+            },
+          )
+          .run();
+    }
+    setLinkRange(null);
+    setWarning('');
+  };
+  const handleLinkKey = (event: KeyboardEvent | React.KeyboardEvent) => {
+    if (
+      composing.current ||
+      ('isComposing' in event
+        ? event.isComposing
+        : event.nativeEvent.isComposing) ||
+      locked
+    )
+      return false;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      event.stopPropagation();
+      openLinkPicker();
+      return true;
+    }
+    const range = linkRangeRef.current;
+    if (!range) return false;
+    const results = searchLinkDocuments(
+      linksRef.current.documents,
+      range.query,
+      currentCanvas,
+    );
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelLink();
+      return true;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      event.stopPropagation();
+      setLinkIndex((index) =>
+        results.length
+          ? (index + (event.key === 'ArrowDown' ? 1 : results.length - 1)) %
+            results.length
+          : 0,
+      );
+      return true;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (results[linkIndex]) applyLink(results[linkIndex]);
+      return true;
+    }
+    return false;
+  };
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => updateLinkTrigger();
+    const map = ({
+      transaction,
+    }: {
+      transaction: import('@tiptap/pm/state').Transaction;
+    }) => {
+      const range = linkRangeRef.current;
+      if (
+        !range ||
+        range.mode !== 'visual' ||
+        !transaction.docChanged ||
+        range.trigger
+      )
+        return;
+      const from = transaction.mapping.mapResult(range.from, 1),
+        to = transaction.mapping.mapResult(range.to, -1);
+      if (from.deleted || to.deleted) {
+        setLinkRange(null);
+        return;
+      }
+      setLinkRange({ ...range, from: from.pos, to: to.pos });
+    };
+    editor.on('update', update);
+    editor.on('selectionUpdate', update);
+    editor.on('transaction', map);
+    return () => {
+      editor.off('update', update);
+      editor.off('selectionUpdate', update);
+      editor.off('transaction', map);
+    };
+  }, [editor, source, locked]);
+  useEffect(() => {
+    setLinkRange(null);
+  }, [source, locked, owner]);
   const state = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -195,6 +580,19 @@ export function MarkdownEditor({
     editor.commands.setContent('<p>/</p>');
     editor.commands.focus('end');
     setSlash({ query: '', from: 1, to: 2 });
+  }, [editor]);
+  useEffect(() => {
+    const state = previewState('editor');
+    if (!editor || !['link-search', 'link-empty'].includes(state ?? '')) return;
+    setLinkRange({
+      mode: 'visual',
+      from: 1,
+      to: 1,
+      query: state === 'link-empty' ? '존재하지 않는 문서' : '',
+      label: '',
+      automatic: true,
+      trigger: false,
+    });
   }, [editor]);
   useEffect(() => {
     if (!editor) return;
@@ -346,6 +744,7 @@ export function MarkdownEditor({
     runCommand(id);
   };
   keyHandler.current = (event) => {
+    if (handleLinkKey(event)) return true;
     if (event.isComposing || composing.current || locked) return false;
     const commands = editorCommands(slashRef.current?.query ?? '');
     if (slashRef.current) {
@@ -394,6 +793,7 @@ export function MarkdownEditor({
   );
   const toggleMenu = (id: string) => {
     setSlash(null);
+    setLinkRange(null);
     setMenu(menu === id ? null : id);
   };
   const menuItem = (label: string, run: () => void, active?: boolean) =>
@@ -412,9 +812,12 @@ export function MarkdownEditor({
   const closeFocus = () => {
     setFocused(false);
     setMenu(null);
+    setLinkRange(null);
     restoreFocus();
   };
   const dismissMenus = (event: React.KeyboardEvent) => {
+    if (event.isPropagationStopped()) return;
+    if (linkRangeRef.current && handleLinkKey(event)) return;
     if (event.nativeEvent.isComposing) return;
     if (event.key === 'Escape') {
       if (menu || slash) {
@@ -436,8 +839,12 @@ export function MarkdownEditor({
       if (
         event.target instanceof Element &&
         !event.target.closest(`[data-editor-tools="${owner}"]`)
-      )
+      ) {
         setMenu(null);
+        if (linkRangeRef.current?.trigger)
+          dismissedLink.current = linkRangeRef.current.from;
+        setLinkRange(null);
+      }
     };
     window.addEventListener('pointerdown', outside);
     return () => window.removeEventListener('pointerdown', outside);
@@ -515,6 +922,7 @@ export function MarkdownEditor({
               : void editor?.chain().focus().toggleItalic().run(),
           source ? undefined : state?.italic,
         )}
+        {action('문서 링크 (Ctrl+K)', <Link2 size={16} />, openLinkPicker)}
         {(['list', 'insert', 'more'] as const).map((id) => (
           <button
             key={id}
@@ -554,12 +962,46 @@ export function MarkdownEditor({
           {focused ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
       </div>
-      {(menu || slash) && (
+      {(menu || slash || linkRange) && (
         <div
           className="editor-menu"
           role={slash ? 'listbox' : 'group'}
           aria-label={slash ? '블록 삽입 명령' : '서식 옵션'}
         >
+          {linkRange && (
+            <DocumentLinkPicker
+              currentCanvas={currentCanvas}
+              query={linkRange.query}
+              setQuery={(query) => {
+                setLinkIndex(0);
+                setLinkRange(
+                  (current) => current && { ...current, query, trigger: false },
+                );
+              }}
+              automatic={linkRange.automatic}
+              setAutomatic={(automatic) =>
+                setLinkRange((current) => current && { ...current, automatic })
+              }
+              label={linkRange.label}
+              setLabel={(label) =>
+                setLinkRange((current) => current && { ...current, label })
+              }
+              index={linkIndex}
+              choose={applyLink}
+              cancel={cancelLink}
+              keyboard={(event) => {
+                handleLinkKey(event);
+              }}
+              trigger={linkRange.trigger}
+              existing={!!linkRange.href}
+              unlink={() => applyLink()}
+              open={() => {
+                const href = linkRange.href;
+                cancelLink();
+                if (href) linksRef.current.open(href);
+              }}
+            />
+          )}
           {menu === 'text' && (
             <>
               {menuItem('본문', () => runCommand('paragraph'), !state?.heading)}
@@ -707,6 +1149,7 @@ export function MarkdownEditor({
                     setWarning('');
                   }
                   setMenu(null);
+                  setLinkRange(null);
                   restoreFocus();
                 }}
               >
@@ -764,16 +1207,21 @@ export function MarkdownEditor({
   const content = (
     <div
       className="markdown-editor"
-      onKeyDown={dismissMenus}
+      onKeyDown={(event) => {
+        if (!event.isPropagationStopped() && !handleLinkKey(event))
+          dismissMenus(event);
+      }}
       onCompositionStart={() => {
         composing.current = true;
         onCompositionChange?.(true);
         setSlash(null);
+        if (linkRangeRef.current?.trigger) setLinkRange(null);
       }}
       onCompositionEnd={() => {
         composing.current = false;
         onCompositionChange?.(false);
         requestAnimationFrame(updateSlash);
+        requestAnimationFrame(() => updateLinkTrigger());
       }}
     >
       {warning && (
@@ -799,8 +1247,11 @@ export function MarkdownEditor({
             );
             lastEmitted.current = e.target.value;
             onChange(e.target.value);
+            updateLinkTrigger(e.target.value, e.target.selectionStart);
           }}
+          onSelect={() => updateLinkTrigger()}
           onKeyDown={(e) => {
+            if (handleLinkKey(e)) return;
             if (
               !e.nativeEvent.isComposing &&
               !locked &&
@@ -844,7 +1295,9 @@ export function MarkdownEditor({
       )}
       {!focused && (
         <span className="editor-inline-hint">
-          {source ? 'Markdown 원문' : '/ 블록 추가 · #, -, [] + Space'}
+          {source
+            ? 'Markdown 원문 · Ctrl+K 문서 링크'
+            : '/ 블록 추가 · [[ 문서 링크 · Ctrl+K'}
         </span>
       )}
     </div>

@@ -373,6 +373,10 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
       'slash',
       'locked',
       'warning',
+      'link-search',
+      'link-empty',
+      'link-missing',
+      'link-auto-title',
     ],
   ),
   entry(

@@ -42,7 +42,10 @@ try {
   }
   assert.equal(health?.documentStatusesVersion, 1);
   assert.equal(health?.projectTrash, true);
-  assert.equal(health.version, '0.17.0');
+  assert.equal(
+    health.version,
+    JSON.parse(await fs.readFile('package.json', 'utf8')).version,
+  );
   const created = await CollaborationClient.create(
     url,
     '',

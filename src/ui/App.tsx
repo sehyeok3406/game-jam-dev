@@ -1,4 +1,10 @@
 import { DocumentStatusBadge } from './DocumentStatusBadge';
+import {
+  DocumentLinksProvider,
+  useDocumentLinks,
+} from './DocumentLinksContext';
+import { DocumentBacklinks } from './DocumentBacklinks';
+import { resolveDocumentLink, linkStatusText } from '../document-links';
 import { DocumentStatusManager } from './DocumentStatusManager';
 import {
   defaultStatuses,
@@ -568,7 +574,9 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
   const editSession = useRef(crypto.randomUUID());
   const taskBusy = useRef(false);
   const [taskError, setTaskError] = useState('');
-  const [editing, setEditing] = useState(!!previewState('editor'));
+  const [editing, setEditing] = useState(
+    !!previewState('editor') && document.id === 'ui-sample-note',
+  );
   const [title, setTitle] = useState(document.title);
   const [body, setBody] = useState(document.body);
   const [saving, setSaving] = useState(false);
@@ -1124,6 +1132,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
                   onChange={(event) => updateTitle(event.target.value)}
                 />
                 <MarkdownEditor
+                  currentCanvas={document.canvasId}
                   value={body}
                   onCompositionChange={setComposing}
                   locked={data.locked}
@@ -1337,6 +1346,7 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
               </div>
             )}
 
+            <DocumentBacklinks path={document.relativePath} />
             {document.sources.length > 0 && (
               <details className="source-list nodrag">
                 <summary>
@@ -1436,6 +1446,10 @@ function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
 }
 
 function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
+  const pageLinks = useDocumentLinks();
+  const linkedDocument = pageLinks.documents.find(
+    (doc) => doc.htmlSource === data.preview.relativePath,
+  );
   const [restart, setRestart] = useState(0);
   const cardRef = useRef<HTMLElement>(null);
   const playAreaRef = useRef<HTMLDivElement>(null);
@@ -1701,6 +1715,9 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
             완료
           </button>
         </div>
+        {!collapsed && linkedDocument && (
+          <DocumentBacklinks path={linkedDocument.relativePath} />
+        )}
         {!collapsed && data.preview.warnings?.length ? (
           <div
             className="preview-import-warning nodrag nowheel"
@@ -1926,6 +1943,40 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const firstCanvasView = useRef<string | null>(null);
   const navigateCanvasItem = useRef<((id: string) => void) | null>(null);
   const [documents, setDocuments] = useState<CanvasDocument[]>([]);
+  const linkDocumentsRef = useRef(documents);
+  const linkScopeRef = useRef(workspace.root);
+  linkScopeRef.current = workspace.root;
+  const openingLink = useRef(false);
+  const openLinkRef = useRef<(href: string) => Promise<void>>(async () => {});
+  const dispatchDocumentLink = useCallback((href: string) => {
+    void openLinkRef
+      .current(href)
+      .catch((error) =>
+        setNotice(error instanceof Error ? error.message : String(error)),
+      );
+  }, []);
+  linkDocumentsRef.current = documents;
+  const [temporaryDocuments, setTemporaryDocuments] = useState<string[]>([]);
+  const linkComposing = useRef(false);
+  useEffect(() => {
+    const start = () => {
+      linkComposing.current = true;
+    };
+    const end = () => {
+      linkComposing.current = false;
+    };
+    window.addEventListener('compositionstart', start);
+    window.addEventListener('compositionend', end);
+    window.addEventListener('blur', end);
+    return () => {
+      window.removeEventListener('compositionstart', start);
+      window.removeEventListener('compositionend', end);
+      window.removeEventListener('blur', end);
+    };
+  }, []);
+  useEffect(() => {
+    setTemporaryDocuments([]);
+  }, [workspace.root]);
   const [statusSettings, setStatusSettings] = useState<{
     value: DocumentStatuses;
     raw: string | null;
@@ -2025,6 +2076,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     setNewFileNodes(new Set(current.value.unread));
   }, []);
   const [taskDocuments, setTaskDocuments] = useState<CanvasDocument[]>([]);
+  const [htmlLinkDocuments, setHtmlLinkDocuments] = useState<CanvasDocument[]>(
+    [],
+  );
+  const allLinkDocuments = useMemo(
+    () => [...documents, ...htmlLinkDocuments],
+    [documents, htmlLinkDocuments],
+  );
+  linkDocumentsRef.current = allLinkDocuments;
   const [sections, setSections] = useState<CanvasSection[]>([]);
   const [previews, setPreviews] = useState<PreviewResult[]>([]);
   const [previewWindows, setPreviewWindows] = useState<
@@ -2900,6 +2959,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       if (!state.root) {
         setDocuments([]);
         setTaskDocuments([]);
+        setHtmlLinkDocuments([]);
         setSections([]);
         setPreviews([]);
         setPreviewWindows({});
@@ -3136,6 +3196,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       }
       setLoadedProjectRoot(state.root);
       setDocuments((current) => reconcile(current, canvasDocuments));
+      setHtmlLinkDocuments((current) =>
+        reconcile(
+          current,
+          visibleDocuments.filter((doc) => !!doc.htmlSource),
+        ),
+      );
       setTaskDocuments((current) =>
         reconcile(
           current,
@@ -4060,7 +4126,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             : { x: document.x, y: document.y },
           style: {
             width: document.width,
-            height: document.collapsed && !findOpen ? 38 : document.height,
+            height:
+              document.collapsed &&
+              !findOpen &&
+              !temporaryDocuments.includes(document.id)
+                ? 38
+                : document.height,
           },
           parentId: parent ? sectionNodeId(parent.id) : undefined,
           zIndex: 2,
@@ -4108,7 +4179,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             beginEdit,
             endEdit,
             registerEditor,
-            document: findOpen ? { ...document, collapsed: false } : document,
+            document:
+              findOpen || temporaryDocuments.includes(document.id)
+                ? { ...document, collapsed: false }
+                : document,
             onSave: saveDocument,
             onResize: resizeDocument,
             onSource: focusSource,
@@ -4116,13 +4190,17 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             onReveal: revealDocument,
             onDetails: () => setInspectorId(document.id),
             onCollapse: () =>
-              void window.gameCanvas
-                .setDocumentCollapsed({
-                  relativePath: document.relativePath,
-                  collapsed: !document.collapsed,
-                })
-                .then(() => loadProject(false))
-                .catch(showError),
+              temporaryDocuments.includes(document.id)
+                ? setTemporaryDocuments((current) =>
+                    current.filter((id) => id !== document.id),
+                  )
+                : void window.gameCanvas
+                    .setDocumentCollapsed({
+                      relativePath: document.relativePath,
+                      collapsed: !document.collapsed,
+                    })
+                    .then(() => loadProject(false))
+                    .catch(showError),
             sourceTitles,
             reportEdit,
           },
@@ -4349,6 +4427,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     workflowChange,
     sectionViews,
     temporarySections,
+    temporaryDocuments,
     kanbanLayouts,
     pluginPanelOpen,
     workflowReason,
@@ -5590,6 +5669,33 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     setSectionContextMenu(null);
     setPreviewContextMenu(null);
   };
+  const openDocumentLink = async (href: string) => {
+    if (openingLink.current) return;
+    if (linkComposing.current) {
+      setNotice('한글 입력을 마친 뒤 링크를 열어주세요.');
+      return;
+    }
+    openingLink.current = true;
+    const scope = workspace.root;
+    try {
+      if (!locked && editorsRef.current.size) await flushEditors();
+      if (scope !== linkScopeRef.current) return;
+      const resolved = resolveDocumentLink(href, linkDocumentsRef.current);
+      if (resolved.status !== 'found') {
+        setNotice(linkStatusText(resolved));
+        return;
+      }
+      const target = resolved.document;
+      const id = target.htmlSource
+        ? previewNodeId(target.htmlSource)
+        : target.id;
+      pendingCanvasJump.current = id;
+      setTemporaryDocuments((current) => [...new Set([...current, target.id])]);
+      navigateCanvasItem.current?.(id);
+    } finally {
+      openingLink.current = false;
+    }
+  };
   const jumpTo = (id: string) => {
     const section = sections.find((s) => s.members.some((m) => m.id === id));
     if (section && sectionViews[section.id])
@@ -5627,6 +5733,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     });
   };
   navigateCanvasItem.current = jumpTo;
+  openLinkRef.current = openDocumentLink;
   useEffect(() => {
     if (firstCanvasView.current !== activeCanvas || !nodes.length) return;
     firstCanvasView.current = null;
@@ -7516,288 +7623,302 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           openCanvasMenu(event.clientX, event.clientY);
         }}
       >
-        <ReactFlow<CanvasNode>
-          key={activeCanvas}
-          nodes={nodes}
-          edges={[]}
-          nodeTypes={nodeTypes}
-          onInit={(instance) => {
-            flowRef.current = instance;
-            try {
-              const saved = JSON.parse(
-                localStorage.getItem(
-                  'game-canvas-sheet-view:' +
-                    workspace.root +
-                    ':' +
-                    activeCanvas,
-                ) ?? 'null',
-              );
-              if (
-                saved &&
-                ['x', 'y', 'zoom'].every(
-                  (key) =>
-                    typeof saved[key] === 'number' &&
-                    Number.isFinite(saved[key]),
-                ) &&
-                saved.zoom >= 0.1 &&
-                saved.zoom <= 2
-              ) {
+        <DocumentLinksProvider
+          documents={allLinkDocuments}
+          canvases={canvasSheets.canvases}
+          open={dispatchDocumentLink}
+        >
+          <ReactFlow<CanvasNode>
+            key={activeCanvas}
+            nodes={nodes}
+            edges={[]}
+            nodeTypes={nodeTypes}
+            onInit={(instance) => {
+              flowRef.current = instance;
+              try {
+                const saved = JSON.parse(
+                  localStorage.getItem(
+                    'game-canvas-sheet-view:' +
+                      workspace.root +
+                      ':' +
+                      activeCanvas,
+                  ) ?? 'null',
+                );
+                if (
+                  saved &&
+                  ['x', 'y', 'zoom'].every(
+                    (key) =>
+                      typeof saved[key] === 'number' &&
+                      Number.isFinite(saved[key]),
+                  ) &&
+                  saved.zoom >= 0.1 &&
+                  saved.zoom <= 2
+                ) {
+                  firstCanvasView.current = null;
+                  void instance.setViewport(saved);
+                  setViewZoom(saved.zoom);
+                  return;
+                }
+              } catch {
+                /* Invalid preferences use the default viewport. */
+              }
+              firstCanvasView.current = activeCanvas;
+              void instance.setViewport({ x: 0, y: 0, zoom: 1 });
+              setViewZoom(1);
+              if (nodes.length) {
                 firstCanvasView.current = null;
-                void instance.setViewport(saved);
-                setViewZoom(saved.zoom);
+                requestAnimationFrame(() => {
+                  void instance.fitView({
+                    padding: 0.16,
+                    maxZoom: 1,
+                    duration: 0,
+                  });
+                });
+              }
+            }}
+            onNodesChange={onNodesChange}
+            onNodeClick={(event, node) => {
+              acknowledgeNewFile(node.id);
+              if (inspectorId && !event.shiftKey) setInspectorId(node.id);
+              setDocumentContextMenu(null);
+              setSectionContextMenu(null);
+              setPreviewContextMenu(null);
+              if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                const ids = new Set(selectionBeforeClick.current);
+                if (ids.has(node.id)) ids.delete(node.id);
+                else ids.add(node.id);
+                setNodes((current) =>
+                  current.map((item) => ({
+                    ...item,
+                    selected: ids.has(item.id),
+                  })),
+                );
+              }
+            }}
+            onNodeContextMenu={(event, node) => {
+              event.preventDefault();
+              setContextMenu(null);
+              setPreviewContextMenu(null);
+              if (node.data.kind === 'kanban') {
+                openKanbanControls();
                 return;
               }
-            } catch {
-              /* Invalid preferences use the default viewport. */
-            }
-            firstCanvasView.current = activeCanvas;
-            void instance.setViewport({ x: 0, y: 0, zoom: 1 });
-            setViewZoom(1);
-            if (nodes.length) {
-              firstCanvasView.current = null;
-              requestAnimationFrame(() => {
-                void instance.fitView({
-                  padding: 0.16,
-                  maxZoom: 1,
-                  duration: 0,
+              if (node.data.kind === 'document') {
+                setSectionContextMenu(null);
+                setDocumentContextMenu({
+                  screenX: Math.min(event.clientX, window.innerWidth - 282),
+                  screenY: Math.min(event.clientY, window.innerHeight - 190),
+                  document: node.data.document,
                 });
-              });
-            }
-          }}
-          onNodesChange={onNodesChange}
-          onNodeClick={(event, node) => {
-            acknowledgeNewFile(node.id);
-            if (inspectorId && !event.shiftKey) setInspectorId(node.id);
-            setDocumentContextMenu(null);
-            setSectionContextMenu(null);
-            setPreviewContextMenu(null);
-            if (event.shiftKey || event.ctrlKey || event.metaKey) {
-              const ids = new Set(selectionBeforeClick.current);
-              if (ids.has(node.id)) ids.delete(node.id);
-              else ids.add(node.id);
-              setNodes((current) =>
-                current.map((item) => ({
-                  ...item,
-                  selected: ids.has(item.id),
-                })),
-              );
-            }
-          }}
-          onNodeContextMenu={(event, node) => {
-            event.preventDefault();
-            setContextMenu(null);
-            setPreviewContextMenu(null);
-            if (node.data.kind === 'kanban') {
-              openKanbanControls();
-              return;
-            }
-            if (node.data.kind === 'document') {
-              setSectionContextMenu(null);
-              setDocumentContextMenu({
-                screenX: Math.min(event.clientX, window.innerWidth - 282),
-                screenY: Math.min(event.clientY, window.innerHeight - 190),
-                document: node.data.document,
-              });
-            } else if (node.data.kind === 'section') {
-              setDocumentContextMenu(null);
-              setSectionContextMenu({
-                screenX: Math.min(event.clientX, window.innerWidth - 282),
-                screenY: Math.min(event.clientY, window.innerHeight - 230),
-                section: node.data.section,
-              });
-            } else if (node.data.kind === 'preview') {
-              setDocumentContextMenu(null);
-              setSectionContextMenu(null);
-              setPreviewContextMenu({
-                screenX: Math.min(event.clientX, window.innerWidth - 282),
-                screenY: Math.min(event.clientY, window.innerHeight - 160),
-                preview: node.data.preview,
-              });
-            }
-          }}
-          onNodeDragStart={() => {
-            snapLatest.current = null;
-            setGuides({});
-          }}
-          onNodeDrag={(_event, node, dragged) => {
-            if (
-              !snapEnabled ||
-              _event.altKey ||
-              dragged.length > 1 ||
-              node.data.kind === 'preview' ||
-              locked
-            ) {
+              } else if (node.data.kind === 'section') {
+                setDocumentContextMenu(null);
+                setSectionContextMenu({
+                  screenX: Math.min(event.clientX, window.innerWidth - 282),
+                  screenY: Math.min(event.clientY, window.innerHeight - 230),
+                  section: node.data.section,
+                });
+              } else if (node.data.kind === 'preview') {
+                setDocumentContextMenu(null);
+                setSectionContextMenu(null);
+                setPreviewContextMenu({
+                  screenX: Math.min(event.clientX, window.innerWidth - 282),
+                  screenY: Math.min(event.clientY, window.innerHeight - 160),
+                  preview: node.data.preview,
+                });
+              }
+            }}
+            onNodeDragStart={() => {
               snapLatest.current = null;
               setGuides({});
-              return;
-            }
-            const parent = sections.find(
-              (section) => node.parentId === sectionNodeId(section.id),
-            );
-            const x = node.position.x + (parent?.x ?? 0),
-              y = node.position.y + (parent?.y ?? 0),
-              width = node.measured?.width ?? Number(node.style?.width ?? 300),
-              height =
-                node.measured?.height ?? Number(node.style?.height ?? 300);
-            const excluded =
-              node.data.kind === 'section'
-                ? new Set(node.data.section.members.map((member) => member.id))
-                : new Set<string>();
-            const others = nodes
-              .filter(
-                (other) =>
-                  other.id !== node.id &&
-                  other.id !== node.parentId &&
-                  !other.selected &&
-                  !excluded.has(other.id),
-              )
-              .map((other) => {
-                const p = sections.find(
-                  (section) => other.parentId === sectionNodeId(section.id),
-                );
-                return {
-                  x: other.position.x + (p?.x ?? 0),
-                  y: other.position.y + (p?.y ?? 0),
-                  width:
-                    other.measured?.width ?? Number(other.style?.width ?? 300),
-                  height:
-                    other.measured?.height ??
-                    Number(other.style?.height ?? 300),
-                };
-              });
-            const snapped = snapPosition(
-              { x, y, width, height },
-              others,
-              6 / (flowRef.current?.getZoom() ?? 1),
-            );
-            const snappedPosition = {
-              x: snapped.x - (parent?.x ?? 0),
-              y: snapped.y - (parent?.y ?? 0),
-            };
-            snapLatest.current = { id: node.id, ...snappedPosition };
-            setNodes((current) =>
-              current.map((item) =>
-                item.id === node.id
-                  ? {
-                      ...item,
-                      position: snappedPosition,
-                    }
-                  : item,
-              ),
-            );
-            setGuides({ x: snapped.xGuide, y: snapped.yGuide });
-          }}
-          onNodeDragStop={(_event, node, dragged) => {
-            const snap = snapLatest.current;
-            const target =
-              snap?.id === node.id
-                ? { ...node, position: { x: snap.x, y: snap.y } }
-                : node;
-            const moved = dragged.map((item) =>
-              item.id === target.id ? target : item,
-            );
-            setGuides({});
-            snapLatest.current = null;
-            void persistDraggedNodes(target, moved).catch(showError);
-          }}
-          onSelectionChange={({ nodes: selected }) => {
-            const nextIds = selected.flatMap((node) =>
-              node.data.kind === 'document' ? [node.data.document.id] : [],
-            );
-            const nextSectionIds = selected.flatMap((node) =>
-              node.data.kind === 'section' ? [node.data.section.id] : [],
-            );
-            setSelectedIds((currentIds) =>
-              sameIds(currentIds, nextIds) ? currentIds : nextIds,
-            );
-            setSelectedSectionIds((currentIds) =>
-              sameIds(currentIds, nextSectionIds) ? currentIds : nextSectionIds,
-            );
-          }}
-          onPaneClick={() => {
-            setContextMenu(null);
-            setDocumentContextMenu(null);
-            setSectionContextMenu(null);
-            setPreviewContextMenu(null);
-          }}
-          onPaneContextMenu={(event) => {
-            event.preventDefault();
-            openCanvasMenu(event.clientX, event.clientY);
-          }}
-          onMoveStart={() => {
-            if (preview) return;
-            setContextMenu(null);
-            setDocumentContextMenu(null);
-            setSectionContextMenu(null);
-            setPreviewContextMenu(null);
-          }}
-          onMove={(_event, viewport) => {
-            if (activeCanvasRef.current === activeCanvas)
-              setViewZoom(viewport.zoom);
-          }}
-          onMoveEnd={() => {
-            if (activeCanvasRef.current === activeCanvas)
-              storeViewport(activeCanvas);
-          }}
-          selectionOnDrag={tool === 'select'}
-          panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
-          nodesDraggable={tool === 'select'}
-          elementsSelectable={tool === 'select'}
-          multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
-          fitView={false}
-          zoomOnScroll={!noteDraft && !drawingGesture}
-          zoomOnPinch={!noteDraft && !drawingGesture}
-          zoomOnDoubleClick={
-            tool !== 'note' && tool !== 'drawing' && !drawingGesture
-          }
-          minZoom={0.15}
-          maxZoom={2}
-          elevateNodesOnSelect={false}
-          deleteKeyCode={null}
-        >
-          <Background
-            color={theme === 'dark' ? '#373b44' : '#c9cdd3'}
-            gap={24}
-            size={1}
-          />
-          <Controls position="bottom-left" showInteractive={false} />
-          <CanvasMiniMap
-            theme={theme}
-            preferences={minimapPreferences}
-            change={updateMiniMapPreferences}
-            previewOpen={preview?.id === 'minimap-settings'}
-          />
-          <DrawingInputLayer
-            tool={drawingTool}
-            style={drawingStyle}
-            enabled={
-              tool === 'drawing' &&
-              !locked &&
-              (!collaboration.active || collaboration.drawingsVersion === 1)
-            }
-            scope={workspace.saveScope ?? ''}
-            canvasId={activeCanvas}
-            items={drawing.items}
-            pressure={drawingPressure}
-            touch={drawingTouch}
-            onCreate={(o) => {
-              if (o.kind === 'shape' && !drawingContinuous)
-                createdDrawingSelection.current = o.id;
-              submitDrawing({ action: 'create', objects: [o] });
             }}
-            onErase={(targets) => submitDrawing({ action: 'delete', targets })}
-            onPartial={drawing.partial}
-            onGesture={setDrawingGesture}
-            onFinished={() => {
+            onNodeDrag={(_event, node, dragged) => {
               if (
-                drawingTool !== 'pen' &&
-                drawingTool !== 'highlighter' &&
-                !drawingContinuous
-              )
-                setTool('select');
+                !snapEnabled ||
+                _event.altKey ||
+                dragged.length > 1 ||
+                node.data.kind === 'preview' ||
+                locked
+              ) {
+                snapLatest.current = null;
+                setGuides({});
+                return;
+              }
+              const parent = sections.find(
+                (section) => node.parentId === sectionNodeId(section.id),
+              );
+              const x = node.position.x + (parent?.x ?? 0),
+                y = node.position.y + (parent?.y ?? 0),
+                width =
+                  node.measured?.width ?? Number(node.style?.width ?? 300),
+                height =
+                  node.measured?.height ?? Number(node.style?.height ?? 300);
+              const excluded =
+                node.data.kind === 'section'
+                  ? new Set(
+                      node.data.section.members.map((member) => member.id),
+                    )
+                  : new Set<string>();
+              const others = nodes
+                .filter(
+                  (other) =>
+                    other.id !== node.id &&
+                    other.id !== node.parentId &&
+                    !other.selected &&
+                    !excluded.has(other.id),
+                )
+                .map((other) => {
+                  const p = sections.find(
+                    (section) => other.parentId === sectionNodeId(section.id),
+                  );
+                  return {
+                    x: other.position.x + (p?.x ?? 0),
+                    y: other.position.y + (p?.y ?? 0),
+                    width:
+                      other.measured?.width ??
+                      Number(other.style?.width ?? 300),
+                    height:
+                      other.measured?.height ??
+                      Number(other.style?.height ?? 300),
+                  };
+                });
+              const snapped = snapPosition(
+                { x, y, width, height },
+                others,
+                6 / (flowRef.current?.getZoom() ?? 1),
+              );
+              const snappedPosition = {
+                x: snapped.x - (parent?.x ?? 0),
+                y: snapped.y - (parent?.y ?? 0),
+              };
+              snapLatest.current = { id: node.id, ...snappedPosition };
+              setNodes((current) =>
+                current.map((item) =>
+                  item.id === node.id
+                    ? {
+                        ...item,
+                        position: snappedPosition,
+                      }
+                    : item,
+                ),
+              );
+              setGuides({ x: snapped.xGuide, y: snapped.yGuide });
             }}
-          />
-        </ReactFlow>
+            onNodeDragStop={(_event, node, dragged) => {
+              const snap = snapLatest.current;
+              const target =
+                snap?.id === node.id
+                  ? { ...node, position: { x: snap.x, y: snap.y } }
+                  : node;
+              const moved = dragged.map((item) =>
+                item.id === target.id ? target : item,
+              );
+              setGuides({});
+              snapLatest.current = null;
+              void persistDraggedNodes(target, moved).catch(showError);
+            }}
+            onSelectionChange={({ nodes: selected }) => {
+              const nextIds = selected.flatMap((node) =>
+                node.data.kind === 'document' ? [node.data.document.id] : [],
+              );
+              const nextSectionIds = selected.flatMap((node) =>
+                node.data.kind === 'section' ? [node.data.section.id] : [],
+              );
+              setSelectedIds((currentIds) =>
+                sameIds(currentIds, nextIds) ? currentIds : nextIds,
+              );
+              setSelectedSectionIds((currentIds) =>
+                sameIds(currentIds, nextSectionIds)
+                  ? currentIds
+                  : nextSectionIds,
+              );
+            }}
+            onPaneClick={() => {
+              setContextMenu(null);
+              setDocumentContextMenu(null);
+              setSectionContextMenu(null);
+              setPreviewContextMenu(null);
+            }}
+            onPaneContextMenu={(event) => {
+              event.preventDefault();
+              openCanvasMenu(event.clientX, event.clientY);
+            }}
+            onMoveStart={() => {
+              if (preview) return;
+              setContextMenu(null);
+              setDocumentContextMenu(null);
+              setSectionContextMenu(null);
+              setPreviewContextMenu(null);
+            }}
+            onMove={(_event, viewport) => {
+              if (activeCanvasRef.current === activeCanvas)
+                setViewZoom(viewport.zoom);
+            }}
+            onMoveEnd={() => {
+              if (activeCanvasRef.current === activeCanvas)
+                storeViewport(activeCanvas);
+            }}
+            selectionOnDrag={tool === 'select'}
+            panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
+            nodesDraggable={tool === 'select'}
+            elementsSelectable={tool === 'select'}
+            multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
+            fitView={false}
+            zoomOnScroll={!noteDraft && !drawingGesture}
+            zoomOnPinch={!noteDraft && !drawingGesture}
+            zoomOnDoubleClick={
+              tool !== 'note' && tool !== 'drawing' && !drawingGesture
+            }
+            minZoom={0.15}
+            maxZoom={2}
+            elevateNodesOnSelect={false}
+            deleteKeyCode={null}
+          >
+            <Background
+              color={theme === 'dark' ? '#373b44' : '#c9cdd3'}
+              gap={24}
+              size={1}
+            />
+            <Controls position="bottom-left" showInteractive={false} />
+            <CanvasMiniMap
+              theme={theme}
+              preferences={minimapPreferences}
+              change={updateMiniMapPreferences}
+              previewOpen={preview?.id === 'minimap-settings'}
+            />
+            <DrawingInputLayer
+              tool={drawingTool}
+              style={drawingStyle}
+              enabled={
+                tool === 'drawing' &&
+                !locked &&
+                (!collaboration.active || collaboration.drawingsVersion === 1)
+              }
+              scope={workspace.saveScope ?? ''}
+              canvasId={activeCanvas}
+              items={drawing.items}
+              pressure={drawingPressure}
+              touch={drawingTouch}
+              onCreate={(o) => {
+                if (o.kind === 'shape' && !drawingContinuous)
+                  createdDrawingSelection.current = o.id;
+                submitDrawing({ action: 'create', objects: [o] });
+              }}
+              onErase={(targets) =>
+                submitDrawing({ action: 'delete', targets })
+              }
+              onPartial={drawing.partial}
+              onGesture={setDrawingGesture}
+              onFinished={() => {
+                if (
+                  drawingTool !== 'pen' &&
+                  drawingTool !== 'highlighter' &&
+                  !drawingContinuous
+                )
+                  setTool('select');
+              }}
+            />
+          </ReactFlow>
+        </DocumentLinksProvider>
         {noteDraft && (
           <div
             className="note-drawing-preview"

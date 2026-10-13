@@ -47,6 +47,8 @@ export type FileAuthorshipRecord = FileAuthorship & {
 export type FileAuthorshipMap = Record<string, FileAuthorshipRecord>;
 
 export type CanvasDocument = {
+  /** Derived from frontmatter; never persisted by link insertion. */
+  identitySource?: 'frontmatter' | 'path';
   workflowStatusId?: string;
   workflowOrder?: number;
   workflowRevision?: number;

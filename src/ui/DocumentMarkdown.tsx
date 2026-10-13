@@ -1,7 +1,53 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, {
+  defaultUrlTransform,
+  type Components,
+} from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
+import {
+  AUTO_LINK_TITLE,
+  parseDocumentLink,
+  linkStatusText,
+} from '../document-links';
+import { useDocumentLinks } from './DocumentLinksContext';
+
+const MarkdownLink: NonNullable<Components['a']> = ({
+  href,
+  title,
+  children,
+}) => {
+  const links = useDocumentLinks();
+  if (href === '') return <span>{children}</span>;
+  if (!href?.startsWith('gamejam:'))
+    return (
+      <a href={href} title={title}>
+        {children}
+      </a>
+    );
+  const resolved = links.resolve(href);
+  return (
+    <a
+      href={href}
+      className={`document-link${resolved.status === 'found' ? '' : ' document-link--missing'}`}
+      title={
+        resolved.status === 'found'
+          ? `${resolved.document.title} · ${links.canvasName(resolved.document.canvasId)} · ${resolved.document.relativePath}`
+          : linkStatusText(resolved)
+      }
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        links.open(href);
+      }}
+    >
+      {title === AUTO_LINK_TITLE && resolved.status === 'found'
+        ? resolved.document.title
+        : children}
+    </a>
+  );
+};
 
 const TaskContext = createContext<{ offset?: number; label: string }>({
   label: '항목',
@@ -52,6 +98,7 @@ function MarkdownInput({
   ) : null;
 }
 const components: Components = {
+  a: MarkdownLink,
   img: MarkdownImage,
   li: MarkdownListItem,
   input: MarkdownInput,
@@ -97,6 +144,9 @@ export function DocumentMarkdown({
   return (
     <RenderContext.Provider value={{ disabled, onToggle, image }}>
       <ReactMarkdown
+        urlTransform={(url) =>
+          parseDocumentLink(url) ? url : defaultUrlTransform(url)
+        }
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={components}
       >

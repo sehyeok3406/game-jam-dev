@@ -219,6 +219,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
         Number.isFinite(data[key]) ? (data[key] as number) : fallback;
       return {
         canvasId: canvasId(data.canvas_id),
+        identitySource: typeof data.id === 'string' ? 'frontmatter' : 'path',
         id: typeof data.id === 'string' ? data.id : relativePath,
         title: typeof data.title === 'string' ? data.title : relativePath,
         type: [

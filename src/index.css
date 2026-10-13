@@ -2742,6 +2742,77 @@ button:disabled {
   font-size: 12px;
   line-height: 1.7;
 }
+.document-link {
+  color: var(--selection);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.document-link--missing {
+  text-decoration-style: dashed;
+  opacity: 0.7;
+}
+.document-link:focus-visible {
+  outline: 2px solid var(--selection);
+  outline-offset: 3px;
+}
+.document-link-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+.document-link-picker > input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface-subtle);
+}
+.document-link-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.document-link-picker [role='listbox'] {
+  max-height: 210px;
+  overflow: auto;
+}
+.document-link-picker [role='option'] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 46px;
+  padding: 7px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.document-link-picker [role='option'] small {
+  display: block;
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+.document-link-actions {
+  display: flex;
+  gap: 6px;
+}
+.document-link-actions button {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.document-backlinks button {
+  display: flex;
+  gap: 6px;
+}
+.document-backlinks small {
+  color: var(--text-muted);
+}
 .editor-menu .editor-heading-choice--1 {
   font-size: 22px;
 }

@@ -484,7 +484,15 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     getCanvasChanges: async () => null,
     getDocument: async (relative) =>
       structuredClone(
-        documents.find((doc) => doc.relativePath === relative) ?? null,
+        (() => {
+          const doc = documents.find((item) => item.relativePath === relative);
+          return doc
+            ? {
+                ...doc,
+                identitySource: doc.identitySource ?? ('frontmatter' as const),
+              }
+            : null;
+        })(),
       ),
     getEditorDraft: async (key) => drafts.get(key) ?? null,
     setEditorDraft: async (key, draft) => {
@@ -1008,7 +1016,14 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         '\n';
       notify();
     },
-    listDocuments: async () => structuredClone(documents),
+    // Dev documents are generated with explicit IDs, just like imported files.
+    listDocuments: async () =>
+      structuredClone(
+        documents.map((d) => ({
+          ...d,
+          identitySource: d.identitySource ?? ('frontmatter' as const),
+        })),
+      ),
     applyCanvasCommands: async ({ commands }) => {
       const before = devSnapshot();
       devBatchActive = true;

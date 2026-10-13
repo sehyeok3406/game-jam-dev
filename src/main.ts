@@ -1080,6 +1080,7 @@ const parseDocument = async (absolutePath: string): Promise<CanvasDocument> => {
 
   return {
     canvasId: canvasId(data.canvas_id),
+    identitySource: typeof data.id === 'string' ? 'frontmatter' : 'path',
     id: typeof data.id === 'string' ? data.id : relativePath,
     title: typeof data.title === 'string' ? data.title : fallbackTitle,
     type:

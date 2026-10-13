@@ -5,6 +5,11 @@ import { TaskList, TaskItem } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
 import { HorizontalRule } from '@tiptap/extension-horizontal-rule';
+import {
+  documentLinkNode,
+  type DocumentLinkRuntime,
+} from './document-link-node.ts';
+import { parseDocumentLink } from './document-links.ts';
 
 const SpaceRule = HorizontalRule.extend({
   addInputRules() {
@@ -38,14 +43,23 @@ const SafeImage = Image.extend({
   },
 });
 
-export function markdownExtensions() {
+export function markdownExtensions(runtime?: DocumentLinkRuntime) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4, 5, 6] },
       horizontalRule: false,
       underline: false,
-      link: { openOnClick: false, autolink: false },
+      link: {
+        openOnClick: false,
+        autolink: false,
+        protocols: ['gamejam'],
+        isAllowedUri: (href, context) =>
+          /^gamejam:/i.test(href)
+            ? !!parseDocumentLink(href)
+            : context.defaultValidate(href),
+      },
     }),
+    documentLinkNode(runtime),
     SpaceRule,
     TaskList,
     SpaceTask.configure({

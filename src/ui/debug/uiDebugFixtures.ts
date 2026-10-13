@@ -61,6 +61,7 @@ export function sampleDrawing(state: string): DrawingItem {
 
 export const SAMPLE_TIME = Date.UTC(2026, 9, 9, 3);
 export const SAMPLE_DOCUMENT: CanvasDocument = {
+  identitySource: 'frontmatter',
   id: 'ui-sample-note',
   title: '전투 시스템 아이디어',
   type: 'idea',
@@ -291,6 +292,22 @@ export function sampleDocuments(selection: UiDebugSelection): CanvasDocument[] {
   }
   if (id === 'document' && (state === 'system' || state === 'reference'))
     first.type = state;
+  if (id === 'editor' && state.startsWith('link-')) {
+    first.body =
+      state === 'link-missing'
+        ? '[삭제된 문서](gamejam://document/missing "gamejam:auto-title")'
+        : '[변경 전 제목](gamejam://document/ui-sample-system "gamejam:auto-title")\n\n[고정 문구](gamejam://document/ui-sample-system)';
+    return [
+      first,
+      {
+        ...SAMPLE_DOCUMENT,
+        id: 'ui-sample-system',
+        title: '변경된 최신 제목',
+        relativePath: 'docs/ui-system.md',
+        x: 590,
+      },
+    ];
+  }
   if (['document', 'image', 'markdown', 'editor'].includes(id)) return [first];
   return [
     first,
