@@ -958,6 +958,33 @@ button:disabled {
   letter-spacing: -0.025em;
 }
 
+.section-dialog > h2,
+.section-dialog > p,
+.section-dialog > input,
+.section-dialog > ul {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.section-dialog > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: normal;
+}
+
+.section-dialog > ul {
+  max-height: min(240px, 30vh);
+  margin: 0;
+  padding-left: 22px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .section-dialog > div:nth-child(2) > span {
   display: block;
   margin-top: 7px;

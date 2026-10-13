@@ -174,6 +174,39 @@ async function run() {
     await key('a', ['control']);
     await key('Delete');
     await wait('!!document.querySelector("[data-ui-id=delete-many]")');
+    const deleteLayout = () =>
+      js(`(()=>{
+        const dialog=document.querySelector('[data-ui-id=delete-many] section');
+        const rect=element=>{const r=element.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
+        return {dialog:rect(dialog),title:rect(dialog.querySelector('h2')),description:rect(dialog.querySelector('p')),list:rect(dialog.querySelector('ul')),actions:rect(dialog.querySelector('.section-dialog__actions')),fontSize:parseFloat(getComputedStyle(dialog.querySelector('p')).fontSize),viewport:{width:innerWidth,height:innerHeight}};
+      })()`);
+    const assertDeleteLayout = (layout) => {
+      assert.ok(
+        layout.description.width >= layout.dialog.width - 40,
+        'Deletion description uses the full dialog width',
+      );
+      assert.ok(layout.fontSize >= 12, 'Deletion explanation is readable');
+      assert.ok(layout.description.top >= layout.title.bottom);
+      assert.ok(layout.list.top >= layout.description.bottom);
+      assert.ok(layout.actions.top >= layout.list.bottom);
+      assert.ok(layout.dialog.height < 400, 'Small selection stays compact');
+      assert.ok(layout.dialog.left >= 0);
+      assert.ok(layout.dialog.right <= layout.viewport.width);
+      assert.ok(layout.dialog.top >= 0);
+      assert.ok(layout.dialog.bottom <= layout.viewport.height);
+    };
+    assertDeleteLayout(await deleteLayout());
+    await js("document.documentElement.dataset.theme='light'");
+    await fs.writeFile(
+      'out/drawing-ui/delete-confirmation.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    win.setSize(420, 600);
+    await pause();
+    assertDeleteLayout(await deleteLayout());
+    win.setSize(1360, 1000);
+    await js('delete document.documentElement.dataset.theme');
+    await pause();
     await js(
       'Array.from(document.querySelectorAll("[data-ui-id=delete-many] button")).find(b=>b.textContent.trim()==="취소").click()',
     );
