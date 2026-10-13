@@ -119,10 +119,12 @@ export const DrawingNode = memo(function DrawingNode({
       }
     };
     window.addEventListener('blur', cancel);
+    window.addEventListener('canvas-clipboard-paste', cancel);
     window.addEventListener('keydown', escape, true);
     return () => {
       cancel();
       window.removeEventListener('blur', cancel);
+      window.removeEventListener('canvas-clipboard-paste', cancel);
       window.removeEventListener('keydown', escape, true);
     };
   }, [data.onGesture]);

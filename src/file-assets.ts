@@ -204,6 +204,8 @@ export function buildFileImports(input: ImportBatchInput): Snapshot {
         );
       }
     } else if (ext in IMAGE_MIMES) {
+      if (/^clipboard-[0-9a-f-]{36}\.(png|jpg|webp|gif)$/i.test(file.name))
+        data.title = '붙여넣은 이미지';
       const assetPath = `assets/images/${id}.${ext}`;
       const bytes = decodeAsset(assetPath, file.content);
       additions[assetPath] = file.content;

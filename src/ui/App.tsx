@@ -1925,6 +1925,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     root: null,
     name: null,
   });
+  const clipboardWorkspaceRef = useRef(workspace);
+  clipboardWorkspaceRef.current = workspace;
   const [canvasSheets, setCanvasSheets] = useState<CanvasSheets>(() =>
     readCanvasSheets(),
   );
@@ -2483,7 +2485,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const canvasClipboardRef = useRef<{
     documents: { id: string; path: string }[];
     pasteCount: number;
+    copyId: string;
+    contextId: string;
   } | null>(null);
+  const clipboardActions = useRef<Promise<unknown>>(Promise.resolve());
+  const queueClipboardAction = (action: () => Promise<void>) => {
+    const next = clipboardActions.current.then(action);
+    clipboardActions.current = next.catch(() => undefined);
+    return next;
+  };
+  useEffect(() => {
+    canvasClipboardRef.current = null;
+    drawingClipboard.current = null;
+    drawingPasteCount.current = 0;
+  }, [workspace.clipboardContextId]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -2950,7 +2965,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       draftFlushers.delete(key);
     };
   }, [workspace.saveScope, drawing.flush]);
-  const loadProject = useCallback(async (fit = false) => {
+  const loadProject = useCallback(async (fit = false, throwOnError = false) => {
     const request = ++projectLoadRef.current;
     try {
       const state = await window.gameCanvas.getWorkspace();
@@ -3287,6 +3302,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     } catch (error) {
       if (request !== projectLoadRef.current) return;
       setLoading(false);
+      if (throwOnError) throw error;
       showError(error);
     }
   }, []);
@@ -5484,96 +5500,190 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           !!n.selected && n.data.kind === 'drawing',
       )
       .map((n) => structuredClone(n.data.object));
-    drawingClipboard.current = copiedDrawings;
-    drawingPasteCount.current = 0;
     const copiedDocuments = documents
-      .filter((document) => selectedIds.includes(document.id))
-      .map((document) => ({ id: document.id, path: document.relativePath }));
-    if (copiedDocuments.length === 0) {
-      canvasClipboardRef.current = null;
-      if (copiedDrawings.length) {
-        setNotice(`${copiedDrawings.length}개 그림을 복사했습니다.`);
-        return;
-      }
+      .filter((doc) => selectedIds.includes(doc.id))
+      .map((doc) => ({ id: doc.id, path: doc.relativePath }));
+    if (!copiedDocuments.length && !copiedDrawings.length) {
       setNotice('복사할 메모 또는 파일을 선택하세요.');
       return;
     }
-    canvasClipboardRef.current = {
-      documents: copiedDocuments,
-      pasteCount: 0,
+    const current = clipboardWorkspaceRef.current;
+    const input = {
+      scope: current.saveScope ?? '',
+      contextId: current.clipboardContextId ?? '',
+      copyId: crypto.randomUUID(),
     };
-    setNotice(`${copiedDocuments.length}개 파일을 복사했습니다.`);
+    void queueClipboardAction(async () => {
+      await window.gameCanvas.markCanvasClipboard(input);
+      if (clipboardWorkspaceRef.current.clipboardContextId !== input.contextId)
+        return;
+      drawingClipboard.current = copiedDrawings;
+      drawingPasteCount.current = 0;
+      canvasClipboardRef.current = {
+        documents: copiedDocuments,
+        pasteCount: 0,
+        copyId: input.copyId,
+        contextId: input.contextId,
+      };
+      setNotice(
+        `${copiedDocuments.length}개 파일 · ${copiedDrawings.length}개 그림을 복사했습니다.`,
+      );
+    }).catch((error) => {
+      if (clipboardWorkspaceRef.current.clipboardContextId === input.contextId)
+        showError(error);
+    });
   }, [documents, selectedIds, nodes]);
 
-  const pasteCanvasSelection = useCallback(async () => {
-    const copiedDrawings = drawingClipboard.current ?? [];
-    if (
-      copiedDrawings.length &&
-      !canvasClipboardRef.current?.documents.length
-    ) {
-      submitDrawing({
-        action: 'create',
-        objects: drawingCopies(
-          copiedDrawings,
-          ++drawingPasteCount.current * 32,
-        ),
+  const pasteCanvasSelection = useCallback(() => {
+    if (locked) return onBlocked();
+    const current = clipboardWorkspaceRef.current;
+    const target = {
+      scope: current.saveScope ?? '',
+      contextId: current.clipboardContextId ?? '',
+      requestId: crypto.randomUUID(),
+      canvasId: activeCanvasRef.current,
+      imagePurpose,
+      ...(flowRef.current?.screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }) ?? { x: 160, y: 140 }),
+    };
+    const sameProject = () =>
+      clipboardWorkspaceRef.current.clipboardContextId === target.contextId;
+    const sameView = () =>
+      sameProject() && activeCanvasRef.current === target.canvasId;
+    cancelNoteDrawing();
+    cancelSelectionDrag();
+    if (drawingGesture)
+      window.dispatchEvent(new Event('canvas-clipboard-paste'));
+    void queueClipboardAction(async () => {
+      if (!sameProject()) return;
+      setNotice('클립보드 이미지를 붙여넣는 중…');
+      const copied = canvasClipboardRef.current;
+      const result = await window.gameCanvas.pasteCanvasClipboard({
+        ...target,
+        internalCopyId: copied?.copyId,
       });
-      return;
-    }
-    const copied = canvasClipboardRef.current;
-    if (!copied || copied.documents.length === 0) {
-      setNotice('먼저 Ctrl+C로 메모 또는 파일을 복사하세요.');
-      return;
-    }
-    copied.pasteCount += 1;
-    const offset = copied.pasteCount * 32;
-    try {
-      const input = {
-        canvasId: activeCanvasRef.current,
-        documents: copied.documents,
-        offsetX: offset,
-        offsetY: offset,
-      };
-      const copies = drawingCopies(copiedDrawings, offset);
-      const created = copies.length
-        ? ((
-            await canvasBatch([
-              { channel: 'documents:duplicate', input },
-              {
-                channel: 'drawings:apply',
-                input: {
-                  canvasId: activeCanvasRef.current,
-                  action: 'create',
-                  objects: copies,
-                },
-              },
-            ])
-          )[0] as CanvasDocument[])
-        : await window.gameCanvas.duplicateDocuments(input);
-      const createdIds = created.map((document) => document.id);
+      if (!sameProject()) return;
+      if (
+        result.kind === 'empty' ||
+        result.kind === 'unsupported' ||
+        result.kind === 'stale-internal'
+      ) {
+        if (sameView())
+          setNotice(
+            {
+              empty:
+                '붙여넣을 이미지나 복사한 카드가 없습니다. 이미지를 복사한 뒤 다시 시도해주세요.',
+              unsupported:
+                'PNG, JPG, WebP, GIF 이미지 데이터를 붙여넣을 수 있습니다.',
+              'stale-internal':
+                '이전에 복사한 자료를 사용할 수 없습니다. 현재 프로젝트에서 다시 복사해주세요.',
+            }[result.kind],
+          );
+        return;
+      }
+      let created: CanvasDocument[] = [];
+      let copies: DrawingObject[] = [];
+      if (result.kind === 'images') created = result.documents;
+      else if (result.kind === 'internal') {
+        if (
+          !copied ||
+          copied.copyId !== result.copyId ||
+          copied.contextId !== target.contextId
+        )
+          return;
+        const offset = (copied.pasteCount + 1) * 32;
+        copies = drawingCopies(drawingClipboard.current ?? [], offset);
+        const input = {
+          scope: target.scope,
+          clipboardContextId: target.contextId,
+          requestId: target.requestId,
+          canvasId: target.canvasId,
+          documents: copied.documents,
+          offsetX: offset,
+          offsetY: offset,
+        };
+        await drawing.flush();
+        if (copies.length) {
+          const commands: { channel: string; input: unknown }[] = [];
+          if (copied.documents.length)
+            commands.push({ channel: 'documents:duplicate', input });
+          commands.push({
+            channel: 'drawings:apply',
+            input: {
+              canvasId: target.canvasId,
+              action: 'create',
+              objects: copies,
+            },
+          });
+          const results = await window.gameCanvas.applyCanvasCommands({
+            scope: target.scope,
+            clipboardContextId: target.contextId,
+            requestId: target.requestId,
+            commands,
+          });
+          created = copied.documents.length
+            ? (results[0] as CanvasDocument[])
+            : [];
+        } else created = await window.gameCanvas.duplicateDocuments(input);
+        copied.pasteCount++;
+      }
+      if (!sameProject()) return;
+      try {
+        await loadProject(false, true);
+        if (!sameView()) return;
+        await drawing.reload();
+      } catch {
+        if (sameView())
+          setNotice(
+            result.kind === 'images'
+              ? '이미지는 저장됐지만 화면을 갱신하지 못했습니다. 프로젝트를 다시 열어 확인해주세요.'
+              : '복사본은 저장됐지만 화면을 갱신하지 못했습니다. 프로젝트를 다시 열어 확인해주세요.',
+          );
+        return;
+      }
+      if (!sameView()) return;
+      const createdIds = created.map((doc) => doc.id);
       setSelectedIds(createdIds);
       setSelectedSectionIds([]);
-      await loadProject(false);
-      setTimeout(
-        () =>
-          setNodes((current) =>
-            current.map((node) => ({
-              ...node,
-              selected:
-                node.data.kind === 'document'
-                  ? createdIds.includes(node.data.document.id)
-                  : node.data.kind === 'drawing' &&
-                    copies.some((o) => `drawing:${o.id}` === node.id),
-            })),
-          ),
-        80,
+      setTimeout(() => {
+        if (!sameView()) return;
+        setNodes((nodes) =>
+          nodes.map((node) => ({
+            ...node,
+            selected:
+              node.data.kind === 'document'
+                ? createdIds.includes(node.data.document.id)
+                : node.data.kind === 'drawing' &&
+                  copies.some((o) => `drawing:${o.id}` === node.id),
+          })),
+        );
+        if (result.kind === 'images')
+          void flowRef.current?.fitView({
+            nodes: createdIds.map((id) => ({ id })),
+            padding: 0.2,
+            maxZoom: 1,
+            duration: 300,
+          });
+      }, 80);
+      setNotice(
+        result.kind === 'images'
+          ? `이미지 ${created.length}개를 붙여넣었습니다.`
+          : `${created.length}개 파일 · ${copies.length}개 그림의 복사본을 만들었습니다.`,
       );
-      setNotice(`${created.length}개 파일의 복사본을 만들었습니다.`);
-    } catch (error) {
-      showError(error);
-    }
-  }, [loadProject, setNodes, submitDrawing]);
-
+    }).catch((error) => {
+      if (sameView()) showError(error);
+    });
+  }, [
+    locked,
+    imagePurpose,
+    drawingGesture,
+    loadProject,
+    setNodes,
+    drawing.flush,
+    drawing.reload,
+  ]);
   const flushEditors = async (finish = true) => {
     await drawing.flush();
     await Promise.all(

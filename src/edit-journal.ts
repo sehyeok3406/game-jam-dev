@@ -2,6 +2,7 @@ import { assertWorkflowReferences } from './document-statuses-storage.ts';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { mergeProperties } from './sync-properties.ts';
 import type { Snapshot } from './project-store.ts';
+import { assertRemovedImagesUnreferenced } from './asset-reference-safety.ts';
 
 export type EditRecord = { id: string; label: string };
 
@@ -70,5 +71,6 @@ export function invertEdit(
   }
   if (next[DOCUMENT_STATUSES_PATH] || current[DOCUMENT_STATUSES_PATH])
     assertWorkflowReferences(next);
+  assertRemovedImagesUnreferenced(current, next);
   return next;
 }

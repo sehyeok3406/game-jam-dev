@@ -104,6 +104,7 @@ export type WorkspaceState = {
   root: string | null;
   name: string | null;
   saveScope?: string;
+  clipboardContextId?: string;
 };
 
 export type LayoutUpdate = {
@@ -157,6 +158,9 @@ export type DeleteSectionResult = {
 };
 
 export type DuplicateDocumentsInput = {
+  scope?: string;
+  clipboardContextId?: string;
+  requestId?: string;
   canvasId?: string;
   documents: SectionMember[];
   offsetX: number;
@@ -459,6 +463,10 @@ export type GameCanvasApi = {
   onUpdateRestartRequested: (listener: () => Promise<string[]>) => () => void;
   onUpdateRestartReleased: (listener: () => void) => () => void;
   importFiles: (input: ImportFilesInput) => Promise<CanvasDocument[]>;
+  markCanvasClipboard: (input: CanvasClipboardCopyInput) => Promise<void>;
+  pasteCanvasClipboard: (
+    input: CanvasClipboardPasteInput,
+  ) => Promise<CanvasClipboardPasteResult>;
   readAsset: (relativePath: string) => Promise<string>;
   getUndoState: () => Promise<{ undo: string | null; redo: string | null }>;
   undo: () => Promise<void>;
@@ -530,6 +538,8 @@ export type GameCanvasApi = {
   listDrawings: () => Promise<import('./drawing-types').DrawingItem[]>;
   applyCanvasCommands: (input: {
     scope: string;
+    clipboardContextId?: string;
+    requestId?: string;
     commands: { channel: string; input: unknown }[];
   }) => Promise<unknown[]>;
   getDrawingChanges: (
@@ -586,6 +596,21 @@ export type ImportFilesInput = {
 export type ImportBatchInput = ImportFilesInput & {
   files: { name: string; content: string }[];
 };
+export type CanvasClipboardCopyInput = {
+  scope: string;
+  contextId: string;
+  copyId: string;
+};
+export type CanvasClipboardPasteInput = ImportFilesInput & {
+  scope: string;
+  contextId: string;
+  requestId: string;
+  internalCopyId?: string;
+};
+export type CanvasClipboardPasteResult =
+  | { kind: 'internal'; copyId: string }
+  | { kind: 'images'; documents: CanvasDocument[] }
+  | { kind: 'empty' | 'unsupported' | 'stale-internal' };
 
 export type PreviewWindowState = {
   placementId?: string;

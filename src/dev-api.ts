@@ -410,6 +410,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
   const saveListeners = new Set<(state: DocumentSaveState) => void>();
   let publicApi: GameCanvasApi;
   const saveScope = 'local:dev-workspace';
+  let previewClipboardId: string | undefined;
   const saveQueue = new DocumentSaveQueue(
     {
       load: async () => [],
@@ -668,6 +669,17 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         '파일 불러오기는 데스크톱 앱에서 사용해주세요. 브라우저 화면은 UI 미리보기입니다.',
       );
     },
+    // Internal selection copying is simulated in this UI preview; never read the OS clipboard.
+    markCanvasClipboard: async (input) => {
+      previewClipboardId = input.copyId;
+    },
+    pasteCanvasClipboard: async (input) => {
+      if (previewClipboardId && input.internalCopyId === previewClipboardId)
+        return { kind: 'internal', copyId: previewClipboardId };
+      throw new Error(
+        '클립보드 이미지 붙여넣기는 데스크톱 앱에서 사용해주세요.',
+      );
+    },
     readAsset: async () => {
       throw new Error('이미지는 데스크톱 프로젝트에서 불러올 수 있습니다.');
     },
@@ -892,6 +904,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     },
     getWorkspace: async () => ({
       saveScope,
+      clipboardContextId: 'dev-preview',
       root: '/demo/game-canvas',
       name: demoProjectName,
     }),

@@ -80,6 +80,7 @@ export function DrawingInputLayer({
   }, [enabled, tool, scope, canvasId]);
   useEffect(() => {
     window.addEventListener('blur', cancel);
+    window.addEventListener('canvas-clipboard-paste', cancel);
     const esc = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && gesture.current) {
         e.stopImmediatePropagation();
@@ -90,6 +91,7 @@ export function DrawingInputLayer({
     window.addEventListener('keydown', esc, true);
     return () => {
       window.removeEventListener('blur', cancel);
+      window.removeEventListener('canvas-clipboard-paste', cancel);
       window.removeEventListener('keydown', esc, true);
       if (frame.current !== null) cancelAnimationFrame(frame.current);
     };

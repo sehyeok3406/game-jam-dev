@@ -49,6 +49,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  ClipboardItem,
   dialog,
   ipcMain,
   shell,
@@ -124,6 +125,13 @@ import {
   MAX_MARKDOWN_BYTES,
 } from './file-assets';
 import {
+  CANVAS_CLIPBOARD_MIME,
+  UUID_PATTERN,
+  ClipboardRequestCache,
+  readCanvasClipboard,
+  type ClipboardContents,
+} from './clipboard-images';
+import {
   testProfilePath,
   TestUserLauncher,
   MAX_TEST_WINDOWS,
@@ -194,6 +202,10 @@ import type {
   CollaborationRole,
   LaunchTestUsersInput,
   ImportFilesInput,
+  ImportBatchInput,
+  CanvasClipboardCopyInput,
+  CanvasClipboardPasteInput,
+  CanvasClipboardPasteResult,
 } from './shared';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -412,6 +424,18 @@ let selfHostLifecycle:
 let workspaceWatcher: FSWatcher | null = null;
 let mainWindow: BrowserWindow | null = null;
 let collaboration: CollaborationClient | null = null;
+let clipboardContextId = randomUUID();
+let clipboardCopy: {
+  copyId: string;
+  contextId: string;
+  senderId: number;
+} | null = null;
+const clipboardRequests = new ClipboardRequestCache();
+const resetClipboardContext = () => {
+  clipboardContextId = randomUUID();
+  clipboardCopy = null;
+  clipboardRequests.clear();
+};
 let localWorkspaceBeforeCollaboration: string | null = null;
 let localCollaborationServer: Awaited<
   ReturnType<typeof createCollaborationServer>
@@ -448,6 +472,7 @@ const recordUserEdit = async (
   before: Snapshot,
   after: Snapshot,
   label: string,
+  editJournal = journal(),
 ) => {
   if (
     !Object.keys({ ...before, ...after }).some(
@@ -474,7 +499,7 @@ const recordUserEdit = async (
       touched.every((relative) => relative.startsWith('.ai/tasks/'))
     )
   )
-    journal().push({ id, label });
+    editJournal.push({ id, label });
 };
 const canvasViews = new WeakMap<CollaborationClient, CanvasView>();
 let draftStore: EditorDraftStore;
@@ -485,6 +510,17 @@ const documentSaveScope = () =>
     : workspaceRoot
       ? `local:${workspaceRoot}`
       : '';
+const assertClipboardContext = (scope: unknown, contextId: unknown) => {
+  if (
+    !workspaceRoot ||
+    scope !== documentSaveScope() ||
+    contextId !== clipboardContextId
+  )
+    throw new CanvasError(
+      'GC-IMPORT-001',
+      '프로젝트가 변경되어 붙여넣기를 취소했습니다.',
+    );
+};
 let lastSharedState = '';
 let sharedCacheQueue: Promise<unknown> = Promise.resolve();
 let lastQueuedCache = '';
@@ -557,6 +593,7 @@ const saveCollaborationSession = async () => {
   );
 };
 const attachCollaboration = async (credentials: CollaborationCredentials) => {
+  resetClipboardContext();
   if (projectTrash?.hasProject(`shared:${credentials.projectId}`))
     throw Error('이 PC의 사본이 휴지통에 있습니다. 먼저 복원해주세요.');
   if (!/^[a-f0-9-]{36}$/.test(credentials.projectId))
@@ -622,6 +659,7 @@ const leaveCollaboration = async () => {
   if (activeCodexRun || runPreparing)
     throw new Error('AI 작업을 먼저 중지해주세요.');
   await collaboration?.leave();
+  resetClipboardContext();
   if (collaboration)
     await projectLibrary.forgetSession(collaboration.credentials.projectId);
   collaboration = null;
@@ -689,6 +727,14 @@ const assertEditable = () => {
     );
 };
 const assertMutationAllowed = async (channel: string, args: unknown[]) => {
+  const context = args[0] as
+    | { scope?: string; contextId?: string; clipboardContextId?: string }
+    | undefined;
+  if (channel === 'clipboard:canvas-paste' || context?.clipboardContextId)
+    assertClipboardContext(
+      context?.scope,
+      context?.contextId ?? context?.clipboardContextId,
+    );
   if (
     (channel === 'drawings:apply' || channel === 'canvas:batch') &&
     (args[0] as DrawingCommand)?.scope !== documentSaveScope()
@@ -711,7 +757,8 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
   const lock = currentAiFileLock();
   // Older servers still enforce a project lease; retain their protection.
   if (!lock) return assertEditable();
-  if (channel === 'files:import') return;
+  if (channel === 'files:import' || channel === 'clipboard:canvas-paste')
+    return;
   if (
     channel === 'history:restore' ||
     channel === 'edit:undo' ||
@@ -926,6 +973,7 @@ const getAiStatus = async (providerId: import('./shared').AiProviderId) => {
 
 const workspaceState = async (): Promise<WorkspaceState> => ({
   root: workspaceRoot,
+  clipboardContextId,
   name: workspaceRoot
     ? (collaboration?.state.projectName ??
       (await localProjectName(workspaceRoot)))
@@ -1336,6 +1384,7 @@ const moveWorkspaceResults = async (before: Snapshot, after: Snapshot) => {
 
 const setWorkspace = async (root: string) => {
   if (projectTrash?.hasRoot(root)) throw Error('휴지통에서 먼저 복원해주세요.');
+  resetClipboardContext();
   workspaceRoot = await fs.realpath(root);
   await ensureWorkspace();
   await recoverInterruptedHistory(workspaceRoot);
@@ -2083,6 +2132,7 @@ const mutationLabels: Record<string, string> = {
   'results:move': 'HTML 결과물 폴더 이동',
   'results:organize': '기존 HTML 결과물 폴더 정리',
   'files:import': '파일 불러오기',
+  'clipboard:canvas-paste': '이미지 붙여넣기',
   'documents:create-idea': '메모 추가',
   'documents:save': '문서 저장',
   'documents:set-collapsed': '문서 최소화·펼치기',
@@ -2128,6 +2178,58 @@ const handle = (
   listener: Parameters<typeof ipcMain.handle>[1],
 ) => {
   const invoke: Parameters<typeof ipcMain.handle>[1] = (event, ...args) => {
+    const clipboardInput = args[0] as
+      | (CanvasClipboardPasteInput & { clipboardContextId?: string })
+      | undefined;
+    if (
+      channel.startsWith('clipboard:canvas-') ||
+      clipboardInput?.clipboardContextId
+    ) {
+      if (!isUpdateSender(event))
+        throw new Error('앱의 캔버스에서만 클립보드를 사용할 수 있습니다.');
+    }
+    let preparedClipboard: Promise<ClipboardContents> | undefined;
+    if (channel === 'clipboard:canvas-paste') {
+      assertClipboardContext(clipboardInput?.scope, clipboardInput?.contextId);
+      if (
+        !clipboardInput ||
+        typeof clipboardInput.requestId !== 'string' ||
+        !UUID_PATTERN.test(clipboardInput.requestId) ||
+        !Number.isFinite(clipboardInput.x) ||
+        !Number.isFinite(clipboardInput.y) ||
+        Math.abs(clipboardInput.x) > 1_000_000 ||
+        Math.abs(clipboardInput.y) > 1_000_000 ||
+        !['asset', 'diagram'].includes(clipboardInput.imagePurpose)
+      )
+        throw new CanvasError(
+          'GC-IMPORT-001',
+          '붙여넣을 위치와 이미지 용도를 확인해주세요.',
+        );
+      const expected =
+        clipboardCopy?.contextId === clipboardContextId &&
+        clipboardCopy.senderId === event.sender.id &&
+        clipboardCopy.copyId === clipboardInput.internalCopyId
+          ? clipboardCopy.copyId
+          : undefined;
+      preparedClipboard = clipboard.read().then((items) =>
+        readCanvasClipboard(items, expected, (bytes, ext) => {
+          if (ext !== 'png' && ext !== 'jpg') return;
+          const image = nativeImage.createFromBuffer(bytes);
+          const size = image.getSize();
+          if (
+            image.isEmpty() ||
+            !size.width ||
+            !size.height ||
+            size.width * size.height > 32_000_000
+          )
+            throw new CanvasError(
+              'GC-IMPORT-002',
+              '클립보드 이미지를 읽을 수 없습니다. 다시 복사해주세요.',
+            );
+        }),
+      );
+      void preparedClipboard.catch(() => undefined);
+    }
     if (
       (channel.startsWith('projects:trash') ||
         channel.startsWith('projects:shared-')) &&
@@ -2140,6 +2242,8 @@ const handle = (
       throw new Error('[GC-UPD-004] 업데이트 재시작을 준비하고 있습니다.');
     pendingAppOperations += 1;
     const dispatch = async () => {
+      // Read before joining the mutation queue, so project switching can cancel a slow read.
+      if (preparedClipboard) await preparedClipboard;
       if (collaboration) {
         const client = collaboration;
         if (channel === 'document-statuses:get') {
@@ -2156,10 +2260,14 @@ const handle = (
             client.files[relative],
           );
         }
-        if (channel === 'files:import')
+        if (channel === 'files:import' || channel === 'clipboard:canvas-paste')
           return enqueueMutation(async () => {
             await assertMutationAllowed(channel, args);
-            return listener(event, ...args);
+            return listener(
+              event,
+              ...args,
+              ...(preparedClipboard ? [await preparedClipboard] : []),
+            );
           });
         if (channel === 'assets:read') {
           const relative = args[0];
@@ -2290,6 +2398,7 @@ const handle = (
         if (channel === 'workspace:get')
           return {
             root: workspaceRoot,
+            clipboardContextId,
             name: client.state.projectName ?? '공동 프로젝트',
             saveScope: documentSaveScope(),
           };
@@ -2461,7 +2570,10 @@ const handle = (
         if (channel === 'workspace:select' || channel.startsWith('projects:'))
           return listener(event, ...args);
         const root = requireWorkspace();
-        const label = mutationLabels[channel];
+        const label =
+          channel === 'clipboard:canvas-paste'
+            ? undefined
+            : mutationLabels[channel];
         const scopedPath = [
           'documents:save',
           'documents:update-layout',
@@ -2481,7 +2593,11 @@ const handle = (
               }
             : captureProject(root);
         const before = label ? await capture() : null;
-        const result = await listener(event, ...args);
+        const result = await listener(
+          event,
+          ...args,
+          ...(preparedClipboard ? [await preparedClipboard] : []),
+        );
         if (before) {
           let after = await capture();
           const initialized = initializeWorkflows(before, after);
@@ -2499,7 +2615,7 @@ const handle = (
               (relative) => before[relative] !== after[relative],
             )
           )
-            await recordUserEdit(root, before, after, label);
+            await recordUserEdit(root, before, after, label!);
         }
         notifyWorkspaceChanged();
         return result;
@@ -2544,11 +2660,158 @@ const handle = (
         pendingAppOperations -= 1;
       });
   };
-  ipcMain.handle(channel, invoke);
-  return invoke;
+  const cachedInvoke: Parameters<typeof ipcMain.handle>[1] = (
+    event,
+    ...args
+  ) => {
+    const input = args[0] as
+      | {
+          requestId?: string;
+          scope?: string;
+          contextId?: string;
+          clipboardContextId?: string;
+        }
+      | undefined;
+    if (
+      (channel === 'clipboard:canvas-paste' || input?.clipboardContextId) &&
+      input?.requestId
+    ) {
+      if (!isUpdateSender(event))
+        throw new Error('앱의 캔버스에서만 클립보드를 사용할 수 있습니다.');
+      assertClipboardContext(
+        input.scope,
+        input.contextId ?? input.clipboardContextId,
+      );
+      if (
+        typeof input.requestId !== 'string' ||
+        !UUID_PATTERN.test(input.requestId)
+      )
+        throw new Error('붙여넣기 요청이 올바르지 않습니다.');
+      return clipboardRequests.run(
+        `${event.sender.id}:${clipboardContextId}:${channel}:${input.requestId}`,
+        () => Promise.resolve(invoke(event, ...args)),
+      );
+    }
+    return invoke(event, ...args);
+  };
+  ipcMain.handle(channel, cachedInvoke);
+  return cachedInvoke;
+};
+
+const applyImportedFiles = async (
+  payload: ImportBatchInput,
+  context?: CanvasClipboardPasteInput,
+) => {
+  if (collaboration) {
+    const client = collaboration,
+      editJournal = journal();
+    if (!client.state.connected || client.state.role === 'viewer')
+      throw new CanvasError(
+        'GC-IMPORT-001',
+        '연결된 관리자·편집자만 파일을 불러올 수 있습니다.',
+      );
+    const result = await client.command('files:import-batch', payload);
+    if (client.lastCommandHistoryId)
+      editJournal.push({
+        id: client.lastCommandHistoryId,
+        label: '파일 불러오기',
+      });
+    notifyWorkspaceChanged();
+    return result as CanvasDocument[];
+  }
+  const root = requireWorkspace(),
+    before = await captureProject(root);
+  if (context) assertClipboardContext(context.scope, context.contextId);
+  const reduced = reduceCollaboration(before, 'files:import-batch', payload);
+  const after = context
+    ? initializeWorkflows(before, reduced.files)
+    : reduced.files;
+  assertAiMutation(currentAiFileLock(), before, after);
+  const changes = Object.fromEntries(
+    Object.entries(after).filter(([p, raw]) => before[p] !== raw),
+  );
+  const editJournal = context ? journal() : undefined;
+  await applyChanges(
+    root,
+    before,
+    changes,
+    () => !!context && context.contextId !== clipboardContextId,
+  );
+  if (context) {
+    try {
+      await recordUserEdit(root, before, after, '이미지 붙여넣기', editJournal);
+    } catch (error) {
+      await applyChanges(
+        root,
+        after,
+        Object.fromEntries(
+          Object.keys(changes).map((p) => [p, before[p] ?? null]),
+        ),
+      ).catch(() => {
+        throw new Error(
+          `이미지 기록과 복구에 실패했습니다. 프로젝트에서 확인할 파일: ${Object.keys(changes).join(', ')}`,
+        );
+      });
+      throw error;
+    }
+  }
+  return context
+    ? snapshotDocuments(
+        Object.fromEntries(
+          Object.entries(after).filter(([p]) => before[p] === undefined),
+        ),
+      )
+    : (reduced.result as CanvasDocument[]);
 };
 
 const registerIpc = () => {
+  handle(
+    'clipboard:canvas-copy',
+    async (event, input: CanvasClipboardCopyInput) => {
+      assertClipboardContext(input?.scope, input?.contextId);
+      if (
+        !input ||
+        typeof input.copyId !== 'string' ||
+        !UUID_PATTERN.test(input.copyId)
+      )
+        throw new Error('복사할 자료가 올바르지 않습니다.');
+      await clipboard.write([
+        new ClipboardItem({
+          [CANVAS_CLIPBOARD_MIME]: new Blob([
+            JSON.stringify({ version: 1, copyId: input.copyId }),
+          ]),
+        }),
+      ]);
+      assertClipboardContext(input.scope, input.contextId);
+      clipboardCopy = {
+        copyId: input.copyId,
+        contextId: clipboardContextId,
+        senderId: event.sender.id,
+      };
+    },
+  );
+  handle(
+    'clipboard:canvas-paste',
+    async (
+      _event,
+      input: CanvasClipboardPasteInput,
+      contents: ClipboardContents,
+    ): Promise<CanvasClipboardPasteResult> => {
+      assertClipboardContext(input.scope, input.contextId);
+      if (contents.kind !== 'images') return contents;
+      const documents = await applyImportedFiles(
+        {
+          canvasId: input.canvasId,
+          x: input.x,
+          y: input.y,
+          imagePurpose: input.imagePurpose,
+          files: contents.files,
+        },
+        input,
+      );
+      return { kind: 'images', documents };
+    },
+  );
   draftStore = new EditorDraftStore(
     path.join(app.getPath('userData'), 'editor-drafts'),
   );
@@ -2822,28 +3085,7 @@ const registerIpc = () => {
         files.push({ name, content });
       }
     }
-    const payload = { ...input, files };
-    if (collaboration) {
-      const result = await collaboration.command('files:import-batch', payload);
-      if (collaboration.lastCommandHistoryId)
-        journal().push({
-          id: collaboration.lastCommandHistoryId,
-          label: '파일 불러오기',
-        });
-      notifyWorkspaceChanged();
-      return result;
-    }
-    const root = requireWorkspace(),
-      before = await captureProject(root);
-    const reduced = reduceCollaboration(before, 'files:import-batch', payload);
-    assertAiMutation(currentAiFileLock(), before, reduced.files);
-    const additions = Object.fromEntries(
-      Object.entries(reduced.files).filter(
-        ([relative]) => before[relative] === undefined,
-      ),
-    );
-    await applyChanges(root, before, additions);
-    return reduced.result;
+    return applyImportedFiles({ ...input, files });
   });
   handle('edit:state', () =>
     workspaceRoot ? journal().state : { undo: null, redo: null },
@@ -2961,6 +3203,7 @@ const registerIpc = () => {
   const suspendProject = async () => {
     if (activeCodexRun || runPreparing)
       throw new Error('AI 작업을 먼저 종료해주세요.');
+    resetClipboardContext();
     await sharedCacheQueue;
     if (collaboration) {
       await projectLibrary.rememberShared(
@@ -3640,6 +3883,7 @@ const registerIpc = () => {
   handle('workspace:get', async () => ({
     ...(await workspaceState()),
     saveScope: documentSaveScope(),
+    clipboardContextId,
   }));
   handle('workspace:select', async () => {
     const result = await dialog.showOpenDialog({
@@ -4130,6 +4374,7 @@ const createWindow = async () => {
   });
 
   const closingWindow = mainWindow;
+  mainWindow.webContents.on('render-process-gone', resetClipboardContext);
   let draftsFlushed = false,
     closing = false,
     draftFlushReady = false;

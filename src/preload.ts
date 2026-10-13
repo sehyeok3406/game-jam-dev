@@ -129,6 +129,10 @@ const api: GameCanvasApi = {
     return () => ipcRenderer.removeListener('updates:release', wrapped);
   },
   importFiles: (input) => ipcRenderer.invoke('files:import', input),
+  markCanvasClipboard: (input) =>
+    ipcRenderer.invoke('clipboard:canvas-copy', input),
+  pasteCanvasClipboard: (input) =>
+    ipcRenderer.invoke('clipboard:canvas-paste', input),
   readAsset: (relative) => ipcRenderer.invoke('assets:read', relative),
   getUndoState: () => ipcRenderer.invoke('edit:state'),
   undo: () => ipcRenderer.invoke('edit:undo'),

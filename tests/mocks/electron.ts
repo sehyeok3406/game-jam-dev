@@ -48,9 +48,28 @@ export const dialog = {
 };
 export const nativeImage = {
   createFromPath: () => ({ isEmpty: () => false }),
-  createFromBuffer: () => ({ isEmpty: () => false }),
+  createFromBuffer: () => ({
+    isEmpty: () => false,
+    getSize: () => ({ width: 1, height: 1 }),
+  }),
 };
-export const clipboard = { writeText: () => {} };
+export class ClipboardItem {
+  constructor(private data: Record<string, Blob>) {}
+  get types() {
+    return Object.keys(this.data);
+  }
+  async getType(mime: string) {
+    return this.data[mime];
+  }
+}
+export const clipboard = {
+  items: [] as ClipboardItem[],
+  writeText: () => {},
+  read: async () => clipboard.items,
+  write: async (items: ClipboardItem[]) => {
+    clipboard.items = items;
+  },
+};
 export const Menu = { buildFromTemplate: (template: unknown) => template };
 export class Tray extends EventEmitter {
   constructor(_image: unknown) {

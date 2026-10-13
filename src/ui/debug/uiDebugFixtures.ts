@@ -409,7 +409,12 @@ export function createUiPreviewApi(
       root: 'ui-preview',
       name: '전투 시스템 연구',
       saveScope: 'ui-preview',
+      clipboardContextId: 'ui-preview',
     }),
+    markCanvasClipboard: async () => {
+      throw new Error('UI 미리보기에서는 클립보드를 사용하지 않습니다.');
+    },
+    pasteCanvasClipboard: async () => ({ kind: 'empty' as const }),
     listProjects: async () => {
       if (selection.id === 'home' && selection.state === 'loading')
         return new Promise<ProjectEntry[]>(() => {});
