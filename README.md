@@ -2,7 +2,9 @@
 
 ### v0.19.0 클립보드 이미지 붙여넣기
 
-열린 프로젝트의 캔버스에서 Ctrl+V로 복사한 이미지 데이터를 카드로 추가합니다. 원본·설명 저장, 내부 카드 복사와의 우선순위, 협업·Undo/Redo를 지원합니다. v0.19.0 배포 준비 중이며 문서 본문 이미지 삽입은 후속 범위입니다. [사용법과 검증 범위](CLIPBOARD_IMAGES.md)
+열린 프로젝트의 캔버스에서 Ctrl+V로 복사한 이미지 데이터를 카드로 추가합니다. 원본·설명 저장, 내부 카드 복사와의 우선순위, 협업·Undo/Redo를 지원합니다. 문서 본문 이미지 삽입은 후속 범위입니다. [사용법과 검증 범위](CLIPBOARD_IMAGES.md)
+
+2026-10-13 [v0.19.0 정식 배포·공개 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.19.0) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.19.0/Game.Jam-0.19.0.Setup.exe). 공개 파일과 v0.18.1 자동 업데이트 피드·Windows RELEASES 피드의 새 버전 반영을 확인했습니다.
 
 ### v0.18.0 문서 링크 · 역링크 · 자동 제목 갱신
 
