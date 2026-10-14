@@ -8,7 +8,7 @@
 
 Windows x64 설치 파일: `Game.Jam-0.23.0.Setup.exe`. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 저장 형식과 협업 기능 버전을 유지하며 v0.22.0 협업 서버와 호환됩니다. [사용 안내](https://github.com/sehyeok3406/game-jam-dev/blob/main/UI_DETAIL_EDITING.md)
 
-배포 준비 중입니다. 최종 패키지·공개 파일·자동 업데이트 피드 확인 결과는 [업데이트 기록](UPDATES.md)에 반영합니다.
+2026-10-14 [정식 배포·공개 파일 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.23.0). 자동 테스트 384개·타입·코드/배포 대상 서식·전체 Electron/IPC 통합·게임 UI·F12·최종 Windows 패키지와 내장 서버 검증을 통과했습니다. 공개 파일의 SHA-256·크기·다운로드 접근과 RELEASES가 일치합니다. 게시 직후 자동 업데이트 피드는 HTTP 500으로 응답해 반영 대기 상태입니다. [현재 기록](UPDATES.md)
 
 ---
 
