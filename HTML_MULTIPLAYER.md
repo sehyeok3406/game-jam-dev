@@ -48,7 +48,7 @@ Game Jam! v0.24.0부터 지원한다. 앱과 협업 서버가 모두 `multiplaye
 
 - `npm test`: 전체 자동 테스트 387개 통과. 추가 멀티 검사에는 선언·크기·입력·생성 계약·두 단계 전달·기존 모듈 유지/제거·권한·뷰어 참가·방 시작·상태 전달·문서 리비전 보존·참여 권한 회수가 포함된다. 재접속 확장 검사도 별도로 통과했다.
 - `npm run typecheck`와 `oxlint`: 통과. 기존 IPC·HTML 실행·마우스 잠금·여러 사용자·편집 안정성 통합 검사도 통과했다.
-- 변경 파일의 서식 검사와 `git diff --check`도 통과했다. 저장소 전체 `npm run lint`는 작업 시작 전부터 있던 두 문서 `BUSINESS_MODEL_RESEARCH_2026-10-13.md`, `GENEX_COMPETITOR_ANALYSIS_2026-10-13.md`의 서식 오류로 실패하며, 해당 문서는 이 작업에서 수정하지 않았다.
+- v0.24.0 배포 소스의 전체 `npm run lint`는 416개 파일에서 통과했다. 변경 파일의 서식 검사와 `git diff --check`도 통과했다. 저장소 전체 `npm run lint`는 작업 시작 전부터 있던 두 문서 `BUSINESS_MODEL_RESEARCH_2026-10-13.md`, `GENEX_COMPETITOR_ANALYSIS_2026-10-13.md`의 서식 오류로 실패하며, 해당 문서는 이 작업에서 수정하지 않았다.
 - `npm run test:gamejam-validation`: 실제 Chromium에서 모듈 추가·최대 4명 변경·최종 확인·이전 단계 복귀·모듈 제거와 기존 기능 예시 선택을 확인했다.
 - `npm run test:multiplayer`: 독립 Electron 앱 2개가 실제 인증 서버에 접속해 공동 아이템 획득 결과가 일치했다. 방장 창 60초 최소화와 참가자 런타임 재로딩 후 상태 복구·조작 재개를 확인했다. 생성 결과용 격리 검사는 최대 4명 초기화도 확인했다.
 - `node tests/multiplayer-packaged.mjs`: 실제 Windows 패키지의 별도 참여자 4명으로 실제 메인 IPC·전용 preload·준비·시작·입력·방장 퇴장 처리를 확인했다. 결과는 `out/multiplayer-packaged/report.json`, 화면은 같은 폴더의 `player-*.png`에 있다.

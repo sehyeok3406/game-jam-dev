@@ -8,7 +8,7 @@
 
 Windows x64 설치 파일: `Game.Jam-0.24.0.Setup.exe`. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. **함께 플레이하려면 앱과 협업 서버 모두 v0.24.0 이상으로 갱신해야 합니다.** 내장 서버는 새 앱에서 재시작하고 외부 서버는 새 번들로 재시작합니다. 기존 HTML은 온라인 모듈을 적용해 다시 구현해야 합니다. [사용 안내](https://github.com/sehyeok3406/game-jam-dev/blob/main/HTML_MULTIPLAYER.md)
 
-자동 테스트 387개, 타입·코드/배포 대상 서식, Electron/IPC, 기능 라이브러리 UI, 독립 앱과 Windows 패키지 4인·내장 서버 검증을 통과했습니다. 공개 게시·검증 상태는 [배포 기록](https://github.com/sehyeok3406/game-jam-dev/blob/main/UPDATES.md)에서 확인하세요. 서로 다른 실제 PC·외부망과 다양한 AI 생성 게임의 장시간 플레이는 후속 검증 범위입니다.
+자동 테스트 387개, 타입·코드/배포 대상 서식, Electron/IPC, 기능 라이브러리 UI, 독립 앱과 Windows 패키지 4인·내장 서버 검증을 통과했습니다. 2026-10-15 정식 게시 후 공개 파일의 SHA-256·크기·다운로드 접근과 RELEASES를 검증했습니다. RELEASES 기본 주소와 일부 자동 업데이트 피드가 HTTP 500을 반환해 공개 파일은 `?download=1` 주소로도 검증했으며 자동 업데이트 피드는 반영 대기 상태입니다. [배포 기록](https://github.com/sehyeok3406/game-jam-dev/blob/main/UPDATES.md) 서로 다른 실제 PC·외부망과 다양한 AI 생성 게임의 장시간 플레이는 후속 검증 범위입니다.
 
 ---
 
