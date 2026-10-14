@@ -48,7 +48,7 @@ UI 묶음은 기본적으로 한 행으로 설명합니다. 개별 슬롯 이름
 - 기존 그림 Electron 검사, F12 전체 카탈로그·행동 격리 검사와 native preload/IPC 검사 통과. F12 미리보기의 일시적인 ResizeObserver 배달 진단은 `ui-debug:layout-notice`로 보존하고 스크립트 오류와 구분한다.
 - 같은 최종 소스의 Windows 패키지 생성 후 실제 실행 파일에서 플러그인으로 화면 생성, UI·Markdown 저장, 사용자 설명 보존, Undo/Redo, 정상 종료 후 전체 프로세스 재실행의 복원을 확인했다.
 
-공개 릴리스 게시·운영 서버 갱신은 이 구현 작업에서 수행하지 않았다. PNG 생성·해상도는 실제 Chromium에서 확인했고, PNG 저장 대화상자의 사용자 파일 선택은 별도 실사용 확인 대상이다. 최대 한도의 성능·모든 외형 조합·모든 화면 크기를 전수 검증했다는 의미는 아니다.
+2026-10-14 [v0.21.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.21.0)의 공개 파일 해시·크기·다운로드·RELEASES 검증을 완료했다. 게시 직후 자동 업데이트 피드 반영은 대기 상태이며 [업데이트 안내](UPDATES.md)에 기록했다. 별도 서버 번들은 최종 내장 서버와 같은 파일로 갱신했으며 운영 서버 재시작은 수행하지 않았다. PNG 생성·해상도는 실제 Chromium에서 확인했고, PNG 저장 대화상자의 사용자 파일 선택은 별도 실사용 확인 대상이다. 최대 한도의 성능·모든 외형 조합·모든 화면 크기를 전수 검증했다는 의미는 아니다.
 
 검사 명령은 `npm run typecheck`, `npm test`, `npm run test:game-ui:ui`, `npm run test:integration`, `npm run test:game-ui:packaged`입니다. 패키지 검사는 같은 소스로 `npm run package`를 완료한 후 실행합니다. 실제 실행 결과는 구현 완료 보고에 기록합니다.
 

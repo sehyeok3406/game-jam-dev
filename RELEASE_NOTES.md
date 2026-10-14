@@ -7,6 +7,8 @@
 
 Windows x64 설치 파일: `Game.Jam-0.21.0.Setup.exe`. 기존 앱의 **앱 업데이트 → 업데이트 확인**으로 적용합니다. 공동 편집에는 앱과 협업 서버를 함께 업데이트해야 합니다. 내장 서버는 새 앱에서 재시작하고 외부 서버는 새 번들로 재시작합니다. [사용 안내](https://github.com/sehyeok3406/game-jam-dev/blob/main/GAME_UI_PLUGIN.md)
 
+2026-10-14 [정식 배포·공개 파일 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.21.0). 자동 테스트 377개·타입·린트·Windows 패키지와 내장 서버 검증을 통과했습니다. 게시 직후 자동 업데이트 피드 반영은 대기 상태입니다. [현재 기록](UPDATES.md)
+
 ---
 
 # Game Jam! v0.19.1
