@@ -221,6 +221,66 @@ try {
     ),
     /rotate\(45/,
   );
+  await js(`document.querySelector('[aria-label="게임 UI 편집"]').click()`);
+  await wait('!!document.querySelector(".game-ui-inspector")');
+  await js('document.querySelector(".game-ui-layer-list button").click()');
+  await wait(`!!document.querySelector('[aria-label="최소 값"]')`);
+  assert.equal(
+    await js(
+      '!!document.querySelector(".game-ui-inspector").closest(".react-flow__viewport")',
+    ),
+    false,
+  );
+  const panelWidth = await js(
+    'document.querySelector(".game-ui-inspector").getBoundingClientRect().width',
+  );
+  await js(
+    `document.querySelector('[aria-label="속성 패널 너비"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))`,
+  );
+  await wait(
+    `document.querySelector('.game-ui-inspector').getBoundingClientRect().width===${panelWidth + 16}`,
+  );
+  await js(
+    `document.querySelector('[aria-label="속성 패널 배치 전환"]').click()`,
+  );
+  await wait(
+    `document.querySelector('.game-ui-inspector-host').dataset.layout==='floating'`,
+  );
+  await js(
+    `document.querySelector('[aria-label="속성 패널 배치 전환"]').click()`,
+  );
+  await wait(
+    `document.querySelector('.game-ui-inspector-host').dataset.layout==='docked'`,
+  );
+  await js(
+    `(()=>{const el=document.querySelector('[aria-label="UI 너비"]');el.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'invalid');el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))})()`,
+  );
+  await wait(
+    `document.querySelector('[aria-label="UI 너비"]').getAttribute('aria-invalid')==='true'`,
+  );
+  assert.equal(
+    (await js('window.gameCanvas.listGameUi().then(f=>f[0].items[0])')).width,
+    item.width,
+  );
+  await js(
+    `document.querySelector('[aria-label="UI 너비"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
+  );
+  await wait(
+    `document.querySelector('[aria-label="UI 너비"]').value==='${item.width}'`,
+  );
+  await js(
+    `(()=>{const set=(label,value)=>{const el=document.querySelector('[aria-label="'+label+'"]');el.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}))};set('최소 값','200');set('최대 값','500')})()`,
+  );
+  await js(
+    `document.querySelector('[aria-label="최대 값"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
+  );
+  await wait(
+    'window.gameCanvas.listGameUi().then(f=>f[0].items[0].minimum===200&&f[0].items[0].maximum===500&&f[0].items[0].value===200)',
+  );
+  await js('window.gameCanvas.undo()');
+  await wait(
+    'window.gameCanvas.listGameUi().then(f=>f[0].items[0].minimum===20&&f[0].items[0].maximum===100&&f[0].items[0].value===60)',
+  );
   await apply({ action: 'describe' });
   const descriptionPath = `docs/ui/${frame.id}.md`;
   await js(
@@ -270,6 +330,14 @@ try {
   );
   await stop(true);
   await boot();
+  await js(`document.querySelector('[aria-label="게임 UI 편집"]').click()`);
+  await wait('!!document.querySelector(".game-ui-inspector")');
+  assert.equal(
+    await js(
+      'document.querySelector(".game-ui-inspector").getBoundingClientRect().width',
+    ),
+    panelWidth + 16,
+  );
   assert.deepEqual(
     await js('window.gameCanvas.listGameUi().then(f=>f[0])'),
     expected,
@@ -281,7 +349,7 @@ try {
     /실제 패키지에서 편집한 한글 설명/,
   );
   console.log(
-    'PASS: actual Windows package plugin creates a standalone frame, persists UI/Markdown, preserves custom descriptions, supports Undo/Redo, and survives full process restart.',
+    'PASS: actual Windows package verifies the independent inspector, personal width/floating layout, invalid drafts/Escape, atomic range/Undo, UI/Markdown persistence, custom descriptions and full process restart.',
   );
 } finally {
   await stop();

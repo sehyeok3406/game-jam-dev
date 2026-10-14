@@ -14,6 +14,13 @@ import {
   isGauge,
 } from '../../game-ui-details';
 import type { GameUiPreview } from './GameUiGraphic';
+import { GAME_UI_SHAPES } from '../../game-ui-types';
+import {
+  GameUiNumberField as NumberField,
+  GameUiColorField as ColorField,
+  GameUiTextField,
+  GameUiRangeFields,
+} from './GameUiFields';
 let styleClipboard: Partial<GameUiDetails> | null = null;
 const clipboardListeners = new Set<() => void>();
 const subscribeClipboard = (listener: () => void) => {
@@ -27,108 +34,12 @@ const copyStyle = (style: Partial<GameUiDetails>) => {
   styleClipboard = structuredClone(style);
   clipboardListeners.forEach((listener) => listener());
 };
-function NumberField({
-  label,
-  value,
-  apply,
-  min = 0,
-  max = 4096,
-  preview,
-}: {
-  label: string;
-  value: number | string;
-  apply: (n: number) => void;
-  min?: number;
-  max?: number;
-  preview?: (n: number) => void;
-}) {
-  return (
-    <label>
-      {label}
-      <input
-        aria-label={label}
-        type="number"
-        step="any"
-        key={`${label}-${value}`}
-        defaultValue={value}
-        placeholder={value === '' ? '혼합' : undefined}
-        min={min}
-        max={max}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (e.target.value && Number.isFinite(n) && n >= min && n <= max)
-            preview?.(n);
-        }}
-        onBlur={(e) => {
-          const n = Number(e.target.value);
-          if (
-            e.target.value.trim() &&
-            Number.isFinite(n) &&
-            n >= min &&
-            n <= max &&
-            n !== value
-          )
-            apply(n);
-          else e.target.value = String(value);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-        }}
-      />
-    </label>
-  );
-}
-function ColorField({
-  label,
-  value,
-  apply,
-  preview,
-}: {
-  label: string;
-  value: string;
-  apply: (v: string) => void;
-  preview?: (v: string) => void;
-}) {
-  return (
-    <label className="game-ui-color-row">
-      {label}
-      <span>
-        <input
-          type="color"
-          aria-label={`${label} 선택`}
-          key={`${label}-${value}`}
-          defaultValue={value || '#64748b'}
-          onChange={(e) => preview?.(e.target.value)}
-          onBlur={(e) => {
-            if (e.target.value !== value) apply(e.target.value);
-          }}
-        />
-        <input
-          aria-label={label}
-          key={value}
-          defaultValue={value}
-          placeholder="혼합"
-          maxLength={7}
-          onBlur={(e) => {
-            if (
-              /^#[a-f\d]{6}$/i.test(e.target.value) &&
-              e.target.value !== value
-            )
-              apply(e.target.value);
-            else e.target.value = value;
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-        />
-      </span>
-    </label>
-  );
-}
 export function GameUiDetailInspector({
   items,
   disabled,
-  apply,
+  apply: submitChanges,
+  editingState,
+  setEditingState,
   draft,
   preview,
   setPreview,
@@ -137,15 +48,16 @@ export function GameUiDetailInspector({
 }: {
   items: GameUiItem[];
   disabled: boolean;
-  apply: (changes: Partial<GameUiItem>) => void;
+  apply: (changes: Partial<GameUiItem>) => void | Promise<unknown>;
+  editingState: GameUiState;
+  setEditingState: (state: GameUiState) => void;
   draft: (changes: Partial<GameUiItem>) => void;
   preview?: GameUiPreview;
   setPreview: (v: GameUiPreview | undefined) => void;
   animate: (value: number) => void;
   stop: () => void;
 }) {
-  const [editingState, setEditingState] = useState<GameUiState>('normal'),
-    [rangeError, setRangeError] = useState(''),
+  const [feedback, setFeedback] = useState(''),
     copied = useSyncExternalStore(
       subscribeClipboard,
       readClipboard,
@@ -155,6 +67,29 @@ export function GameUiDetailInspector({
     first = items[0],
     gauge = !!one && isGauge(one);
   const activeState = one ? editingState : 'normal';
+  const apply = (changes: Partial<GameUiItem>) => {
+    const result = submitChanges(changes);
+    void Promise.resolve(result).catch(() => {});
+    return result;
+  };
+  const surface = items.every((i) => i.kind !== 'text'),
+    fills = items.every(isGauge);
+  const source = (key: keyof GameUiStyle) =>
+    activeState === 'normal'
+      ? undefined
+      : Object.hasOwn(first.stateStyles?.[activeState] ?? {}, key)
+        ? '별도 설정'
+        : '기본에서 상속';
+  const shape = items.every((i) => i.shape === first.shape) ? first.shape : '';
+  const stateNote =
+    activeState === 'normal'
+      ? '기본 외형을 편집합니다.'
+      : GAME_UI_STATES[activeState] +
+        ' 외형을 편집합니다. 상속 항목을 수정하면 이 상태에만 적용됩니다.';
+  const rule = one?.thresholds?.find(
+    (t) => gameUiRatio(one, preview?.value ?? one.value) * 100 <= t.below,
+  );
+
   const styles = items.map((i) => gameUiStyle(i, activeState));
   const mixed = <K extends keyof GameUiStyle>(k: K): GameUiStyle[K] | '' =>
     styles.every((s) => JSON.stringify(s[k]) === JSON.stringify(styles[0][k]))
@@ -177,7 +112,7 @@ export function GameUiDetailInspector({
       items.every((i) => ['rectangle', 'rounded'].includes(i.shape))
     )
       Object.assign(patch, { shape: 'rounded' });
-    (temporary ? draft : apply)(patch);
+    return (temporary ? draft : apply)(patch);
   };
   const choice = (
     label: string,
@@ -210,27 +145,76 @@ export function GameUiDetailInspector({
   ) => {
     const v = mixed(k);
     return (
-      <NumberField
-        label={label}
-        value={typeof v === 'number' ? (percent ? Math.round(v * 100) : v) : ''}
-        min={min}
-        max={max}
-        apply={(n) => changeStyle({ [k]: percent ? n / 100 : n })}
-        preview={(n) => changeStyle({ [k]: percent ? n / 100 : n }, true)}
-      />
+      <div
+        key={activeState + ':' + k}
+        className="game-ui-style-property"
+        data-source={source(k)}
+      >
+        <NumberField
+          label={label}
+          value={
+            typeof v === 'number'
+              ? percent
+                ? Number((v * 100).toFixed(2))
+                : v
+              : ''
+          }
+          min={min}
+          max={max}
+          unit={
+            percent
+              ? '%'
+              : k === 'fontSize' || k === 'cornerRadius' || k === 'borderWidth'
+                ? 'px'
+                : undefined
+          }
+          apply={(n) => changeStyle({ [k]: percent ? n / 100 : n })}
+          preview={(n) => changeStyle({ [k]: percent ? n / 100 : n }, true)}
+          cancel={() => draft({})}
+        />
+        {source(k) && (
+          <small className="game-ui-state-source">{source(k)}</small>
+        )}
+      </div>
     );
   };
   const styleColor = (
     label: string,
     k: 'backgroundColor' | 'borderColor' | 'fillColor' | 'textColor',
-  ) => (
-    <ColorField
-      label={label}
-      value={mixed(k)}
-      apply={(v) => changeStyle({ [k]: v })}
-      preview={(v) => changeStyle({ [k]: v }, true)}
-    />
-  );
+  ) => {
+    const alpha = (
+      {
+        backgroundColor: 'backgroundOpacity',
+        borderColor: 'borderOpacity',
+        fillColor: 'fillOpacity',
+        textColor: 'textOpacity',
+      } as const
+    )[k];
+    const v = mixed(alpha);
+    return (
+      <div
+        key={activeState + ':' + k}
+        className="game-ui-style-property"
+        data-source={source(k)}
+      >
+        <ColorField
+          label={label}
+          value={mixed(k)}
+          apply={(v) => changeStyle({ [k]: v })}
+          preview={(v) => changeStyle({ [k]: v }, true)}
+          cancel={() => draft({})}
+          opacity={typeof v === 'number' ? Number((v * 100).toFixed(2)) : ''}
+          applyOpacity={(n) => changeStyle({ [alpha]: n / 100 })}
+          previewOpacity={(n) => changeStyle({ [alpha]: n / 100 }, true)}
+        />
+        {source(k) && (
+          <small className="game-ui-state-source">
+            색: {source(k)} · 불투명도: {source(alpha)}
+          </small>
+        )}
+      </div>
+    );
+  };
   const valueNumber = (
     label: string,
     k: keyof GameUiDetails,
@@ -243,6 +227,7 @@ export function GameUiDetailInspector({
       value={value}
       min={min}
       max={max}
+      integer={k === 'decimals' || k === 'segments'}
       apply={(n) => apply({ [k]: k === 'cooldownOpacity' ? n / 100 : n })}
     />
   );
@@ -253,81 +238,124 @@ export function GameUiDetailInspector({
       onBlurCapture={() => draft({})}
     >
       <fieldset disabled={disabled}>
-        <details open>
-          <summary>외형 · 상세 설정</summary>
+        <section className="game-ui-section game-ui-rotation">
+          <h3>회전</h3>
+          <NumberField
+            label="UI 회전 (°)"
+            displayLabel="회전"
+            value={
+              items.every((i) => (i.rotation ?? 0) === (first.rotation ?? 0))
+                ? (first.rotation ?? 0)
+                : ''
+            }
+            unit="°"
+            cancel={() => draft({})}
+            min={-360}
+            max={360}
+            apply={(rotation) => apply({ rotation })}
+            preview={(rotation) => draft({ rotation })}
+          />
+          <button type="button" onClick={() => apply({ rotation: 0 })}>
+            회전 초기화
+          </button>
+        </section>
+        <div className="game-ui-state-editor">
+          {' '}
           {one &&
             choice('외형 편집 상태', editingState, GAME_UI_STATES, (v) => {
               setEditingState(v as GameUiState);
               setPreview({ ...preview, state: v as GameUiState });
             })}
-          <p>불투명도 0%는 숨김, 100%는 완전히 보입니다.</p>
-          {styleColor('배경색', 'backgroundColor')}
-          {styleNumber('배경 불투명도 (%)', 'backgroundOpacity', 0, 100, true)}
-          {styleColor('테두리 색', 'borderColor')}
-          {styleNumber('테두리 불투명도 (%)', 'borderOpacity', 0, 100, true)}
-          {styleNumber('테두리 두께', 'borderWidth', 0, 128)}
-          {choice(
-            '테두리 형태',
-            mixed('borderStyle'),
-            { solid: '실선', dashed: '파선', dotted: '점선' },
-            (v) =>
-              changeStyle({ borderStyle: v as GameUiStyle['borderStyle'] }),
+          {activeState !== 'normal' && <p>{stateNote}</p>}
+        </div>
+        <details open className="game-ui-appearance">
+          <summary>외형</summary>
+          {surface &&
+            choice(
+              'UI 외형',
+              shape,
+              Object.fromEntries(
+                Object.entries(GAME_UI_SHAPES).filter(
+                  ([key]) => key !== 'ring' || fills,
+                ),
+              ),
+              (v) => apply({ shape: v as GameUiItem['shape'] }),
+            )}
+          <p className="game-ui-help">
+            불투명도 0%는 숨김, 100%는 완전히 보입니다.
+          </p>
+          {surface && styleColor('배경색', 'backgroundColor')}
+          {surface && styleColor('테두리 색', 'borderColor')}
+          {surface && styleNumber('테두리 두께', 'borderWidth', 0, 128)}
+          {surface &&
+            items.every((i) => ['rectangle', 'rounded'].includes(i.shape)) && (
+              <>
+                {styleNumber('모서리 R값', 'cornerRadius')}
+                <button
+                  type="button"
+                  onClick={() => {
+                    changeStyle({
+                      cornerRadii: styles[0].cornerRadii
+                        ? null
+                        : [
+                            styles[0].cornerRadius,
+                            styles[0].cornerRadius,
+                            styles[0].cornerRadius,
+                            styles[0].cornerRadius,
+                          ],
+                    });
+                  }}
+                >
+                  {styles[0].cornerRadii ? '모서리 연결' : '모서리별 R값'}
+                </button>
+                {styles[0].cornerRadii &&
+                  ['왼쪽 위', '오른쪽 위', '오른쪽 아래', '왼쪽 아래'].map(
+                    (l, n) => (
+                      <NumberField
+                        key={l}
+                        label={`${l} R값`}
+                        value={styles[0].cornerRadii![n]}
+                        apply={(v) => {
+                          const r = [...styles[0].cornerRadii!] as [
+                            number,
+                            number,
+                            number,
+                            number,
+                          ];
+                          r[n] = v;
+                          changeStyle({ cornerRadii: r });
+                        }}
+                      />
+                    ),
+                  )}
+              </>
+            )}
+          {fills && !one && styleColor('채움색', 'fillColor')}
+          {surface && (
+            <details className="game-ui-advanced">
+              <summary>테두리 위치·점선</summary>{' '}
+              {choice(
+                '테두리 형태',
+                mixed('borderStyle'),
+                { solid: '실선', dashed: '파선', dotted: '점선' },
+                (v) =>
+                  changeStyle({ borderStyle: v as GameUiStyle['borderStyle'] }),
+              )}
+              {choice(
+                '테두리 위치',
+                mixed('borderPosition'),
+                { inside: '안쪽', center: '중앙', outside: '바깥쪽' },
+                (v) =>
+                  changeStyle({
+                    borderPosition: v as GameUiStyle['borderPosition'],
+                  }),
+              )}
+            </details>
           )}
-          {choice(
-            '테두리 위치',
-            mixed('borderPosition'),
-            { inside: '안쪽', center: '중앙', outside: '바깥쪽' },
-            (v) =>
-              changeStyle({
-                borderPosition: v as GameUiStyle['borderPosition'],
-              }),
-          )}
-          {items.every((i) => ['rectangle', 'rounded'].includes(i.shape)) && (
-            <>
-              {styleNumber('모서리 R값', 'cornerRadius')}
-              <button
-                type="button"
-                onClick={() => {
-                  apply({
-                    shape: 'rounded',
-                    cornerRadii: first.cornerRadii
-                      ? null
-                      : [
-                          gameUiStyle(first).cornerRadius,
-                          gameUiStyle(first).cornerRadius,
-                          gameUiStyle(first).cornerRadius,
-                          gameUiStyle(first).cornerRadius,
-                        ],
-                  });
-                }}
-              >
-                {first.cornerRadii ? '모서리 연결' : '모서리별 R값'}
-              </button>
-              {first.cornerRadii &&
-                ['왼쪽 위', '오른쪽 위', '오른쪽 아래', '왼쪽 아래'].map(
-                  (l, n) => (
-                    <NumberField
-                      key={l}
-                      label={`${l} R값`}
-                      value={first.cornerRadii![n]}
-                      apply={(v) => {
-                        const r = [...first.cornerRadii!] as [
-                          number,
-                          number,
-                          number,
-                          number,
-                        ];
-                        r[n] = v;
-                        changeStyle({ cornerRadii: r });
-                      }}
-                    />
-                  ),
-                )}
-            </>
-          )}
-          {styleColor('채움색', 'fillColor')}
-          {styleNumber('채움 불투명도 (%)', 'fillOpacity', 0, 100, true)}
           {styleNumber('전체 불투명도 (%)', 'opacity', 0, 100, true)}
+          <p className="game-ui-help">
+            전체 불투명도는 배경·테두리·문자에 함께 적용됩니다.
+          </p>
           <div className="game-ui-actions">
             <button
               type="button"
@@ -363,28 +391,16 @@ export function GameUiDetailInspector({
             </button>
           )}
         </details>
-        <details open>
-          <summary>회전</summary>
-          <NumberField
-            label="UI 회전 (°)"
-            value={
-              items.every((i) => (i.rotation ?? 0) === (first.rotation ?? 0))
-                ? (first.rotation ?? 0)
-                : ''
-            }
-            min={-360}
-            max={360}
-            apply={(rotation) => apply({ rotation })}
-            preview={(rotation) => draft({ rotation })}
-          />
-          <button type="button" onClick={() => apply({ rotation: 0 })}>
-            회전 초기화
-          </button>
-        </details>
-        <details>
+        <details open={one?.kind === 'text'} className="game-ui-text-settings">
           <summary>문자</summary>
+          {one && (
+            <GameUiTextField
+              label="UI 문구"
+              value={one.text}
+              apply={(text) => apply({ text })}
+            />
+          )}
           {styleColor('문자색', 'textColor')}
-          {styleNumber('문자 불투명도 (%)', 'textOpacity', 0, 100, true)}
           {styleNumber('글자 크기', 'fontSize', 1, 512)}
           {choice(
             '문자 정렬',
@@ -406,126 +422,145 @@ export function GameUiDetailInspector({
           <>
             <details open>
               <summary>값과 채움</summary>
-              {(['minimum', 'maximum', 'value'] as const).map((k) => (
+              <GameUiRangeFields
+                minimum={one.minimum ?? 0}
+                maximum={one.maximum}
+                current={one.value}
+                apply={(range) => apply(gameUiRangePatch(one, range))}
+                notify={setFeedback}
+              />
+              {feedback && (
+                <p className="game-ui-help" role="status">
+                  {feedback}
+                </p>
+              )}
+              <div className="game-ui-field-grid">
                 <NumberField
-                  key={k}
-                  label={
-                    {
-                      minimum: '최소 값',
-                      maximum: '최대 값',
-                      value: '현재 값',
-                    }[k]
-                  }
-                  value={one[k] ?? 0}
-                  min={k === 'value' ? (one.minimum ?? 0) : -1e9}
-                  max={k === 'value' ? one.maximum : 1e9}
-                  apply={(v) => {
-                    try {
-                      apply(gameUiRangePatch(one, { [k]: v }));
-                      setRangeError('');
-                    } catch (e) {
-                      setRangeError(String(e));
-                    }
-                  }}
+                  label="현재 값"
+                  value={one.value}
+                  min={one.minimum ?? 0}
+                  max={one.maximum}
+                  apply={(value) => apply({ value })}
                 />
-              ))}
-              {rangeError && <p role="alert">{rangeError}</p>}
-              {valueNumber(
-                '값 변화 단위',
-                'step',
-                one.step ?? 1,
-                0.000001,
-                1e9,
+                <div className="game-ui-field">
+                  <span>저장된 채움 비율</span>
+                  <output>{Math.round(gameUiRatio(one) * 100)}%</output>
+                </div>
+              </div>
+              {styleColor('채움색', 'fillColor')}
+              {rule && (
+                <p className="game-ui-rule-note" role="status">
+                  현재 표시: {rule.below}% 이하 경고색 {rule.color}. 기본
+                  채움색보다 우선합니다.
+                </p>
               )}
-              {valueNumber('소수 자릿수', 'decimals', one.decimals ?? 0, 0, 6)}
-              {choice(
-                '값 표시',
-                one.valueFormat ?? 'fraction',
-                {
-                  fraction: '현재/최대',
-                  value: '현재 값',
-                  percent: '백분율',
-                  none: '문구만',
-                },
-                (v) =>
-                  apply({ valueFormat: v as GameUiDetails['valueFormat'] }),
-              )}
-              {choice(
-                '채움 방향',
-                one.fillDirection ??
-                  (one.shape === 'circle' || one.shape === 'triangle'
-                    ? 'up'
-                    : 'right'),
-                {
-                  right: '왼쪽 → 오른쪽',
-                  left: '오른쪽 → 왼쪽',
-                  up: '아래 → 위',
-                  down: '위 → 아래',
-                  'center-x': '중앙 → 좌우',
-                  'center-y': '중앙 → 위아래',
-                  radial: '원형',
-                },
-                (v) =>
-                  apply({ fillDirection: v as GameUiDetails['fillDirection'] }),
-              )}
-              {(one.shape === 'ring' || one.fillDirection === 'radial') && (
-                <>
-                  {valueNumber(
-                    '원형 시작 각도 (°)',
-                    'radialStart',
-                    one.radialStart ?? -90,
-                    -360,
-                    360,
-                  )}
-                  {valueNumber(
-                    '원형 전체 각도 (°)',
-                    'radialSweep',
-                    one.radialSweep ?? 360,
-                    1,
-                    360,
-                  )}
-                  {one.shape === 'ring' &&
-                    valueNumber(
-                      '링 두께',
-                      'ringWidth',
-                      one.ringWidth ?? 10,
-                      1,
-                      256,
+              <details className="game-ui-advanced">
+                <summary>채움 방향·표시 형식·구간</summary>
+                {valueNumber(
+                  '값 변화 단위',
+                  'step',
+                  one.step ?? 1,
+                  0.000001,
+                  1e9,
+                )}
+                {valueNumber(
+                  '소수 자릿수',
+                  'decimals',
+                  one.decimals ?? 0,
+                  0,
+                  6,
+                )}
+                {choice(
+                  '값 표시',
+                  one.valueFormat ?? 'fraction',
+                  {
+                    fraction: '현재/최대',
+                    value: '현재 값',
+                    percent: '백분율',
+                    none: '문구만',
+                  },
+                  (v) =>
+                    apply({ valueFormat: v as GameUiDetails['valueFormat'] }),
+                )}
+                {choice(
+                  '채움 방향',
+                  one.fillDirection ??
+                    (one.shape === 'circle' || one.shape === 'triangle'
+                      ? 'up'
+                      : 'right'),
+                  {
+                    right: '왼쪽 → 오른쪽',
+                    left: '오른쪽 → 왼쪽',
+                    up: '아래 → 위',
+                    down: '위 → 아래',
+                    'center-x': '중앙 → 좌우',
+                    'center-y': '중앙 → 위아래',
+                    radial: '원형',
+                  },
+                  (v) =>
+                    apply({
+                      fillDirection: v as GameUiDetails['fillDirection'],
+                    }),
+                )}
+                {(one.shape === 'ring' || one.fillDirection === 'radial') && (
+                  <>
+                    {valueNumber(
+                      '원형 시작 각도 (°)',
+                      'radialStart',
+                      one.radialStart ?? -90,
+                      -360,
+                      360,
                     )}
-                  <label>
-                    시계 방향
-                    <input
-                      aria-label="시계 방향"
-                      type="checkbox"
-                      checked={one.clockwise !== false}
-                      onChange={(e) => apply({ clockwise: e.target.checked })}
-                    />
-                  </label>
-                </>
-              )}
-              {valueNumber(
-                '게이지 구간 수',
-                'segments',
-                one.segments ?? 1,
-                1,
-                100,
-              )}
-              {valueNumber(
-                '구간 간격',
-                'segmentGap',
-                one.segmentGap ?? 2,
-                0,
-                100,
-              )}
-              <label>
-                칸 단위 채움
-                <input
-                  aria-label="칸 단위 채움"
-                  type="checkbox"
-                  checked={!!one.segmentSnap}
-                  onChange={(e) => apply({ segmentSnap: e.target.checked })}
-                />
-              </label>
+                    {valueNumber(
+                      '원형 전체 각도 (°)',
+                      'radialSweep',
+                      one.radialSweep ?? 360,
+                      1,
+                      360,
+                    )}
+                    {one.shape === 'ring' &&
+                      valueNumber(
+                        '링 두께',
+                        'ringWidth',
+                        one.ringWidth ?? 10,
+                        1,
+                        256,
+                      )}
+                    <label>
+                      시계 방향
+                      <input
+                        aria-label="시계 방향"
+                        type="checkbox"
+                        checked={one.clockwise !== false}
+                        onChange={(e) => apply({ clockwise: e.target.checked })}
+                      />
+                    </label>
+                  </>
+                )}
+                {valueNumber(
+                  '게이지 구간 수',
+                  'segments',
+                  one.segments ?? 1,
+                  1,
+                  100,
+                )}
+                {valueNumber(
+                  '구간 간격',
+                  'segmentGap',
+                  one.segmentGap ?? 2,
+                  0,
+                  100,
+                )}
+                <label>
+                  칸 단위 채움
+                  <input
+                    aria-label="칸 단위 채움"
+                    type="checkbox"
+                    checked={!!one.segmentSnap}
+                    onChange={(e) => apply({ segmentSnap: e.target.checked })}
+                  />
+                </label>
+              </details>
             </details>
             <details>
               <summary>값에 따른 색 변경</summary>
@@ -683,9 +718,24 @@ export function GameUiDetailInspector({
       </fieldset>
       {one && (
         <details open className="game-ui-preview-controls">
-          <summary>상태 미리보기 · 저장되지 않음</summary>
+          <summary>값·상태 테스트 · 저장되지 않음</summary>
+          <p className="game-ui-help">
+            {gauge
+              ? `저장 값 ${one.value} / 테스트 값 ${preview?.value ?? one.value}`
+              : `저장 상태 ${GAME_UI_STATES[one.state ?? 'normal']} / 표시 상태 ${GAME_UI_STATES[preview?.state ?? one.state ?? 'normal']}`}
+          </p>
           {gauge && (
             <>
+              <NumberField
+                label="테스트 값 직접 입력"
+                value={preview?.value ?? one.value}
+                min={one.minimum ?? 0}
+                max={one.maximum}
+                apply={(value) => {
+                  stop();
+                  setPreview({ ...preview, value, delta: undefined });
+                }}
+              />
               <label>
                 미리보기 값
                 <input
@@ -797,7 +847,10 @@ export function GameUiDetailInspector({
                 type="button"
                 disabled={disabled || preview?.value === undefined}
                 onClick={() => {
-                  apply(gameUiRangePatch(one, { value: preview?.value }));
+                  apply({
+                    value: gameUiRangePatch(one, { value: preview?.value })
+                      .value,
+                  });
                   setPreview(undefined);
                 }}
               >
