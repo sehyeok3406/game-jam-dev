@@ -1,5 +1,12 @@
 import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses.ts';
 import {
+  isGameUiPath,
+  readGameUi,
+  applyGameUi,
+  snapshotGameUi,
+} from './game-ui-model.ts';
+import type { GameUiCommand } from './game-ui-types.ts';
+import {
   KANBAN_VIEW_PATH,
   validateKanbanView,
 } from './features/kanban/view.ts';
@@ -82,6 +89,7 @@ export function collaborationPath(relative: unknown): string {
       relative === DOCUMENT_STATUSES_PATH ||
       relative === KANBAN_VIEW_PATH ||
       isDrawingPath(relative) ||
+      isGameUiPath(relative) ||
       isAssetPath(relative)
     ) ||
     relative
@@ -101,7 +109,8 @@ export function collaborationPath(relative: unknown): string {
                 DOCUMENT_STATUSES_PATH,
                 KANBAN_VIEW_PATH,
               ].includes(relative) ||
-                isDrawingPath(relative)) &&
+                isDrawingPath(relative) ||
+                isGameUiPath(relative)) &&
               segment === '.canvas'
             )) ||
           /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment),
@@ -120,6 +129,18 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if ((files as Snapshot)[KANBAN_VIEW_PATH])
     validateKanbanView(JSON.parse((files as Snapshot)[KANBAN_VIEW_PATH]));
   const sheets = readCanvasSheets((files as Snapshot)[CANVAS_SHEETS_PATH]);
+  for (const f of snapshotGameUi(files as Snapshot))
+    if (!sheets.canvases.some((c) => c.id === f.canvasId))
+      throw new Error('게임 화면의 캔버스를 찾을 수 없습니다.');
+    else if (f.descriptionPath && (files as Snapshot)[f.descriptionPath]) {
+      const meta = matter((files as Snapshot)[f.descriptionPath]).data;
+      if (
+        meta.game_ui_frame !== f.id ||
+        JSON.stringify(meta.game_ui_rows) !==
+          JSON.stringify(f.items.map((i) => ({ id: i.id, name: i.name })))
+      )
+        throw new Error('게임 화면과 UI 설명 표의 연결이 일치하지 않습니다.');
+    }
   for (const path of Object.keys(files).filter(isDrawingPath)) {
     const id = path.slice(DRAWING_DIRECTORY.length + 1, -5);
     if (!sheets.canvases.some((c) => c.id === id))
@@ -153,6 +174,10 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
     bytes += Buffer.byteLength(value);
+    if (isGameUiPath(key)) {
+      readGameUi(value, key);
+      continue;
+    }
     if (isDrawingPath(key)) {
       readDrawingFile(value, key.slice(DRAWING_DIRECTORY.length + 1, -5));
       continue;
@@ -331,6 +356,7 @@ export const commandLabels: Record<string, string> = {
   'documents:set-workflow': '문서 진행 상태 변경',
   'document-statuses:save': '문서 상태 설정 변경',
   'drawings:apply': '도형 · 그림 편집',
+  'game-ui:apply': '게임 UI 편집',
   'canvas:batch': '선택 항목 함께 편집',
   'canvases:change': '캔버스 구성 변경',
   'results:move': 'HTML 결과물 폴더 이동',
@@ -427,6 +453,7 @@ export function reduceCollaboration(
     const results: unknown[] = [];
     const allowed = [
       'drawings:apply',
+      'game-ui:apply',
       'layouts:update',
       'documents:duplicate',
       'documents:delete-many',
@@ -454,6 +481,11 @@ export function reduceCollaboration(
     const changed = applyDrawing(files, input as unknown as DrawingCommand);
     checkSnapshot(changed);
     return { files: changed, result: undefined };
+  }
+  if (channel === 'game-ui:apply') {
+    const changed = applyGameUi(files, input as unknown as GameUiCommand);
+    checkSnapshot(changed);
+    return { files: changed, result: snapshotGameUi(changed) };
   }
   if (channel === 'canvases:change') {
     const changed = changeCanvasSheets(

@@ -552,6 +552,15 @@ export type GameCanvasApi = {
   selectWorkspace: () => Promise<WorkspaceState>;
   listDocuments: () => Promise<CanvasDocument[]>;
   listDrawings: () => Promise<import('./drawing-types').DrawingItem[]>;
+  listGameUi: () => Promise<import('./game-ui-types').GameUiFrame[]>;
+  applyGameUiCommand: (
+    command: import('./game-ui-types').GameUiCommand,
+  ) => Promise<import('./game-ui-types').GameUiFrame[]>;
+  exportGameUiPng: (input: {
+    scope: string;
+    name: string;
+    data: string;
+  }) => Promise<boolean>;
   applyCanvasCommands: (input: {
     scope: string;
     clipboardContextId?: string;
@@ -708,6 +717,7 @@ export type CollaborationState = {
   projectPurged?: boolean;
   awaitingResume?: boolean;
   drawingsVersion?: number;
+  gameUiVersion?: number;
   propertySync?: boolean;
   deltaSync?: boolean;
   eventStream?: boolean;

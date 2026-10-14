@@ -1,4 +1,10 @@
 import matter from './markdown.ts';
+import {
+  snapshotGameUi,
+  gameUiPath,
+  serializeGameUi,
+  isGameUiPath,
+} from './game-ui-model.ts';
 import { placeMovedDocuments } from './canvas-move-placement.ts';
 import {
   drawingPath,
@@ -66,6 +72,14 @@ export function changeCanvasSheets(
     return value.trim();
   };
   const assign = (path: string, target: string) => {
+    if (isGameUiPath(path)) {
+      const f = snapshotGameUi({ [path]: next[path] })[0];
+      f.canvasId = target;
+      next[path] = serializeGameUi(f);
+      if (f.descriptionPath && next[f.descriptionPath])
+        assign(f.descriptionPath, target);
+      return;
+    }
     if (isPreviewPath(path)) {
       if (!next[path]) throw new Error('HTML을 찾을 수 없습니다.');
       const source = htmlSourcePath(path);
@@ -111,6 +125,9 @@ export function changeCanvasSheets(
     if (input.action === 'delete' && sheets.canvases.length === 1)
       throw new Error('마지막 캔버스는 삭제할 수 없습니다.');
     const paths = new Set<string>();
+    if (input.action === 'delete')
+      for (const f of snapshotGameUi(next))
+        if (f.canvasId === id) paths.add(gameUiPath(f.id));
     if (input.action === 'delete') {
       for (const [path, raw] of Object.entries(next))
         if (
@@ -130,6 +147,12 @@ export function changeCanvasSheets(
       )
         throw new Error('이동할 자료를 선택해주세요.');
       for (const path of input.paths) {
+        if (isGameUiPath(path)) {
+          if (snapshotGameUi({ [path]: next[path] })[0].canvasId !== id)
+            throw new Error('게임 화면의 캔버스가 변경되었습니다.');
+          paths.add(path);
+          continue;
+        }
         const raw = isPreviewPath(path)
           ? next[htmlSourcePath(path)]
           : next[path];

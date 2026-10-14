@@ -85,9 +85,17 @@ export async function bootstrapUiDebugPreview(raw: string) {
     },
     true,
   );
-  window.addEventListener('error', (event) =>
-    send({ type: 'ui-debug:error', message: event.message }),
-  );
+  window.addEventListener('error', (event) => {
+    // Preserve resize-delivery diagnostics without treating them as script failures.
+    if (
+      event.message ===
+      'ResizeObserver loop completed with undelivered notifications.'
+    ) {
+      send({ type: 'ui-debug:layout-notice', message: event.message });
+      return;
+    }
+    send({ type: 'ui-debug:error', message: event.message });
+  });
   window.addEventListener('unhandledrejection', (event) => {
     event.preventDefault();
     send({ type: 'ui-debug:error', message: String(event.reason) });

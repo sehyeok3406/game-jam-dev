@@ -2,6 +2,7 @@ import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { mergeStatuses } from './document-statuses-storage.ts';
 import matter from './markdown.ts';
 import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
+import { isGameUiPath, mergeGameUi } from './game-ui-model.ts';
 import type { Snapshot } from './project-store.ts';
 
 export const propertyKeys = {
@@ -75,6 +76,8 @@ export function mergeProperties(
     return mergeStatuses(expected, desired, current);
   if (isDrawingPath(relative))
     return mergeDrawingFile(relative, expected, desired, current, true);
+  if (isGameUiPath(relative))
+    return mergeGameUi(expected, desired, current, true);
   if (current === expected) return desired;
   if (
     expected === undefined ||

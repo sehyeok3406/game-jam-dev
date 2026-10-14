@@ -14,6 +14,7 @@ import {
   atomicJson,
 } from './trash-files.ts';
 import { isDrawingPath, drawingDelta } from './drawing-model.ts';
+import { isGameUiPath } from './game-ui-model.ts';
 import {
   advanceProperties,
   changedGroups,
@@ -465,6 +466,7 @@ export async function createCollaborationServer(options: Options) {
       documentBundles: true,
       documentOutputFormats: true,
       drawingsVersion: 1,
+      gameUiVersion: 1,
       documentStatusesVersion: 1,
       filePropertiesVersion: 1,
       htmlImportAnalysis: true,
@@ -586,6 +588,11 @@ export async function createCollaborationServer(options: Options) {
     )) {
       const groups = changedGroups(relative, before[relative], after[relative]);
       // Targets are checked by the drawing reducer against the current snapshot.
+      if (
+        command?.channel === 'game-ui:apply' &&
+        (isGameUiPath(relative) || relative.startsWith('docs/ui/'))
+      )
+        continue;
       if (
         (command?.channel === 'drawings:apply' ||
           command?.channel === 'canvas:batch') &&
@@ -891,6 +898,7 @@ export async function createCollaborationServer(options: Options) {
           documentBundles: true,
           documentOutputFormats: true,
           drawingsVersion: 1,
+          gameUiVersion: 1,
           documentStatusesVersion: 1,
           filePropertiesVersion: 1,
           htmlImportAnalysis: true,
@@ -903,7 +911,7 @@ export async function createCollaborationServer(options: Options) {
           deltaSync: true,
           eventStream: true,
           projectTrash: true,
-          version: '0.20.0',
+          version: '0.21.0',
         });
         return;
       }
@@ -1170,6 +1178,25 @@ export async function createCollaborationServer(options: Options) {
           throw error;
         }
         project = await expireJob(project);
+        if (
+          Object.keys(project.files).some(isGameUiPath) &&
+          ![
+            'state',
+            'leave',
+            'history',
+            'history-read',
+            'lock',
+            'unlock',
+            'ai-heartbeat',
+            'ai-event',
+            'ai-cancel',
+          ].includes(action) &&
+          input.gameUiVersion !== 1
+        )
+          throw new ApiError(
+            '게임 UI가 있는 프로젝트입니다. 앱을 업데이트해주세요.',
+            409,
+          );
         if (['rename', 'role', 'invite', 'restore'].includes(action))
           admin(member);
         if (

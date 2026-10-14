@@ -36,8 +36,8 @@ export function PluginControlPanel({
 }: {
   page: PluginPanelPage;
   navigate: (page: PluginPanelPage) => void;
-  enabled: boolean;
-  toggle: (enabled: boolean) => void;
+  enabled: (id: PluginPanelPage) => boolean;
+  toggle: (id: PluginPanelPage, enabled: boolean) => void;
   geometry: PluginPanelGeometry;
   updateGeometry: (g: PluginPanelGeometry) => void;
   children: ReactNode;
@@ -115,7 +115,11 @@ export function PluginControlPanel({
       ref={panel}
       className="plugin-control-panel floating-surface nodrag nowheel"
       role="dialog"
-      aria-label={page === 'plugins' ? '플러그인 관리' : '칸반 컨트롤'}
+      aria-label={
+        page === 'plugins'
+          ? '플러그인 관리'
+          : BUILTIN_CANVAS_FEATURES.find((f) => f.id === page)?.name
+      }
       style={{ left: box.x, top: box.y, width: box.width, height: box.height }}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
@@ -187,7 +191,11 @@ export function PluginControlPanel({
             <ArrowLeft size={17} />
           </button>
         )}
-        <strong>{page === 'plugins' ? '플러그인 관리' : '칸반 보드'}</strong>
+        <strong>
+          {page === 'plugins'
+            ? '플러그인 관리'
+            : BUILTIN_CANVAS_FEATURES.find((f) => f.id === page)?.name}
+        </strong>
         <GripHorizontal size={16} className="plugin-panel-grip" />
         <button
           className="icon-button"
@@ -219,14 +227,14 @@ export function PluginControlPanel({
                 <input
                   type="checkbox"
                   role="switch"
-                  aria-label="칸반 보드 활성화"
-                  checked={enabled}
-                  onChange={(e) => toggle(e.target.checked)}
+                  aria-label={`${feature.name} 활성화`}
+                  checked={enabled(feature.id)}
+                  onChange={(e) => toggle(feature.id, e.target.checked)}
                 />
                 <button
                   className="icon-button"
-                  title="칸반 컨트롤 열기"
-                  aria-label="칸반 컨트롤 열기"
+                  title={`${feature.name} 열기`}
+                  aria-label={`${feature.name} 열기`}
                   onClick={() => navigate(feature.id)}
                 >
                   <ChevronRight size={17} />

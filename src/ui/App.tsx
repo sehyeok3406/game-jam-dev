@@ -32,6 +32,14 @@ import {
   defaultPluginPanelGeometry,
 } from '../features/plugins/PluginControlPanel';
 import type { PluginPanelPage } from '../features/plugins/builtin-features';
+import { useGameUi } from '../features/game-ui/useGameUi';
+import {
+  GameUiNode,
+  type GameUiCanvasNode,
+} from '../features/game-ui/GameUiNode';
+import { GameUiControls } from '../features/game-ui/GameUiControls';
+import { gameUiHeight } from '../game-ui-types';
+import '../features/game-ui/game-ui.css';
 import { Puzzle } from 'lucide-react';
 import {
   usePersonalValue,
@@ -480,7 +488,8 @@ type CanvasNode =
   | PreviewCanvasNode
   | SectionCanvasNode
   | DrawingCanvasNode
-  | KanbanCanvasNode;
+  | KanbanCanvasNode
+  | GameUiCanvasNode;
 
 function sameIds(left: string[], right: string[]) {
   return (
@@ -1806,6 +1815,7 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
 
 const nodeTypes: NodeTypes = {
   kanban: KanbanNode,
+  'game-ui': GameUiNode,
   drawing: DrawingNode,
   document: DocumentCard,
   preview: PreviewCard,
@@ -2237,6 +2247,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [loading, setLoading] = useState(true);
   const [tool, setTool] = useState<CanvasTool>('select');
   const drawing = useDrawing(workspace.saveScope, activeCanvas);
+  const gameUi = useGameUi(workspace.saveScope);
+  const [gameUiSettings, setGameUiSettings] = usePersonalValue(
+    `builtin.game-ui:${personalScope}`,
+    { enabled: true },
+  );
+
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('rectangle');
   const [drawingStyle, setDrawingStyle] = useState<DrawingStyle>({
     ...DEFAULT_SHAPE_STYLE,
@@ -3014,6 +3030,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       draftFlushers.delete(key);
     };
   }, [workspace.saveScope, drawing.flush]);
+  useEffect(() => {
+    const key = `game-ui:${workspace.saveScope}`;
+    draftFlushers.set(key, gameUi.flush);
+    return () => {
+      draftFlushers.delete(key);
+    };
+  }, [workspace.saveScope, gameUi.flush]);
   const loadProject = useCallback(async (fit = false, throwOnError = false) => {
     const request = ++projectLoadRef.current;
     try {
@@ -4475,7 +4498,54 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               },
             ]
           : [];
+      const gameUiNodes: GameUiCanvasNode[] = gameUi.frames
+        .filter((f) => f.canvasId === activeCanvas)
+        .map((frame) => ({
+          id: `game-ui:${frame.id}`,
+          type: 'game-ui',
+          position: { x: frame.x, y: frame.y },
+          style: { width: frame.width, height: gameUiHeight(frame) },
+          zIndex: 5,
+          dragHandle: '.game-ui-drag-handle',
+          draggable:
+            !locked &&
+            (!collaboration.active || collaboration.gameUiVersion === 1),
+          data: {
+            kind: 'game-ui',
+            frame,
+            scope: workspace.saveScope ?? '',
+            zoom: viewZoom,
+            libraryEnabled: gameUiSettings.enabled,
+            locked:
+              locked ||
+              (collaboration.active && collaboration.gameUiVersion !== 1),
+            inspectorMode:
+              preview?.id === 'game-ui-inspector'
+                ? preview.state === 'multiple'
+                  ? 'multiple'
+                  : 'single'
+                : undefined,
+            submit: async (command) => {
+              await flushEditors(false);
+              await gameUi.submit(command);
+            },
+            openDescription: async () => {
+              await loadProject(false);
+              setTimeout(
+                () => navigateCanvasItem.current?.(frame.id + '-description'),
+                220,
+              );
+            },
+            exportPng: (data, name) =>
+              window.gameCanvas.exportGameUiPng({
+                scope: workspace.saveScope ?? '',
+                name,
+                data,
+              }),
+          },
+        }));
       const next = [
+        ...gameUiNodes,
         ...board,
         ...sectionNodes,
         ...drawingNodes,
@@ -4550,6 +4620,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     canvasSheets,
     geometryEpoch,
     drawing.items,
+    gameUi.frames,
+    gameUiSettings.enabled,
+    gameUi.submit,
     submitDrawing,
     viewZoom,
     sourceTitles,
@@ -5369,7 +5442,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           y: node.position.y,
           placed: true,
         });
-    const movedNodes = allMovedNodes.filter((n) => n.data.kind !== 'kanban');
+    for (const node of allMovedNodes)
+      if (node.data.kind === 'game-ui') {
+        const f = node.data.frame;
+        await gameUi.submit({
+          id: f.id,
+          generation: f.generation,
+          action: 'frame',
+          changes: { x: node.position.x, y: node.position.y },
+          expected: { x: f.x, y: f.y },
+        });
+      }
+    const movedNodes = allMovedNodes.filter(
+      (n) => n.data.kind !== 'kanban' && n.data.kind !== 'game-ui',
+    );
     if (!movedNodes.length) return;
     if (
       blockAiFiles(
@@ -5785,6 +5871,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     drawing.reload,
   ]);
   const flushEditors = async (finish = true) => {
+    await gameUi.flush();
     await drawing.flush();
     await Promise.all(
       [...editorsRef.current.values()].map((flush) => flush(finish)),
@@ -7082,7 +7169,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (id === 'kanban-appearance') setKanbanAppearanceOpen(true);
     if (id === 'plugin-controls') {
       setPluginPanelOpen(true);
-      setPluginPanelPage(state === 'kanban' ? 'builtin.kanban' : 'plugins');
+      setPluginPanelPage(
+        state === 'kanban'
+          ? 'builtin.kanban'
+          : state === 'game-ui'
+            ? 'builtin.game-ui'
+            : 'plugins',
+      );
     }
     if (id === 'kanban') {
       updateKanbanPreferences({
@@ -7250,8 +7343,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         <PluginControlPanel
           page={pluginPanelPage}
           navigate={setPluginPanelPage}
-          enabled={kanbanVisibilityValue.enabled}
-          toggle={toggleKanban}
+          enabled={(id) =>
+            id === 'builtin.game-ui'
+              ? gameUiSettings.enabled
+              : kanbanVisibilityValue.enabled
+          }
+          toggle={(id, value) =>
+            id === 'builtin.game-ui'
+              ? setGameUiSettings({ enabled: value })
+              : toggleKanban(value)
+          }
           geometry={pluginPanelGeometry}
           updateGeometry={updatePluginPanelGeometry}
           canvasName={
@@ -7260,26 +7361,65 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           }
           close={() => setPluginPanelOpen(false)}
         >
-          <KanbanControls
-            preferences={kanbanPreferences}
-            activationEnabled={kanbanVisibilityValue.enabled}
-            visibilityPicker={
-              <CanvasVisibilityPicker
-                value={kanbanVisibilityValue}
-                canvases={canvasSheets.canvases}
-                change={updateKanbanVisibility}
-              />
-            }
-            update={updateKanbanPreferences}
-            toggle={toggleKanban}
-            focus={revealKanban}
-            manage={() => setStatusManagerOpen(true)}
-            appearance={() => setKanbanAppearanceOpen(true)}
-            manageDisabled={
-              !workflowEditable || workflowBusy || !!kanbanViewError
-            }
-            reason={workflowReason}
-          />
+          {pluginPanelPage === 'builtin.game-ui' ? (
+            <GameUiControls
+              frames={gameUi.frames}
+              canvasId={activeCanvas}
+              occupied={[
+                ...documents.filter(
+                  (d) => (d.canvasId ?? 'default') === activeCanvas,
+                ),
+                ...gameUi.frames
+                  .filter((f) => f.canvasId === activeCanvas)
+                  .map((f) => ({
+                    x: f.x,
+                    y: f.y,
+                    width: f.width + 320,
+                    height: gameUiHeight(f),
+                  })),
+              ]}
+              disabled={
+                locked ||
+                !gameUiSettings.enabled ||
+                (collaboration.active && collaboration.gameUiVersion !== 1)
+              }
+              submit={gameUi.submit}
+              focus={(id) => {
+                setPluginPanelOpen(false);
+                setTimeout(
+                  () =>
+                    void flowRef.current?.fitView({
+                      nodes: [{ id: `game-ui:${id}` }],
+                      padding: 0.35,
+                      maxZoom: 1,
+                      duration: 200,
+                    }),
+                  100,
+                );
+              }}
+            />
+          ) : (
+            <KanbanControls
+              preferences={kanbanPreferences}
+              activationEnabled={kanbanVisibilityValue.enabled}
+              visibilityPicker={
+                <CanvasVisibilityPicker
+                  value={kanbanVisibilityValue}
+                  canvases={canvasSheets.canvases}
+                  change={updateKanbanVisibility}
+                />
+              }
+              update={updateKanbanPreferences}
+              toggle={toggleKanban}
+              focus={revealKanban}
+              manage={() => setStatusManagerOpen(true)}
+              appearance={() => setKanbanAppearanceOpen(true)}
+              manageDisabled={
+                !workflowEditable || workflowBusy || !!kanbanViewError
+              }
+              reason={workflowReason}
+            />
+          )}
         </PluginControlPanel>
       )}
       {kanbanAppearanceOpen && (
@@ -8574,6 +8714,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           canvasId={activeCanvas}
         />
       )}
+      {(gameUi.error || gameUi.saving) && (
+        <aside className="drawing-save-alert floating-surface" role="status">
+          {gameUi.error || '게임 UI 저장 중…'}
+          {gameUi.error && (
+            <button onClick={gameUi.retry}>게임 UI 저장 재시도</button>
+          )}
+        </aside>
+      )}
       {(drawing.error || drawing.recovery || drawing.saving) && (
         <aside className="drawing-save-alert floating-surface" role="status">
           {drawing.error ||
@@ -9575,7 +9723,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     ? n.data.section.title
                     : n.data.kind === 'kanban'
                       ? '칸반 보드'
-                      : (n.data.preview.title ?? 'HTML 결과');
+                      : n.data.kind === 'game-ui'
+                        ? n.data.frame.title
+                        : (n.data.preview.title ?? 'HTML 결과');
             return (
               <button
                 key={id}

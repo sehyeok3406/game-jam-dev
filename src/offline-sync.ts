@@ -2,6 +2,12 @@ import { assertWorkflowReferences } from './document-statuses-storage.ts';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { mergeProperties, changedGroups } from './sync-properties.ts';
 import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
+import {
+  isGameUiPath,
+  mergeGameUi,
+  snapshotGameUi,
+  gameUiPath,
+} from './game-ui-model.ts';
 import { createHash } from 'node:crypto';
 import matter from './markdown.ts';
 import {
@@ -26,6 +32,13 @@ function mergeFile(
   local: string | undefined,
   server: string | undefined,
 ) {
+  if (isGameUiPath(path)) {
+    try {
+      return { value: mergeGameUi(base, local, server) };
+    } catch {
+      return { conflict: true, value: local };
+    }
+  }
   if (isDrawingPath(path)) {
     try {
       return { value: mergeDrawingFile(path, base, local, server) };
@@ -111,6 +124,8 @@ function relatedPaths(initial: string[], snapshots: Snapshot[]) {
   const paths = new Set(initial);
   const groups: string[][] = [];
   for (const files of snapshots) {
+    for (const f of snapshotGameUi(files))
+      if (f.descriptionPath) groups.push([gameUiPath(f.id), f.descriptionPath]);
     if (files[DOCUMENT_STATUSES_PATH])
       groups.push([
         DOCUMENT_STATUSES_PATH,

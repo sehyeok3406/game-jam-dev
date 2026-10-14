@@ -1,5 +1,6 @@
 import matter from './markdown.ts';
 import { isDrawingPath } from './drawing-model.ts';
+import { isGameUiPath } from './game-ui-model.ts';
 import type { Snapshot } from './project-store';
 import { isPreviewPath } from './preview-output.ts';
 import { CanvasError } from './app-errors.ts';
@@ -30,7 +31,9 @@ export function validateArtifacts(
   after: Snapshot,
   outputs: string[],
 ) {
-  for (const path of Object.keys({ ...before, ...after }).filter(isDrawingPath))
+  for (const path of Object.keys({ ...before, ...after }).filter(
+    (p) => isDrawingPath(p) || isGameUiPath(p),
+  ))
     if (before[path] !== after[path])
       throw new CanvasError(
         'GC-AI-004',

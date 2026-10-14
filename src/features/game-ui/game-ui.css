@@ -1,0 +1,137 @@
+.game-ui-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 5px 20px #0002;
+  color: #0f172a;
+}
+.game-ui-drag-handle {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  background: var(--surface-solid);
+  color: var(--text);
+  border-radius: 10px 10px 0 0;
+  cursor: grab;
+}
+.game-ui-drag-handle strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.game-ui-drag-handle small {
+  font-size: 11px;
+}
+.game-ui-drag-handle button {
+  font-size: 11px;
+  padding: 5px 6px;
+}
+.game-ui-stage {
+  display: block;
+  width: 100%;
+  touch-action: none;
+  outline: none;
+  border-radius: 0 0 10px 10px;
+}
+.game-ui-inspector {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 12px);
+  width: 280px;
+  max-height: 700px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--surface-solid);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px #0003;
+  z-index: 20;
+}
+.game-ui-inspector header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.game-ui-inspector fieldset,
+.game-ui-controls fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.game-ui-inspector label,
+.game-ui-controls label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.game-ui-inspector input,
+.game-ui-inspector select {
+  max-width: 160px;
+  width: 160px;
+  min-height: 30px;
+}
+.game-ui-inspector input[type='color'] {
+  width: 50px;
+}
+.game-ui-inspector details {
+  margin: 10px 0;
+}
+.game-ui-inspector details button,
+.game-ui-controls > button {
+  display: block;
+  margin: 5px 0;
+  width: 100%;
+  text-align: left;
+}
+.game-ui-inspector button.active {
+  border-color: #2563eb;
+}
+.game-ui-inspector p,
+.game-ui-controls p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.game-ui-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+.game-ui-actions button {
+  font-size: 11px;
+  padding: 6px;
+}
+.game-ui-controls input,
+.game-ui-controls select {
+  max-width: 65%;
+  min-height: 32px;
+}
+.game-ui-delete {
+  color: #dc2626;
+  margin-top: 16px;
+}
+.game-ui-error {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 8px;
+  font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .game-ui-inspector {
+    left: auto;
+    right: 0;
+    top: 42px;
+    max-height: 420px;
+  }
+}

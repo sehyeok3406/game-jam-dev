@@ -3,6 +3,8 @@ import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { KANBAN_VIEW_PATH } from './features/kanban/view.ts';
 import { CANVAS_SHEETS_PATH } from './canvas-sheets.ts';
 import { DRAWING_DIRECTORY, isDrawingPath } from './drawing-model.ts';
+import { isGameUiPath } from './game-ui-model.ts';
+import { GAME_UI_DIRECTORY } from './game-ui-types.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -87,6 +89,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       relative === DOCUMENT_STATUSES_PATH ||
       relative === KANBAN_VIEW_PATH ||
       isDrawingPath(relative) ||
+      isGameUiPath(relative) ||
       isAssetPath(relative)
     ) {
       snapshot[relative] = await readSnapshotFile(absolute, relative);
@@ -103,6 +106,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     DOCUMENT_STATUSES_PATH,
     KANBAN_VIEW_PATH,
     DRAWING_DIRECTORY,
+    GAME_UI_DIRECTORY,
     'output',
     'assets/images',
   ])

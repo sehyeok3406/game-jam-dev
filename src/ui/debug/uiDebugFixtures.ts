@@ -1,4 +1,5 @@
 import { defaultStatuses } from '../../document-statuses.ts';
+import { newGameUiItem } from '../../game-ui-model.ts';
 import { defaultKanbanView } from '../../features/kanban/view.ts';
 import type {
   CanvasDocument,
@@ -439,6 +440,35 @@ export function createUiPreviewApi(
     }),
     listDocuments: async () => structuredClone(documents),
     listDrawings: async () => structuredClone(drawings),
+    listGameUi: async () =>
+      ['game-ui-frame', 'game-ui-inspector'].includes(selection.id)
+        ? [
+            {
+              version: 1,
+              id: '00000000-0000-4000-8000-000000000010',
+              generation: '00000000-0000-4000-8000-000000000011',
+              canvasId: 'default',
+              title: '전투 HUD',
+              x: 40,
+              y: 80,
+              width: 640,
+              viewportWidth: 1280,
+              viewportHeight: 720,
+              descriptionPath: null,
+              items:
+                selection.state === 'empty'
+                  ? []
+                  : [
+                      newGameUiItem('health', () => crypto.randomUUID()),
+                      {
+                        ...newGameUiItem('skills', () => crypto.randomUUID()),
+                        x: 400,
+                        y: 500,
+                      },
+                    ],
+            },
+          ]
+        : [],
     getDrawingChanges: async () => ({
       changed: structuredClone(drawings),
       removed: [],

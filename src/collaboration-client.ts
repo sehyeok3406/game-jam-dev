@@ -521,6 +521,7 @@ export class CollaborationClient {
         syncClientVersion: 1,
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
+        gameUiVersion: 1,
         documentStatusesVersion: 1,
         filePropertiesVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
@@ -805,6 +806,21 @@ export class CollaborationClient {
         this.state.message ?? '삭제된 공동 프로젝트는 편집할 수 없습니다.',
       );
     return this.serial(async () => {
+      if (channel === 'game-ui:apply' && this.state.gameUiVersion !== 1)
+        throw new Error(
+          '게임 UI 플러그인을 사용하려면 협업 서버를 업데이트해주세요.',
+        );
+      if (
+        channel === 'game-ui:apply' &&
+        ['move', 'delete', 'describe'].includes(
+          (input as { action: string }).action,
+        ) &&
+        (this.offline || !this.state.connected || this.state.pendingChanges)
+      )
+        throw new Error(
+          '게임 화면 이동·삭제와 설명 문서 생성은 온라인 동기화 완료 후 진행해주세요.',
+        );
+
       if (
         (channel === 'files:set-status-property' ||
           channel.startsWith('kanban:')) &&
@@ -1042,7 +1058,7 @@ export class CollaborationClient {
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {
         id:
-          channel === 'drawings:apply'
+          channel === 'drawings:apply' || channel === 'game-ui:apply'
             ? ((input as { requestId?: string }).requestId ?? randomUUID())
             : randomUUID(),
         ...(this.state.propertySync
@@ -1148,7 +1164,7 @@ export class CollaborationClient {
           // A confirmed drawing request may be replayed after a lost IPC reply.
           // Let the server resolve its stable operation ID before validating again.
           if (
-            channel !== 'drawings:apply' ||
+            (channel !== 'drawings:apply' && channel !== 'game-ui:apply') ||
             !(input as { requestId?: string }).requestId
           )
             throw error;

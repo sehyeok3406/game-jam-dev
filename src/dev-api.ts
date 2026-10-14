@@ -1,3 +1,10 @@
+import {
+  applyGameUi,
+  snapshotGameUi,
+  mergeGameUi,
+  isGameUiPath,
+} from './game-ui-model';
+import matter from './game-ui-markdown';
 import { defaultStatuses, validateStatuses } from './document-statuses';
 import { statusPropertyApplied } from './file-properties';
 import { readKanbanView, validateKanbanView } from './features/kanban/view';
@@ -18,6 +25,7 @@ import {
   serializeDrawing,
 } from './drawing-model';
 let drawingFiles: Record<string, string> = {};
+let gameUiFiles: Record<string, string> = {};
 import type {
   CanvasDocument,
   CanvasSection,
@@ -183,6 +191,7 @@ const previewWindows = new Map<string, PreviewWindowState>();
 const histories: HistoryEntry[] = [];
 const devAuthorship: Record<string, FileAuthorship> = {};
 type DevState = {
+  gameUiFiles: Record<string, string>;
   drawingFiles: Record<string, string>;
   sheetsRaw: string | null;
   documents: CanvasDocument[];
@@ -191,10 +200,18 @@ type DevState = {
 };
 const historyStates = new Map<string, { before: DevState; after: DevState }>();
 const devSnapshot = (): DevState =>
-  structuredClone({ documents, sections, previews, sheetsRaw, drawingFiles });
+  structuredClone({
+    documents,
+    sections,
+    previews,
+    sheetsRaw,
+    drawingFiles,
+    gameUiFiles,
+  });
 const devFiles = (state: DevState): Record<string, string> =>
   Object.fromEntries([
     ...Object.entries(state.drawingFiles),
+    ...Object.entries(state.gameUiFiles),
     ...(state.sheetsRaw ? [[CANVAS_SHEETS_PATH, state.sheetsRaw]] : []),
     ...state.documents.map((item) => [
       item.relativePath,
@@ -335,7 +352,12 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     );
     assertAiFilesUnlocked(activeDevRun?.fileLock, touched);
     if (
-      touched.some((key) => !isDrawingPath(key) && current[key] !== left[key])
+      touched.some(
+        (key) =>
+          !isDrawingPath(key) &&
+          !isGameUiPath(key) &&
+          current[key] !== left[key],
+      )
     )
       throw new Error('이후 변경과 충돌하여 중단했습니다.');
     const before = devSnapshot();
@@ -352,6 +374,21 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       );
       if (raw === undefined) delete drawingFiles[p];
       else drawingFiles[p] = raw;
+    }
+    for (const p of new Set([
+      ...Object.keys(expected.gameUiFiles),
+      ...Object.keys(desired.gameUiFiles),
+    ])) {
+      const raw = isGameUiPath(p)
+        ? mergeGameUi(
+            expected.gameUiFiles[p],
+            desired.gameUiFiles[p],
+            gameUiFiles[p],
+            true,
+          )
+        : desired.gameUiFiles[p];
+      if (raw === undefined) delete gameUiFiles[p];
+      else gameUiFiles[p] = raw;
     }
     if (touched.includes(CANVAS_SHEETS_PATH)) sheetsRaw = desired.sheetsRaw;
     previews = [
@@ -1160,6 +1197,62 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       } finally {
         devBatchActive = false;
       }
+    },
+    listGameUi: async () => snapshotGameUi(gameUiFiles),
+    exportGameUiPng: async () => true,
+    applyGameUiCommand: async (input) => {
+      if (collab.active && collab.role === 'viewer')
+        throw new Error('보기 권한입니다.');
+      const before = devSnapshot();
+      let files: Record<string, string> = {
+        ...gameUiFiles,
+        ...(sheetsRaw ? { [CANVAS_SHEETS_PATH]: sheetsRaw } : {}),
+      };
+      for (const d of documents)
+        if (files[d.relativePath] && d.relativePath.startsWith('docs/ui/')) {
+          const meta = matter(files[d.relativePath]).data;
+          files[d.relativePath] = matter.stringify(d.body, {
+            ...meta,
+            title: d.title,
+            x: d.x,
+            y: d.y,
+            width: d.width,
+            height: d.height,
+          });
+        }
+      files = applyGameUi(files, input);
+      gameUiFiles = Object.fromEntries(
+        Object.entries(files).filter(
+          ([p]) => isGameUiPath(p) || p.startsWith('docs/ui/'),
+        ),
+      );
+      for (const [p, raw] of Object.entries(gameUiFiles))
+        if (p.endsWith('.md')) {
+          const m = matter(raw),
+            data = m.data;
+          const doc: CanvasDocument = {
+            id: data.id,
+            title: data.title,
+            type: 'reference',
+            status: 'draft',
+            relativePath: p,
+            canvasId: data.canvas_id,
+            body: m.content,
+            x: data.x,
+            y: data.y,
+            width: data.width,
+            height: data.height,
+            collapsed: false,
+            sources: [],
+            modifiedAt: Date.now(),
+          };
+          documents = [...documents.filter((d) => d.relativePath !== p), doc];
+        }
+      recordDevHistory(before, devSnapshot(), '게임 UI 편집', 'user');
+      const entry = histories[0];
+      if (entry) journal.push({ id: entry.id, label: entry.label });
+      notify();
+      return snapshotGameUi(gameUiFiles);
     },
     listDrawings: async () => snapshotDrawings(drawingFiles),
     getDrawingChanges: async (known) => {

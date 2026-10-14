@@ -24,6 +24,8 @@ import {
   assertCanvas,
 } from './canvas-sheets';
 import { randomUUID, createHash } from 'node:crypto';
+import { snapshotGameUi, isGameUiPath, applyGameUi } from './game-ui-model.ts';
+import { GAME_UI_DIRECTORY, type GameUiCommand } from './game-ui-types.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import {
@@ -737,7 +739,9 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
       context?.contextId ?? context?.clipboardContextId,
     );
   if (
-    (channel === 'drawings:apply' || channel === 'canvas:batch') &&
+    (channel === 'drawings:apply' ||
+      channel === 'game-ui:apply' ||
+      channel === 'canvas:batch') &&
     (args[0] as DrawingCommand)?.scope !== documentSaveScope()
   )
     throw new Error(
@@ -1332,6 +1336,8 @@ const startWatcher = async () => {
       )
         return false;
       if (relative === DRAWING_DIRECTORY || isDrawingPath(relative))
+        return false;
+      if (relative === GAME_UI_DIRECTORY || isGameUiPath(relative))
         return false;
       return (
         /(^|\/)\./.test(relative) ||
@@ -2135,6 +2141,7 @@ const mutationLabels: Record<string, string> = {
   'documents:set-workflow': '문서 진행 상태 변경',
   'document-statuses:save': '문서 상태 설정 변경',
   'drawings:apply': '도형 · 그림 편집',
+  'game-ui:apply': '게임 UI 편집',
   'canvas:batch': '선택 항목 함께 편집',
   'canvases:change': '캔버스 구성 변경',
   'results:move': 'HTML 결과물 폴더 이동',
@@ -2337,6 +2344,8 @@ const handle = (
             }
             if (channel === 'drawings:apply')
               return snapshotDrawings(client.files);
+            if (channel === 'game-ui:apply')
+              return snapshotGameUi(client.files);
             return result;
           });
         if (channel === 'edit:undo' || channel === 'edit:redo')
@@ -2354,6 +2363,7 @@ const handle = (
             raw: client.files[CANVAS_SHEETS_PATH] ?? null,
           };
         if (channel === 'drawings:list') return snapshotDrawings(client.files);
+        if (channel === 'game-ui:list') return snapshotGameUi(client.files);
         if (channel === 'drawings:changes')
           return drawingChanges(client.files, args[0]);
         if (channel === 'canvas:changes') {
@@ -2933,6 +2943,60 @@ const registerIpc = () => {
     drawingChanges(await captureProject(requireWorkspace()), known),
   );
   const completedDrawingRequests = new Set<string>();
+  handle('game-ui:list', async () =>
+    snapshotGameUi(await captureProject(requireWorkspace())),
+  );
+  const completedGameUiRequests = new Set<string>();
+  handle('game-ui:apply', async (_event, input: GameUiCommand) => {
+    const root = requireWorkspace(),
+      before = await captureProject(root);
+    const key = `${input.scope}:${input.requestId}`;
+    if (input.requestId && completedGameUiRequests.has(key))
+      return snapshotGameUi(before);
+    const after = applyGameUi(before, input);
+    await applyChanges(
+      root,
+      before,
+      Object.fromEntries(
+        Object.keys({ ...before, ...after })
+          .filter((p) => before[p] !== after[p])
+          .map((p) => [p, after[p] ?? null]),
+      ),
+    );
+    if (input.requestId) {
+      completedGameUiRequests.add(key);
+      if (completedGameUiRequests.size > 1000)
+        completedGameUiRequests.delete(
+          completedGameUiRequests.values().next().value!,
+        );
+    }
+    return snapshotGameUi(after);
+  });
+  handle(
+    'game-ui:export-png',
+    async (event, input: { scope: string; name: string; data: string }) => {
+      if (
+        !isUpdateSender(event) ||
+        input.scope !== documentSaveScope() ||
+        typeof input.name !== 'string' ||
+        !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(input.data) ||
+        input.data.length > 32_000_000
+      )
+        throw new Error('내보낼 게임 UI 이미지를 확인해주세요.');
+      const bytes = Buffer.from(input.data.split(',')[1], 'base64'),
+        image = nativeImage.createFromBuffer(bytes),
+        size = image.getSize();
+      if (image.isEmpty() || size.width * size.height > 16_777_216)
+        throw new Error('게임 UI 이미지를 읽을 수 없습니다.');
+      const result = await dialog.showSaveDialog(mainWindow!, {
+        defaultPath: input.name.replace(/[<>:"/\\|?*]/g, '_') + '.png',
+        filters: [{ name: 'PNG', extensions: ['png'] }],
+      });
+      if (result.canceled || !result.filePath) return false;
+      await fs.writeFile(result.filePath, bytes);
+      return true;
+    },
+  );
   handle('drawings:apply', async (_event, input: DrawingCommand) => {
     const root = requireWorkspace(),
       before = await captureProject(root);

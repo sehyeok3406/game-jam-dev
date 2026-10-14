@@ -23,6 +23,7 @@ async function run() {
     'canvas:changes': api.getCanvasChanges,
     'canvases:list': api.getCanvasSheets,
     'documents:list': api.listDocuments,
+    'game-ui:list': async () => [],
     'documents:get': api.getDocument,
     'drawings:changes': async () => ({
       changed: [],

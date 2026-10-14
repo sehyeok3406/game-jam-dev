@@ -2324,6 +2324,90 @@ try {
     () => handlers.get('projects:trash-list')!({ sender: {}, senderFrame: {} }),
     /홈 화면/,
   );
+  const gameUiScope = (await call('workspace:get')).saveScope;
+  const frame = {
+    version: 1,
+    id: crypto.randomUUID(),
+    generation: crypto.randomUUID(),
+    canvasId: 'default',
+    title: '게임 UI IPC',
+    x: 100,
+    y: 120,
+    width: 720,
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    items: [],
+    descriptionPath: null,
+  };
+  const frameCommand = (action: string, rest: object = {}) => ({
+    scope: gameUiScope,
+    id: frame.id,
+    generation: frame.generation,
+    action,
+    ...rest,
+  });
+  await assert.rejects(
+    call('game-ui:apply', {
+      ...frameCommand('create', { frame }),
+      scope: 'old-project',
+    }),
+    /프로젝트.*변경/,
+  );
+  await call('game-ui:apply', frameCommand('create', { frame }));
+  assert.equal((await call('game-ui:list')).length, 1);
+  assert.equal((await call('game-ui:list'))[0].descriptionPath, null);
+  const { newGameUiItem } = await import('../src/game-ui-model');
+  const health = newGameUiItem('health', () => crypto.randomUUID());
+  await call('game-ui:apply', frameCommand('add', { items: [health] }));
+  await call('game-ui:apply', frameCommand('describe'));
+  const descriptionPath = `docs/ui/${frame.id}.md`,
+    doc = await call('documents:get', descriptionPath);
+  await call('documents:save', {
+    relativePath: descriptionPath,
+    title: doc.title,
+    body: doc.body.replace(
+      '현재 체력과 최대 체력을 표시합니다.',
+      '직접 작성한 한글 설명',
+    ),
+    queueScope: gameUiScope,
+  });
+  await call(
+    'game-ui:apply',
+    frameCommand('patch', {
+      patches: [
+        {
+          id: health.id,
+          generation: health.generation,
+          changes: { name: '플레이어 체력' },
+          expected: { name: health.name },
+        },
+      ],
+    }),
+  );
+  const renamed = await call('documents:get', descriptionPath);
+  assert.match(renamed.body, /플레이어 체력.*직접 작성한 한글 설명/);
+  await call(
+    'game-ui:apply',
+    frameCommand('frame', {
+      changes: { x: 900, y: 800 },
+      expected: { x: 100, y: 120 },
+    }),
+  );
+  await call('edit:undo');
+  assert.equal((await call('game-ui:list'))[0].x, 100);
+  await call('edit:redo');
+  assert.equal((await call('game-ui:list'))[0].x, 900);
+  assert.ok(
+    await fs.stat(
+      path.join(
+        (await call('workspace:get')).root,
+        `.canvas/game-ui/${frame.id}.json`,
+      ),
+    ),
+  );
+  console.log(
+    'PASS: game UI production IPC validates scopes, saves standalone frames, preserves manual Markdown descriptions, and supports on-disk Undo/Redo',
+  );
   console.log('PASS: project trash IPC rejects foreign windows and frames');
 } finally {
   if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
