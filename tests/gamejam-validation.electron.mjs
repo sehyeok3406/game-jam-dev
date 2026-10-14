@@ -163,7 +163,7 @@ async function run() {
     assert.equal(await visiblePages(), 1);
     assert(
       await js(
-        `document.querySelector('[data-gamejam-page="4"] .ai-step-heading').textContent.includes('미리보기')`,
+        `document.querySelector('[data-gamejam-page="4"] .ai-step-heading').textContent.includes('모듈·기능 예시')`,
       ),
     );
     assert(
@@ -175,6 +175,24 @@ async function run() {
       await js('document.querySelectorAll(".game-feature-category").length'),
       32,
     );
+    // A real module is explicit and separate from browsing-only examples.
+    assert(await js('!!document.querySelector("#ai-multiplayer")'));
+    await js('document.querySelector("#ai-multiplayer button").click()');
+    await wait('!!document.querySelector("#ai-multiplayer select")');
+    await js(
+      `{const select=document.querySelector('#ai-multiplayer select');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'4');select.dispatchEvent(new Event('change',{bubbles:true}));}`,
+    );
+    await next();
+    await wait(
+      'document.querySelector(".gamejam-review").textContent.includes("최대 4명")',
+    );
+    await goTo(4);
+    assert.equal(
+      await js('document.querySelector("#ai-multiplayer select").value'),
+      '4',
+    );
+    await js('document.querySelector("#ai-multiplayer button").click()');
+    await wait('!document.querySelector("#ai-multiplayer select")');
     await js(
       'document.querySelector(".game-feature-category summary").click()',
     );

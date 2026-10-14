@@ -1,4 +1,5 @@
 import matter from './markdown.ts';
+import { multiplayerInstructions } from './multiplayer/generation.ts';
 import { ASSET_RULE } from './file-assets.ts';
 import { previewVersion } from './preview-output.ts';
 import {
@@ -101,7 +102,7 @@ export function createTaskSpecification(
     ASSET_RULE.trim(),
   ].join('\n');
   return matter.stringify(
-    `# ${title}\n\n## 입력 문서\n\n${input.inputPaths.map((file) => `- \`${file}\``).join('\n')}\n\n## 사용자 작업 지시\n\n${instructions}\n\n## 고정 보호 규칙\n\n${protectedRules}\n\n## 출력\n\n${outputs.map((file) => `- \`${file}\``).join('\n')}\n`,
+    `# ${title}\n\n## 입력 문서\n\n${input.inputPaths.map((file) => `- \`${file}\``).join('\n')}\n\n## 사용자 작업 지시\n\n${instructions}\n\n## 고정 보호 규칙\n\n${protectedRules}${organize ? '' : multiplayerInstructions(input.multiplayer)}\n\n## 출력\n\n${outputs.map((file) => `- \`${file}\``).join('\n')}\n`,
     {
       id,
       title,
@@ -116,6 +117,9 @@ export function createTaskSpecification(
       expected_outputs: outputs,
       sources: [],
       instruction_template_version: 1,
+      ...(!organize && input.multiplayer !== undefined
+        ? { multiplayer: input.multiplayer }
+        : {}),
       ...(input.requestSnapshot
         ? { gamejam_request: JSON.parse(JSON.stringify(input.requestSnapshot)) }
         : {}),

@@ -143,10 +143,26 @@ export function GamejamReview({
             </details>
           ))}
       </section>
+      {request.multiplayer && (
+        <section>
+          <strong>이번 구현에 포함</strong>
+          <p>
+            프로젝트 온라인 멀티플레이 · 최대 {request.multiplayer.maxPlayers}명
+            · 혼자 연습 지원
+            {!request.implement ? ' · HTML 구현 선택 시 적용' : ''}
+          </p>
+          <button type="button" disabled={busy} onClick={() => navigate(4)}>
+            모듈 설정 수정
+          </button>
+        </section>
+      )}
+      {request.multiplayer === null && (
+        <p>기존 멀티 모듈 제거 · 다음 HTML 결과에 반영</p>
+      )}
       <p className="gamejam-preview-notice">
         <Eye size={15} aria-hidden="true" />
-        기능 라이브러리는 미리보기입니다. 선택한 기능은 이번 작업에 반영되지
-        않습니다.
+        기능 예시의 참고 선택은 이번 작업에 반영되지 않습니다. 적용 모듈은 위
+        목록에서 확인하세요.
       </p>
     </div>
   );

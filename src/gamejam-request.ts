@@ -5,6 +5,7 @@ import type { DocumentResultChoice } from './document-output.ts';
 import type { GamejamSavedRequest } from './gamejam-history.ts';
 
 export type GamejamRequest = {
+  multiplayer?: import('./multiplayer/types').MultiplayerSettings | null;
   canvasId?: string;
   sourceMode?: 'html' | 'html-compose';
   organize: boolean;
@@ -52,9 +53,11 @@ export function gamejamTaskInput(
     resultName: request.resultName,
     documentResult: request.organize ? request.documentResult : undefined,
     htmlResult: !request.organize ? request.htmlResult : undefined,
+    multiplayer: request.implement ? request.multiplayer : undefined,
     ...(request.organize && request.implement
       ? {
           thenImplement: {
+            multiplayer: request.multiplayer,
             htmlResult: request.htmlResult,
             resultName: request.resultName,
             instructions: taskInstructions(

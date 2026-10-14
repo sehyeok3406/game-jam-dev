@@ -11,6 +11,8 @@ export type GamejamPage = (typeof GAMEJAM_PAGES)[number]['number'];
 
 export const gamejamFieldPage = (field: GamejamField): GamejamPage => {
   switch (field) {
+    case 'multiplayer':
+      return 4;
     case 'steps':
       return 1;
     case 'name':

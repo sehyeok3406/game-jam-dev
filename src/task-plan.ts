@@ -1,4 +1,8 @@
 import { assertCanvas } from './canvas-sheets.ts';
+import {
+  multiplayerSettings,
+  readMultiplayerManifest,
+} from './multiplayer/contract.ts';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { reservePaths, resolveDocumentOutputs } from './document-output.ts';
@@ -45,6 +49,35 @@ export function createTaskPlan(
   id: string,
   files: Snapshot,
 ) {
+  const htmlChoice = input.thenImplement ?? input;
+  const baseline =
+    htmlChoice.htmlResult?.basePath ??
+    (htmlChoice.htmlResult?.mode !== 'new' ? 'output/index.html' : undefined);
+  const requestedMultiplayer =
+    htmlChoice.multiplayer !== undefined
+      ? htmlChoice.multiplayer
+      : input.multiplayer;
+  const inheritedMultiplayer =
+    requestedMultiplayer === undefined && baseline && files[baseline]
+      ? readMultiplayerManifest(files[baseline])
+      : undefined;
+  const resolvedMultiplayer = multiplayerSettings(
+    requestedMultiplayer !== undefined
+      ? requestedMultiplayer
+      : inheritedMultiplayer,
+  );
+  input = {
+    ...input,
+    multiplayer: resolvedMultiplayer,
+    ...(input.thenImplement
+      ? {
+          thenImplement: {
+            ...input.thenImplement,
+            multiplayer: resolvedMultiplayer,
+          },
+        }
+      : {}),
+  };
   input = { ...input, requestSnapshot: gamejamSnapshotFromInput(input) };
   if (
     input.sourceMode !== undefined &&
@@ -64,6 +97,16 @@ export function createTaskPlan(
           describeHtmlInput(files, descriptor.path),
         )
       : undefined;
+  if (
+    htmlInputs &&
+    htmlInputs.length > 1 &&
+    !htmlChoice.htmlResult?.basePath &&
+    requestedMultiplayer === undefined &&
+    htmlInputs.some((source) => readMultiplayerManifest(files[source.path]))
+  )
+    throw new Error(
+      '[GC-MP-001] 멀티 게임을 통합할 때는 기능 라이브러리에서 온라인 모듈 추가 또는 개인 게임을 선택해주세요.',
+    );
   if (source) {
     files = { ...files, ...source.additions };
     input = {
@@ -237,6 +280,7 @@ export function createTaskPlan(
   const second = createTaskSpecification(
     {
       kind: 'implement',
+      multiplayer: resolvedMultiplayer,
       canvasId: input.canvasId,
       inputPaths: [
         ...new Set([
@@ -274,6 +318,9 @@ export function createTaskPlan(
       expected_outputs: [...docOutputs, htmlTarget],
       html_output_mode: secondData.html_output_mode,
       base_html: secondData.base_html,
+      ...(secondData.multiplayer !== undefined
+        ? { multiplayer: secondData.multiplayer }
+        : {}),
       gamejam_workflow_version: 1,
       workflow_steps: [first, second],
     },

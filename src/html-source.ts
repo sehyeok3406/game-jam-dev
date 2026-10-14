@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { htmlReferences } from './html-references.ts';
 import matter from './markdown.ts';
+import {
+  multiplayerSettings,
+  validateMultiplayerHtml,
+} from './multiplayer/contract.ts';
 import { CanvasError } from './app-errors.ts';
 import { inspectHtml } from './html-document.ts';
 import { isPreviewPath, previewLabel } from './preview-output.ts';
@@ -205,6 +209,12 @@ export function validateHtmlAnalysis(
   outputs?: string[],
 ) {
   const data = matter(task).data;
+  if (outputs && data.multiplayer !== undefined)
+    for (const relative of outputs.filter((path) => path.endsWith('.html')))
+      validateMultiplayerHtml(
+        files[relative] ?? '',
+        multiplayerSettings(data.multiplayer),
+      );
   validateHtmlInputs(task, files, outputs);
   if (data.source_mode !== 'html') return;
   const source = data.html_analysis_source;

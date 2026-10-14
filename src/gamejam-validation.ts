@@ -1,4 +1,5 @@
 import type { GamejamRequest } from './gamejam-request';
+import { multiplayerSettings } from './multiplayer/contract.ts';
 import type {
   AiProviderId,
   CollaborationState,
@@ -10,6 +11,7 @@ import { documentTemplates } from './document-format.ts';
 
 export type GamejamField =
   | 'steps'
+  | 'multiplayer'
   | 'name'
   | 'organize'
   | 'implement'
@@ -29,6 +31,7 @@ export type GamejamValidationContext = {
   locked: boolean;
   updateRestarting: boolean;
   availableInputs?: string[];
+  multiplayerChoiceRequired?: boolean;
 };
 
 /** The execution guard and visible feedback use the same conditions. */
@@ -41,6 +44,30 @@ export function gamejamIssues(
     issues.push({ field, message });
   if (!request.organize && !request.implement)
     add('steps', '문서 정리 또는 HTML 구현을 하나 이상 선택해주세요.');
+  if (
+    request.implement &&
+    context.multiplayerChoiceRequired &&
+    request.multiplayer === undefined
+  )
+    add(
+      'multiplayer',
+      '멀티 게임을 통합할 때는 온라인 모듈 추가 또는 개인 게임을 선택해주세요.',
+    );
+  try {
+    multiplayerSettings(request.multiplayer);
+  } catch (error) {
+    add('multiplayer', (error as Error).message);
+  }
+  if (
+    request.implement &&
+    request.multiplayer !== undefined &&
+    context.collaboration.active &&
+    context.collaboration.multiplayerVersion !== 1
+  )
+    add(
+      'multiplayer',
+      '온라인 멀티 모듈을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+    );
   if (!request.inputPaths.length)
     add('steps', '입력 자료를 하나 이상 선택해주세요.');
   if (context.availableInputs) {
@@ -229,6 +256,7 @@ export function gamejamIssues(
 export const gamejamFieldId = (field: GamejamField) =>
   ({
     steps: 'ai-request-steps',
+    multiplayer: 'ai-multiplayer',
     name: 'ai-result-name',
     organize: 'ai-task-instructions-organize',
     implement: 'ai-task-instructions-implement',

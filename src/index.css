@@ -6137,3 +6137,48 @@ kbd {
     transition: none;
   }
 }
+.multiplayer-launcher {
+  position: relative;
+}
+.multiplayer-lobby {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 30;
+  width: 380px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #64748b;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #172033;
+  box-shadow: 0 12px 32px #0004;
+  font: 13px/1.5 system-ui;
+}
+.multiplayer-lobby p {
+  white-space: normal;
+}
+.multiplayer-lobby li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+.multiplayer-lobby li span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.multiplayer-module {
+  padding: 16px;
+  border: 1px solid #64748b;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+.multiplayer-module h4 {
+  margin: 8px 0;
+}
+.multiplayer-module select {
+  margin: 0 8px;
+  padding: 6px;
+}

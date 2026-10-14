@@ -1,4 +1,5 @@
 import matter from './markdown.ts';
+import { multiplayerSettings } from './multiplayer/contract.ts';
 import { RESULT_CATEGORIES } from './preview-output.ts';
 import {
   DEFAULT_TASK_INSTRUCTIONS,
@@ -41,6 +42,11 @@ export function readSavedRequest(
   )
     return;
   const request = value.request;
+  try {
+    if (object(request)) multiplayerSettings(request.multiplayer);
+  } catch {
+    return;
+  }
   if (
     !object(request) ||
     typeof request.organize !== 'boolean' ||
@@ -108,6 +114,10 @@ export function gamejamSnapshotFromInput(
         x: input.x,
         y: input.y,
         resultName: input.resultName ?? '',
+        multiplayer:
+          input.thenImplement?.multiplayer !== undefined
+            ? input.thenImplement.multiplayer
+            : input.multiplayer,
         documentResult: input.documentResult,
         htmlResult: input.thenImplement?.htmlResult ?? input.htmlResult,
         instructions: {
@@ -178,6 +188,7 @@ export function requestSnapshotFromTask(
       x: data.x ?? 0,
       y: data.y ?? 0,
       resultName: data.result_name ?? '',
+      multiplayer: html.data.multiplayer,
       instructions: {
         ...DEFAULT_TASK_INSTRUCTIONS,
         [organize ? 'organize' : 'implement']: primary,

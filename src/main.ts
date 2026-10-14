@@ -73,6 +73,7 @@ import {
 } from './collaboration-client';
 import { createCollaborationServer } from './collaboration-server';
 import { WebViewerService } from './web-viewer-service';
+import { registerMultiplayerWindows } from './multiplayer/window-manager';
 import { startWebViewerSync } from './web-viewer-sync';
 import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
@@ -2801,6 +2802,16 @@ const applyImportedFiles = async (
 };
 
 const registerIpc = () => {
+  registerMultiplayerWindows({
+    preload: path.join(__dirname, 'multiplayer-player-preload.cjs'),
+    credentials: () =>
+      mainWindow && !mainWindow.isDestroyed()
+        ? collaboration?.credentials
+        : undefined,
+    memberId: () => collaboration?.state.memberId,
+    isMainSender: isUpdateSender,
+    currentHtml: (relative) => collaboration?.files[relative],
+  });
   handle(
     'clipboard:canvas-copy',
     async (event, input: CanvasClipboardCopyInput) => {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Copy, LoaderCircle, Users, X } from 'lucide-react';
 import type { CollaborationState, TestUsersState } from '../shared';
 import { previewState, uiPreview } from './debug/uiDebugPreviewState';
+import { MultiplayerLobby } from './MultiplayerLobby';
 
 export const ROLE_NAMES = { admin: '관리자', editor: '편집자', viewer: '뷰어' };
 
@@ -178,6 +179,7 @@ export function CollaborationPanel({
         )}
         {state.active ? (
           <>
+            {state.multiplayerVersion === 1 && <MultiplayerLobby projectOnly />}
             <div
               className={`collaboration-connection ${state.connected ? '' : 'is-offline'}`}
             >

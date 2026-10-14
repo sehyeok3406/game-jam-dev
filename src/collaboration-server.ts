@@ -6,6 +6,7 @@ import {
   assertWorkflowReferences,
 } from './document-workflow.ts';
 import { SyncStore } from './sync-store.ts';
+import { attachMultiplayerServer } from './multiplayer/server.ts';
 import {
   TRASH_RETENTION,
   moveChecked,
@@ -234,6 +235,7 @@ export async function createCollaborationServer(options: Options) {
   const root = path.resolve(options.dataDirectory);
   await fs.mkdir(root, { recursive: true });
   const projects = new Map<string, Project>();
+  let multiplayer: ReturnType<typeof attachMultiplayerServer> | undefined;
   const lifecycleMarkers = new Map<
     string,
     { status: string; version: number }
@@ -330,6 +332,7 @@ export async function createCollaborationServer(options: Options) {
         project.lifecycle.version,
       );
     projects.set(project.id, project);
+    multiplayer?.recheck();
     if (project.lifecycle && project.lifecycle.status !== 'active') {
       dirtyCheckpoints.delete(project.id);
       announce(project.id);
@@ -458,6 +461,7 @@ export async function createCollaborationServer(options: Options) {
       propertySync: true,
       deltaSync: true,
       eventStream: true,
+      multiplayerVersion: 1,
       offlineSync: true,
       projectRename: true,
       taskInstructionsEditable: true,
@@ -910,8 +914,9 @@ export async function createCollaborationServer(options: Options) {
           propertySync: true,
           deltaSync: true,
           eventStream: true,
+          multiplayerVersion: 1,
           projectTrash: true,
-          version: '0.22.0',
+          version: '0.24.0',
         });
         return;
       }
@@ -955,6 +960,26 @@ export async function createCollaborationServer(options: Options) {
       }
       if (request.method !== 'POST')
         throw new ApiError('지원하지 않는 요청입니다.', 404);
+      const playMatch = /^\/projects\/([a-f0-9-]{36})\/play$/.exec(
+        url.pathname,
+      );
+      if (playMatch) {
+        const project = projects.get(playMatch[1]);
+        if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+        const token = String(request.headers.authorization ?? '').replace(
+          /^Bearer /,
+          '',
+        );
+        const member = authenticate(project, token);
+        assertActive(project);
+        limit(`${project.id}:${member.id}`, 'play-control', 120);
+        reply(
+          response,
+          200,
+          multiplayer!.control(project.id, token, await body(request)),
+        );
+        return;
+      }
       // Do not trust client-supplied proxy headers. A tunnel shares one peer IP,
       // so authenticated traffic is limited by real server-side member identity.
       const peer = request.socket.remoteAddress ?? 'unknown';
@@ -1810,6 +1835,13 @@ export async function createCollaborationServer(options: Options) {
               );
             const outputs = expectedArtifacts(project.files[taskPath]);
             if (
+              matter(project.files[taskPath]).data.multiplayer !== undefined &&
+              input.multiplayerVersion !== 1
+            )
+              throw new ApiError(
+                '[GC-MP-001] 멀티플레이 실행을 지원하는 앱으로 업데이트해주세요.',
+              );
+            if (
               taskDocumentFormat(project.files[taskPath]) &&
               input.documentOutputFormatVersion !== 1
             )
@@ -2168,6 +2200,18 @@ export async function createCollaborationServer(options: Options) {
       });
     }
   });
+  multiplayer = attachMultiplayerServer(server, (id, token) => {
+    const project = projects.get(id);
+    if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+    assertActive(project);
+    const member = authenticate(project, token);
+    return {
+      id: member.id,
+      nickname: member.nickname,
+      role: member.role,
+      files: project.files,
+    };
+  });
   const checkpointTimer = setInterval(() => {
     void maintainTrash().catch(() => undefined);
     // Export an immutable committed reference without holding the mutation or lease queue.
@@ -2190,6 +2234,7 @@ export async function createCollaborationServer(options: Options) {
     port: typeof address === 'object' && address ? address.port : 4317,
     close: async () => {
       clearInterval(checkpointTimer);
+      multiplayer?.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections();

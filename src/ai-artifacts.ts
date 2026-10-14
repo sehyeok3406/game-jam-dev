@@ -5,6 +5,7 @@ import type { Snapshot } from './project-store';
 import { isPreviewPath } from './preview-output.ts';
 import { CanvasError } from './app-errors.ts';
 import { inspectHtml } from './html-document.ts';
+import { validateMultiplayerHtml } from './multiplayer/contract.ts';
 
 export function expectedArtifacts(task: string): string[] {
   const outputs = matter(task).data.expected_outputs;
@@ -64,6 +65,7 @@ export function validateArtifacts(
       );
     if (relative.endsWith('.html')) {
       inspectHtml(content, relative);
+      validateMultiplayerHtml(content);
       continue;
     }
     let parsed;

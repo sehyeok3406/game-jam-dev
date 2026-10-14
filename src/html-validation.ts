@@ -2,9 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import { inspectHtml } from './html-document';
 import { CanvasError } from './app-errors';
+import { withMultiplayerSdk } from './multiplayer/sdk';
+import { readMultiplayerManifest } from './multiplayer/contract';
+import { validateMultiplayerRuntime } from './multiplayer/runtime-validation';
 
 export async function validateHtml(content: string, relativePath?: string) {
-  const normalized = inspectHtml(content, relativePath).normalized;
+  const normalized = withMultiplayerSdk(
+    inspectHtml(content, relativePath).normalized,
+  );
   const validator = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -67,6 +72,8 @@ export async function validateHtml(content: string, relativePath?: string) {
             `HTML 초기 실행 오류: ${errors[0].message}`,
             { relativePath, errors: errors.slice(0, 10) },
           );
+        if (readMultiplayerManifest(content))
+          await validateMultiplayerRuntime(validator, content);
       })(),
       new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(

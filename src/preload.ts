@@ -4,6 +4,10 @@ import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import { selfHostPreload } from './features/self-host/preload';
 
 const api: GameCanvasApi = {
+  multiplayer: {
+    control: (input) => ipcRenderer.invoke('multiplayer:control', input),
+    open: (roomId) => ipcRenderer.invoke('multiplayer:open', roomId),
+  },
   getDocumentStatuses: () => ipcRenderer.invoke('document-statuses:get'),
   setFileStatusProperty: (input) =>
     ipcRenderer.invoke('files:set-status-property', input),

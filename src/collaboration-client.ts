@@ -934,6 +934,16 @@ export class CollaborationClient {
       }
       if (
         channel === 'tasks:create' &&
+        ((input as CreateTaskInput).multiplayer !== undefined ||
+          (input as CreateTaskInput).thenImplement?.multiplayer !==
+            undefined) &&
+        this.state.multiplayerVersion !== 1
+      )
+        throw new Error(
+          '[GC-MP-001] 멀티플레이 생성에는 앱과 협업 서버 업데이트가 필요합니다.',
+        );
+      if (
+        channel === 'tasks:create' &&
         ((input as CreateTaskInput)?.kind === 'implement' ||
           (input as CreateTaskInput)?.thenImplement) &&
         !this.state.htmlResultFolders
@@ -1386,6 +1396,7 @@ export class CollaborationClient {
         modelId,
         providerId,
         gamejamVersion: 1,
+        multiplayerVersion: 1,
         documentBundleVersion: 1,
         documentOutputFormatVersion: 1,
         htmlAnalysisVersion: 1,

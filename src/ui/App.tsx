@@ -230,6 +230,9 @@ import {
 import { gamejamFieldPage, type GamejamPage } from '../gamejam-wizard';
 import { GamejamProgress, GamejamReview } from './GamejamWizard';
 import { GameFeatureLibrary } from './GameFeatureLibrary';
+import { withMultiplayerSdk } from '../multiplayer/sdk';
+import { readMultiplayerManifest } from '../multiplayer/contract';
+import { MultiplayerLobby } from './MultiplayerLobby';
 import {
   gamejamIssues,
   gamejamFieldId,
@@ -1492,7 +1495,11 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
   const preset = previewPreset(state);
   const viewport = previewViewport(state);
   const previewHtml = useMemo(
-    () => withPreviewKeyboardBridge(data.preview.content, settingsId),
+    () =>
+      withPreviewKeyboardBridge(
+        withMultiplayerSdk(data.preview.content),
+        settingsId,
+      ),
     [data.preview.content, settingsId],
   );
   const collapsed = state.collapsed && !fullscreen;
@@ -1658,6 +1665,10 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
             >
               <History size={14} />
             </button>
+            <MultiplayerLobby
+              path={data.preview.relativePath}
+              html={data.preview.content}
+            />
             <button
               className="icon-button"
               title="HTML 버전 비교"
@@ -2148,6 +2159,29 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   linkDocumentsRef.current = allLinkDocuments;
   const [sections, setSections] = useState<CanvasSection[]>([]);
   const [previews, setPreviews] = useState<PreviewResult[]>([]);
+  useEffect(() => {
+    if (
+      !aiRequest ||
+      aiRequest.multiplayer !== undefined ||
+      !aiRequest.htmlResult?.basePath
+    )
+      return;
+    const base = previews.find(
+      (p) => p.relativePath === aiRequest.htmlResult?.basePath,
+    );
+    if (!base) return;
+    try {
+      const manifest = readMultiplayerManifest(base.content);
+      if (manifest)
+        setAiRequest((current) =>
+          current && current.multiplayer === undefined
+            ? { ...current, multiplayer: manifest }
+            : current,
+        );
+    } catch {
+      /* Invalid declarations are shown by generation validation. */
+    }
+  }, [aiRequest?.htmlResult?.basePath, aiRequest?.multiplayer, previews]);
   const [previewWindows, setPreviewWindows] = useState<
     Record<string, PreviewWindowState>
   >({});
@@ -2622,9 +2656,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       ? collaboration.aiRun?.fileLock
       : codexRun?.fileLock
     : undefined;
+  const multiplayerChoiceRequired =
+    !!aiRequest?.implement &&
+    aiRequest.sourceMode === 'html-compose' &&
+    !aiRequest.htmlResult?.basePath &&
+    aiRequest.inputPaths.filter((path) => path.endsWith('.html')).length > 1 &&
+    previews.some((preview) => {
+      if (!aiRequest.inputPaths.includes(preview.relativePath)) return false;
+      try {
+        return !!readMultiplayerManifest(preview.content);
+      } catch {
+        return false;
+      }
+    });
   const aiRequestIssues = aiRequest
     ? gamejamIssues(aiRequest, {
         collaboration,
+        multiplayerChoiceRequired,
         provider: selectedAiProvider,
         model: selectedAiModel,
         connection: codexStatus,
@@ -11156,9 +11204,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               >
                 <h3 className="ai-step-heading" tabIndex={-1}>
                   <span>4</span> 게임 기능 라이브러리{' '}
-                  <small className="gamejam-preview-badge">미리보기</small>
+                  <small className="gamejam-preview-badge">
+                    모듈·기능 예시
+                  </small>
                 </h3>
-                <GameFeatureLibrary />
+                <GameFeatureLibrary
+                  requiresChoice={multiplayerChoiceRequired}
+                  multiplayer={aiRequest.multiplayer}
+                  implementing={aiRequest.implement}
+                  onMultiplayerChange={(multiplayer) =>
+                    setAiRequest({ ...aiRequest, multiplayer })
+                  }
+                />
+                <GamejamFieldErrors
+                  field="multiplayer"
+                  issues={aiRequestIssues}
+                />
               </section>
               <section
                 className="gamejam-page"

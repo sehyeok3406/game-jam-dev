@@ -1,4 +1,8 @@
 import { useMemo, useState } from 'react';
+import {
+  DEFAULT_MULTIPLAYER,
+  type MultiplayerSettings,
+} from '../multiplayer/types';
 import { Eye, Folder, Search, X } from 'lucide-react';
 import {
   GAME_FEATURE_CATALOG,
@@ -8,7 +12,17 @@ import {
   searchGameFeatures,
 } from '../game-feature-catalog';
 
-export function GameFeatureLibrary() {
+export function GameFeatureLibrary({
+  multiplayer,
+  onMultiplayerChange,
+  implementing = true,
+  requiresChoice = false,
+}: {
+  multiplayer?: MultiplayerSettings | null;
+  onMultiplayerChange?: (value: MultiplayerSettings | null) => void;
+  implementing?: boolean;
+  requiresChoice?: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'features' | 'presets'>('features');
   const [activeId, setActiveId] = useState(GAME_FEATURES[0].id);
@@ -33,10 +47,75 @@ export function GameFeatureLibrary() {
 
   return (
     <div className="game-feature-library">
+      {onMultiplayerChange && (
+        <section
+          id="ai-multiplayer"
+          tabIndex={-1}
+          className="multiplayer-module"
+          aria-label="온라인 멀티플레이 모듈"
+        >
+          <small>멀티플레이·협동 · 사용 가능</small>
+          <h4>프로젝트 온라인 멀티플레이</h4>
+          <p>
+            2~4인 협동 게임을 만들고 프로젝트 참여자와 함께 플레이합니다. 혼자
+            연습도 지원합니다.
+          </p>
+          <p>
+            방 만들기·참가·준비·게임 상태 동기화·연결 복구를 함께 제공합니다.
+          </p>
+          {multiplayer ? (
+            <>
+              <label>
+                최대 참여 인원{' '}
+                <select
+                  value={multiplayer.maxPlayers}
+                  onChange={(e) =>
+                    onMultiplayerChange({
+                      ...multiplayer,
+                      maxPlayers: Number(e.target.value) as 2 | 3 | 4,
+                    })
+                  }
+                >
+                  {[2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n}명
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p>이번 구현에 포함 · 온라인 최소 2명 · 혼자 연습 가능</p>
+              <button type="button" onClick={() => onMultiplayerChange(null)}>
+                적용 모듈 제거
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onMultiplayerChange({ ...DEFAULT_MULTIPLAYER })}
+            >
+              게임에 추가
+            </button>
+          )}
+          {!implementing && (
+            <p>
+              HTML 구현을 선택하면 적용됩니다. 현재 설정은 초안에 보관합니다.
+            </p>
+          )}
+          {requiresChoice && !multiplayer && (
+            <p>
+              입력에 멀티 게임이 포함되어 있습니다.{' '}
+              <button type="button" onClick={() => onMultiplayerChange(null)}>
+                개인 게임으로 만들기
+              </button>
+              {multiplayer === null ? ' · 개인 게임 선택됨' : ''}
+            </p>
+          )}
+        </section>
+      )}
       <p className="gamejam-preview-notice">
         <Eye size={16} aria-hidden="true" />
-        게임 제작에 활용할 기능들을 미리 살펴보세요. 현재 기능 선택은 HTML
-        구현에 반영되지 않습니다.
+        아래 목록은 기능 예시입니다. 참고 예시 선택은 HTML 구현에 반영되지
+        않습니다.
       </p>
       <div
         className="game-feature-views"
@@ -244,7 +323,7 @@ export function GameFeatureLibrary() {
       <section className="game-feature-selection" aria-label="선택한 게임 기능">
         <div className="game-feature-selection-heading">
           <h4>
-            선택한 기능 <span role="status">{selectedIds.length}개</span>
+            선택한 기능 예시 <span role="status">{selectedIds.length}개</span>
           </h4>
           {selectedIds.length > 0 && (
             <button type="button" onClick={() => setSelectedIds([])}>

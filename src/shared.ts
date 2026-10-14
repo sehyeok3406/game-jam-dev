@@ -211,6 +211,7 @@ export type MoveDocumentSectionInput = {
 };
 
 export type CreateTaskInput = {
+  multiplayer?: import('./multiplayer/types').MultiplayerSettings | null;
   requestSnapshot?: import('./gamejam-history').GamejamSavedRequest;
   canvasId?: string;
   sourceMode?: 'html' | 'html-compose';
@@ -224,6 +225,7 @@ export type CreateTaskInput = {
   resultName?: string;
   /** Run HTML implementation after the organized Markdown passes validation. */
   thenImplement?: {
+    multiplayer?: import('./multiplayer/types').MultiplayerSettings | null;
     htmlResult?: HtmlResultChoice;
     instructions?: string;
     resultName?: string;
@@ -331,6 +333,12 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  multiplayer?: {
+    control: (
+      input: import('./multiplayer/types').PlayAction,
+    ) => Promise<import('./multiplayer/types').PlayEnvelope>;
+    open: (roomId: string) => Promise<void>;
+  };
   getDocumentStatuses: () => Promise<{
     value: import('./document-statuses').DocumentStatuses;
     raw: string | null;
@@ -709,6 +717,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  multiplayerVersion?: number;
   filePropertiesVersion?: number;
   documentStatusesVersion?: number;
   projectTrash?: boolean;
