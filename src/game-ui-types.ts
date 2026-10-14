@@ -26,8 +26,68 @@ export type GameUiSlot = {
   label: string;
   quantity: number;
   cooldown: number;
+  cooldownTotal?: number;
+  cooldownRemaining?: number;
+  disabled?: boolean;
 };
-export type GameUiItem = {
+export type GameUiStyle = {
+  backgroundColor: string;
+  backgroundOpacity: number;
+  borderColor: string;
+  borderOpacity: number;
+  borderWidth: number;
+  borderStyle: 'solid' | 'dashed' | 'dotted';
+  borderPosition: 'inside' | 'center' | 'outside';
+  cornerRadius: number;
+  cornerRadii: [number, number, number, number] | null;
+  fillColor: string;
+  fillOpacity: number;
+  textColor: string;
+  textOpacity: number;
+  fontSize: number;
+  textAlign: 'left' | 'center' | 'right';
+  textVisible: boolean;
+  opacity: number;
+};
+export type GameUiState =
+  | 'normal'
+  | 'hover'
+  | 'pressed'
+  | 'disabled'
+  | 'selected';
+export type GameUiDetails = Partial<GameUiStyle> & {
+  rotation?: number;
+  minimum?: number;
+  step?: number;
+  decimals?: number;
+  valueFormat?: 'fraction' | 'value' | 'percent' | 'none';
+  fillDirection?:
+    | 'right'
+    | 'left'
+    | 'up'
+    | 'down'
+    | 'center-x'
+    | 'center-y'
+    | 'radial';
+  radialStart?: number;
+  radialSweep?: number;
+  clockwise?: boolean;
+  ringWidth?: number;
+  segments?: number;
+  segmentGap?: number;
+  segmentSnap?: boolean;
+  thresholds?: { below: number; color: string }[];
+  state?: GameUiState;
+  stateStyles?: Partial<Record<GameUiState, Partial<GameUiStyle>>>;
+  cooldownDirection?: 'down' | 'radial';
+  cooldownColor?: string;
+  cooldownOpacity?: number;
+  cooldownText?: boolean;
+  transitionDuration?: number;
+  deltaColor?: string;
+  deltaDuration?: number;
+};
+export type GameUiItem = GameUiDetails & {
   id: string;
   generation: string;
   kind: GameUiKind;

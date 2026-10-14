@@ -171,8 +171,25 @@ try {
     shape: 'rounded',
     color: '#64748b',
     text: 'HP',
-    value: 75,
+    value: 60,
     maximum: 100,
+    minimum: 20,
+    backgroundColor: '#112233',
+    backgroundOpacity: 0.35,
+    borderColor: '#abcdef',
+    borderWidth: 6,
+    borderOpacity: 0.8,
+    cornerRadius: 18,
+    rotation: 45,
+    fillDirection: 'left',
+    valueFormat: 'percent',
+    thresholds: [
+      { below: 20, color: '#ef4444' },
+      { below: 50, color: '#eab308' },
+    ],
+    radialStart: 0,
+    radialSweep: 270,
+    ringWidth: 12,
     count: 1,
     columns: 1,
     gap: 8,
@@ -189,6 +206,21 @@ try {
       `window.gameCanvas.applyGameUiCommand(${JSON.stringify({ ...c, scope, id: frame.id, generation: frame.generation, requestId: randomUUID() })})`,
     );
   await apply({ action: 'add', items: [item] });
+  await wait(
+    `!!document.querySelector('[data-game-ui-item="${item.id}"] [data-ui-part=progress]')`,
+  );
+  assert.equal(
+    await js(
+      `document.querySelector('[data-game-ui-item="${item.id}"] [data-ui-part=progress]').dataset.ratio`,
+    ),
+    '0.5',
+  );
+  assert.match(
+    await js(
+      `document.querySelector('[data-game-ui-item="${item.id}"]').getAttribute('transform')`,
+    ),
+    /rotate\(45/,
+  );
   await apply({ action: 'describe' });
   const descriptionPath = `docs/ui/${frame.id}.md`;
   await js(

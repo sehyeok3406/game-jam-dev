@@ -12,7 +12,17 @@ import {
   type GameUiKind,
 } from '../../game-ui-types';
 import { newGameUiItem } from '../../game-ui-model';
-import { GameUiGraphic, GameUiItemGraphic } from './GameUiGraphic';
+import {
+  GameUiGraphic,
+  GameUiItemGraphic,
+  type GameUiPreview,
+} from './GameUiGraphic';
+import { GameUiDetailInspector } from './GameUiDetailInspector';
+import {
+  gameUiBounds,
+  gameUiResize,
+  gameUiTransform,
+} from '../../game-ui-details';
 import { snapPosition } from '../../canvas-ux';
 export type GameUiNodeData = {
   kind: 'game-ui';
@@ -39,14 +49,27 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
     [draft, setDraft] = useState<GameUiItem[] | null>(null),
     [inspector, setInspector] = useState(!!data.inspectorMode),
     [preview, setPreview] = useState(false),
+    [previews, setPreviews] = useState<Record<string, GameUiPreview>>({}),
+    [exportPreview, setExportPreview] = useState(false),
     [error, setError] = useState('');
   const svg = useRef<SVGSVGElement>(null),
     gesture = useRef<{
       pointer: number;
       start: { x: number; y: number };
       items: GameUiItem[];
-      mode: 'move' | 'resize';
+      mode: 'move' | 'resize' | 'rotate';
     } | null>(null);
+  const animation = useRef<number | null>(null);
+  const stopAnimation = () => {
+    if (animation.current !== null) cancelAnimationFrame(animation.current);
+    animation.current = null;
+  };
+  useEffect(
+    () => () => {
+      if (animation.current !== null) cancelAnimationFrame(animation.current);
+    },
+    [],
+  );
   const chosen = f.items.filter((i) => ids.includes(i.id)),
     one = chosen.length === 1 ? chosen[0] : null;
   const handleSize =
@@ -79,6 +102,39 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
         Object.keys(changes!).map((k) => [k, f[k as keyof GameUiFrame]]),
       ),
     });
+  const detailDraft = (changes: Partial<GameUiItem>) => {
+    if (!Object.keys(changes).length) cancel();
+    else setDraft(chosen.map((i) => ({ ...i, ...changes })));
+  };
+  const detailApply = (changes: Partial<GameUiItem>) => {
+    cancel();
+    run(patches(chosen.map((item) => ({ item, changes }))));
+  };
+  const animateValue = (value: number) => {
+    if (!one) return;
+    stopAnimation();
+    const id = one.id,
+      from = previews[id]?.value ?? one.value,
+      duration = one.transitionDuration ?? 0,
+      deltaDuration = one.deltaDuration ?? 0,
+      start = performance.now();
+    const update = (now: number) => {
+      const t = duration ? Math.min(1, (now - start) / duration) : 1,
+        deltaT = deltaDuration ? Math.min(1, (now - start) / deltaDuration) : 1;
+      setPreviews((prev) => ({
+        ...prev,
+        [id]: {
+          ...prev[id],
+          value: from + (value - from) * t,
+          delta: deltaT < 1 ? from + (value - from) * deltaT : undefined,
+        },
+      }));
+      if (t < 1 || deltaT < 1)
+        animation.current = requestAnimationFrame(update);
+      else animation.current = null;
+    };
+    animation.current = requestAnimationFrame(update);
+  };
   const add = (kind: GameUiKind) => {
     const i = newGameUiItem(
       kind,
@@ -178,11 +234,10 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
       }),
     );
   const point = (e: { clientX: number; clientY: number }) => {
-    const box = svg.current!.getBoundingClientRect();
-    return {
-      x: ((e.clientX - box.left) * f.viewportWidth) / box.width,
-      y: ((e.clientY - box.top) * f.viewportHeight) / box.height,
-    };
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+      svg.current!.getScreenCTM()!.inverse(),
+    );
+    return { x: p.x, y: p.y };
   };
   const cancel = () => {
     gesture.current = null;
@@ -196,10 +251,11 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
     let dx = p.x - g.start.x,
       dy = p.y - g.start.y;
     if (g.mode === 'move' && !e.altKey) {
-      const left = Math.min(...g.items.map((i) => i.x)),
-        top = Math.min(...g.items.map((i) => i.y)),
-        right = Math.max(...g.items.map((i) => i.x + i.width)),
-        bottom = Math.max(...g.items.map((i) => i.y + i.height));
+      const bounds = g.items.map(gameUiBounds);
+      const left = Math.min(...bounds.map((i) => i.x)),
+        top = Math.min(...bounds.map((i) => i.y)),
+        right = Math.max(...bounds.map((i) => i.x + i.width)),
+        bottom = Math.max(...bounds.map((i) => i.y + i.height));
       const others = f.items.filter((i) => !g.items.some((o) => o.id === i.id));
       const result = snapPosition(
         {
@@ -210,7 +266,7 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
         },
         [
           { x: 0, y: 0, width: f.viewportWidth, height: f.viewportHeight },
-          ...others,
+          ...others.map(gameUiBounds),
         ],
         (6 * f.viewportWidth) /
           (svg.current?.getBoundingClientRect().width ?? f.viewportWidth),
@@ -220,6 +276,25 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
     }
     return { dx, dy };
   };
+  const gestureChange = (
+    g: NonNullable<typeof gesture.current>,
+    i: GameUiItem,
+    e: { clientX: number; clientY: number; altKey: boolean; shiftKey: boolean },
+  ) => {
+    if (g.mode === 'rotate') {
+      const p = point(e),
+        cx = i.x + i.width / 2,
+        cy = i.y + i.height / 2;
+      const start = Math.atan2(g.start.y - cy, g.start.x - cx),
+        end = Math.atan2(p.y - cy, p.x - cx);
+      let rotation = (i.rotation ?? 0) + ((end - start) * 180) / Math.PI;
+      if (e.shiftKey) rotation = Math.round(rotation / 15) * 15;
+      return { rotation: Math.round(((rotation + 540) % 360) - 180) };
+    }
+    const { dx, dy } = motion(g, e);
+    if (g.mode === 'resize') return gameUiResize(i, dx, dy);
+    return { x: Math.round(i.x + dx), y: Math.round(i.y + dy) };
+  };
   useEffect(() => {
     const abort = () => cancel();
     window.addEventListener('blur', abort);
@@ -227,40 +302,44 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
   }, []);
   const arrange = (mode: string) => {
     if (chosen.length < 2) return;
-    const left = Math.min(...chosen.map((i) => i.x)),
-      top = Math.min(...chosen.map((i) => i.y)),
-      right = Math.max(...chosen.map((i) => i.x + i.width)),
-      bottom = Math.max(...chosen.map((i) => i.y + i.height));
+    const bounds = chosen.map(gameUiBounds);
+    const left = Math.min(...bounds.map((i) => i.x)),
+      top = Math.min(...bounds.map((i) => i.y)),
+      right = Math.max(...bounds.map((i) => i.x + i.width)),
+      bottom = Math.max(...bounds.map((i) => i.y + i.height));
     const sorted = [...chosen].sort((a, b) =>
-      mode === 'gap-x' ? a.x - b.x : a.y - b.y,
+      mode === 'gap-x'
+        ? gameUiBounds(a).x - gameUiBounds(b).x
+        : gameUiBounds(a).y - gameUiBounds(b).y,
     );
     let cursor = mode === 'gap-x' ? left : top;
     const gap =
       mode === 'gap-x'
-        ? (right - left - chosen.reduce((n, i) => n + i.width, 0)) /
+        ? (right - left - bounds.reduce((n, i) => n + i.width, 0)) /
           (chosen.length - 1)
-        : (bottom - top - chosen.reduce((n, i) => n + i.height, 0)) /
+        : (bottom - top - bounds.reduce((n, i) => n + i.height, 0)) /
           (chosen.length - 1);
     const changes = (mode.startsWith('gap') ? sorted : chosen).map((item) => {
+      const b = gameUiBounds(item);
       let x = item.x,
         y = item.y,
         width = item.width,
         height = item.height;
-      if (mode === 'left') x = left;
-      if (mode === 'center') x = (left + right - item.width) / 2;
-      if (mode === 'right') x = right - item.width;
-      if (mode === 'top') y = top;
-      if (mode === 'middle') y = (top + bottom - item.height) / 2;
-      if (mode === 'bottom') y = bottom - item.height;
+      if (mode === 'left') x += left - b.x;
+      if (mode === 'center') x += (left + right - b.width) / 2 - b.x;
+      if (mode === 'right') x += right - b.width - b.x;
+      if (mode === 'top') y += top - b.y;
+      if (mode === 'middle') y += (top + bottom - b.height) / 2 - b.y;
+      if (mode === 'bottom') y += bottom - b.height - b.y;
       if (mode === 'width') width = chosen[0].width;
       if (mode === 'height') height = chosen[0].height;
       if (mode === 'gap-x') {
-        x = cursor;
-        cursor += item.width + gap;
+        x += cursor - b.x;
+        cursor += b.width + gap;
       }
       if (mode === 'gap-y') {
-        y = cursor;
-        cursor += item.height + gap;
+        y += cursor - b.y;
+        cursor += b.height + gap;
       }
       return {
         item,
@@ -278,9 +357,19 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
     const snapshot = structuredClone(f);
     await document.fonts.ready;
     const url = URL.createObjectURL(
-      new Blob([renderToStaticMarkup(<GameUiGraphic frame={snapshot} />)], {
-        type: 'image/svg+xml',
-      }),
+      new Blob(
+        [
+          renderToStaticMarkup(
+            <GameUiGraphic
+              frame={snapshot}
+              previews={exportPreview ? previews : undefined}
+            />,
+          ),
+        ],
+        {
+          type: 'image/svg+xml',
+        },
+      ),
     );
     try {
       const img = new Image();
@@ -460,40 +549,27 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
           const g = gesture.current;
           if (!g || g.pointer !== e.pointerId) return;
           e.stopPropagation();
-          const { dx, dy } = motion(g, e);
-          setDraft(
-            g.items.map((i) =>
-              g.mode === 'move'
-                ? { ...i, x: i.x + dx, y: i.y + dy }
-                : {
-                    ...i,
-                    width: Math.max(8, i.width + dx),
-                    height: Math.max(8, i.height + dy),
-                  },
-            ),
-          );
+          setDraft(g.items.map((i) => ({ ...i, ...gestureChange(g, i, e) })));
         }}
         onPointerUp={(e) => {
           const g = gesture.current;
           if (!g || g.pointer !== e.pointerId) return;
           e.stopPropagation();
-          const { dx, dy } = motion(g, e);
+          const changes = g.items.map((item) => ({
+            item,
+            changes: gestureChange(g, item, e),
+          }));
           cancel();
-          if (Math.abs(dx) + Math.abs(dy) < 0.1) return;
-          run(
-            patches(
-              g.items.map((item) => ({
-                item,
-                changes:
-                  g.mode === 'move'
-                    ? { x: Math.round(item.x + dx), y: Math.round(item.y + dy) }
-                    : {
-                        width: Math.round(Math.max(8, item.width + dx)),
-                        height: Math.round(Math.max(8, item.height + dy)),
-                      },
-              })),
-            ),
-          );
+          if (
+            changes.every(({ item, changes: c }) =>
+              Object.entries(c).every(
+                ([k, v]) =>
+                  Math.abs(Number(item[k as keyof GameUiItem] ?? 0) - v) < 0.1,
+              ),
+            )
+          )
+            return;
+          run(patches(changes));
         }}
         onPointerCancel={cancel}
       >
@@ -508,7 +584,7 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
           return (
             <g
               key={i.id}
-              transform={`translate(${i.x} ${i.y})`}
+              transform={gameUiTransform(i)}
               data-game-ui-item={i.id}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -549,7 +625,11 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                 cancel();
               }}
             >
-              <GameUiItemGraphic item={i} prefix={f.id} />
+              <GameUiItemGraphic
+                item={i}
+                prefix={f.id}
+                preview={previews[i.id]}
+              />
               <rect width={i.width} height={i.height} fill="transparent" />
               {!preview && ids.includes(i.id) && (
                 <rect
@@ -584,11 +664,37 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                     }}
                   />
                 )}
+              {!preview &&
+                !data.locked &&
+                !i.locked &&
+                ids.length === 1 &&
+                ids[0] === i.id && (
+                  <circle
+                    cx={i.width / 2}
+                    cy={-handleSize * 2}
+                    r={handleSize / 2}
+                    fill="#fff"
+                    stroke="#2563eb"
+                    strokeWidth={handleSize / 6}
+                    data-game-ui-rotate={i.id}
+                    style={{ cursor: 'grab' }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      gesture.current = {
+                        pointer: e.pointerId,
+                        start: point(e),
+                        items: [original],
+                        mode: 'rotate',
+                      };
+                      svg.current!.setPointerCapture(e.pointerId);
+                    }}
+                  />
+                )}
             </g>
           );
         })}
       </svg>
-      {inspector && !preview && (
+      {inspector && (!preview || ids.length > 0) && (
         <aside
           className="game-ui-inspector nodrag nowheel"
           data-ui-id="game-ui-inspector"
@@ -876,44 +982,9 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                     )}
                   </div>
                 ))}
-                {['health', 'mana', 'stamina', 'experience'].includes(
-                  one.kind,
-                ) && (
-                  <>
-                    {num(
-                      '현재 값',
-                      one.value,
-                      (v) =>
-                        run(
-                          patches([
-                            {
-                              item: one,
-                              changes: { value: v, maximum: one.maximum },
-                            },
-                          ]),
-                        ),
-                      0,
-                      one.maximum,
-                    )}
-                    {num(
-                      '최대 값',
-                      one.maximum,
-                      (v) =>
-                        run(
-                          patches([
-                            {
-                              item: one,
-                              changes: { value: one.value, maximum: v },
-                            },
-                          ]),
-                        ),
-                      1,
-                      1e9,
-                    )}
-                  </>
-                )}
                 {(one.kind === 'skills' || one.kind === 'items') && (
-                  <>
+                  <details>
+                    <summary>슬롯 설정</summary>
                     {num(
                       '슬롯 개수',
                       one.count,
@@ -997,7 +1068,17 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                                             ...s,
                                             ...(one.kind === 'items'
                                               ? { quantity: v }
-                                              : { cooldown: v }),
+                                              : {
+                                                  cooldown: v,
+                                                  ...(s.cooldownTotal
+                                                    ? {
+                                                        cooldownRemaining:
+                                                          (s.cooldownTotal *
+                                                            v) /
+                                                          100,
+                                                      }
+                                                    : {}),
+                                                }),
                                           }
                                         : s,
                                     ),
@@ -1008,6 +1089,94 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                           0,
                           one.kind === 'items' ? 1e9 : 100,
                         )}
+                        {one.kind === 'skills' && (
+                          <>
+                            {num(
+                              `슬롯 ${n + 1} 전체 쿨다운 (초)`,
+                              slot.cooldownTotal ?? 10,
+                              (v) =>
+                                run(
+                                  patches([
+                                    {
+                                      item: one,
+                                      changes: {
+                                        slots: one.slots.map((s) =>
+                                          s.id === slot.id
+                                            ? {
+                                                ...s,
+                                                cooldownTotal: v,
+                                                cooldownRemaining: Math.min(
+                                                  v,
+                                                  s.cooldownRemaining ??
+                                                    (v * s.cooldown) / 100,
+                                                ),
+                                              }
+                                            : s,
+                                        ),
+                                      },
+                                    },
+                                  ]),
+                                ),
+                              0.000001,
+                              1e9,
+                            )}
+                            {num(
+                              `슬롯 ${n + 1} 남은 쿨다운 (초)`,
+                              slot.cooldownRemaining ??
+                                ((slot.cooldownTotal ?? 10) * slot.cooldown) /
+                                  100,
+                              (v) =>
+                                run(
+                                  patches([
+                                    {
+                                      item: one,
+                                      changes: {
+                                        slots: one.slots.map((s) =>
+                                          s.id === slot.id
+                                            ? {
+                                                ...s,
+                                                cooldownTotal:
+                                                  s.cooldownTotal ?? 10,
+                                                cooldownRemaining: v,
+                                                cooldown:
+                                                  (100 * v) /
+                                                  (s.cooldownTotal ?? 10),
+                                              }
+                                            : s,
+                                        ),
+                                      },
+                                    },
+                                  ]),
+                                ),
+                              0,
+                              slot.cooldownTotal ?? 10,
+                            )}
+                          </>
+                        )}
+                        <label>
+                          사용 불가
+                          <input
+                            type="checkbox"
+                            aria-label={`슬롯 ${n + 1} 사용 불가`}
+                            checked={!!slot.disabled}
+                            onChange={(e) =>
+                              run(
+                                patches([
+                                  {
+                                    item: one,
+                                    changes: {
+                                      slots: one.slots.map((s) =>
+                                        s.id === slot.id
+                                          ? { ...s, disabled: e.target.checked }
+                                          : s,
+                                      ),
+                                    },
+                                  },
+                                ]),
+                              )
+                            }
+                          />
+                        </label>
                         {one.kind === 'items' && (
                           <button
                             onClick={() =>
@@ -1026,23 +1195,8 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                         )}
                       </details>
                     ))}
-                  </>
+                  </details>
                 )}
-                <label>
-                  색
-                  <input
-                    type="color"
-                    aria-label="UI 색"
-                    value={one.color}
-                    onChange={(e) =>
-                      run(
-                        patches([
-                          { item: one, changes: { color: e.target.value } },
-                        ]),
-                      )
-                    }
-                  />
-                </label>
               </fieldset>
             )}
             <details open>
@@ -1073,6 +1227,38 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
               게임 화면 삭제
             </button>
           </fieldset>
+          {chosen.length > 0 && (
+            <GameUiDetailInspector
+              items={chosen}
+              disabled={data.locked || chosen.some((i) => i.locked)}
+              apply={detailApply}
+              draft={detailDraft}
+              preview={one ? previews[one.id] : undefined}
+              setPreview={(p) => {
+                if (!one) return;
+                cancel();
+                setPreviews((v) => {
+                  const next = { ...v };
+                  if (p) next[one.id] = p;
+                  else delete next[one.id];
+                  return next;
+                });
+              }}
+              animate={animateValue}
+              stop={stopAnimation}
+            />
+          )}
+          <label>
+            PNG 출력 상태
+            <select
+              aria-label="PNG 출력 상태"
+              value={exportPreview ? 'preview' : 'saved'}
+              onChange={(e) => setExportPreview(e.target.value === 'preview')}
+            >
+              <option value="saved">저장된 값</option>
+              <option value="preview">미리보기 상태</option>
+            </select>
+          </label>
           {error && (
             <p role="alert">
               {error}

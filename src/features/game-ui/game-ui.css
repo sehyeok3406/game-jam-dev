@@ -121,6 +121,38 @@
   color: #dc2626;
   margin-top: 16px;
 }
+.game-ui-detail-editor summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+.game-ui-detail-editor details {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.game-ui-detail-editor .game-ui-color-row > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.game-ui-detail-editor .game-ui-color-row input[type='color'] {
+  width: 32px;
+  padding: 2px;
+}
+.game-ui-detail-editor .game-ui-color-row input:not([type='color']) {
+  width: 90px;
+}
+.game-ui-inspector input[type='checkbox'] {
+  width: 18px;
+  min-height: 18px;
+}
+.game-ui-preview-controls {
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.game-ui-detail-editor .game-ui-actions button {
+  width: auto;
+}
 .game-ui-error {
   background: #fee2e2;
   color: #991b1b;

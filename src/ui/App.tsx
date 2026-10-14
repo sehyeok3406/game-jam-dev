@@ -4509,7 +4509,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           dragHandle: '.game-ui-drag-handle',
           draggable:
             !locked &&
-            (!collaboration.active || collaboration.gameUiVersion === 1),
+            (!collaboration.active || collaboration.gameUiVersion === 2),
           data: {
             kind: 'game-ui',
             frame,
@@ -4518,7 +4518,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             libraryEnabled: gameUiSettings.enabled,
             locked:
               locked ||
-              (collaboration.active && collaboration.gameUiVersion !== 1),
+              (collaboration.active && collaboration.gameUiVersion !== 2),
             inspectorMode:
               preview?.id === 'game-ui-inspector'
                 ? preview.state === 'multiple'
@@ -7381,7 +7381,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               disabled={
                 locked ||
                 !gameUiSettings.enabled ||
-                (collaboration.active && collaboration.gameUiVersion !== 1)
+                (collaboration.active && collaboration.gameUiVersion !== 2)
               }
               submit={gameUi.submit}
               focus={(id) => {

@@ -466,7 +466,7 @@ export async function createCollaborationServer(options: Options) {
       documentBundles: true,
       documentOutputFormats: true,
       drawingsVersion: 1,
-      gameUiVersion: 1,
+      gameUiVersion: 2,
       documentStatusesVersion: 1,
       filePropertiesVersion: 1,
       htmlImportAnalysis: true,
@@ -898,7 +898,7 @@ export async function createCollaborationServer(options: Options) {
           documentBundles: true,
           documentOutputFormats: true,
           drawingsVersion: 1,
-          gameUiVersion: 1,
+          gameUiVersion: 2,
           documentStatusesVersion: 1,
           filePropertiesVersion: 1,
           htmlImportAnalysis: true,
@@ -911,7 +911,7 @@ export async function createCollaborationServer(options: Options) {
           deltaSync: true,
           eventStream: true,
           projectTrash: true,
-          version: '0.21.0',
+          version: '0.22.0',
         });
         return;
       }
@@ -1191,7 +1191,7 @@ export async function createCollaborationServer(options: Options) {
             'ai-event',
             'ai-cancel',
           ].includes(action) &&
-          input.gameUiVersion !== 1
+          input.gameUiVersion !== 2
         )
           throw new ApiError(
             '게임 UI가 있는 프로젝트입니다. 앱을 업데이트해주세요.',

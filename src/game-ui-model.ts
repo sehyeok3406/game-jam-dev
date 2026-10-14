@@ -9,6 +9,7 @@ import {
   type GameUiKind,
 } from './game-ui-types.ts';
 import { assertCanvas } from './canvas-sheets.ts';
+import { GAME_UI_DETAIL_KEYS, validGameUiDetails } from './game-ui-details.ts';
 
 type Files = Record<string, string>;
 const same = (a: unknown, b: unknown) =>
@@ -84,8 +85,10 @@ export function readGameUi(raw: string, path?: string): GameUiFrame {
       !Object.hasOwn(GAME_UI_SHAPES, i.shape) ||
       !/^#[a-f\d]{6}$/i.test(i.color) ||
       !str(i.text, 1000) ||
-      !finite(i.maximum, 1, 1e9) ||
-      !finite(i.value, 0, i.maximum) ||
+      !validGameUiDetails(i) ||
+      !finite(i.maximum, -1e9, 1e9) ||
+      i.maximum <= (i.minimum ?? 0) ||
+      !finite(i.value, i.minimum ?? 0, i.maximum) ||
       !finite(i.count, 1, 32) ||
       !Number.isInteger(i.count) ||
       !finite(i.columns, 1, 32) ||
@@ -107,7 +110,11 @@ export function readGameUi(raw: string, path?: string): GameUiFrame {
         !str(s.label, 100) ||
         !finite(s.quantity, 0, 1e9) ||
         !Number.isInteger(s.quantity) ||
-        !finite(s.cooldown, 0, 100)
+        !finite(s.cooldown, 0, 100) ||
+        (s.disabled !== undefined && typeof s.disabled !== 'boolean') ||
+        ((s.cooldownTotal !== undefined || s.cooldownRemaining !== undefined) &&
+          (!finite(s.cooldownTotal, 0.000001, 1e9) ||
+            !finite(s.cooldownRemaining, 0, s.cooldownTotal)))
       )
         fail();
       slotIds.add(s.id);
@@ -269,7 +276,7 @@ function comparePatch<T extends object>(
     !expected ||
     Object.keys(changes).some(
       (k) =>
-        !Object.hasOwn(expected, k) ||
+        (!Object.hasOwn(expected, k) && Object.hasOwn(target, k)) ||
         (!same(target[k as keyof T], expected[k as keyof T]) &&
           !same(target[k as keyof T], changes[k as keyof T])),
     )
@@ -307,11 +314,17 @@ function mergeSlots(
     }
     if (!b || !d || !c) fail('슬롯 구조가 변경되었습니다.');
     const merged = { ...c };
-    for (const k of ['label', 'quantity', 'cooldown'] as const) {
-      if (same(b[k], d[k])) continue;
-      if (!same(b[k], c[k]) && !same(d[k], c[k]))
+    for (const keys of [
+      ['label'],
+      ['quantity'],
+      ['disabled'],
+      ['cooldown', 'cooldownTotal', 'cooldownRemaining'],
+    ] as const) {
+      const vals = (s: GameUiItem['slots'][number]) => keys.map((k) => s[k]);
+      if (same(vals(b), vals(d))) continue;
+      if (!same(vals(b), vals(c)) && !same(vals(d), vals(c)))
         fail('같은 슬롯 속성이 변경되었습니다.');
-      Object.assign(merged, { [k]: d[k] });
+      for (const k of keys) Object.assign(merged, { [k]: d[k] });
     }
     result.push(merged);
   }
@@ -399,6 +412,7 @@ export function applyGameUi(files: Files, c: GameUiCommand): Files {
         'slots',
         'groupId',
         'locked',
+        ...GAME_UI_DETAIL_KEYS,
       ];
       if (Object.keys(p.changes).some((k) => !allowed.includes(k))) fail();
       if (i.locked && Object.keys(p.changes).some((k) => k !== 'locked'))
@@ -572,7 +586,7 @@ export function mergeGameUi(
       ...mergeObject(ar, nr, vr, [
         ['x', 'y'],
         ['width', 'height'],
-        ['value', 'maximum'],
+        ['minimum', 'value', 'maximum'],
         ['count', 'columns', 'gap', 'selectedSlot'],
       ]),
       slots: mergeSlots(as, ns, vs),

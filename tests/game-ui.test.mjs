@@ -303,6 +303,19 @@ test('real server supports independent same-widget edits, request retry, descrip
   await owner.refresh();
   assert.equal(get(owner.files, f).items[0].x, 90);
   assert.equal(get(owner.files, f).items[0].text, '팀원 변경');
+  assert.equal(owner.state.gameUiVersion, 2);
+  const ui = get(owner.files, f).items[0];
+  await owner.command(
+    'game-ui:apply',
+    patch(f, ui, { borderColor: '#ff0000' }),
+  );
+  await editor.command(
+    'game-ui:apply',
+    patch(f, ui, { backgroundColor: '#000000' }),
+  );
+  await owner.refresh();
+  assert.equal(get(owner.files, f).items[0].borderColor, '#ff0000');
+  assert.equal(get(owner.files, f).items[0].backgroundColor, '#000000');
   await owner.command('game-ui:apply', command(f, 'describe'));
   assert.match(owner.files[`docs/ui/${f.id}.md`], /체력/);
   const history = owner.lastCommandHistoryId;

@@ -115,6 +115,118 @@ async function run() {
     await wait(
       '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].height===180)()',
     );
+    await select('UI 외형', 'rounded');
+    const detail = async (label, value, key) => {
+      await fill(label, value);
+      await wait(
+        `(async()=> (await window.gameCanvas.listGameUi())[0].items[0][${JSON.stringify(key)}]===${JSON.stringify(key.endsWith('Opacity') ? value / 100 : value)})()`,
+      );
+    };
+    await detail('배경색', '#112233', 'backgroundColor');
+    await detail('배경 불투명도 (%)', 35, 'backgroundOpacity');
+    await detail('테두리 색', '#abcdef', 'borderColor');
+    await detail('테두리 두께', 6, 'borderWidth');
+    await detail('테두리 불투명도 (%)', 80, 'borderOpacity');
+    await detail('모서리 R값', 18, 'cornerRadius');
+    await detail('UI 회전 (°)', 45, 'rotation');
+    await detail('최소 값', 20, 'minimum');
+    await detail('현재 값', 60, 'value');
+    await select('채움 방향', 'left');
+    await wait(
+      'document.querySelector("[data-ui-part=progress]")?.dataset.ratio==="0.5"',
+    );
+    assert.equal(
+      await js(
+        'document.querySelector("[data-ui-part=body]>path")?.getAttribute("fill-opacity")',
+      ),
+      '0.35',
+    );
+    assert.match(
+      await js(
+        'document.querySelector("[data-game-ui-item]").getAttribute("transform")',
+      ),
+      /rotate\(45/,
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-detail-editor button')).find(e=>e.textContent==='낮은 값 경고 추가').click()`,
+    );
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].thresholds?.length===2)()',
+    );
+    const persisted = await js(
+      '(async()=>JSON.stringify(await window.gameCanvas.listGameUi()))()',
+    );
+    await js(
+      `(()=>{const e=document.querySelector('[aria-label="미리보기 값"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'36');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await wait(
+      'document.querySelector("[data-ui-part=progress]")?.dataset.ratio==="0.2"',
+    );
+    assert.equal(
+      await js(
+        '(async()=>JSON.stringify(await window.gameCanvas.listGameUi()))()',
+      ),
+      persisted,
+    );
+    assert.equal(
+      await js(
+        'document.querySelector("[data-ui-part=progress] rect")?.getAttribute("fill")',
+      ),
+      '#ef4444',
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-detail-editor button')).find(e=>e.textContent==='미리보기 초기화').click()`,
+    );
+    await wait(
+      'document.querySelector("[data-ui-part=progress]")?.dataset.ratio==="0.5"',
+    );
+    await select('UI 외형', 'ring');
+    await detail('원형 시작 각도 (°)', 0, 'radialStart');
+    await detail('원형 전체 각도 (°)', 270, 'radialSweep');
+    await detail('링 두께', 12, 'ringWidth');
+    await select('외형 편집 상태', 'hover');
+    await fill('배경색', '#445566');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].stateStyles?.hover?.backgroundColor==="#445566")()',
+    );
+    assert.equal(
+      await js(
+        'document.querySelector("[data-ui-part=body]>path")?.getAttribute("fill")',
+      ),
+      '#445566',
+    );
+    await select('외형 편집 상태', 'normal');
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-detail-editor button')).find(e=>e.textContent==='스타일 복사').click()`,
+    );
+    const handle = await js(
+      `(()=>{const r=document.querySelector('[data-game-ui-rotate]').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()`,
+    );
+    await mouse('mouseMove', handle.x, handle.y);
+    await mouse('mouseDown', handle.x, handle.y);
+    await mouse('mouseMove', handle.x + 30, handle.y);
+    await mouse('mouseUp', handle.x + 30, handle.y);
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].rotation!==45)()',
+    );
+    await js('window.gameCanvas.undo()');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].rotation===45)()',
+    );
+    const resize = await js(
+      `(()=>{const e=document.querySelector('[data-game-ui-item]'),p=new DOMPoint(180,180).matrixTransform(e.getScreenCTM());return{x:p.x,y:p.y};})()`,
+    );
+    await mouse('mouseMove', resize.x, resize.y);
+    await mouse('mouseDown', resize.x, resize.y);
+    await mouse('mouseMove', resize.x + 20, resize.y + 10);
+    await mouse('mouseUp', resize.x + 20, resize.y + 10);
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].width>180)()',
+    );
+    await js('window.gameCanvas.undo()');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].width===180&&(await window.gameCanvas.listGameUi())[0].items[0].height===180)()',
+    );
     await js(
       `Array.from(document.querySelectorAll('.game-ui-drag-handle button')).find(e=>e.textContent==='UI 설명 문서 만들기').click()`,
     );
@@ -139,6 +251,12 @@ async function run() {
       '(async()=> (await window.gameCanvas.listGameUi())[0].items.length===2)()',
     );
     await wait(`!!document.querySelector('[aria-label="슬롯 개수"]')`);
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-detail-editor button')).find(e=>e.textContent==='스타일 붙여넣기').click()`,
+    );
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[1].borderWidth===6)()',
+    );
     await fill('슬롯 20 수량', 42);
     await fill('슬롯 개수', 12);
     await wait(
@@ -167,7 +285,7 @@ async function run() {
       '(async()=> (await window.gameCanvas.listGameUi())[0].items[1].x)()',
     );
     const location = await js(
-      `(()=>{const e=document.querySelectorAll('[data-game-ui-item]')[1],r=e.getBoundingClientRect();return{x:r.x+10,y:r.y+10}})()`,
+      `(()=>{const e=document.querySelectorAll('[data-game-ui-item]')[1],p=new DOMPoint(20,20).matrixTransform(e.getScreenCTM());return{x:p.x,y:p.y}})()`,
     );
     await mouse('mouseMove', location.x, location.y);
     await mouse('mouseDown', location.x, location.y);
@@ -190,9 +308,19 @@ async function run() {
     await wait(
       '(async()=> (await window.gameCanvas.listGameUi())[0].items[2].slots[0].cooldown===50)()',
     );
-    assert.equal(
-      await js('document.querySelectorAll(".game-ui-stage clipPath").length'),
-      1,
+    assert.ok(
+      (await js(
+        'document.querySelectorAll(".game-ui-stage clipPath").length',
+      )) >= 1,
+    );
+    await fill('슬롯 1 전체 쿨다운 (초)', 10);
+    await fill('슬롯 1 남은 쿨다운 (초)', 3);
+    await select('쿨다운 채움', 'radial');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[2].slots[0].cooldownRemaining===3)()',
+    );
+    assert.ok(
+      await js('!!document.querySelector("[data-ui-part=cooldown] path")'),
     );
     await js(
       'window.gameCanvas.exportGameUiPng=async input=>{window.qaGameUiPng=input;return true};true',

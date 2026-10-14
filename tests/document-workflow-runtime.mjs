@@ -43,7 +43,7 @@ try {
   assert.equal(health?.documentStatusesVersion, 1);
   assert.equal(health?.filePropertiesVersion, 1);
   assert.equal(health?.projectTrash, true);
-  assert.equal(health.version, '0.21.0');
+  assert.equal(health.version, '0.22.0');
   const created = await CollaborationClient.create(
     url,
     '',

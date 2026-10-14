@@ -521,7 +521,7 @@ export class CollaborationClient {
         syncClientVersion: 1,
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
-        gameUiVersion: 1,
+        gameUiVersion: 2,
         documentStatusesVersion: 1,
         filePropertiesVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
@@ -806,7 +806,7 @@ export class CollaborationClient {
         this.state.message ?? '삭제된 공동 프로젝트는 편집할 수 없습니다.',
       );
     return this.serial(async () => {
-      if (channel === 'game-ui:apply' && this.state.gameUiVersion !== 1)
+      if (channel === 'game-ui:apply' && this.state.gameUiVersion !== 2)
         throw new Error(
           '게임 UI 플러그인을 사용하려면 협업 서버를 업데이트해주세요.',
         );
