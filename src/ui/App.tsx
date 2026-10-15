@@ -1506,12 +1506,31 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
   const previewHtml = useMemo(
     () =>
       withPreviewKeyboardBridge(
-        withMultiplayerSdk(data.preview.content),
+        withMultiplayerSdk(data.preview.content, 'solo', settingsId),
         settingsId,
       ),
     [data.preview.content, settingsId],
   );
   const collapsed = state.collapsed && !fullscreen;
+  useEffect(() => {
+    const report = (event: MessageEvent) => {
+      if (
+        event.source !==
+          cardRef.current?.querySelector('iframe')?.contentWindow ||
+        event.data?.id !== settingsId ||
+        event.data?.type !== 'gamejam:diagnostic'
+      )
+        return;
+      void window.gameCanvas.multiplayer
+        ?.reportPreview?.({
+          path: data.preview.relativePath,
+          diagnostic: event.data.diagnostic,
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('message', report);
+    return () => window.removeEventListener('message', report);
+  }, [settingsId, data.preview.relativePath]);
   useEffect(() => {
     const update = () => {
       const active = document.fullscreenElement === cardRef.current;

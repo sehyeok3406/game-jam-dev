@@ -141,6 +141,11 @@ try {
       [gamePath]: COOP_REFERENCE_HTML.replace(
         '"maxPlayers":2',
         '"maxPlayers":4',
+      ).replace(
+        '</body>',
+        process.argv.includes('--diagnostics')
+          ? '<script>addEventListener("keydown",e=>{if(e.code==="F9")GameJamMultiplayer.reportIssue({area:"rules",code:"GAME-PUSH-001",message:"PRIVATE-CONTENT"});});</script></body>'
+          : '</body>',
       ),
     },
   );
@@ -279,6 +284,60 @@ try {
       ).includes('함께 플레이 중'),
     );
   }
+  if (process.argv.includes('--diagnostics')) {
+    await players[0].send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'F9',
+      code: 'F9',
+      windowsVirtualKeyCode: 120,
+    });
+    await players[0].send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'F9',
+      code: 'F9',
+      windowsVirtualKeyCode: 120,
+    });
+    const incidents = [];
+    for (const [index, session] of players.entries()) {
+      await until(
+        () =>
+          session.js(
+            '!document.querySelector("#failure").hidden && document.querySelector("#failure-code").textContent.includes("GC-MP-016")',
+          ),
+        'packaged diagnostic propagated',
+      );
+      const value = await session.js('window.gameJamPlayer.diagnostics(false)');
+      assert(!value.report.includes('PRIVATE-CONTENT'));
+      const report = JSON.parse(value.report),
+        incident = report.entries.find((e) => e.failure.code === 'GC-MP-016');
+      assert(incident);
+      assert.equal(incident.failure.details.customCode, 'GAME-PUSH-001');
+      incidents.push(incident.failure.id);
+      const screenshot = await session.send('Page.captureScreenshot', {
+        format: 'png',
+      });
+      await fs.writeFile(
+        path.join(output, `error-player-${index + 1}.png`),
+        Buffer.from(screenshot.data, 'base64'),
+      );
+    }
+    assert(incidents.every((id) => id === incidents[0]));
+    for (const session of players)
+      await session.js('document.querySelector("#ready").click()');
+    await until(
+      () => players[0].js('!document.querySelector("#start").disabled'),
+      'retry after game error',
+    );
+    await players[0].js('document.querySelector("#start").click()');
+    for (const session of players)
+      await until(
+        () =>
+          session.js(
+            'document.querySelector("#status").textContent.includes("함께 플레이 중") && document.querySelector("#failure").hidden',
+          ),
+        'new round clears error and resumes',
+      );
+  }
   await mains[0].js(
     `window.gameCanvas.multiplayer.control({action:'leave',roomId:${JSON.stringify(roomId)}})`,
   );
@@ -300,6 +359,7 @@ try {
         productionPlayer: true,
         bundledServer: process.argv.includes('--bundled-server'),
         hostLeave: true,
+        diagnostics: process.argv.includes('--diagnostics'),
       },
       null,
       2,

@@ -1,4 +1,6 @@
+import { PLAY_ERROR_HINTS, PlayError } from './multiplayer/errors.ts';
 export const ERROR_CODES = {
+  ...PLAY_ERROR_HINTS,
   'GC-UPD-001': [
     '업데이트 설정',
     '배포 저장소의 소유자·이름과 앱 빌드 설정을 확인해주세요.',
@@ -163,7 +165,10 @@ export function failureInfo(
     stage: ERROR_CODES[code][0],
     message: message.replace(/^\[GC-[A-Z]+-\d{3}\]\s*/, ''),
     hint: ERROR_CODES[code][1],
-    details: error instanceof CanvasError ? error.details : {},
+    details:
+      error instanceof CanvasError || error instanceof PlayError
+        ? error.details
+        : {},
   };
 }
 export function errorText(failure: FailureInfo) {

@@ -139,7 +139,7 @@ test('multiplayer contract validates portable games and bounded JSON; SDK preced
     JSON.parse('{"__proto__":1}'),
   ])
     assert.throws(() => jsonPayload(value, 1024));
-  assert.throws(() => jsonPayload({ x: 'a'.repeat(2048) }, 1024), /크기/);
+  assert.throws(() => jsonPayload({ x: 'a'.repeat(2048) }, 1024), /GC-MP-019/);
   const injected = withMultiplayerSdk(COOP_REFERENCE_HTML);
   assert.ok(
     injected.indexOf('installMultiplayerSdk') <
@@ -263,7 +263,7 @@ test('real authenticated rooms start, relay only host state, preserve project re
         .update(COOP_REFERENCE_HTML)
         .digest('hex'),
     }),
-    /뷰어/,
+    /GC-MP-008/,
   );
   const create = {
     action: 'create',
@@ -276,7 +276,10 @@ test('real authenticated rooms start, relay only host state, preserve project re
   assert.equal(first.room.id, repeated.room.id);
   const roomId = first.room.id;
   const room = (await control(viewer, { action: 'join', roomId })).room;
-  await assert.rejects(control(editor, { action: 'join', roomId }), /가득/);
+  await assert.rejects(
+    control(editor, { action: 'join', roomId }),
+    /GC-MP-010/,
+  );
   const host = await make(owner, room),
     guest = await make(viewer, room);
   await waitFor(

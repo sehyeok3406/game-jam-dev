@@ -339,6 +339,13 @@ export type GameCanvasApi = {
       input: import('./multiplayer/types').PlayAction,
     ) => Promise<import('./multiplayer/types').PlayEnvelope>;
     open: (roomId: string) => Promise<void>;
+    diagnostics?: (
+      copy?: boolean,
+    ) => Promise<{ report: string; count: number; storageAvailable: boolean }>;
+    reportPreview?: (input: {
+      path: string;
+      diagnostic: unknown;
+    }) => Promise<unknown>;
   };
   getDocumentStatuses: () => Promise<{
     value: import('./document-statuses').DocumentStatuses;

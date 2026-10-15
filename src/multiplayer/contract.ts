@@ -1,4 +1,5 @@
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
+import { PlayError } from './errors.ts';
 import { htmlReferences } from '../html-references.ts';
 import {
   DEFAULT_MULTIPLAYER,
@@ -92,7 +93,7 @@ export function jsonPayload(value: unknown, maxBytes: number): string {
     if (typeof item === 'number' && Number.isFinite(item)) return;
     if (typeof item === 'string') {
       if (item.length > maxBytes)
-        throw Error('[GC-MP-002] 게임 데이터 전송 크기를 초과했습니다.');
+        throw new PlayError('GC-MP-019', { limit: maxBytes });
       return;
     }
     if (Array.isArray(item)) {

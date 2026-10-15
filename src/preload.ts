@@ -2,11 +2,27 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { GameCanvasApi } from './shared';
 import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import { selfHostPreload } from './features/self-host/preload';
+import { playFailure } from './multiplayer/errors';
+async function playInvoke(channel: string, input?: unknown) {
+  const result = await ipcRenderer.invoke(channel, input);
+  if (result?.playFailure) {
+    const failure = playFailure(result.playFailure);
+    throw Object.assign(
+      new Error(
+        `[${failure.code}] ${failure.message} [incident:${failure.id}]`,
+      ),
+      { failure },
+    );
+  }
+  return result;
+}
 
 const api: GameCanvasApi = {
   multiplayer: {
-    control: (input) => ipcRenderer.invoke('multiplayer:control', input),
-    open: (roomId) => ipcRenderer.invoke('multiplayer:open', roomId),
+    control: (input) => playInvoke('multiplayer:control', input),
+    open: (roomId) => playInvoke('multiplayer:open', roomId),
+    diagnostics: (copy) => playInvoke('multiplayer:diagnostics', copy),
+    reportPreview: (input) => playInvoke('multiplayer:report-preview', input),
   },
   getDocumentStatuses: () => ipcRenderer.invoke('document-statuses:get'),
   setFileStatusProperty: (input) =>

@@ -10,6 +10,12 @@ import type {
   PlayMessage,
   PlayRoom,
 } from './types.ts';
+import {
+  PlayError,
+  playFailure,
+  type PlayErrorCode,
+  type PlayFailure,
+} from './errors.ts';
 
 export class PlayClient {
   private socket?: WebSocket;
@@ -17,6 +23,8 @@ export class PlayClient {
   private stopped = false;
   private loaded = false;
   private failures = 0;
+  private transportFailure?: PlayFailure;
+  private disconnectedAt = 0;
   readonly credentials: CollaborationCredentials;
   room: PlayRoom;
   private notify: (message: PlayMessage) => void;
@@ -29,13 +37,23 @@ export class PlayClient {
     this.room = room;
     this.notify = notify;
   }
-  static control(credentials: CollaborationCredentials, input: PlayAction) {
-    return CollaborationClient.fetch(
-      credentials.serverUrl,
-      `/projects/${credentials.projectId}/play`,
-      input,
-      credentials.token,
-    ) as Promise<PlayEnvelope>;
+  static async control(
+    credentials: CollaborationCredentials,
+    input: PlayAction,
+  ) {
+    try {
+      return (await CollaborationClient.fetch(
+        credentials.serverUrl,
+        `/projects/${credentials.projectId}/play`,
+        input,
+        credentials.token,
+      )) as PlayEnvelope;
+    } catch (error) {
+      const failure = playFailure(error, 'GC-MP-007', {
+        operation: input.action,
+      });
+      throw new PlayError(failure.code, failure.details, failure);
+    }
   }
   connect() {
     if (this.stopped || this.socket) return;
@@ -52,8 +70,32 @@ export class PlayClient {
       perMessageDeflate: false,
     });
     this.socket = socket;
-    socket.on('error', () => {});
+    let lastFailure: ReturnType<typeof playFailure> | undefined;
+    socket.on('error', (error: Error & { code?: string }) => {
+      lastFailure ??= playFailure(
+        error,
+        error.message.includes('timed out') ? 'GC-MP-006' : 'GC-MP-005',
+        {
+          operation: 'connect',
+          side: 'client',
+          attempt: this.failures,
+          transportCode: error.code,
+        },
+      );
+    });
+    socket.on('unexpected-response', (_request, response) => {
+      const header = response.headers['x-gamejam-error'];
+      lastFailure = playFailure(
+        { code: header, status: response.statusCode },
+        'GC-MP-007',
+        { operation: 'connect', side: 'client' },
+      );
+      response.resume();
+      socket.terminate();
+    });
     socket.on('open', () => {
+      this.transportFailure = undefined;
+      this.disconnectedAt = 0;
       this.failures = 0;
       socket.send(
         JSON.stringify({
@@ -75,11 +117,32 @@ export class PlayClient {
             room.id !== this.room.id ||
             room.serverEpoch !== this.room.serverEpoch
           )
-            throw Error('Game room changed');
+            throw new PlayError('GC-MP-021');
           this.room = room;
         }
+        if (
+          message.type === 'error' ||
+          (message.type === 'room' && this.room.failure)
+        ) {
+          const failure = playFailure(
+            message.type === 'room'
+              ? this.room.failure
+              : (message.failure ?? { code: message.code }),
+            'GC-MP-020',
+          );
+          if (message.type === 'error') {
+            message.failure = failure;
+            message.code = failure.code;
+            message.message = failure.message;
+            lastFailure = failure;
+          } else this.room.failure = failure;
+        }
         this.notify(message);
-      } catch {
+      } catch (error) {
+        lastFailure = playFailure(error, 'GC-MP-020', {
+          side: 'client',
+          operation: 'receive',
+        });
         socket.close(4003, 'invalid server message');
       }
     });
@@ -90,16 +153,52 @@ export class PlayClient {
         this.stopped = true;
         return;
       }
-      this.notify({ type: 'connection', connected: false });
-      if (!this.stopped && ![4000, 4001, 4003].includes(code))
+      if (this.stopped) return;
+      this.disconnectedAt ||= Date.now();
+      const fallback: PlayErrorCode =
+        code === 4008 || code === 1009
+          ? 'GC-MP-022'
+          : code === 4001
+            ? 'GC-MP-021'
+            : code === 4003
+              ? 'GC-MP-008'
+              : 'GC-MP-005';
+      const failure = playFailure(
+        lastFailure ?? this.transportFailure,
+        fallback,
+        {
+          closeCode: code,
+          attempt: this.failures,
+          side: 'client',
+        },
+      );
+      this.notify({ type: 'connection', connected: false, failure });
+      if (this.failures >= 6 || Date.now() - this.disconnectedAt >= 20000) {
+        this.stopped = true;
+        const timeout = playFailure(new PlayError('GC-MP-024'), 'GC-MP-024', {
+          side: 'client',
+          attempt: this.failures,
+          durationMs: Date.now() - this.disconnectedAt,
+        });
+        this.notify({
+          type: 'error',
+          code: timeout.code,
+          message: timeout.message,
+          failure: timeout,
+        });
+        return;
+      }
+      if (![4000, 4001, 4003].includes(code) && failure.retryable)
         this.timer = setTimeout(
           () => this.connect(),
           Math.min(4000, 500 * 2 ** this.failures++) + Math.random() * 150,
         );
-      else if (!this.stopped)
+      else
         this.notify({
           type: 'error',
-          message: '방이 종료되었거나 참여 권한이 변경되었습니다.',
+          code: failure.code,
+          message: failure.message,
+          failure,
         });
     });
   }
@@ -110,7 +209,7 @@ export class PlayClient {
         message.type,
       )
     )
-      throw Error('허용되지 않는 게임 메시지입니다.');
+      throw new PlayError('GC-MP-020');
     const encoded = jsonPayload(
       {
         ...message,
@@ -120,6 +219,25 @@ export class PlayClient {
       },
       40 * 1024,
     );
+    if (
+      this.socket?.readyState === WebSocket.OPEN &&
+      this.socket.bufferedAmount >= 256 * 1024
+    ) {
+      const failure = playFailure(new PlayError('GC-MP-022'), 'GC-MP-022', {
+        side: 'client',
+        bytes: this.socket.bufferedAmount,
+        limit: 256 * 1024,
+      });
+      this.transportFailure = failure;
+      this.notify({
+        type: 'error',
+        code: failure.code,
+        message: failure.message,
+        failure,
+      });
+      this.socket.terminate();
+      return;
+    }
     if (
       this.socket?.readyState === WebSocket.OPEN &&
       this.socket.bufferedAmount < 256 * 1024

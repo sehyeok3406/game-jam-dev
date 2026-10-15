@@ -37,6 +37,7 @@ export type PlayRoom = {
   matchId: string | null;
   seed: number;
   reason?: string;
+  failure?: import('./errors.ts').PlayFailure;
 };
 export type PlayArtifact = {
   html: string;

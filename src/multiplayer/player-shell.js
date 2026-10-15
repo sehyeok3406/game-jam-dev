@@ -12,6 +12,51 @@ export async function installPlayerShell() {
     port,
     loaded = false,
     begunMatch;
+  const showFailure = (value) => {
+    const raw = value?.failure || value || {};
+    const embedded = String(raw.message || '').match(/\[(GC-MP-\d{3})\]/)?.[1];
+    const code = boot?.errors?.[raw.code]
+      ? raw.code
+      : boot?.errors?.[embedded]
+        ? embedded
+        : 'GC-MP-029';
+    const text = boot?.errors?.[code] || {
+      message: '플레이 중 문제가 생겼어요.',
+      hint: '게임을 다시 열어주세요. 반복되면 오류 정보를 전달해주세요.',
+    };
+    const incident =
+      raw.id ||
+      String(raw.message || '').match(/\[incident:([a-f0-9-]{36})\]/)?.[1];
+    const failure = {
+      code,
+      id: incident,
+      phase: text.phase,
+      details: raw.details,
+    };
+    status.textContent = text.message;
+    document.querySelector('#failure').hidden = false;
+    document.querySelector('#failure-message').textContent = text.message;
+    document.querySelector('#failure-hint').textContent = text.hint;
+    document.querySelector('#failure-code').textContent =
+      code + (incident ? ' · 추적 번호 ' + incident.slice(0, 8) : '');
+    document.querySelector('#failure-detail').textContent = JSON.stringify(
+      failure,
+      null,
+      2,
+    );
+  };
+  document.querySelector('#copy-diagnostics').onclick = async () => {
+    const result = document.querySelector('#copy-result');
+    try {
+      const value = await api.diagnostics(true);
+      result.textContent = value.storageAvailable
+        ? '오류 정보를 복사했어요.'
+        : '오류 정보를 복사했어요. 파일 저장은 확인이 필요해요.';
+    } catch {
+      result.textContent =
+        '복사하지 못했어요. 오류 코드와 추적 번호를 함께 전달해주세요.';
+    }
+  };
   const pause = () => port?.postMessage({ type: 'pause' });
   const context = () => ({
     selfId: boot.memberId,
@@ -48,6 +93,9 @@ export async function installPlayerShell() {
         finished: '이번 판 종료 · 다시 준비할 수 있습니다.',
         closed: '방 종료',
       }[room.status];
+    if (room.failure) showFailure(room.failure);
+    else if (room.status === 'running')
+      document.querySelector('#failure').hidden = true;
     const self = room.members.find((m) => m.id === boot.memberId);
     ready.disabled =
       !loaded ||
@@ -74,6 +122,7 @@ export async function installPlayerShell() {
           pause();
       } else if (message.type === 'restore') {
         room = message.room;
+        display();
         if (message.snapshot) {
           begin(message.snapshot);
           if (room.status === 'running') port?.postMessage({ type: 'run' });
@@ -82,10 +131,10 @@ export async function installPlayerShell() {
         port?.postMessage(message);
       else if (message.type === 'connection' && !message.connected) {
         pause();
-        status.textContent = '연결 끊김 · 다시 연결하는 중입니다.';
+        showFailure(message.failure || { code: 'GC-MP-005' });
       } else if (message.type === 'error') {
         pause();
-        status.textContent = message.message;
+        showFailure(message.failure || { code: message.code });
       }
     });
     ready.onclick = async () => {
@@ -93,14 +142,14 @@ export async function installPlayerShell() {
         const self = room.members.find((m) => m.id === boot.memberId);
         await api.control({ action: 'ready', ready: !self?.ready });
       } catch (error) {
-        status.textContent = error.message;
+        showFailure(error);
       }
     };
     start.onclick = async () => {
       try {
         await api.control({ action: 'start', expectedRevision: room.revision });
       } catch (error) {
-        status.textContent = error.message;
+        showFailure(error);
       }
     };
     frame.onload = () => {
@@ -122,7 +171,7 @@ export async function installPlayerShell() {
             api.send(message);
           } catch (error) {
             pause();
-            status.textContent = error.message;
+            showFailure(error);
           }
         }
       };

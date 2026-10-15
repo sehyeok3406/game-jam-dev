@@ -14,6 +14,8 @@ import {
 } from './gamejam-approval.ts';
 import { gamejamTaskInput, type GamejamRequest } from './gamejam-request.ts';
 import { attachMultiplayerServer } from './multiplayer/server.ts';
+import { PlayDiagnostics, diagnosticRef } from './multiplayer/diagnostics.ts';
+import packageInfo from '../package.json' with { type: 'json' };
 import {
   TRASH_RETENTION,
   moveChecked,
@@ -277,6 +279,10 @@ export async function createCollaborationServer(options: Options) {
     throw new Error('외부 연결 서버에는 32자 이상의 creationKey가 필요합니다.');
   const root = path.resolve(options.dataDirectory);
   await fs.mkdir(root, { recursive: true });
+  const playDiagnostics = new PlayDiagnostics(
+    path.join(root, '.multiplayer-diagnostics.json'),
+    packageInfo.version,
+  );
   const projects = new Map<string, Project>();
   let multiplayer: ReturnType<typeof attachMultiplayerServer> | undefined;
   const lifecycleMarkers = new Map<
@@ -993,8 +999,9 @@ export async function createCollaborationServer(options: Options) {
           deltaSync: true,
           eventStream: true,
           multiplayerVersion: 1,
+          multiplayerDiagnosticsVersion: 1,
           projectTrash: true,
-          version: '0.24.0',
+          version: packageInfo.version,
         });
         return;
       }
@@ -1042,20 +1049,44 @@ export async function createCollaborationServer(options: Options) {
         url.pathname,
       );
       if (playMatch) {
-        const project = projects.get(playMatch[1]);
-        if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
-        const token = String(request.headers.authorization ?? '').replace(
-          /^Bearer /,
-          '',
-        );
-        const member = authenticate(project, token);
-        assertActive(project);
-        limit(`${project.id}:${member.id}`, 'play-control', 120);
-        reply(
-          response,
-          200,
-          multiplayer!.control(project.id, token, await body(request)),
-        );
+        let playContext: Record<string, unknown> = {};
+        try {
+          const project = projects.get(playMatch[1]);
+          if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+          const token = String(request.headers.authorization ?? '').replace(
+            /^Bearer /,
+            '',
+          );
+          const member = authenticate(project, token);
+          assertActive(project);
+          limit(`${project.id}:${member.id}`, 'play-control', 120);
+          const payload = await body(request);
+          const action = payload as { action?: unknown; roomId?: unknown };
+          playContext = {
+            operation: action?.action,
+            roomRef:
+              typeof action?.roomId === 'string' &&
+              /^[a-f0-9-]{36}$/.test(action.roomId)
+                ? diagnosticRef(action.roomId)
+                : undefined,
+          };
+          reply(
+            response,
+            200,
+            multiplayer!.control(project.id, token, payload),
+          );
+        } catch (error) {
+          const failure = playDiagnostics.record(error, 'GC-MP-020', {
+            side: 'server',
+            projectRef: diagnosticRef(playMatch[1]),
+            ...playContext,
+          });
+          reply(response, error instanceof ApiError ? error.status : 400, {
+            error: `[${failure.code}] ${failure.message}`,
+            code: failure.code,
+            failure,
+          });
+        }
         return;
       }
       // Do not trust client-supplied proxy headers. A tunnel shares one peer IP,
@@ -2512,18 +2543,22 @@ export async function createCollaborationServer(options: Options) {
       });
     }
   });
-  multiplayer = attachMultiplayerServer(server, (id, token) => {
-    const project = projects.get(id);
-    if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
-    assertActive(project);
-    const member = authenticate(project, token);
-    return {
-      id: member.id,
-      nickname: member.nickname,
-      role: member.role,
-      files: project.files,
-    };
-  });
+  multiplayer = attachMultiplayerServer(
+    server,
+    (id, token) => {
+      const project = projects.get(id);
+      if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+      assertActive(project);
+      const member = authenticate(project, token);
+      return {
+        id: member.id,
+        nickname: member.nickname,
+        role: member.role,
+        files: project.files,
+      };
+    },
+    playDiagnostics,
+  );
   const checkpointTimer = setInterval(() => {
     void maintainTrash().catch(() => undefined);
     // Export an immutable committed reference without holding the mutation or lease queue.
@@ -2547,6 +2582,7 @@ export async function createCollaborationServer(options: Options) {
     close: async () => {
       clearInterval(checkpointTimer);
       multiplayer?.close();
+      await playDiagnostics.flush();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections();

@@ -1,5 +1,8 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain } from 'electron';
 import type { CollaborationCredentials } from '../collaboration-client.ts';
+import path from 'node:path';
+import { PlayDiagnostics, diagnosticRef } from './diagnostics.ts';
+import { PlayError, PLAY_ERRORS, type PlayErrorCode } from './errors.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { PlayClient } from './client.ts';
 import { withMultiplayerSdk } from './sdk.ts';
@@ -13,8 +16,45 @@ export function registerMultiplayerWindows(options: {
   credentials: () => CollaborationCredentials | undefined;
   memberId: () => string | undefined;
   isMainSender: (event: Electron.IpcMainInvokeEvent) => boolean;
-  currentHtml: (path: string) => string | undefined;
+  currentHtml: (
+    path: string,
+  ) => string | undefined | Promise<string | undefined>;
 }) {
+  const diagnostics = new PlayDiagnostics(
+    path.join(app.getPath('userData'), 'multiplayer-diagnostics.json'),
+    app.getVersion(),
+  );
+  const previews = new Map<number, number>();
+  const detailsFor = (
+    room?: import('./types.ts').PlayRoom,
+    operation?: string,
+  ) => ({
+    side: 'main',
+    operation,
+    projectRef: diagnosticRef(options.credentials()?.projectId),
+    roomRef: diagnosticRef(room?.id),
+    sessionRef: diagnosticRef(room?.serverEpoch),
+    matchRef: diagnosticRef(room?.matchId ?? undefined),
+    sourceHash: room?.sourceHash,
+    roomStatus: room?.status,
+  });
+  const capture = (
+    error: unknown,
+    code: PlayErrorCode = 'GC-MP-029',
+    room?: import('./types.ts').PlayRoom,
+    operation?: string,
+  ) => diagnostics.record(error, code, detailsFor(room, operation));
+  const handle = (
+    channel: string,
+    action: (event: Electron.IpcMainInvokeEvent, input: any) => unknown,
+  ) =>
+    ipcMain.handle(channel, async (event, input) => {
+      try {
+        return await action(event, input);
+      } catch (error) {
+        return { playFailure: capture(error) };
+      }
+    });
   const entries = new Map<
     number,
     {
@@ -23,6 +63,7 @@ export function registerMultiplayerWindows(options: {
       artifact: PlayArtifact;
       bridgeId: string;
       connected: boolean;
+      loaded: boolean;
     }
   >();
   const entryFor = (
@@ -34,21 +75,20 @@ export function registerMultiplayerWindows(options: {
       event.senderFrame !== event.sender.mainFrame ||
       options.credentials() !== entry.client.credentials
     )
-      throw Error('[GC-MP-003] 현재 플레이 창에서만 사용할 수 있습니다.');
+      throw new PlayError('GC-MP-026');
     return entry;
   };
   const credentials = () => {
     const value = options.credentials();
-    if (!value) throw Error('[GC-MP-003] 공동 프로젝트에 연결해주세요.');
+    if (!value) throw new PlayError('GC-MP-003');
     return value;
   };
-  ipcMain.handle('multiplayer:control', (event, input: PlayAction) => {
-    if (!options.isMainSender(event))
-      throw Error('앱에서만 플레이 방을 관리할 수 있습니다.');
+  handle('multiplayer:control', async (event, input: PlayAction) => {
+    if (!options.isMainSender(event)) throw new PlayError('GC-MP-026');
     jsonPayload(input, 4096);
     if (input.action === 'create') {
-      const html = options.currentHtml(input.path ?? '');
-      if (!html) throw Error('HTML 결과를 찾을 수 없습니다.');
+      const html = await options.currentHtml(input.path ?? '');
+      if (!html) throw new PlayError('GC-MP-001');
       input = {
         ...input,
         sourceHash: createHash('sha256').update(html).digest('hex'),
@@ -75,7 +115,7 @@ export function registerMultiplayerWindows(options: {
       roomId,
       requestId: randomUUID(),
     });
-    if (!room) throw Error('플레이 방을 찾을 수 없습니다.');
+    if (!room) throw new PlayError('GC-MP-009');
     const { artifact } = await PlayClient.control(auth, {
       action: 'artifact',
       roomId,
@@ -86,7 +126,7 @@ export function registerMultiplayerWindows(options: {
       createHash('sha256').update(artifact.html).digest('hex') !==
         room.sourceHash
     )
-      throw Error('플레이 소스 해시가 일치하지 않습니다.');
+      throw new PlayError('GC-MP-012');
     const window = new BrowserWindow({
       width: 1100,
       height: 800,
@@ -111,14 +151,49 @@ export function registerMultiplayerWindows(options: {
       if (!['about:blank', 'about:srcdoc'].includes(event.url))
         event.preventDefault();
     });
-    contents.session.webRequest.onBeforeRequest((details, done) =>
-      done({
-        cancel: !['data:', 'blob:', 'about:'].some((prefix) =>
-          details.url.startsWith(prefix),
-        ),
-      }),
-    );
+    let blockedResource = false;
+    contents.session.webRequest.onBeforeRequest((details, done) => {
+      const cancel = !['data:', 'blob:', 'about:'].some((prefix) =>
+        details.url.startsWith(prefix),
+      );
+      done({ cancel });
+      if (cancel && !blockedResource) {
+        blockedResource = true;
+        const failure = capture(
+          new PlayError('GC-MP-027', { resourceType: details.resourceType }),
+          'GC-MP-027',
+          room,
+          'runtime',
+        );
+        contents.send('multiplayer:event', {
+          type: 'error',
+          code: failure.code,
+          message: failure.message,
+          failure,
+        });
+        try {
+          client.send({ type: 'error', code: failure.code, failure });
+        } catch {
+          /* No URL or request contents are recorded. */
+        }
+      }
+    });
     const client = new PlayClient(auth, room, (message) => {
+      const problem =
+        message.failure ??
+        (message.type === 'room'
+          ? (message.room as import('./types.ts').PlayRoom)?.failure
+          : undefined);
+      if (problem) {
+        const failure = capture(problem, 'GC-MP-029', client.room, 'receive');
+        if (message.type !== 'room')
+          message = {
+            ...message,
+            failure,
+            code: failure.code,
+            message: failure.message,
+          };
+      }
       if (!contents.isDestroyed()) contents.send('multiplayer:event', message);
     });
     const entry = {
@@ -127,10 +202,52 @@ export function registerMultiplayerWindows(options: {
       artifact,
       bridgeId: randomUUID(),
       connected: false,
+      loaded: false,
     };
     entries.set(contents.id, entry);
+    const loadTimer = setTimeout(() => {
+      if (
+        entry.loaded ||
+        window.isDestroyed() ||
+        ['finished', 'closed'].includes(client.room.status)
+      )
+        return;
+      const failure = capture(
+        new PlayError('GC-MP-013'),
+        'GC-MP-013',
+        client.room,
+        'open',
+      );
+      contents.send('multiplayer:event', {
+        type: 'error',
+        code: failure.code,
+        message: failure.message,
+        failure,
+      });
+      try {
+        client.send({ type: 'error', code: failure.code, failure });
+      } catch {
+        /* Failure is already recorded locally. */
+      }
+    }, 13000);
+    loadTimer.unref();
+    contents.on('render-process-gone', () => {
+      const failure = capture(
+        new PlayError('GC-MP-025'),
+        'GC-MP-025',
+        client.room,
+        'runtime',
+      );
+      try {
+        client.send({ type: 'error', code: failure.code, failure });
+      } catch {
+        /* Connection may have already closed. */
+      }
+    });
     window.on('closed', () => {
       entries.delete(contents.id);
+      clearTimeout(loadTimer);
+      void diagnostics.flush();
       client.close();
       void PlayClient.control(auth, {
         action: 'leave',
@@ -140,30 +257,31 @@ export function registerMultiplayerWindows(options: {
     });
     const csp =
       "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src about:; connect-src 'none'; form-action 'none';";
-    const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;background:#141821;color:#edf1fa;font:14px system-ui}header{padding:12px 16px;display:flex;gap:12px;align-items:center}h1{font-size:16px;margin:0;flex:1}button{padding:8px 16px;border:0;border-radius:6px}button:disabled{opacity:.5}p{margin:4px 16px 10px}iframe{width:100%;height:calc(100vh - 128px);border:0;background:#080b12}</style></head><body><header><h1 id="title">함께 플레이</h1><button id="ready" disabled>준비</button><button id="start" disabled>게임 시작</button></header><p id="members"></p><p id="status" role="status">게임을 준비하고 있습니다.</p><iframe sandbox="allow-scripts allow-pointer-lock" title="함께 플레이 게임"></iframe><script>(${installPlayerShell.toString()})();</script></body></html>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#141821;color:#edf1fa;font:14px system-ui}header{padding:12px 16px;display:flex;gap:12px;align-items:center}h1{font-size:16px;margin:0;flex:1}button{padding:8px 16px;border:0;border-radius:6px}button:disabled{opacity:.5}p{margin:4px 16px 10px}#failure{flex-shrink:0;max-height:42vh;overflow:auto}header,p{flex-shrink:0}iframe{width:100%;flex:1;min-height:140px;border:0;background:#080b12}</style></head><body><header><h1 id="title">함께 플레이</h1><button id="ready" disabled>준비</button><button id="start" disabled>게임 시작</button></header><p id="members"></p><p id="status" role="status">게임을 준비하고 있습니다.</p><section id="failure" hidden style="margin:8px 16px;padding:12px;border:1px solid #e7b36c;border-radius:8px"><strong id="failure-message"></strong><p id="failure-hint"></p><small id="failure-code"></small><details><summary>오류 정보</summary><pre id="failure-detail" style="white-space:pre-wrap"></pre></details><button id="copy-diagnostics">오류 정보 복사</button><span id="copy-result" role="status"></span></section><iframe sandbox="allow-scripts allow-pointer-lock" title="함께 플레이 게임"></iframe><script>(${installPlayerShell.toString()})();</script></body></html>`;
     await window.loadURL(
       `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
     );
   }
-  ipcMain.handle('multiplayer:open', (event, roomId: string) => {
+  handle('multiplayer:open', (event, roomId: string) => {
     if (!options.isMainSender(event) || typeof roomId !== 'string')
-      throw Error('앱에서 방을 선택해주세요.');
+      throw new PlayError('GC-MP-026');
     return open(roomId);
   });
-  ipcMain.handle('multiplayer:bootstrap', (event) => {
+  handle('multiplayer:bootstrap', (event) => {
     const entry = entryFor(event);
     return {
       room: entry.client.room,
+      errors: PLAY_ERRORS,
       memberId: options.memberId(),
       bridgeId: entry.bridgeId,
       html: withMultiplayerSdk(entry.artifact.html, 'online', entry.bridgeId),
     };
   });
-  ipcMain.handle('multiplayer:player-control', (event, raw: PlayAction) => {
+  handle('multiplayer:player-control', (event, raw: PlayAction) => {
     const entry = entryFor(event);
     jsonPayload(raw, 4096);
     if (!['ready', 'start'].includes(raw.action))
-      throw Error('허용되지 않는 플레이 조작입니다.');
+      throw new PlayError('GC-MP-026');
     return PlayClient.control(entry.client.credentials, {
       action: raw.action,
       ready: raw.ready,
@@ -191,15 +309,83 @@ export function registerMultiplayerWindows(options: {
       return;
     }
     try {
+      if (message.type === 'loaded') entry.loaded = true;
+      if (message.type === 'error') {
+        const failure = capture(
+          { code: message.code, details: message.diagnostic },
+          'GC-MP-025',
+          entry.client.room,
+          'runtime',
+        );
+        event.sender.send('multiplayer:event', {
+          type: 'error',
+          code: failure.code,
+          message: failure.message,
+          failure,
+        });
+        message = {
+          type: 'error',
+          code: failure.code,
+          failure,
+          diagnostic: failure.details,
+        };
+      }
       entry.client.send(message);
     } catch (error) {
-      const reason = String((error as Error).message).slice(0, 300);
+      const failure = capture(error, 'GC-MP-020', entry.client.room, 'send');
       event.sender.send('multiplayer:event', {
         type: 'error',
-        message: reason,
+        code: failure.code,
+        message: failure.message,
+        failure,
       });
-      entry.client.send({ type: 'error', message: reason });
+      try {
+        entry.client.send({ type: 'error', code: failure.code, failure });
+      } catch {
+        /* The original diagnostic is preserved if the socket is unavailable. */
+      }
     }
+  });
+  handle('multiplayer:diagnostics', async (event, copy: unknown) => {
+    let scope;
+    if (options.isMainSender(event))
+      scope = options.credentials()
+        ? { projectRef: diagnosticRef(options.credentials()?.projectId) }
+        : { side: 'preview' };
+    else scope = { roomRef: diagnosticRef(entryFor(event).client.room.id) };
+    const report = await diagnostics.report(scope);
+    const text = JSON.stringify(report, null, 2);
+    if (copy === true) await clipboard.writeText(text);
+    return {
+      report: text,
+      count: report.count,
+      storageAvailable: report.storageAvailable,
+    };
+  });
+  handle('multiplayer:report-preview', async (event, input: unknown) => {
+    if (!options.isMainSender(event)) throw new PlayError('GC-MP-026');
+    const now = Date.now();
+    if (now - (previews.get(event.sender.id) ?? 0) < 1000) return;
+    if (!previews.has(event.sender.id))
+      event.sender.once('destroyed', () => previews.delete(event.sender.id));
+    previews.set(event.sender.id, now);
+    const value = input as {
+      path: string;
+      diagnostic: { code?: unknown; diagnostic?: unknown };
+    };
+    jsonPayload(value, 4096);
+    const html = await options.currentHtml(value.path);
+    if (!html || !value.diagnostic) return;
+    return diagnostics.record(
+      { code: value.diagnostic.code, details: value.diagnostic.diagnostic },
+      'GC-MP-025',
+      {
+        side: 'preview',
+        operation: 'preview',
+        projectRef: diagnosticRef(options.credentials()?.projectId),
+        sourceHash: createHash('sha256').update(html).digest('hex'),
+      },
+    );
   });
   const timer = setInterval(() => {
     for (const entry of entries.values())

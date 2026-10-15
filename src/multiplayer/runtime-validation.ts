@@ -1,3 +1,4 @@
+import { PlayError, playFailure } from './errors.ts';
 import type { BrowserWindow } from 'electron';
 import { withMultiplayerSdk } from './sdk.ts';
 import { readMultiplayerManifest } from './contract.ts';
@@ -23,7 +24,7 @@ export async function validateMultiplayerRuntime(
     const frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-scripts');document.body.append(frame);
     frame.onload=()=>{const ch=new MessageChannel();ports[i]=ch.port1;ch.port1.onmessage=e=>{
       const m=e.data;
-      if(m.type==='error')window.validation.error=m.message;
+      if(m.type==='error')window.validation.error={code:m.code,details:m.diagnostic};
       if(m.type==='loaded'){loaded.add(i);window.validation.registered=loaded.size;if(loaded.size===count)begin();}
       if(m.type==='begun'){begun.add(i);if(begun.size===count&&snapshot)run();}
       if(m.type==='input')send(0,{type:'input',playerId:'p'+i,connectionId:'c'+i,sequence:m.sequence,input:m.input});
@@ -36,13 +37,17 @@ export async function validateMultiplayerRuntime(
   await window.loadURL(
     `data:text/html;charset=utf-8,${encodeURIComponent(harness)}`,
   );
+  let registered = 0;
   for (let n = 0; n < 100; n++) {
     const result =
       await window.webContents.executeJavaScript('window.validation');
-    if (result?.error)
-      throw Error(
-        `[GC-MP-004] 공동 실행 오류: ${String(result.error).slice(0, 300)}`,
-      );
+    registered = result?.registered ?? registered;
+    if (result?.error) {
+      const failure = playFailure(result.error, 'GC-MP-004', {
+        side: 'validation',
+      });
+      throw new PlayError(failure.code, failure.details, failure);
+    }
     if (result?.done) {
       if (result.registered !== count || !result.running || !result.equal)
         throw Error(
@@ -52,5 +57,8 @@ export async function validateMultiplayerRuntime(
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
-  throw Error('[GC-MP-004] 공동 실행 초기화 시간이 초과되었습니다.');
+  throw new PlayError(registered < count ? 'GC-MP-014' : 'GC-MP-013', {
+    side: 'validation',
+    durationMs: 3000,
+  });
 }

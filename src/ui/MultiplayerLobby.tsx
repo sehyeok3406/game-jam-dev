@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { readMultiplayerManifest } from '../multiplayer/contract';
 import type { PlayRoom } from '../multiplayer/types';
+import { playFailure, type PlayFailure } from '../multiplayer/errors';
 
 export function MultiplayerLobby({
   path,
@@ -14,6 +15,9 @@ export function MultiplayerLobby({
   const [open, setOpen] = useState(false);
   const [rooms, setRooms] = useState<PlayRoom[]>([]);
   const [error, setError] = useState('');
+  const [failure, setFailure] = useState<PlayFailure | null>(null);
+  const [report, setReport] = useState('');
+  const [copied, setCopied] = useState('');
   const [busy, setBusy] = useState(false);
   let supported = false;
   try {
@@ -30,10 +34,13 @@ export function MultiplayerLobby({
         const result = await api.control({ action: 'list' });
         if (active) {
           setRooms(result.rooms ?? []);
-          setError('');
         }
       } catch (e) {
-        if (active) setError((e as Error).message);
+        if (active) {
+          const value = playFailure(e, 'GC-MP-007');
+          setFailure(value);
+          setError(value.message);
+        }
       }
     };
     void refresh();
@@ -48,6 +55,7 @@ export function MultiplayerLobby({
     if (!api) return;
     setBusy(true);
     setError('');
+    setFailure(null);
     try {
       if (!roomId) {
         const result = await api.control({ action: 'create', path });
@@ -56,9 +64,34 @@ export function MultiplayerLobby({
       if (roomId) await api.open(roomId);
       setOpen(false);
     } catch (e) {
-      setError((e as Error).message);
+      const value = playFailure(e, 'GC-MP-029');
+      setFailure(value);
+      setError(value.message);
     } finally {
       setBusy(false);
+    }
+  };
+  const diagnostics = async (copy = false) => {
+    try {
+      const result = await api?.diagnostics?.(copy);
+      if (result) {
+        setReport(result.report);
+        setCopied(
+          copy
+            ? '오류 정보를 복사했어요.'
+            : result.count
+              ? '최근 오류 기록을 확인할 수 있어요.'
+              : '아직 기록된 오류가 없어요.',
+        );
+        if (!result.storageAvailable)
+          setCopied(
+            '파일 저장이 어려워 현재 남아 있는 오류 정보를 표시했어요. 복사해 보관해주세요.',
+          );
+      }
+    } catch {
+      setCopied(
+        '오류 기록을 가져오지 못했어요. 표시된 오류 코드를 전달해주세요.',
+      );
     }
   };
   return (
@@ -86,6 +119,28 @@ export function MultiplayerLobby({
           </p>
           {!api && <p>데스크톱 앱에서 공동 프로젝트에 연결해주세요.</p>}
           {error && <p role="alert">{error}</p>}
+          {failure && (
+            <div className="multiplayer-failure">
+              <p>{failure.hint}</p>
+              <details>
+                <summary>오류 정보</summary>
+                <p>
+                  {failure.code} · 추적 번호 {failure.id}
+                </p>
+                <pre>
+                  {JSON.stringify(
+                    {
+                      phase: failure.phase,
+                      at: failure.at,
+                      details: failure.details,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
+            </div>
+          )}
           {!projectOnly && (
             <button
               type="button"
@@ -123,6 +178,31 @@ export function MultiplayerLobby({
               </li>
             ))}
           </ul>
+          {api?.diagnostics && (
+            <>
+              <button type="button" onClick={() => void diagnostics()}>
+                최근 오류 보기
+              </button>
+              <button type="button" onClick={() => void diagnostics(true)}>
+                오류 정보 복사
+              </button>
+              <p role="status">{copied}</p>
+              {report && (
+                <details>
+                  <summary>최근 오류 기록</summary>
+                  <pre
+                    style={{
+                      whiteSpace: 'pre-wrap',
+                      maxHeight: 240,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {report}
+                  </pre>
+                </details>
+              )}
+            </>
+          )}
           <button type="button" onClick={() => setOpen(false)}>
             닫기
           </button>

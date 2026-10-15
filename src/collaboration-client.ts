@@ -247,6 +247,7 @@ export class CollaborationClient {
     let value: {
       error?: string;
       code?: string;
+      failure?: unknown;
       lifecycle?: import('./shared.ts').SharedProjectLifecycle;
     };
     try {
@@ -295,6 +296,7 @@ export class CollaborationClient {
           {
             status: response.status,
             code: value.code,
+            failure: value.failure,
             lifecycle: value.lifecycle,
           },
         );

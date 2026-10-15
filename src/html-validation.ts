@@ -1,3 +1,4 @@
+import { PlayError, isPlayCode, playFailure } from './multiplayer/errors.ts';
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import { inspectHtml } from './html-document';
@@ -66,6 +67,14 @@ export async function validateHtml(content: string, relativePath?: string) {
           `data:text/html;charset=utf-8,${encodeURIComponent(instrumented)}`,
         );
         await new Promise((resolve) => setTimeout(resolve, 900));
+        const gameCode = errors[0]?.message.match(/\[(GC-MP-\d{3})\]/)?.[1];
+        if (isPlayCode(gameCode)) {
+          const failure = playFailure({ code: gameCode }, gameCode, {
+            side: 'validation',
+            line: errors[0].line,
+          });
+          throw new CanvasError(failure.code, failure.message, failure.details);
+        }
         if (errors.length)
           throw new CanvasError(
             errors[0].code ?? 'GC-HTML-002',
@@ -90,6 +99,8 @@ export async function validateHtml(content: string, relativePath?: string) {
       }),
     ]);
   } catch (error) {
+    if (error instanceof PlayError)
+      throw new CanvasError(error.code, error.message, error.details);
     if (error instanceof CanvasError) throw error;
     throw new CanvasError(
       'GC-HTML-002',

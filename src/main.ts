@@ -2834,7 +2834,14 @@ const registerIpc = () => {
         : undefined,
     memberId: () => collaboration?.state.memberId,
     isMainSender: isUpdateSender,
-    currentHtml: (relative) => collaboration?.files[relative],
+    currentHtml: async (relative) => {
+      if (typeof relative !== 'string' || !isPreviewPath(relative))
+        return undefined;
+      if (collaboration) return collaboration.files[relative];
+      return fs
+        .readFile(await safePath(relative), 'utf8')
+        .catch(() => undefined);
+    },
   });
   handle(
     'clipboard:canvas-copy',
