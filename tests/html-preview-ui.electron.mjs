@@ -25,7 +25,7 @@ async function run() {
   const results = [];
   try {
     for (const theme of ['light', 'dark'])
-      for (const state of ['default', 'warning', 'collapsed']) {
+      for (const state of ['default', 'warning', 'collapsed', 'independent']) {
         const url = pathToFileURL(process.env.QA_RENDERER);
         url.searchParams.set(
           'uiDebugPreview',
@@ -99,6 +99,47 @@ async function run() {
             path.join(output, `${theme}-${state}-${width}.png`),
             (await win.webContents.capturePage()).toPNG(),
           );
+        }
+        if (state === 'independent') {
+          await js(
+            'document.querySelector(\'[title="함께 플레이 연결 확인"]\').click()',
+          );
+          await sleep(100);
+          assert.ok(
+            await js(
+              'document.querySelector(".multiplayer-lobby").textContent.includes("GC-MP-030")',
+            ),
+          );
+          assert.ok(
+            await js(
+              '(()=>{const b=document.querySelector(".multiplayer-lobby button");const r=b.getBoundingClientRect();const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return b===top||b.contains(top)})()',
+            ),
+            'Repair action must be clickable above neighboring HTML cards',
+          );
+          await fs.writeFile(
+            path.join(output, `${theme}-independent-connection.png`),
+            (await win.webContents.capturePage()).toPNG(),
+          );
+          await js(
+            'Array.from(document.querySelectorAll(".multiplayer-lobby button")).find(button=>button.textContent.includes("수정 요청")).click()',
+          );
+          await sleep(150);
+          assert.ok(await js('!!document.querySelector(".ai-request-dialog")'));
+          assert.ok(
+            await js(
+              'Array.from(document.querySelectorAll(".ai-request-dialog textarea")).some(input=>input.value.includes("규칙·화면·조작·콘텐츠를 유지"))',
+            ),
+          );
+          assert.ok(
+            await js(
+              'document.querySelector(".ai-request-dialog").textContent.includes("output/inbox/combat/v001/index.html")',
+            ),
+          );
+          results.push({
+            theme,
+            state: 'independent-repair-request',
+            sourcePreserved: true,
+          });
         }
         if (state === 'warning') {
           await js(

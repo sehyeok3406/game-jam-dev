@@ -4,8 +4,22 @@ import { COOP_REFERENCE_HTML } from './reference-game.ts';
 export function multiplayerInstructions(
   settings: MultiplayerSettings | null | undefined,
 ) {
-  if (settings === undefined) return '';
   if (settings === null)
     return '\n## 멀티 모듈 제거\n\n온라인 선언과 SDK 의존을 제거하고 기존 게임을 혼자 실행할 수 있게 수정한다. 원본 입력과 현재 플레이 방은 바꾸지 않는다.\n';
-  return `\n## 프로젝트 온라인 멀티플레이 · 필수 실행 계약\n\n설정: ${JSON.stringify(settings)}\n- 2~${settings.maxPlayers}인 협동과 1인 로컬 플레이를 모두 구현한다. 온라인 방 관리·닉네임·준비/시작 UI는 앱이 제공한다.\n- 아래 JSON 선언과 GameJamMultiplayer.register 어댑터를 사용한다. SDK 소스, 서버 주소, 토큰, WebSocket, 외부 라이브러리를 HTML에 넣지 않는다. 앱이 SDK를 먼저 설치한다. SDK가 보이지 않는다고 별도 연결 방식으로 대체하지 않는다. RTCPeerConnection·RTCDataChannel·WebRTC·수동 연결 코드 교환·STUN/TURN/ICE 설정을 구현하지 않는다. 앱 밖에서는 "Game Jam! 앱에서 열어주세요"라고 안내한다.\n- 플레이어 화면에는 SDK·JSON·ICE·STUN·TURN·토큰·동기화 같은 전문 용어나 연결 코드·서버 설정 입력을 노출하지 않는다. "친구를 기다리고 있어요", "연결을 다시 확인하고 있어요"처럼 현재 상태와 다음 행동을 쉬운 말로 안내한다.\n- 1P/2P 선택이 필요하면 앱의 준비·시작 후 게임 안에서 선택하게 한다. 자리 선택·중복 선택 거절은 다른 게임 규칙과 같이 공통 state와 step에서 처리하며, render는 초기 상태나 다른 참가자의 선택을 변경하지 않는다.\n- createState({players,seed,random,solo})는 직렬화 가능한 초기 상태를 반환한다. validateInput(input)은 유효한 입력에 true를 반환한다. step(state,{inputs,dt,tick,players,random,solo})는 방장만 실행한다. dt는 초 단위이며 inputs는 {playerId,input,sequence,fresh} 배열이다. 빈 입력 {}은 중립 입력이다.\n- render(state,{selfId,solo,interpolation,active})는 표시용 사본을 그리며 공통 상태를 변경하지 않는다. getOutcome(state)는 진행 중 null, 종료하면 JSON 결과를 반환한다. GameJamMultiplayer.sendInput(input)으로 조작 상태를 보낸다. 입력은 1KiB, 스냅샷은 32KiB 이하로 유지한다.\n- 적 생성·피해·획득·점수·승패·시간·난수 결과는 모두 state에 넣고 step에서 계산한다. DOM 이벤트나 rAF에서 공통 상태를 바꾸지 않는다. Math.random 대신 제공된 random을 사용한다. 비공개 정보 대전·랭킹·영구 저장은 구현하지 않는다.\n- 키를 놓거나 포커스를 잃으면 입력을 해제한다. 1인 모드에서도 목표와 승패가 동작해야 한다. 일회성 동작은 상태 안에서 이전 입력·식별자를 비교해 중복 처리하지 않는다.\n- 연결 오류 안내는 앱이 제공한다. 게임 자체의 복구 불가능한 조작·규칙·화면 문제가 발견되면 GameJamMultiplayer.reportIssue?.({area:"rules",code:"GAME-RULE-001"})처럼 분류해 보고할 수 있다. area는 controls/rules/display/other이고 code는 GAME-영문분류-3자리숫자다. 정상적인 대기나 입력 거절은 오류로 보고하지 않는다. 비밀 정보·원본 게임 상태·사용자 입력을 오류 메시지나 보고 데이터에 넣지 않는다.\n- 아래 예제는 작동하는 API 참조다. 예제 게임을 그대로 복사하는 대신 사용자 지침의 게임 규칙을 이 계약으로 구현한다. maxPlayers는 요청한 ${settings.maxPlayers}명으로 선언한다.\n\n${COOP_REFERENCE_HTML}\n`;
+  const automatic = settings === undefined;
+  settings ??= {
+    version: 1,
+    authority: 'host',
+    minPlayers: 2,
+    maxPlayers: 2,
+    sdkVersion: 1,
+    solo: true,
+  };
+  const condition = automatic
+    ? '\n## 텍스트로 요청한 온라인 게임\n\n사용자 지시나 선택한 기획 문서가 인터넷에서 다른 참가자와 함께 하는 게임을 요구할 때만 아래 계약을 적용한다. 기능 라이브러리 선택은 필요하지 않다. 온라인 요구가 없거나 같은 PC에서만 조작하는 게임이면 온라인 선언과 어댑터를 추가하지 않고 개인 게임을 유지한다. 아래 2명 설정은 예시이며 인원은 실제 요청한 2~4명(미지정 시 2명)으로 맞춘다.\n'
+    : '';
+  return (
+    condition +
+    `\n## 프로젝트 온라인 멀티플레이 · 필수 실행 계약\n\n설정: ${JSON.stringify(settings)}\n- 2~${settings.maxPlayers}인 협동과 1인 로컬 플레이를 모두 구현한다. 온라인 방 관리·닉네임·준비/시작 UI는 앱이 제공한다.\n- 아래 JSON 선언과 GameJamMultiplayer.register 어댑터를 사용한다. SDK 소스, 서버 주소, 토큰, WebSocket, 외부 라이브러리를 HTML에 넣지 않는다. 앱이 SDK를 먼저 설치한다. SDK가 보이지 않는다고 별도 연결 방식으로 대체하지 않는다. RTCPeerConnection·RTCDataChannel·WebRTC·수동 연결 코드 교환·STUN/TURN/ICE 설정을 구현하지 않는다. 앱 밖에서는 "Game Jam! 앱에서 열어주세요"라고 안내한다.\n- 플레이어 화면에는 SDK·JSON·ICE·STUN·TURN·토큰·동기화 같은 전문 용어나 연결 코드·서버 설정 입력을 노출하지 않는다. "친구를 기다리고 있어요", "연결을 다시 확인하고 있어요"처럼 현재 상태와 다음 행동을 쉬운 말로 안내한다.\n- 1P/2P 선택이 필요하면 앱의 준비·시작 후 게임 안에서 선택하게 한다. 자리 선택·중복 선택 거절은 다른 게임 규칙과 같이 공통 state와 step에서 처리하며, render는 초기 상태나 다른 참가자의 선택을 변경하지 않는다.\n- createState({players,seed,random,solo})는 직렬화 가능한 초기 상태를 반환한다. validateInput(input)은 유효한 입력에 true를 반환한다. step(state,{inputs,dt,tick,players,random,solo})는 방장만 실행한다. dt는 초 단위이며 inputs는 {playerId,input,sequence,fresh} 배열이다. 빈 입력 {}은 중립 입력이다.\n- render(state,{selfId,solo,interpolation,active})는 표시용 사본을 그리며 공통 상태를 변경하지 않는다. getOutcome(state)는 진행 중 null, 종료하면 JSON 결과를 반환한다. GameJamMultiplayer.sendInput(input)으로 조작 상태를 보낸다. 입력은 1KiB, 스냅샷은 32KiB 이하로 유지한다.\n- 적 생성·피해·획득·점수·승패·시간·난수 결과는 모두 state에 넣고 step에서 계산한다. DOM 이벤트나 rAF에서 공통 상태를 바꾸지 않는다. Math.random 대신 제공된 random을 사용한다. 비공개 정보 대전·랭킹·영구 저장은 구현하지 않는다.\n- 키를 놓거나 포커스를 잃으면 입력을 해제한다. 1인 모드에서도 목표와 승패가 동작해야 한다. 일회성 동작은 상태 안에서 이전 입력·식별자를 비교해 중복 처리하지 않는다.\n- 연결 오류 안내는 앱이 제공한다. 게임 자체의 복구 불가능한 조작·규칙·화면 문제가 발견되면 GameJamMultiplayer.reportIssue?.({area:"rules",code:"GAME-RULE-001"})처럼 분류해 보고할 수 있다. area는 controls/rules/display/other이고 code는 GAME-영문분류-3자리숫자다. 정상적인 대기나 입력 거절은 오류로 보고하지 않는다. 비밀 정보·원본 게임 상태·사용자 입력을 오류 메시지나 보고 데이터에 넣지 않는다.\n- 아래 예제는 작동하는 API 참조다. 예제 게임을 그대로 복사하는 대신 사용자 지침의 게임 규칙을 이 계약으로 구현한다. maxPlayers는 요청한 ${automatic ? '실제 요청한 인원(미지정 시 2)' : settings.maxPlayers}명으로 선언한다.\n\n${COOP_REFERENCE_HTML}\n`
+  );
 }

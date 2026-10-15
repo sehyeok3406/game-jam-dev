@@ -388,7 +388,7 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
     '카드',
     project,
     '.preview-card',
-    ['default', 'warning', 'collapsed', 'settings', 'locked'],
+    ['default', 'warning', 'collapsed', 'settings', 'locked', 'independent'],
   ),
   entry(
     'markdown',

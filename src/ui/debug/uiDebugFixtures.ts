@@ -362,6 +362,12 @@ export function createUiPreviewApi(
       ...item,
       warnings: ['외부 파일·URL 참조가 있습니다: ./assets/player.png'],
     }));
+  if (selection.id === 'preview' && selection.state === 'independent')
+    previews = previews.map((item) => ({
+      ...item,
+      content:
+        '<!doctype html><html><body><p>사용자의 기존 게임</p><script>function connect(){return new RTCPeerConnection({iceServers:[]});}</script></body></html>',
+    }));
   const history =
     selection.state === 'empty'
       ? []

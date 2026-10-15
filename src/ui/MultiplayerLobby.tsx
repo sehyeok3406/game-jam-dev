@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { readMultiplayerManifest } from '../multiplayer/contract';
+import { usesIndependentConnection } from '../multiplayer/compatibility';
 import type { PlayRoom } from '../multiplayer/types';
 import { playFailure, type PlayFailure } from '../multiplayer/errors';
 
@@ -7,10 +8,14 @@ export function MultiplayerLobby({
   path,
   html,
   projectOnly = false,
+  onRepair,
+  repairDisabled = false,
 }: {
   path?: string;
   html?: string;
   projectOnly?: boolean;
+  onRepair?: () => void;
+  repairDisabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [rooms, setRooms] = useState<PlayRoom[]>([]);
@@ -26,6 +31,7 @@ export function MultiplayerLobby({
     /* Malformed games have validation diagnostics. */
   }
   const api = window.gameCanvas.multiplayer;
+  const independent = !projectOnly && usesIndependentConnection(html ?? '');
   useEffect(() => {
     if (!open || !api) return;
     let active = true;
@@ -50,6 +56,45 @@ export function MultiplayerLobby({
       clearInterval(timer);
     };
   }, [open, api]);
+  if (independent)
+    return (
+      <span
+        className="multiplayer-launcher nodrag nowheel"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          title="함께 플레이 연결 확인"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          연결 확인
+        </button>
+        {open && (
+          <section
+            className="multiplayer-lobby"
+            role="dialog"
+            aria-label="함께 플레이 연결 확인"
+          >
+            <strong>이 게임은 프로젝트와 별도로 연결하고 있어요.</strong>
+            <p>
+              프로젝트에 함께 들어와 있어도 이 게임은 따로 연결을 시도해요.
+              게임의 규칙과 화면을 유지하고 연결 방식을 수정할 수 있어요.
+            </p>
+            {onRepair && (
+              <button
+                type="button"
+                disabled={repairDisabled}
+                onClick={onRepair}
+              >
+                이 게임의 연결 방식 수정 요청
+              </button>
+            )}
+            <small>GC-MP-030 · 연결 방식 확인 필요</small>
+          </section>
+        )}
+      </span>
+    );
   if (!supported) return null;
   const enter = async (roomId?: string) => {
     if (!api) return;

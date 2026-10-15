@@ -1,4 +1,5 @@
 import { assertCanvas } from './canvas-sheets.ts';
+import { multiplayerIntent } from './multiplayer/intent.ts';
 import {
   multiplayerSettings,
   readMultiplayerManifest,
@@ -53,18 +54,34 @@ export function createTaskPlan(
   const baseline =
     htmlChoice.htmlResult?.basePath ??
     (htmlChoice.htmlResult?.mode !== 'new' ? 'output/index.html' : undefined);
-  const requestedMultiplayer =
+  const explicitMultiplayer =
     htmlChoice.multiplayer !== undefined
       ? htmlChoice.multiplayer
       : input.multiplayer;
+  const implementing = input.kind === 'implement' || !!input.thenImplement;
+  const instructionIntent =
+    implementing && explicitMultiplayer === undefined
+      ? multiplayerIntent(
+          input.thenImplement?.instructions ?? input.instructions ?? '',
+        )
+      : undefined;
+  const requestedMultiplayer =
+    explicitMultiplayer !== undefined ? explicitMultiplayer : instructionIntent;
   const inheritedMultiplayer =
     requestedMultiplayer === undefined && baseline && files[baseline]
       ? readMultiplayerManifest(files[baseline])
       : undefined;
+  const documentIntent =
+    implementing && requestedMultiplayer === undefined && !inheritedMultiplayer
+      ? input.inputPaths
+          .filter((path) => path.endsWith('.md') && files[path])
+          .map((path) => multiplayerIntent(matter(files[path]).content))
+          .find((value) => value !== undefined && value !== null)
+      : undefined;
   const resolvedMultiplayer = multiplayerSettings(
     requestedMultiplayer !== undefined
       ? requestedMultiplayer
-      : inheritedMultiplayer,
+      : (inheritedMultiplayer ?? documentIntent),
   );
   input = {
     ...input,
@@ -101,7 +118,7 @@ export function createTaskPlan(
     htmlInputs &&
     htmlInputs.length > 1 &&
     !htmlChoice.htmlResult?.basePath &&
-    requestedMultiplayer === undefined &&
+    resolvedMultiplayer === undefined &&
     htmlInputs.some((source) => readMultiplayerManifest(files[source.path]))
   )
     throw new Error(

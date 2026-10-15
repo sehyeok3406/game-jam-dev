@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>멀티 테스트</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #101722;
+        color: #e6edf7;
+        font-family: system-ui, sans-serif;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      main {
+        width: min(960px, 100%);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 20px;
+      }
+      h1 {
+        font-size: 26px;
+        letter-spacing: -1px;
+      }
+      header small {
+        color: #748aa4;
+        letter-spacing: 3px;
+      }
+      section {
+        padding: 28px;
+        background: #192535;
+        border: 1px solid #32455f;
+        border-radius: 18px;
+      }
+      h2 {
+        font-size: 22px;
+      }
+      p {
+        color: #afc0d6;
+        line-height: 1.8;
+        font-size: 14px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 18px 0;
+      }
+      button {
+        font: inherit;
+        color: #e8f0ff;
+        padding: 12px 20px;
+        border: 1px solid #4d6482;
+        border-radius: 10px;
+        background: #293e59;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #385779;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .primary {
+        background: #376bd7;
+      }
+      .seat {
+        min-width: 190px;
+        text-align: left;
+      }
+      .dot {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        background: #6bbfff;
+        border-radius: 50%;
+        margin-right: 12px;
+      }
+      .pink {
+        background: #ff86a7;
+      }
+      textarea,
+      input {
+        width: 100%;
+        background: #111c29;
+        border: 1px solid #435771;
+        border-radius: 8px;
+        color: #d9e6fa;
+        padding: 12px;
+        font: 12px monospace;
+      }
+      textarea {
+        height: 70px;
+        resize: vertical;
+      }
+      label {
+        display: block;
+        color: #9eb2cc;
+        font-size: 12px;
+        margin: 14px 0 6px;
+      }
+      summary {
+        cursor: pointer;
+        color: #afc0d6;
+      }
+      details {
+        margin-top: 18px;
+      }
+      #status {
+        color: #bed7ff;
+        min-height: 26px;
+      }
+      #game {
+        display: none;
+        padding: 0;
+        background: none;
+        border: 0;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        aspect-ratio: 8/5;
+        border: 1px solid #435a79;
+        border-radius: 18px;
+        background: #162231;
+      }
+      .hud {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        padding: 20px 2px;
+        color: #b2c4dc;
+        font-size: 13px;
+      }
+      kbd {
+        font: 12px monospace;
+        padding: 4px 6px;
+        border: 1px solid #48607e;
+        border-radius: 5px;
+        background: #26384e;
+      }
+      #cool {
+        min-width: 160px;
+        color: #edf5ff;
+      }
+      #track {
+        height: 3px;
+        background: #32465f;
+        margin-top: 8px;
+      }
+      #fill {
+        height: 3px;
+        background: #88d8d0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 600px) {
+        body {
+          padding: 12px;
+        }
+        section {
+          padding: 18px;
+        }
+        .hud {
+          flex-wrap: wrap;
+        }
+        header small {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>멀티 테스트</h1>
+        <small>MOVEMENT / PUSH LAB</small>
+      </header>
+      <section id="lobby">
+        <h2>같은 공간, 두 개의 원</h2>
+        <p>
+          각자 자리를 선택하면 함께 시작합니다.<br />혼자서는 움직이지 않는 연습
+          상대와 밀치기를 시험하세요.
+        </p>
+        <div class="row">
+          <button id="solo" class="primary">혼자 연습</button
+          ><button id="host">온라인 방 만들기</button
+          ><button id="guest">온라인 방 참가</button>
+        </div>
+        <div class="row">
+          <button id="s0" class="seat" disabled></button
+          ><button id="s1" class="seat" disabled></button>
+        </div>
+        <p id="status" role="status" aria-live="polite">
+          연습 또는 온라인 연결을 선택하세요.
+        </p>
+        <div id="connect" hidden>
+          <p>
+            방장의 코드를 참가자가 적용하고, 생성된 답변 코드를 방장이
+            적용하세요. 연결되면 각자 자리를 선택합니다.
+          </p>
+          <label for="local">상대에게 보낼 코드</label
+          ><textarea id="local" readonly></textarea
+          ><button id="copy">코드 복사</button
+          ><label for="remote">상대에게 받은 코드</label
+          ><textarea id="remote" spellcheck="false"></textarea>
+          <div class="row">
+            <button id="apply" class="primary">받은 코드 적용</button>
+          </div>
+        </div>
+        <details>
+          <summary>온라인 연결 설정</summary>
+          <p>
+            브라우저 기본 WebRTC 직접 연결을 사용합니다. 기본 설정은 같은
+            네트워크용입니다. 인터넷에서는 네트워크에 따라 STUN/TURN 서버가
+            필요합니다. 서버 설정 후 방을 만들거나 참가하세요. 제공된 입력에는
+            Game Jam 온라인 SDK가 포함되어 있지 않습니다.
+          </p>
+          <label for="ice"
+            >ICE 서버 JSON 배열 · TURN은 username, credential 포함</label
+          ><input id="ice" value="[]" spellcheck="false" />
+        </details>
+        <p>
+          <kbd>WASD</kbd> / <kbd>방향키</kbd> 이동 &nbsp;
+          <kbd>Space</kbd> 가까운 상대 밀치기 · 재사용 1초
+        </p>
+      </section>
+      <section id="game">
+        <canvas
+          id="map"
+          width="960"
+          height="600"
+          aria-label="두 원이 이동하는 탑다운 연습장"
+        ></canvas>
+        <div class="hud">
+          <span
+            ><kbd>WASD</kbd> / <kbd>방향키</kbd> 이동 &nbsp;
+            <kbd>Space</kbd> 밀치기</span
+          >
+          <div id="cool">
+            <span id="cd"></span>
+            <div id="track"><div id="fill"></div></div>
+          </div>
+          <button id="leave">나가기</button>
+        </div>
+      </section>
+    </main>
+    <script>
+      'use strict';
+      // Reference: idea-96680de1. Native WebRTC fallback: no supplied Game Jam SDK.
+      const $ = (id) => document.getElementById(id),
+        ctx = $('map').getContext('2d'),
+        keys = new Set();
+      let mode = '',
+        pc = null,
+        ch = null,
+        connected = false,
+        owners = [null, null],
+        seat = -1,
+        running = false,
+        players = [],
+        fx = [],
+        pending = false,
+        remote = { x: 0, y: 0, push: false },
+        remoteAt = 0,
+        seq = 0,
+        rx = -1,
+        epoch = 0,
+        last = 0,
+        acc = 0,
+        net = 0;
+      function status(t) {
+        $('status').textContent = t;
+      }
+      function send(m) {
+        if (ch && ch.readyState === 'open') ch.send(JSON.stringify(m));
+      }
+      function seats() {
+        for (let i = 0; i < 2; i++) {
+          const b = $('s' + i);
+          b.disabled =
+            !mode ||
+            (!connected && mode !== 'solo') ||
+            !!owners[i] ||
+            seat >= 0;
+          b.innerHTML =
+            '<i class="dot ' +
+            (i ? 'pink' : '') +
+            '"></i>' +
+            (i + 1) +
+            'P · ' +
+            (owners[i]
+              ? owners[i] === (mode === 'guest' ? 'guest' : 'host')
+                ? '나'
+                : '선택 완료'
+              : '빈 자리');
+        }
+      }
+      function fresh() {
+        return [
+          { x: 400, y: 300, dx: 1, dy: 0, vx: 0, vy: 0, cd: 0 },
+          { x: 560, y: 300, dx: -1, dy: 0, vx: 0, vy: 0, cd: 0 },
+        ];
+      }
+      function start() {
+        if (running) return;
+        players = fresh();
+        running = true;
+        keys.clear();
+        pending = false;
+        fx = [];
+        last = performance.now();
+        acc = 0;
+        net = 0;
+        $('lobby').hidden = true;
+        $('game').style.display = 'block';
+      }
+      function reset() {
+        epoch++;
+        const old = ch,
+          oldpc = pc;
+        ch = null;
+        pc = null;
+        mode = '';
+        if (old) {
+          old.onclose = null;
+          old.close();
+        }
+        if (oldpc) {
+          oldpc.onconnectionstatechange = null;
+          oldpc.close();
+        }
+        connected = false;
+        running = false;
+        owners = [null, null];
+        seat = -1;
+        remote = { x: 0, y: 0, push: false };
+        rx = -1;
+        seq = 0;
+        keys.clear();
+        pending = false;
+        $('lobby').hidden = false;
+        $('game').style.display = 'none';
+        $('connect').hidden = true;
+        $('local').value = '';
+        $('remote').value = '';
+        seats();
+      }
+      function choose(i, who) {
+        if (running || owners[i] || owners.includes(who)) return;
+        owners[i] = who;
+        if (who === 'host') seat = i;
+        send({ t: 'seats', owners });
+        seats();
+        if (owners.every(Boolean)) {
+          send({ t: 'start', owners });
+          start();
+        } else status('상대의 자리 선택을 기다립니다.');
+      }
+      for (let i = 0; i < 2; i++)
+        $('s' + i).onclick = () => {
+          if (mode === 'solo') {
+            seat = i;
+            owners[i] = 'host';
+            start();
+          } else if (mode === 'host') choose(i, 'host');
+          else send({ t: 'choose', seat: i });
+        };
+      $('solo').onclick = () => {
+        reset();
+        mode = 'solo';
+        status('연습할 자리를 선택하세요. 다른 자리는 연습 상대입니다.');
+        seats();
+      };
+      $('leave').onclick = () => {
+        reset();
+        status('연습 또는 온라인 연결을 선택하세요.');
+      };
+      function lost() {
+        if (!mode || mode === 'solo') return;
+        reset();
+        status('연결이 끊어졌습니다. 다시 연결하거나 연습을 선택하세요.');
+      }
+      function channel(c) {
+        ch = c;
+        c.onopen = () => {
+          connected = true;
+          $('connect').hidden = true;
+          status('연결되었습니다. 각자 자리를 선택하세요.');
+          seats();
+        };
+        c.onclose = lost;
+        c.onerror = () => status('연결 오류가 발생했습니다. 다시 연결하세요.');
+        c.onmessage = (e) => {
+          let m;
+          try {
+            m = JSON.parse(e.data);
+          } catch {
+            return;
+          }
+          if (!m || typeof m !== 'object') return;
+          if (mode === 'host') {
+            if (m.t === 'choose' && (m.seat === 0 || m.seat === 1))
+              choose(m.seat, 'guest');
+            if (
+              m.t === 'input' &&
+              running &&
+              Number.isInteger(m.seq) &&
+              m.seq > rx
+            ) {
+              rx = m.seq;
+              remoteAt = performance.now();
+              remote = {
+                x: Number.isFinite(m.x) ? Math.max(-1, Math.min(1, m.x)) : 0,
+                y: Number.isFinite(m.y) ? Math.max(-1, Math.min(1, m.y)) : 0,
+                push: remote.push || m.push === true,
+              };
+            }
+          } else {
+            if (
+              ['seats', 'start'].includes(m.t) &&
+              Array.isArray(m.owners) &&
+              m.owners.length === 2
+            ) {
+              owners = m.owners;
+              seat = owners.indexOf('guest');
+              seats();
+              if (m.t === 'start' && seat >= 0) start();
+              else
+                status(
+                  seat >= 0
+                    ? '상대의 자리 선택을 기다립니다.'
+                    : '내 자리를 선택하세요.',
+                );
+            }
+            if (
+              m.t === 'state' &&
+              running &&
+              Array.isArray(m.p) &&
+              m.p.length === 2 &&
+              m.p.every((p) =>
+                ['x', 'y', 'dx', 'dy', 'vx', 'vy', 'cd'].every((k) =>
+                  Number.isFinite(p[k]),
+                ),
+              )
+            ) {
+              players = m.p;
+              fx = Array.isArray(m.fx)
+                ? m.fx
+                    .filter((f) =>
+                      ['x', 'y', 'life'].every((k) => Number.isFinite(f[k])),
+                    )
+                    .slice(0, 8)
+                : [];
+            }
+          }
+        };
+      }
+      async function signal() {
+        const token = epoch,
+          conn = pc;
+        status('연결 코드를 준비하고 있습니다…');
+        if (conn.iceGatheringState !== 'complete')
+          await new Promise((resolve) => {
+            const timer = setTimeout(done, 5000);
+            function done() {
+              clearTimeout(timer);
+              conn.removeEventListener('icegatheringstatechange', check);
+              resolve();
+            }
+            function check() {
+              if (conn.iceGatheringState === 'complete') done();
+            }
+            conn.addEventListener('icegatheringstatechange', check);
+          });
+        if (token !== epoch) return;
+        $('local').value = JSON.stringify(conn.localDescription);
+        status(
+          mode === 'host'
+            ? '코드를 상대에게 보내고 답변 코드를 적용하세요.'
+            : '답변 코드를 방장에게 보내세요.',
+        );
+      }
+      async function network(role) {
+        reset();
+        mode = role;
+        $('connect').hidden = false;
+        try {
+          if (!window.RTCPeerConnection)
+            throw Error('이 브라우저는 WebRTC를 지원하지 않습니다.');
+          const iceServers = JSON.parse($('ice').value);
+          if (!Array.isArray(iceServers))
+            throw Error('ICE 설정은 JSON 배열이어야 합니다.');
+          pc = new RTCPeerConnection({ iceServers });
+          const conn = pc;
+          conn.onconnectionstatechange = () => {
+            if (
+              pc === conn &&
+              ['failed', 'closed'].includes(conn.connectionState)
+            )
+              lost();
+            else if (pc === conn && conn.connectionState === 'disconnected') {
+              remote = { x: 0, y: 0, push: false };
+              status('연결을 복구하고 있습니다…');
+            }
+          };
+          if (role === 'host') {
+            channel(pc.createDataChannel('movement'));
+            await pc.setLocalDescription(await pc.createOffer());
+            await signal();
+          } else {
+            pc.ondatachannel = (e) => channel(e.channel);
+            status('방장에게 받은 코드를 적용하세요.');
+          }
+        } catch (e) {
+          status('연결 준비 실패: ' + e.message);
+        }
+      }
+      $('host').onclick = () => network('host');
+      $('guest').onclick = () => network('guest');
+      $('apply').onclick = async () => {
+        if (!pc) return;
+        try {
+          const d = JSON.parse($('remote').value);
+          if (
+            d.type !== (mode === 'host' ? 'answer' : 'offer') ||
+            typeof d.sdp !== 'string'
+          )
+            throw Error('올바른 상대 코드를 입력하세요.');
+          await pc.setRemoteDescription(d);
+          if (mode === 'guest') {
+            await pc.setLocalDescription(await pc.createAnswer());
+            await signal();
+          } else
+            status(
+              '연결 중입니다. 연결되지 않으면 ICE 설정 후 다시 시작하세요.',
+            );
+        } catch (e) {
+          status('코드 적용 실패: ' + e.message);
+        }
+      };
+      $('copy').onclick = async () => {
+        try {
+          await navigator.clipboard.writeText($('local').value);
+          status('코드를 복사했습니다.');
+        } catch {
+          $('local').focus();
+          $('local').select();
+          status('선택한 코드를 Ctrl+C로 복사하세요.');
+        }
+      };
+      function input() {
+        return {
+          x:
+            (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
+            (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0),
+          y:
+            (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) -
+            (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0),
+          push: pending,
+        };
+      }
+      addEventListener('keydown', (e) => {
+        if (!running) return;
+        if (
+          [
+            'KeyW',
+            'KeyA',
+            'KeyS',
+            'KeyD',
+            'ArrowUp',
+            'ArrowDown',
+            'ArrowLeft',
+            'ArrowRight',
+            'Space',
+          ].includes(e.code)
+        ) {
+          e.preventDefault();
+          keys.add(e.code);
+          if (e.code === 'Space' && !e.repeat) pending = true;
+        }
+      });
+      addEventListener('keyup', (e) => keys.delete(e.code));
+      function release() {
+        keys.clear();
+        pending = false;
+        if (mode === 'guest')
+          send({ t: 'input', seq: ++seq, x: 0, y: 0, push: false });
+      }
+      addEventListener('blur', release);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) release();
+      });
+      function step(dt, inputs) {
+        for (let i = 0; i < 2; i++) {
+          const p = players[i],
+            v = inputs[i],
+            n = Math.hypot(v.x, v.y);
+          p.cd = Math.max(0, p.cd - dt);
+          if (n) {
+            p.dx = v.x / n;
+            p.dy = v.y / n;
+          }
+          p.x += (n ? (v.x / n) * 210 : 0) * dt + p.vx * dt;
+          p.y += (n ? (v.y / n) * 210 : 0) * dt + p.vy * dt;
+          p.vx *= Math.exp(-7 * dt);
+          p.vy *= Math.exp(-7 * dt);
+        }
+        for (let i = 0; i < 2; i++) {
+          const p = players[i],
+            q = players[1 - i];
+          if (inputs[i].push && p.cd <= 0) {
+            p.cd = 1;
+            fx.push({ x: p.x + p.dx * 25, y: p.y + p.dy * 25, life: 0.28 });
+            if (Math.hypot(q.x - p.x, q.y - p.y) <= 92) {
+              q.vx = p.dx * 760;
+              q.vy = p.dy * 760;
+            }
+          }
+        }
+        const a = players[0],
+          b = players[1],
+          dx = b.x - a.x,
+          dy = b.y - a.y,
+          d = Math.hypot(dx, dy);
+        if (d < 44) {
+          const nx = d ? dx / d : 1,
+            ny = d ? dy / d : 0,
+            k = (44 - d) / 2;
+          a.x -= nx * k;
+          a.y -= ny * k;
+          b.x += nx * k;
+          b.y += ny * k;
+        }
+        for (const p of players) {
+          p.x = Math.max(22, Math.min(938, p.x));
+          p.y = Math.max(22, Math.min(578, p.y));
+          if (p.x === 22 || p.x === 938) p.vx = 0;
+          if (p.y === 22 || p.y === 578) p.vy = 0;
+        }
+        fx = fx
+          .map((f) => ({ ...f, life: f.life - dt }))
+          .filter((f) => f.life > 0);
+      }
+      function draw() {
+        ctx.clearRect(0, 0, 960, 600);
+        ctx.beginPath();
+        ctx.strokeStyle = '#25364c';
+        ctx.lineWidth = 1;
+        for (let x = 40; x < 960; x += 40) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, 600);
+        }
+        for (let y = 40; y < 600; y += 40) {
+          ctx.moveTo(0, y);
+          ctx.lineTo(960, y);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = '#465b76';
+        ctx.strokeRect(12, 12, 936, 576);
+        for (const f of fx) {
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 25 + (1 - f.life / 0.28) * 55, 0, Math.PI * 2);
+          ctx.strokeStyle =
+            'rgba(210,238,255,' + Math.max(0, f.life / 0.28) + ')';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        players.forEach((p, i) => {
+          const color = i ? '#ff86a7' : '#6bbfff';
+          if (i === seat) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 29, 0, Math.PI * 2);
+            ctx.strokeStyle = '#d6ecff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 16;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(p.x + p.dx * 12, p.y + p.dy * 12, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#18263a';
+          ctx.fill();
+          ctx.fillStyle = '#bbcee6';
+          ctx.textAlign = 'center';
+          ctx.font = '12px system-ui';
+          ctx.fillText(
+            i +
+              1 +
+              'P' +
+              (i === seat ? ' · 나' : mode === 'solo' ? ' · 연습' : ''),
+            p.x,
+            p.y - 39,
+          );
+        });
+        const cd = players[seat]?.cd || 0;
+        $('cd').textContent =
+          cd > 0 ? '밀치기 대기 · ' + cd.toFixed(1) + '초' : '밀치기 준비 완료';
+        $('fill').style.width = (1 - cd) * 100 + '%';
+      }
+      function frame(now) {
+        const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+        last = now;
+        if (running) {
+          net += dt;
+          if (mode === 'guest') {
+            if (net >= 1 / 60) {
+              send({ t: 'input', seq: ++seq, ...input() });
+              pending = false;
+              net = 0;
+            }
+          } else {
+            acc += dt;
+            const own = input();
+            pending = false;
+            let first = true;
+            while (acc >= 1 / 60) {
+              const other =
+                  mode === 'host' && performance.now() - remoteAt < 500
+                    ? remote
+                    : { x: 0, y: 0, push: false },
+                controls = [
+                  { x: 0, y: 0, push: false },
+                  { x: 0, y: 0, push: false },
+                ];
+              controls[seat] = { ...own, push: first && own.push };
+              if (mode === 'host')
+                controls[1 - seat] = { ...other, push: first && other.push };
+              step(1 / 60, controls);
+              remote.push = false;
+              first = false;
+              acc -= 1 / 60;
+            }
+            if (first && own.push) pending = true;
+            if (mode === 'host' && net >= 1 / 30) {
+              send({ t: 'state', p: players, fx });
+              net = 0;
+            }
+          }
+          draw();
+        }
+        requestAnimationFrame(frame);
+      }
+      seats();
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

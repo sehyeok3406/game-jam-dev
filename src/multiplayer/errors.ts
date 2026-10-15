@@ -9,7 +9,7 @@ export const PLAY_ERRORS = {
   'GC-MP-001': entry(
     'game-config',
     '함께 플레이할 수 없는 게임 설정이에요.',
-    '기능 라이브러리에서 함께 플레이를 추가해 게임을 다시 만들어주세요.',
+    '작업 지시에 함께 플레이를 요청해 게임을 수정한 뒤 다시 확인해주세요.',
   ),
   'GC-MP-002': entry(
     'game-data',
@@ -82,7 +82,7 @@ export const PLAY_ERRORS = {
   'GC-MP-014': entry(
     'registration',
     '이 게임의 함께 플레이 기능이 준비되지 않았어요.',
-    '기능 라이브러리에서 함께 플레이를 추가해 다시 만들어주세요. 연결 코드를 직접 입력할 필요는 없어요.',
+    '작업 지시에 함께 플레이를 요청해 게임의 연결 방식을 수정해주세요. 연결 코드를 직접 입력할 필요는 없어요.',
   ),
   'GC-MP-015': entry(
     'input',
@@ -162,6 +162,11 @@ export const PLAY_ERRORS = {
     'unexpected',
     '플레이 중 예상하지 못한 문제가 생겼어요.',
     '오류 정보를 복사한 뒤 게임을 다시 열어주세요.',
+  ),
+  'GC-MP-030': entry(
+    'connection-method',
+    '이 게임은 프로젝트와 다른 방식으로 연결하려고 해요.',
+    '같은 게임의 연결 방식을 앱의 함께 플레이로 수정해주세요. 서버 설정이나 연결 코드를 직접 입력할 필요는 없어요.',
   ),
 } as const;
 export type PlayErrorCode = keyof typeof PLAY_ERRORS;

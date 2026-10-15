@@ -242,6 +242,8 @@ import { GameFeatureLibrary } from './GameFeatureLibrary';
 import { withMultiplayerSdk } from '../multiplayer/sdk';
 import { readMultiplayerManifest } from '../multiplayer/contract';
 import { MultiplayerLobby } from './MultiplayerLobby';
+import { multiplayerRepairRequest } from '../multiplayer/repair-request';
+import { multiplayerIntent } from '../multiplayer/intent';
 import {
   gamejamIssues,
   gamejamFieldId,
@@ -475,6 +477,8 @@ type PreviewNodeData = {
   onWindowChange: (state: PreviewWindowState) => Promise<void>;
   onHistory: () => void;
   onCompare: () => void;
+  onMultiplayerRepair: () => void;
+  multiplayerRepairDisabled: boolean;
 };
 
 type SectionNodeData = {
@@ -1696,6 +1700,8 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
             <MultiplayerLobby
               path={data.preview.relativePath}
               html={data.preview.content}
+              onRepair={data.onMultiplayerRepair}
+              repairDisabled={data.multiplayerRepairDisabled}
             />
             <button
               className="icon-button"
@@ -2195,29 +2201,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   linkDocumentsRef.current = allLinkDocuments;
   const [sections, setSections] = useState<CanvasSection[]>([]);
   const [previews, setPreviews] = useState<PreviewResult[]>([]);
-  useEffect(() => {
-    if (
-      !aiRequest ||
-      aiRequest.multiplayer !== undefined ||
-      !aiRequest.htmlResult?.basePath
-    )
-      return;
-    const base = previews.find(
-      (p) => p.relativePath === aiRequest.htmlResult?.basePath,
-    );
-    if (!base) return;
-    try {
-      const manifest = readMultiplayerManifest(base.content);
-      if (manifest)
-        setAiRequest((current) =>
-          current && current.multiplayer === undefined
-            ? { ...current, multiplayer: manifest }
-            : current,
-        );
-    } catch {
-      /* Invalid declarations are shown by generation validation. */
-    }
-  }, [aiRequest?.htmlResult?.basePath, aiRequest?.multiplayer, previews]);
   const [previewWindows, setPreviewWindows] = useState<
     Record<string, PreviewWindowState>
   >({});
@@ -2728,8 +2711,36 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         return false;
       }
     });
-  const aiRequestIssues = aiRequest
-    ? gamejamIssues(aiRequest, {
+  let effectiveAiRequest = aiRequest;
+  let multiplayerIntentError = '';
+  if (aiRequest?.implement && aiRequest.multiplayer === undefined) {
+    try {
+      const instructionIntent = multiplayerIntent(
+        aiRequest.instructions.implement,
+      );
+      const baseline = previews.find(
+        (item) => item.relativePath === aiRequest.htmlResult?.basePath,
+      );
+      const inherited =
+        instructionIntent === undefined && baseline
+          ? readMultiplayerManifest(baseline.content)
+          : undefined;
+      const detected =
+        instructionIntent !== undefined
+          ? instructionIntent
+          : (inherited ??
+            documents
+              .filter((doc) => aiRequest.inputPaths.includes(doc.relativePath))
+              .map((doc) => multiplayerIntent(doc.body))
+              .find((value) => value !== undefined && value !== null));
+      if (detected !== undefined)
+        effectiveAiRequest = { ...aiRequest, multiplayer: detected };
+    } catch (error) {
+      multiplayerIntentError = (error as Error).message;
+    }
+  }
+  const aiRequestIssues = effectiveAiRequest
+    ? gamejamIssues(effectiveAiRequest, {
         intent: submittingApproval ? 'request' : 'run',
         collaboration,
         multiplayerChoiceRequired,
@@ -2747,6 +2758,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         ],
       })
     : [];
+  if (multiplayerIntentError)
+    aiRequestIssues.push({
+      field: 'multiplayer',
+      message: multiplayerIntentError,
+    });
   const aiFieldProps = (field: GamejamField) => ({
     'aria-invalid':
       aiRequestIssues.some((issue) => issue.field === field) || undefined,
@@ -4544,6 +4560,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               updatePreviewWindow(preview.relativePath, state),
             onHistory: () => openHistory(preview.relativePath),
             onCompare: () => setCompareFirst(preview.relativePath),
+            multiplayerRepairDisabled:
+              !canWriteAiRequest || aiBusy || pathLocked(preview.relativePath),
+            onMultiplayerRepair: () =>
+              initializeAiRequest(
+                multiplayerRepairRequest(
+                  preview.relativePath,
+                  preview.title ?? '함께 플레이',
+                  activeCanvasRef.current,
+                  previewWindow.x,
+                  previewWindow.y,
+                ),
+              ),
           },
         };
       });
@@ -11458,7 +11486,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 </h3>
                 <GameFeatureLibrary
                   requiresChoice={multiplayerChoiceRequired}
-                  multiplayer={aiRequest.multiplayer}
+                  multiplayer={effectiveAiRequest?.multiplayer}
                   implementing={aiRequest.implement}
                   onMultiplayerChange={(multiplayer) =>
                     setAiRequest({ ...aiRequest, multiplayer })
@@ -11479,7 +11507,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   {submittingApproval ? '최종 확인·요청' : '최종 확인·실행'}
                 </h3>
                 <GamejamReview
-                  request={aiRequest}
+                  request={effectiveAiRequest!}
                   busy={creatingTask}
                   navigate={navigateAiPage}
                 />

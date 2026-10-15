@@ -6140,6 +6140,9 @@ kbd {
 .multiplayer-launcher {
   position: relative;
 }
+.react-flow__node:has(.multiplayer-lobby) {
+  z-index: 20 !important;
+}
 .multiplayer-lobby {
   position: absolute;
   top: 32px;

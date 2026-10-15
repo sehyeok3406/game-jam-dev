@@ -1,6 +1,7 @@
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import { PlayError } from './errors.ts';
 import { htmlReferences } from '../html-references.ts';
+import { usesIndependentConnection } from './compatibility.ts';
 import {
   DEFAULT_MULTIPLAYER,
   type MultiplayerSettings,
@@ -68,6 +69,11 @@ export function validateMultiplayerHtml(
   expected?: MultiplayerSettings | null,
 ) {
   const manifest = readMultiplayerManifest(html);
+  if (usesIndependentConnection(html))
+    throw new PlayError('GC-MP-030', {
+      side: 'validation',
+      operation: 'validate',
+    });
   if (expected === null && manifest)
     throw Error(
       '[GC-MP-001] 멀티 모듈 제거 요청이 결과에 반영되지 않았습니다.',

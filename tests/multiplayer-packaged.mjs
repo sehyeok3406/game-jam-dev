@@ -9,6 +9,18 @@ import { TestUserLauncher, testProfilePath } from '../src/test-users.ts';
 import { createCollaborationServer } from '../src/collaboration-server.ts';
 import { CollaborationClient } from '../src/collaboration-client.ts';
 import { COOP_REFERENCE_HTML } from '../src/multiplayer/reference-game.ts';
+import { gamejamTaskInput } from '../src/gamejam-request.ts';
+import { DEFAULT_TASK_INSTRUCTIONS } from '../src/task-instructions.ts';
+import { readMultiplayerManifest } from '../src/multiplayer/contract.ts';
+
+// Opt-in: exercises the real authenticated AI provider with the user's captured
+// text. No fixed SDK game is supplied to the provider as a test result.
+const textGeneration = process.argv.includes('--text-generation');
+const sourceArgument = process.argv.indexOf('--generated-source');
+const generatedSourcePath =
+  sourceArgument >= 0 ? process.argv[sourceArgument + 1] : undefined;
+const userGameFlow = textGeneration || !!generatedSourcePath;
+const participants = userGameFlow ? 2 : 4;
 
 const executable = await fs.realpath(
   path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
@@ -24,8 +36,8 @@ const profiles = [],
   cdpSockets = [],
   ports = [];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(condition, label) {
-  for (let n = 0; n < 200; n++) {
+async function until(condition, label, attempts = 200) {
+  for (let n = 0; n < attempts; n++) {
     const value = await condition();
     if (value) return value;
     await sleep(100);
@@ -49,17 +61,23 @@ async function cdp(target) {
     socket.addEventListener('error', reject, { once: true });
   });
   const pending = new Map();
+  const frames = [];
   let sequence = 0;
   socket.addEventListener('message', ({ data }) => {
-    const result = JSON.parse(String(data)),
-      item = pending.get(result.id);
+    const result = JSON.parse(String(data));
+    if (
+      result.method === 'Target.attachedToTarget' &&
+      result.params.targetInfo.type === 'iframe'
+    )
+      frames.push(result.params.sessionId);
+    const item = pending.get(result.id);
     if (!item) return;
     pending.delete(result.id);
     clearTimeout(item.timer);
     if (result.error) item.reject(Error(JSON.stringify(result.error)));
     else item.resolve(result.result);
   });
-  const send = (method, params = {}) =>
+  const send = (method, params = {}, sessionId) =>
     new Promise((resolve, reject) => {
       const id = ++sequence;
       const timer = setTimeout(() => {
@@ -67,10 +85,18 @@ async function cdp(target) {
         reject(Error('CDP timeout: ' + method));
       }, 15000);
       pending.set(id, { resolve, reject, timer });
-      socket.send(JSON.stringify({ id, method, params }));
+      socket.send(
+        JSON.stringify({
+          id,
+          method,
+          params,
+          ...(sessionId ? { sessionId } : {}),
+        }),
+      );
     });
   return {
     send,
+    frames,
     async js(expression) {
       const value = await send('Runtime.evaluate', {
         expression,
@@ -128,8 +154,8 @@ try {
     }, 'bundled collaboration server');
   } else
     server = await createCollaborationServer({ port: 0, dataDirectory: root });
-  const url = `http://127.0.0.1:${server.port}`,
-    gamePath = 'output/prototypes/coop/v001/index.html';
+  const url = `http://127.0.0.1:${server.port}`;
+  let gamePath = 'output/prototypes/coop/v001/index.html';
   const created = await CollaborationClient.create(
     url,
     '',
@@ -138,20 +164,32 @@ try {
     {
       'project.md':
         '---\nid: project\ntitle: Multiplayer package QA\ntype: overview\nstatus: draft\nsources: []\n---\nQA only',
-      [gamePath]: COOP_REFERENCE_HTML.replace(
-        '"maxPlayers":2',
-        '"maxPlayers":4',
-      ).replace(
-        '</body>',
-        process.argv.includes('--diagnostics')
-          ? '<script>addEventListener("keydown",e=>{if(e.code==="F9")GameJamMultiplayer.reportIssue({area:"rules",code:"GAME-PUSH-001",message:"PRIVATE-CONTENT"});});</script></body>'
-          : '</body>',
-      ),
+      [gamePath]: generatedSourcePath
+        ? await fs.readFile(generatedSourcePath, 'utf8')
+        : COOP_REFERENCE_HTML.replace(
+            '"maxPlayers":2',
+            '"maxPlayers":4',
+          ).replace(
+            '</body>',
+            process.argv.includes('--diagnostics')
+              ? '<script>addEventListener("keydown",e=>{if(e.code==="F9")GameJamMultiplayer.reportIssue({area:"rules",code:"GAME-PUSH-001",message:"PRIVATE-CONTENT"});});</script></body>'
+              : '</body>',
+          ),
+      ...(textGeneration
+        ? {
+            'ideas/user.md':
+              '---\nid: user-idea\ntitle: 멀티 테스트\ntype: idea\nstatus: draft\nsources: []\n---\n' +
+              (await fs.readFile(
+                'tests/fixtures/user-multiplayer-request.md',
+                'utf8',
+              )),
+          }
+        : {}),
     },
   );
   owner = new CollaborationClient(created.credentials, () => {});
   owner.accept(created.result);
-  for (let n = 0; n < 4; n++) {
+  for (let n = 0; n < participants; n++) {
     const listener = net.createServer();
     await new Promise((resolve) => listener.listen(0, '127.0.0.1', resolve));
     ports.push(listener.address().port);
@@ -176,13 +214,15 @@ try {
     },
   });
   await launcher.launch(owner, {
-    count: 4,
+    count: participants,
     role: 'editor',
     nicknamePrefix: '멀티 패키지 QA ' + randomUUID().slice(0, 6),
   });
   await until(async () => {
     const users = await launcher.list(owner.credentials.projectId);
-    return users.length === 4 && users.every((u) => u.status === 'ready');
+    return (
+      users.length === participants && users.every((u) => u.status === 'ready')
+    );
   }, 'packaged users joined');
   const mains = [];
   for (const port of ports) {
@@ -199,6 +239,90 @@ try {
       'production multiplayer API',
     );
     mains.push(session);
+  }
+  if (textGeneration) {
+    const member = await mains[0].js('window.gameCanvas.getCollaboration()');
+    await CollaborationClient.fetch(
+      url,
+      `/projects/${created.credentials.projectId}/role`,
+      { memberId: member.memberId, role: 'admin' },
+      created.credentials.token,
+    );
+    await until(
+      () =>
+        mains[0].js(
+          'window.gameCanvas.getCollaboration().then(state=>state.role==="admin")',
+        ),
+      'QA admin role',
+    );
+    const status = await mains[0].js(
+      'window.gameCanvas.getAiStatus("codex-cli")',
+    );
+    assert(
+      status.available && status.authenticated,
+      'Real provider must be available and authenticated',
+    );
+    const input = gamejamTaskInput({
+      organize: false,
+      implement: true,
+      inputPaths: ['ideas/user.md'],
+      x: 0,
+      y: 0,
+      resultName: '실제 텍스트 멀티 테스트',
+      htmlResult: { mode: 'new' },
+      instructions: DEFAULT_TASK_INSTRUCTIONS,
+    });
+    assert.equal(input.multiplayer, undefined);
+    const task = await mains[0].js(
+      `window.gameCanvas.createTask(${JSON.stringify(input)})`,
+    );
+    await mains[0].js(
+      'window.__userTextQaEvents=[];window.gameCanvas.onCodexRunEvent(e=>window.__userTextQaEvents.push(e))',
+    );
+    const run = await mains[0].js(
+      `window.gameCanvas.startCodexRun(${JSON.stringify({ taskPath: task.relativePath, providerId: 'codex-cli', modelId: null })})`,
+    );
+    const terminal = await until(
+      async () => {
+        const events = await mains[0].js(
+          'window.__userTextQaEvents.map(e=>({runId:e.runId,status:e.status,failure:e.failure,message:e.message}))',
+        );
+        return events.find(
+          (e) =>
+            e.runId === run.runId &&
+            ['completed', 'failed', 'cancelled'].includes(e.status),
+        );
+      },
+      'actual AI text generation and validation',
+      6000,
+    );
+    await fs.writeFile(
+      path.join(output, 'text-generation-result.json'),
+      JSON.stringify(
+        {
+          realProvider: true,
+          librarySelected: false,
+          status: terminal.status,
+          failure: terminal.failure,
+        },
+        null,
+        2,
+      ),
+    );
+    assert.equal(terminal.status, 'completed', JSON.stringify(terminal));
+    const generated = await until(
+      async () =>
+        (await mains[0].js('window.gameCanvas.listPreviews()')).find(
+          (p) => p.relativePath !== gamePath,
+        ),
+      'generated user game',
+    );
+    assert.equal(readMultiplayerManifest(generated.content).maxPlayers, 2);
+    await fs.writeFile(
+      path.join(output, 'user-text-generated.html'),
+      generated.content,
+    );
+    gamePath = generated.relativePath;
   }
   const result = await mains[0].js(
     `window.gameCanvas.multiplayer.control({action:'create',path:${JSON.stringify(gamePath)}})`,
@@ -242,6 +366,91 @@ try {
         ),
       'packaged game running',
     );
+  const gameFrames = [];
+  if (userGameFlow) {
+    for (const [index, session] of players.entries()) {
+      await session.send('Page.bringToFront');
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        x: 200,
+        y: 200,
+        button: 'left',
+        clickCount: 1,
+      });
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        x: 200,
+        y: 200,
+        button: 'left',
+        clickCount: 1,
+      });
+      await session.send('Page.enable');
+      const tree = await session.send('Page.getFrameTree');
+      const frame = tree.frameTree.childFrames?.[0]?.frame;
+      let world, childSession;
+      if (frame)
+        world = await session.send('Page.createIsolatedWorld', {
+          frameId: frame.id,
+          worldName: 'user-game-qa',
+        });
+      else {
+        await session.send('Target.setAutoAttach', {
+          autoAttach: true,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+        });
+        childSession = await until(
+          () => session.frames[0],
+          'generated game frame',
+        );
+      }
+      const evaluate = async (expression) => {
+        // Request a compositor frame when the other QA native window covers it.
+        await session.send('Page.captureScreenshot', { format: 'png' });
+        return (
+          await session.send(
+            'Runtime.evaluate',
+            {
+              ...(world ? { contextId: world.executionContextId } : {}),
+              returnByValue: true,
+              expression,
+            },
+            childSession,
+          )
+        ).result.value;
+      };
+      gameFrames.push(evaluate);
+      await until(
+        () =>
+          evaluate(
+            `Array.from(document.querySelectorAll('button')).some(b=>/${index + 1}\\s*P/i.test(b.textContent)&&!b.disabled)`,
+          ),
+        'generated seat button enabled',
+      );
+      const selected = await evaluate(
+        `(()=>{const button=Array.from(document.querySelectorAll('button')).find(b=>/${index + 1}\\s*P/i.test(b.textContent)&&!b.disabled);if(!button)return false;button.click();return true;})()`,
+      );
+      assert.equal(
+        selected,
+        true,
+        'Real generated game exposes requested seat choice',
+      );
+      await sleep(200);
+    }
+    for (const evaluate of gameFrames)
+      await until(
+        () =>
+          evaluate(
+            "Array.from(document.querySelectorAll('button')).filter(b=>/[12]\\s*P/i.test(b.textContent)).every(b=>b.getClientRects().length===0)",
+          ),
+        'both seats selected and real game started',
+      );
+  }
+  const beforeCanvases = await Promise.all(
+    gameFrames.map((evaluate) =>
+      evaluate('document.querySelector("canvas").toDataURL()'),
+    ),
+  );
   await players[0].send('Input.dispatchMouseEvent', {
     type: 'mousePressed',
     x: 200,
@@ -270,6 +479,63 @@ try {
     windowsVirtualKeyCode: 39,
   });
   await sleep(250);
+  if (userGameFlow) {
+    const afterCanvases = await Promise.all(
+      gameFrames.map((evaluate) =>
+        evaluate('document.querySelector("canvas").toDataURL()'),
+      ),
+    );
+    for (let i = 0; i < participants; i++)
+      assert.notEqual(
+        afterCanvases[i],
+        beforeCanvases[i],
+        'Native movement must appear on both generated game screens',
+      );
+    await players[0].send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'ArrowRight',
+      code: 'ArrowRight',
+      windowsVirtualKeyCode: 39,
+    });
+    await sleep(450);
+    await players[0].send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'ArrowRight',
+      code: 'ArrowRight',
+      windowsVirtualKeyCode: 39,
+    });
+    await sleep(250);
+    const beforePush = await Promise.all(
+      gameFrames.map((evaluate) =>
+        evaluate('document.querySelector("canvas").toDataURL()'),
+      ),
+    );
+    await players[0].send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: ' ',
+      code: 'Space',
+      windowsVirtualKeyCode: 32,
+    });
+    await sleep(100);
+    await players[0].send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: ' ',
+      code: 'Space',
+      windowsVirtualKeyCode: 32,
+    });
+    await sleep(450);
+    const afterPush = await Promise.all(
+      gameFrames.map((evaluate) =>
+        evaluate('document.querySelector("canvas").toDataURL()'),
+      ),
+    );
+    for (let i = 0; i < participants; i++)
+      assert.notEqual(
+        beforePush[i],
+        afterPush[i],
+        'Space push must remain visible on both screens after the short visual effect ends',
+      );
+  }
   for (const [index, session] of players.entries()) {
     const image = await session.send('Page.captureScreenshot', {
       format: 'png',
@@ -353,7 +619,16 @@ try {
     JSON.stringify(
       {
         passed: true,
-        independentProfiles: 4,
+        independentProfiles: participants,
+        realTextGeneration: textGeneration,
+        userGeneratedSource: !!generatedSourcePath,
+        ...(userGameFlow
+          ? {
+              seatsSelected: true,
+              movementOnBothScreens: true,
+              pushOnBothScreens: true,
+            }
+          : {}),
         productionPreload: true,
         productionMain: true,
         productionPlayer: true,
@@ -366,7 +641,7 @@ try {
     ),
   );
   console.log(
-    'PASS: actual Windows package, 4 isolated authenticated users, production IPC/preloads, frozen game, ready/start, native input and host leave.',
+    `PASS: actual Windows package, ${participants} isolated authenticated users, production IPC/preloads, frozen game, ready/start, native input and host leave.`,
   );
 } finally {
   for (const socket of cdpSockets) socket.close();

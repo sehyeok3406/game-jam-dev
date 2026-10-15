@@ -23,7 +23,7 @@ import { installMultiplayerSdk } from '../src/multiplayer/sdk-runtime.js';
 
 const privateText = 'PRIVATE-GAME-TOKEN-AND-CONTENT';
 test('all multiplayer codes survive common errors and IPC serialization without copying private messages', () => {
-  assert.equal(Object.keys(PLAY_ERRORS).length, 29);
+  assert.equal(Object.keys(PLAY_ERRORS).length, 30);
   for (const code of Object.keys(PLAY_ERRORS)) {
     assert.equal(failureInfo(new PlayError(code)).code, code);
     const failure = playFailure(
