@@ -61,7 +61,8 @@ export function GameFeatureLibrary({
             연습도 지원합니다.
           </p>
           <p>
-            방 만들기·참가·준비·게임 상태 동기화·연결 복구를 함께 제공합니다.
+            방을 만들고 참가하면 같은 게임을 함께 즐길 수 있습니다. 연결 코드를
+            복사하거나 어려운 설정을 입력할 필요가 없습니다.
           </p>
           {multiplayer ? (
             <>
@@ -85,7 +86,7 @@ export function GameFeatureLibrary({
               </label>
               <p>이번 구현에 포함 · 온라인 최소 2명 · 혼자 연습 가능</p>
               <button type="button" onClick={() => onMultiplayerChange(null)}>
-                적용 모듈 제거
+                함께 플레이 빼기
               </button>
             </>
           ) : (

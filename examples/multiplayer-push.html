@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>같이 밀치기</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #101722;
+        color: #e6edf7;
+        font:
+          16px system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 900px;
+        margin: auto;
+      }
+      h1 {
+        font-size: 26px;
+      }
+      p {
+        color: #b8c9df;
+        line-height: 1.7;
+      }
+      section {
+        padding: 24px;
+        border: 1px solid #34475f;
+        border-radius: 16px;
+        background: #192535;
+      }
+      .seats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 20px 0;
+      }
+      button {
+        flex: 1;
+        min-width: 180px;
+        padding: 18px;
+        color: white;
+        font: inherit;
+        border: 1px solid #6383a8;
+        border-radius: 12px;
+        background: #293e59;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 3px solid #ffdc55;
+        outline-offset: 3px;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.65;
+      }
+      #seat-0 {
+        border-left: 8px solid #6bbfff;
+      }
+      #seat-1 {
+        border-left: 8px solid #ff86a7;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        aspect-ratio: 8 / 5;
+        border: 1px solid #435a79;
+        border-radius: 14px;
+        background: #162231;
+      }
+      #hint {
+        min-height: 28px;
+      }
+      #cooldown {
+        color: #e6edf7;
+      }
+      kbd {
+        padding: 3px 6px;
+        border: 1px solid #48607e;
+        border-radius: 5px;
+        font: inherit;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 600px) {
+        body {
+          padding: 12px;
+        }
+        section {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>같이 밀치기</h1>
+      <section id="choose">
+        <h2>내 캐릭터를 골라주세요</h2>
+        <p id="mode">
+          혼자 하려면 이 미리보기에서, 둘이 하려면 게임 창의
+          <strong>함께 플레이</strong>에서 방을 만들어주세요.
+        </p>
+        <div class="seats">
+          <button id="seat-0" type="button" disabled>1P · 파란색</button>
+          <button id="seat-1" type="button" disabled>2P · 분홍색</button>
+        </div>
+        <p id="hint" role="status" aria-live="polite">
+          앱에서 게임을 준비하고 있어요. 함께 하는 중이라면 위쪽의 준비 버튼을
+          눌러주세요.
+        </p>
+      </section>
+      <section id="play" hidden>
+        <canvas
+          id="map"
+          width="800"
+          height="500"
+          aria-label="두 캐릭터가 이동하는 연습장"
+        ></canvas>
+        <p id="who"></p>
+        <p id="cooldown" role="status">밀치기 준비 완료</p>
+      </section>
+      <p>
+        <kbd>WASD</kbd> 또는 <kbd>방향키</kbd>로 이동 · <kbd>스페이스 바</kbd>로
+        가까운 상대 밀치기 · 1초 뒤 다시 사용
+      </p>
+    </main>
+    <script type="application/json" id="gamejam-multiplayer">
+      {
+        "version": 1,
+        "authority": "host",
+        "minPlayers": 2,
+        "maxPlayers": 2,
+        "sdkVersion": 1,
+        "solo": true,
+        "stateVersion": 1
+      }
+    </script>
+    <script>
+      (() => {
+        const $ = (id) => document.getElementById(id);
+        const sdk = window.GameJamMultiplayer;
+        if (!sdk) {
+          $('hint').textContent =
+            '이 파일을 Game Jam! 앱에 가져와 열어주세요. 혼자 연습하거나 프로젝트 참여자와 함께 할 수 있어요.';
+          return;
+        }
+        const canvas = $('map'),
+          ctx = canvas.getContext('2d');
+        const held = new Set();
+        let wantedSeat = null,
+          pushId = 0,
+          selfId,
+          active = false;
+        const movement = new Set([
+          'KeyW',
+          'KeyA',
+          'KeyS',
+          'KeyD',
+          'ArrowUp',
+          'ArrowDown',
+          'ArrowLeft',
+          'ArrowRight',
+          'Space',
+        ]);
+        function send() {
+          if (!active) return;
+          sdk.sendInput({
+            seat: wantedSeat,
+            pushId,
+            x:
+              Number(held.has('KeyD') || held.has('ArrowRight')) -
+              Number(held.has('KeyA') || held.has('ArrowLeft')),
+            y:
+              Number(held.has('KeyS') || held.has('ArrowDown')) -
+              Number(held.has('KeyW') || held.has('ArrowUp')),
+          });
+        }
+        for (let i = 0; i < 2; i++)
+          $('seat-' + i).onclick = () => {
+            wantedSeat = i;
+            send();
+          };
+        addEventListener('keydown', (event) => {
+          if (!active || !movement.has(event.code)) return;
+          event.preventDefault();
+          held.add(event.code);
+          if (event.code === 'Space' && !event.repeat) pushId++;
+          send();
+        });
+        addEventListener('keyup', (event) => {
+          held.delete(event.code);
+          send();
+        });
+        const release = () => {
+          held.clear();
+          send();
+        };
+        addEventListener('blur', release);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) release();
+        });
+        sdk.register({
+          createState({ players, solo }) {
+            return {
+              solo,
+              stage: 'choose',
+              owners: [null, null],
+              people: players.map((p) => ({ id: p.id, pushId: 0 })),
+              circles: [
+                { x: 350, y: 250, dx: 1, dy: 0, vx: 0, vy: 0, cooldown: 0 },
+                { x: 420, y: 250, dx: -1, dy: 0, vx: 0, vy: 0, cooldown: 0 },
+              ],
+            };
+          },
+          validateInput(input) {
+            return (
+              !!input &&
+              typeof input === 'object' &&
+              !Array.isArray(input) &&
+              (input.seat === undefined ||
+                input.seat === null ||
+                input.seat === 0 ||
+                input.seat === 1) &&
+              (input.pushId === undefined ||
+                (Number.isSafeInteger(input.pushId) && input.pushId >= 0)) &&
+              ['x', 'y'].every(
+                (k) => input[k] === undefined || [-1, 0, 1].includes(input[k]),
+              )
+            );
+          },
+          step(state, { inputs, dt }) {
+            const controls = [
+              { x: 0, y: 0, push: false },
+              { x: 0, y: 0, push: false },
+            ];
+            for (const command of inputs) {
+              const person = state.people.find(
+                (p) => p.id === command.playerId,
+              );
+              if (!person) continue;
+              const input = command.input;
+              if (
+                state.stage === 'choose' &&
+                !state.owners.includes(person.id) &&
+                (input.seat === 0 || input.seat === 1) &&
+                state.owners[input.seat] === null
+              )
+                state.owners[input.seat] = person.id;
+              const seat = state.owners.indexOf(person.id);
+              const push =
+                Number.isSafeInteger(input.pushId) &&
+                input.pushId > person.pushId;
+              if (Number.isSafeInteger(input.pushId))
+                person.pushId = Math.max(person.pushId, input.pushId);
+              if (seat >= 0)
+                controls[seat] = { x: input.x || 0, y: input.y || 0, push };
+            }
+            if (state.stage === 'choose') {
+              if (
+                state.solo
+                  ? state.owners.some(Boolean)
+                  : state.owners.every(Boolean)
+              )
+                state.stage = 'play';
+              return;
+            }
+            for (let i = 0; i < 2; i++) {
+              const p = state.circles[i],
+                v = controls[i],
+                length = Math.hypot(v.x, v.y);
+              p.cooldown = Math.max(0, p.cooldown - dt);
+              if (length) {
+                p.dx = v.x / length;
+                p.dy = v.y / length;
+              }
+              p.x += ((length ? (v.x / length) * 190 : 0) + p.vx) * dt;
+              p.y += ((length ? (v.y / length) * 190 : 0) + p.vy) * dt;
+              p.vx *= Math.exp(-7 * dt);
+              p.vy *= Math.exp(-7 * dt);
+            }
+            for (let i = 0; i < 2; i++) {
+              const p = state.circles[i],
+                other = state.circles[1 - i];
+              if (controls[i].push && p.cooldown === 0) {
+                p.cooldown = 1;
+                if (Math.hypot(other.x - p.x, other.y - p.y) <= 88) {
+                  other.vx += p.dx * 600;
+                  other.vy += p.dy * 600;
+                }
+              }
+            }
+            for (const p of state.circles) {
+              p.x = Math.max(20, Math.min(780, p.x));
+              p.y = Math.max(20, Math.min(480, p.y));
+              if (p.x === 20 || p.x === 780) p.vx = 0;
+              if (p.y === 20 || p.y === 480) p.vy = 0;
+            }
+          },
+          render(state, context) {
+            selfId = context.selfId;
+            pushId = Math.max(
+              pushId,
+              state.people.find((p) => p.id === selfId)?.pushId || 0,
+            );
+            if (active && !context.active) held.clear();
+            active = context.active;
+            const seat = state.owners.indexOf(selfId);
+            // A refused simultaneous choice can be retried; only the shared state decides ownership.
+            if (seat < 0 && wantedSeat !== null && state.owners[wantedSeat])
+              wantedSeat = null;
+            $('choose').hidden = state.stage === 'play';
+            $('play').hidden = state.stage !== 'play';
+            $('mode').textContent = context.solo
+              ? '혼자 연습 중이에요. 다른 캐릭터는 움직이지 않는 연습 상대예요.'
+              : '친구와 함께하는 중이에요. 서로 다른 캐릭터를 골라주세요.';
+            $('hint').textContent = !active
+              ? '연결을 다시 확인하고 있어요. 위쪽 안내를 확인해주세요.'
+              : seat >= 0
+                ? '친구가 캐릭터를 고르면 바로 시작해요.'
+                : '파란색 또는 분홍색을 골라주세요.';
+            for (let i = 0; i < 2; i++) {
+              const owner = state.owners[i];
+              $('seat-' + i).disabled = !active || owner !== null || seat >= 0;
+              $('seat-' + i).textContent =
+                `${i + 1}P · ${i ? '분홍색' : '파란색'}${owner ? (owner === selfId ? ' · 나' : ' · 친구가 선택했어요') : ''}`;
+            }
+            if (state.stage !== 'play') return;
+            ctx.clearRect(0, 0, 800, 500);
+            ctx.strokeStyle = '#25364c';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let x = 40; x < 800; x += 40) {
+              ctx.moveTo(x, 0);
+              ctx.lineTo(x, 500);
+            }
+            for (let y = 40; y < 500; y += 40) {
+              ctx.moveTo(0, y);
+              ctx.lineTo(800, y);
+            }
+            ctx.stroke();
+            state.circles.forEach((p, i) => {
+              ctx.fillStyle = i ? '#ff86a7' : '#6bbfff';
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+              ctx.fill();
+              if (i === seat) {
+                ctx.strokeStyle = '#e6edf7';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 26, 0, Math.PI * 2);
+                ctx.stroke();
+              }
+              ctx.fillStyle = '#162231';
+              ctx.beginPath();
+              ctx.arc(p.x + p.dx * 10, p.y + p.dy * 10, 4, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = '#d4e2f2';
+              ctx.textAlign = 'center';
+              ctx.font = '14px system-ui';
+              ctx.fillText(
+                `${i + 1}P${i === seat ? ' · 나' : context.solo ? ' · 연습 상대' : ' · 친구'}`,
+                p.x,
+                p.y - 36,
+              );
+            });
+            $('who').textContent =
+              `${seat + 1}P로 플레이 중${context.solo ? ' · 혼자 연습' : ''}`;
+            const cooldown = state.circles[seat]?.cooldown || 0;
+            $('cooldown').textContent = !active
+              ? '잠시 멈췄어요. 위쪽 안내를 확인해주세요.'
+              : cooldown > 0
+                ? `밀치기 · ${cooldown.toFixed(1)}초 뒤에 다시 쓸 수 있어요`
+                : '밀치기 준비 완료';
+          },
+          getOutcome() {
+            return null;
+          },
+        });
+      })();
+    </script>
+  </body>
+</html>
