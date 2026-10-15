@@ -7,6 +7,8 @@
 
 Windows x64 설치 파일: `Game.Jam-0.26.0.Setup.exe`. 전체 진단을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요. [오류 안내·추적 방법](https://github.com/sehyeok3406/game-jam-dev/blob/main/MULTIPLAYER_DIAGNOSTICS.md)
 
+2026-10-15 정식 게시 후 공개 파일의 해시·크기·다운로드 접근과 RELEASES를 검증했습니다. 자동 테스트 405개와 추가 무응답 회귀, 실제 Windows 패키지의 독립 4인·내장 서버·오류 추적·새 판 복구를 확인했습니다. **자동 업데이트 피드 반영은 대기 중**입니다. [검증 기록](https://github.com/sehyeok3406/game-jam-dev/blob/main/UPDATES.md)
+
 ---
 
 # Game Jam! v0.24.0

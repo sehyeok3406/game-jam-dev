@@ -4,6 +4,8 @@
 
 연결뿐 아니라 조작·게임 규칙·화면 표시·결과 처리 문제를 구분하고, 쉬운 해결 안내와 오류 정보 복사를 제공합니다. [사용 안내와 오류 코드](MULTIPLAYER_DIAGNOSTICS.md) · [배포 상태](UPDATES.md)
 
+2026-10-15 [v0.26.0 정식 배포·공개 파일 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.26.0) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.26.0/Game.Jam-0.26.0.Setup.exe). 자동 업데이트 피드는 일부 HTTP 500으로 반영 대기 상태입니다.
+
 ### v0.25.0 팀원 요청 · 관리자 승인
 
 팀원은 AI 설치·로그인 없이 문서 정리·HTML 구현을 요청하고, 관리자가 요청함에서 보완 의견을 보내거나 승인해 자신의 AI 연결로 실행합니다. 구현 시작 전까지 작성자가 요청을 수정·취소할 수 있고, 시작한 내용과 완료·실패·중지 결과를 함께 확인합니다. 앱과 협업 서버 모두 v0.25.0 이상이 필요합니다. [사용 안내](AI_CONNECTION.md) · [배포 상태](UPDATES.md)
