@@ -4,6 +4,8 @@
 
 팀원은 AI 설치·로그인 없이 문서 정리·HTML 구현을 요청하고, 관리자가 요청함에서 보완 의견을 보내거나 승인해 자신의 AI 연결로 실행합니다. 구현 시작 전까지 작성자가 요청을 수정·취소할 수 있고, 시작한 내용과 완료·실패·중지 결과를 함께 확인합니다. 앱과 협업 서버 모두 v0.25.0 이상이 필요합니다. [사용 안내](AI_CONNECTION.md) · [배포 상태](UPDATES.md)
 
+2026-10-15 [v0.25.0 정식 배포·공개 파일 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.25.0) · [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.25.0/Game.Jam-0.25.0.Setup.exe). 이전 버전 확인 피드와 Windows 패키지 피드 모두 v0.25.0 반영을 확인했습니다.
+
 ### v0.24.0 HTML 온라인 멀티플레이
 
 기능 라이브러리에서 온라인 멀티 모듈을 추가해 2~4인 협동·혼자 연습 게임을 생성하고, 공동 프로젝트의 방에서 함께 플레이합니다. 앱과 협업 서버 모두 v0.24.0 이상이 필요합니다. [사용 안내](HTML_MULTIPLAYER.md) · [배포 상태](UPDATES.md)
