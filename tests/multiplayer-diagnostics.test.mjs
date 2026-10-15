@@ -341,4 +341,19 @@ test('connection rejection preserves the server code and repeated failures stop 
   assert.equal(stalled.stopped, true);
   assert.equal(stalled.timer, undefined);
   assert(!JSON.stringify(repeated).includes(privateText));
+  const silent = [];
+  const connectedButSilent = new PlayClient(credentials, room, (m) =>
+    silent.push(m),
+  );
+  clients.push(connectedButSilent);
+  connectedButSilent.connect();
+  await until(() => silent.some((m) => m.type === 'connection' && m.connected));
+  connectedButSilent.checkLiveness(connectedButSilent.openedAt + 9000);
+  await until(() =>
+    silent.some((m) => m.type === 'connection' && !m.connected),
+  );
+  assert.equal(
+    silent.find((m) => m.type === 'connection' && !m.connected).failure.code,
+    'GC-MP-006',
+  );
 });

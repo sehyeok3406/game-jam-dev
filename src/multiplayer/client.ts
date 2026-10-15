@@ -25,6 +25,29 @@ export class PlayClient {
   private failures = 0;
   private transportFailure?: PlayFailure;
   private disconnectedAt = 0;
+  private watchdog?: ReturnType<typeof setInterval>;
+  private openedAt = 0;
+  private lastSeen = 0;
+  private attached = false;
+  /** A successful socket upgrade alone does not mean the play service replied. */
+  private checkLiveness(now = Date.now()) {
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
+    if (
+      (!this.attached && now - this.openedAt > 8000) ||
+      now - this.lastSeen > 10000
+    ) {
+      this.transportFailure = playFailure(
+        new PlayError('GC-MP-006'),
+        'GC-MP-006',
+        {
+          side: 'client',
+          operation: 'connect',
+          durationMs: now - this.lastSeen,
+        },
+      );
+      this.socket.terminate();
+    }
+  }
   readonly credentials: CollaborationCredentials;
   room: PlayRoom;
   private notify: (message: PlayMessage) => void;
@@ -97,6 +120,10 @@ export class PlayClient {
       this.transportFailure = undefined;
       this.disconnectedAt = 0;
       this.failures = 0;
+      this.openedAt = this.lastSeen = Date.now();
+      this.attached = false;
+      this.watchdog = setInterval(() => this.checkLiveness(), 1000);
+      this.watchdog.unref();
       socket.send(
         JSON.stringify({
           type: 'attach',
@@ -107,7 +134,14 @@ export class PlayClient {
       this.notify({ type: 'connection', connected: true });
       if (this.loaded) this.send({ type: 'loaded' });
     });
+    socket.on('ping', () => {
+      this.lastSeen = Date.now();
+    });
+    socket.on('pong', () => {
+      this.lastSeen = Date.now();
+    });
     socket.on('message', (bytes) => {
+      this.lastSeen = Date.now();
       try {
         const message = JSON.parse(bytes.toString()) as PlayMessage;
         jsonPayload(message, 48 * 1024);
@@ -119,6 +153,7 @@ export class PlayClient {
           )
             throw new PlayError('GC-MP-021');
           this.room = room;
+          this.attached = true;
         }
         if (
           message.type === 'error' ||
@@ -148,6 +183,7 @@ export class PlayClient {
     });
     socket.on('close', (code) => {
       if (this.socket !== socket) return;
+      clearInterval(this.watchdog);
       this.socket = undefined;
       if (this.room.status === 'closed') {
         this.stopped = true;
@@ -247,6 +283,7 @@ export class PlayClient {
   close() {
     this.stopped = true;
     clearTimeout(this.timer);
+    clearInterval(this.watchdog);
     this.socket?.terminate();
     this.socket = undefined;
   }
