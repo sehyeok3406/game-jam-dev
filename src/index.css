@@ -6315,3 +6315,52 @@ kbd {
     overflow: visible;
   }
 }
+/* Local administrator configuration, kept inside the request inbox. */
+.discord-approval-settings {
+  flex-shrink: 0;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border, #454954);
+  max-height: 45vh;
+  overflow: auto;
+}
+.discord-approval-settings summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.discord-approval-settings p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.discord-approval-settings fieldset {
+  border: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.discord-approval-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  min-width: 0;
+}
+.discord-approval-settings input:not([type='checkbox']),
+.discord-approval-settings select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  color: var(--text);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.discord-approval-settings .discord-threads {
+  flex-direction: row;
+  align-items: center;
+}
+.discord-settings-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+}

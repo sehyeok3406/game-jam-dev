@@ -334,6 +334,16 @@ export type UpdateState = {
 };
 
 export type GameCanvasApi = {
+  discordApproval?: {
+    status(): Promise<import('./discord-approval-types').DiscordApprovalStatus>;
+    configure(
+      input: import('./discord-approval-types').DiscordApprovalInput,
+    ): Promise<import('./discord-approval-types').DiscordApprovalStatus>;
+    disconnect(): Promise<
+      import('./discord-approval-types').DiscordApprovalStatus
+    >;
+    onPrepare(listener: () => Promise<void>): () => void;
+  };
   multiplayer?: {
     control: (
       input: import('./multiplayer/types').PlayAction,

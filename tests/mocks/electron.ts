@@ -12,13 +12,12 @@ export const handlers = new Map<
   (...args: unknown[]) => Promise<unknown>
 >();
 export const events: { runId: string; status: string; message: string }[] = [];
-export const ipcMain = {
-  on: () => {},
+export const ipcMain = Object.assign(new EventEmitter(), {
   handle: (
     channel: string,
     handler: (...args: unknown[]) => Promise<unknown>,
   ) => handlers.set(channel, handler),
-};
+});
 export const app = Object.assign(new EventEmitter(), {
   getVersion: () => '0.10.1',
   isPackaged: false,

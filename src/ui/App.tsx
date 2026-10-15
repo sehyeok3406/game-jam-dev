@@ -6167,6 +6167,17 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       [...editorsRef.current.values()].map((flush) => flush(finish)),
     );
   };
+  useEffect(
+    () =>
+      window.gameCanvas.discordApproval?.onPrepare(async () => {
+        await gameUi.flush();
+        await drawing.flush();
+        await Promise.all(
+          [...editorsRef.current.values()].map((flush) => flush(false)),
+        );
+      }),
+    [workspace.saveScope, gameUi.flush, drawing.flush],
+  );
   const changeEdit = async (direction: 'undo' | 'redo') => {
     if (locked) {
       onBlocked();

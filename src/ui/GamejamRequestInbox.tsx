@@ -10,6 +10,7 @@ import {
 import type { AiProviderId, CollaborationState } from '../shared';
 import { AI_PROVIDERS, aiProvider as getAiProvider } from '../ai-providers';
 import { GamejamReview } from './GamejamWizard';
+import { DiscordApprovalSettings } from './DiscordApprovalSettings';
 
 type Props = {
   collaboration: CollaborationState;
@@ -186,6 +187,13 @@ export function GamejamRequestInbox({
             <X size={18} />
           </button>
         </header>
+        {admin && (
+          <DiscordApprovalSettings
+            provider={provider}
+            model={model}
+            connected={c.connected && !c.accessDenied}
+          />
+        )}
         <div className="approval-toolbar">
           <label>
             <input

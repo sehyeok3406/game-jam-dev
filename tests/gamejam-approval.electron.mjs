@@ -83,6 +83,51 @@ async function run() {
     await wait('!!document.querySelector(".approval-list > button")');
     await click('.approval-list > button', '팀원 수정 완료');
     await wait('!!document.querySelector(".approval-admin")');
+    await click('.discord-approval-settings summary', '디스코드');
+    await wait(
+      '!!document.querySelector(".discord-approval-settings [role=status]")',
+    );
+    await setValue('[aria-label="디스코드 봇 토큰"]', 'ui-test-token');
+    await setValue('[aria-label="디스코드 채널 ID"]', '1560275803198193725');
+    await setValue(
+      '[aria-label="디스코드 관리자 사용자 ID"]',
+      '448449132479381507',
+    );
+    assert.equal(
+      await js(
+        `document.querySelector('[aria-label="디스코드 봇 토큰"]').type`,
+      ),
+      'password',
+    );
+    await click('.discord-settings-actions button', '저장하고 연결');
+    await wait(
+      'document.querySelector(".discord-approval-settings").textContent.includes("테스트 연결")',
+    );
+    assert.equal(
+      await js(
+        `document.querySelector('[aria-label="디스코드 봇 토큰"]').value`,
+      ),
+      '',
+    );
+    await fs.mkdir('out/gamejam-approval', { recursive: true });
+    await js('document.documentElement.dataset.theme="dark"');
+    await pause(150);
+    await fs.writeFile(
+      'out/gamejam-approval/discord-settings-dark.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js('document.documentElement.dataset.theme="light"');
+    await pause(150);
+    await fs.writeFile(
+      'out/gamejam-approval/discord-settings-light.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js('document.documentElement.dataset.theme="dark"');
+    await click('.discord-settings-actions button', '연결 해제');
+    await wait(
+      '!document.querySelector(".discord-settings-actions").textContent.includes("연결 해제")',
+    );
+    await click('.discord-approval-settings summary', '디스코드');
     await setValue('.approval-admin textarea', '조작 방법을 더 써주세요');
     await click('.approval-admin button', '보완 요청');
     await wait(

@@ -54,8 +54,21 @@ let otherClient: CollaborationClient | null = null;
 const originalGeminiKey = process.env.GEMINI_API_KEY;
 process.env.GEMINI_API_KEY = 'fixture-not-a-real-api-key';
 try {
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  for (let attempt = 0; attempt < 250 && !createdWindows.length; attempt++)
+    await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(createdWindows.length, 1);
+  assert.equal((await call('discord-approval:status')).configured, false);
+  await assert.rejects(
+    handlers.get('discord-approval:configure')!(
+      { sender: {}, senderFrame: {} },
+      {},
+    ),
+    /관리자 설정/,
+  );
+  await assert.rejects(
+    call('discord-approval:configure', {}),
+    /공동 프로젝트 관리자/,
+  );
   const updateState = await call('updates:state');
   assert.equal(updateState.status, 'unavailable');
   assert.equal(updateState.repository, 'sehyeok3406/game-jam-dev');

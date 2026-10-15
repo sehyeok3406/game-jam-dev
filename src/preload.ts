@@ -18,6 +18,25 @@ async function playInvoke(channel: string, input?: unknown) {
 }
 
 const api: GameCanvasApi = {
+  discordApproval: {
+    status: () => ipcRenderer.invoke('discord-approval:status'),
+    configure: (input) =>
+      ipcRenderer.invoke('discord-approval:configure', input),
+    disconnect: () => ipcRenderer.invoke('discord-approval:disconnect'),
+    onPrepare: (listener) => {
+      const wrapped = async (_event: Electron.IpcRendererEvent, id: string) => {
+        try {
+          await listener();
+          ipcRenderer.send('discord-approval:prepared', id, true);
+        } catch {
+          ipcRenderer.send('discord-approval:prepared', id, false);
+        }
+      };
+      ipcRenderer.on('discord-approval:prepare', wrapped);
+      return () =>
+        ipcRenderer.removeListener('discord-approval:prepare', wrapped);
+    },
+  },
   multiplayer: {
     control: (input) => playInvoke('multiplayer:control', input),
     open: (roomId) => playInvoke('multiplayer:open', roomId),

@@ -8,6 +8,35 @@ import '@xyflow/react/dist/style.css';
 import '../src/index.css';
 
 const api = createDevGameCanvasApi();
+let discordStatus: import('../src/discord-approval-types').DiscordApprovalStatus =
+  {
+    configured: false,
+    connected: false,
+    message: '디스코드가 연결되지 않았습니다.',
+  };
+api.discordApproval = {
+  status: async () => structuredClone(discordStatus),
+  configure: async ({ token, ...settings }) => {
+    if (!token) throw Error('토큰을 입력해주세요.');
+    discordStatus = {
+      configured: true,
+      connected: true,
+      message: '연결됨 · 테스트 연결',
+      settings,
+      projectName: '승인 UI 프로젝트',
+    };
+    return structuredClone(discordStatus);
+  },
+  disconnect: async () => {
+    discordStatus = {
+      configured: false,
+      connected: false,
+      message: '연결을 해제했습니다.',
+    };
+    return structuredClone(discordStatus);
+  },
+  onPrepare: () => () => {},
+};
 const source = (await api.listDocuments())[0];
 const listeners = new Set<(state: CollaborationState) => void>();
 let connectedAi = false;

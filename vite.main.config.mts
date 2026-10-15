@@ -6,6 +6,13 @@ const selfHostEnabled =
 
 // https://vitejs.dev/config
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      // discord.js probes this optional native accelerator and catches its absence.
+      // Keep the probe at runtime; its supported uncompressed Gateway needs no addon.
+      external: ['zlib-sync'],
+    },
+  },
   resolve: {
     alias: selfHostEnabled
       ? {}

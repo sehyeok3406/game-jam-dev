@@ -1,3 +1,8 @@
+import {
+  DiscordApprovalService,
+  type DiscordApprovalContext,
+} from './discord-approval';
+import { DiscordApprovalStore } from './discord-approval-store';
 import { PropertyQueue } from './property-queue.ts';
 import {
   snapshotDrawings,
@@ -2189,6 +2194,124 @@ function drawingChanges(files: Snapshot, known: Record<string, string> = {}) {
     signatures,
   };
 }
+const prepareCodexRun = async (
+  runInput: StartCodexRunInput,
+  authorized?: () => void,
+) => {
+  assertEditable();
+  if (collaboration) {
+    if (collaboration.state.role !== 'admin')
+      throw new Error('관리자만 AI를 실행할 수 있습니다.');
+    const connection = await getAiStatus(runInput.providerId);
+    if (!connection.available || !connection.authenticated)
+      throw new CanvasError('GC-AI-008', connection.message);
+  }
+  const taskPath = runInput.taskPath;
+  preparingFileLock = runInput.approval
+    ? null
+    : taskFileLock(
+        collaboration?.files ?? (await captureProject(requireWorkspace())),
+        taskPath,
+      );
+  runPreparing = true;
+  preparationCancelled = false;
+  lastRunEvent = null;
+  try {
+    authorized?.();
+    if (collaboration) {
+      const files = await collaboration.beginAi(
+        runInput.taskPath,
+        runInput.modelId,
+        runInput.providerId,
+        runInput.approval,
+      );
+      if (runInput.approval) {
+        runInput.taskPath = collaboration.state.aiRun!.taskPath;
+        preparingFileLock = collaboration.state.aiRun?.fileLock ?? null;
+      }
+      sharedRunId = collaboration.state.aiRun?.runId ?? null;
+      lastSharedRunStatus = '';
+      await syncSharedSnapshot(files);
+    }
+    return await startCodexRun(runInput);
+  } catch (error) {
+    const run = lastRunEvent as CodexRunEvent | null;
+    const failure = preparationCancelled
+      ? undefined
+      : failureInfo(error, 'GC-AI-001');
+    if (run) {
+      const status = preparationCancelled ? 'cancelled' : 'failed';
+      const message = failure
+        ? errorText(failure)
+        : 'AI 작업 준비를 중지했습니다.';
+      if (failure) {
+        failure.diagnosticPath = `.history/${run.runId}/diagnostic.json`;
+        await writeRunDiagnostic(requireWorkspace(), run.runId, {
+          schemaVersion: 1,
+          runId: run.runId,
+          taskPath: run.taskPath,
+          phase: 'prepare',
+          status,
+          failure,
+          events: runTimelines.get(run.runId) ?? [],
+        }).catch(() => {
+          delete failure.diagnosticPath;
+        });
+      }
+      await updateTaskRunStatus(run.taskPath, status, {
+        ai_error: message,
+        ai_error_code: failure?.code,
+        ai_diagnostic_path: failure?.diagnosticPath,
+      }).catch(() => undefined);
+      await saveHistory(
+        requireWorkspace(),
+        {},
+        {},
+        {
+          id: run.runId,
+          label: 'AI 작업 준비',
+          kind: 'ai',
+          status,
+          createdAt: run.timestamp,
+          finishedAt: Date.now(),
+          taskPath: run.taskPath,
+          error: message,
+          providerId: run.providerId,
+          modelId: run.modelId,
+          failure,
+          aiTask: taskHistoryRecord(
+            await fs
+              .readFile(await safePath(run.taskPath), 'utf8')
+              .catch(() => undefined),
+          ),
+        },
+      ).catch(() => undefined);
+      emitCodexRunEvent(
+        run.runId,
+        run.taskPath,
+        status,
+        'error',
+        message,
+        failure,
+      );
+    }
+    if (collaboration?.lease)
+      await collaboration
+        .finishAi(
+          preparationCancelled ? 'cancelled' : 'failed',
+          {},
+          null,
+          failure,
+        )
+        .catch(() => undefined);
+    throw error;
+  } finally {
+    runPreparing = false;
+    preparingFileLock = null;
+    if (!activeCodexRun) sharedRunId = null;
+  }
+};
+
 const handle = (
   channel: string,
   listener: Parameters<typeof ipcMain.handle>[1],
@@ -2497,121 +2620,9 @@ const handle = (
           })();
       }
       if (channel === 'codex:start')
-        return enqueueMutation(async () => {
-          assertEditable();
-          const runInput = args[0] as StartCodexRunInput;
-          if (collaboration) {
-            if (collaboration.state.role !== 'admin')
-              throw new Error('관리자만 AI를 실행할 수 있습니다.');
-            const connection = await getAiStatus(runInput.providerId);
-            if (!connection.available || !connection.authenticated)
-              throw new CanvasError('GC-AI-008', connection.message);
-          }
-          const taskPath = runInput.taskPath;
-          preparingFileLock = runInput.approval
-            ? null
-            : taskFileLock(
-                collaboration?.files ??
-                  (await captureProject(requireWorkspace())),
-                taskPath,
-              );
-          runPreparing = true;
-          preparationCancelled = false;
-          lastRunEvent = null;
-          try {
-            if (collaboration) {
-              const files = await collaboration.beginAi(
-                (args[0] as StartCodexRunInput).taskPath,
-                (args[0] as StartCodexRunInput).modelId,
-                (args[0] as StartCodexRunInput).providerId,
-                runInput.approval,
-              );
-              if (runInput.approval) {
-                runInput.taskPath = collaboration.state.aiRun!.taskPath;
-                preparingFileLock = collaboration.state.aiRun?.fileLock ?? null;
-              }
-              sharedRunId = collaboration.state.aiRun?.runId ?? null;
-              lastSharedRunStatus = '';
-              await syncSharedSnapshot(files);
-            }
-            return await listener(event, ...args);
-          } catch (error) {
-            const run = lastRunEvent as CodexRunEvent | null;
-            const failure = preparationCancelled
-              ? undefined
-              : failureInfo(error, 'GC-AI-001');
-            if (run) {
-              const status = preparationCancelled ? 'cancelled' : 'failed';
-              const message = failure
-                ? errorText(failure)
-                : 'AI 작업 준비를 중지했습니다.';
-              if (failure) {
-                failure.diagnosticPath = `.history/${run.runId}/diagnostic.json`;
-                await writeRunDiagnostic(requireWorkspace(), run.runId, {
-                  schemaVersion: 1,
-                  runId: run.runId,
-                  taskPath: run.taskPath,
-                  phase: 'prepare',
-                  status,
-                  failure,
-                  events: runTimelines.get(run.runId) ?? [],
-                }).catch(() => {
-                  delete failure.diagnosticPath;
-                });
-              }
-              await updateTaskRunStatus(run.taskPath, status, {
-                ai_error: message,
-                ai_error_code: failure?.code,
-                ai_diagnostic_path: failure?.diagnosticPath,
-              }).catch(() => undefined);
-              await saveHistory(
-                requireWorkspace(),
-                {},
-                {},
-                {
-                  id: run.runId,
-                  label: 'AI 작업 준비',
-                  kind: 'ai',
-                  status,
-                  createdAt: run.timestamp,
-                  finishedAt: Date.now(),
-                  taskPath: run.taskPath,
-                  error: message,
-                  providerId: run.providerId,
-                  modelId: run.modelId,
-                  failure,
-                  aiTask: taskHistoryRecord(
-                    await fs
-                      .readFile(await safePath(run.taskPath), 'utf8')
-                      .catch(() => undefined),
-                  ),
-                },
-              ).catch(() => undefined);
-              emitCodexRunEvent(
-                run.runId,
-                run.taskPath,
-                status,
-                'error',
-                message,
-                failure,
-              );
-            }
-            if (collaboration?.lease)
-              await collaboration
-                .finishAi(
-                  preparationCancelled ? 'cancelled' : 'failed',
-                  {},
-                  null,
-                  failure,
-                )
-                .catch(() => undefined);
-            throw error;
-          } finally {
-            runPreparing = false;
-            preparingFileLock = null;
-            if (!activeCodexRun) sharedRunId = null;
-          }
-        });
+        return enqueueMutation(() =>
+          prepareCodexRun(args[0] as StartCodexRunInput),
+        );
       if (
         !guardedChannels.has(channel) &&
         !channel.startsWith('projects:') &&
@@ -2825,7 +2836,160 @@ const applyImportedFiles = async (
     : (reduced.result as CanvasDocument[]);
 };
 
+let discordApproval: DiscordApprovalService | null = null;
+let discordSettingsQueue: Promise<unknown> = Promise.resolve();
+const flushDiscordEditors = () =>
+  new Promise<void>((resolve, reject) => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) {
+      reject(Error('Game Jam! 앱을 열어주세요.'));
+      return;
+    }
+    const id = randomUUID();
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(
+        Error(
+          '앱의 편집 내용을 저장하지 못했습니다. 앱 상태를 확인한 뒤 다시 승인해주세요.',
+        ),
+      );
+    }, 15_000);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      ipcMain.off('discord-approval:prepared', done);
+    };
+    const done = (
+      event: Electron.IpcMainEvent,
+      replyId: string,
+      ok: boolean,
+    ) => {
+      if (
+        replyId !== id ||
+        event.sender !== window.webContents ||
+        event.senderFrame !== window.webContents.mainFrame
+      )
+        return;
+      cleanup();
+      if (ok) resolve();
+      else
+        reject(
+          Error('저장하지 못한 편집 내용이 있습니다. 앱에서 확인해주세요.'),
+        );
+    };
+    ipcMain.on('discord-approval:prepared', done);
+    window.webContents.send('discord-approval:prepare', id);
+  });
+const discordContext = (): DiscordApprovalContext | null => {
+  const client = collaboration,
+    root = workspaceRoot;
+  if (
+    !client ||
+    !root ||
+    !client.state.connected ||
+    client.state.role !== 'admin' ||
+    client.state.accessDenied ||
+    client.state.awaitingResume ||
+    client.state.projectDeleted ||
+    client.state.requestApprovalVersion !== 1 ||
+    client.offline ||
+    client.outgoing ||
+    client.state.pendingChanges
+  )
+    return null;
+  const check = () => {
+    if (collaboration !== client || workspaceRoot !== root || !discordContext())
+      throw Error('연결한 프로젝트와 관리자 권한·동기화 상태를 확인해주세요.');
+  };
+  return {
+    serverUrl: client.credentials.serverUrl,
+    projectId: client.credentials.projectId,
+    memberId: client.state.memberId!,
+    projectName: client.state.projectName || '공동 프로젝트',
+    list: () => {
+      check();
+      return client.listApprovals();
+    },
+    read: (id) => {
+      check();
+      return client.readApproval(id);
+    },
+    feedback: async (id, revision, message, commandId) => {
+      check();
+      await client.mutateApproval('feedback', {
+        id,
+        revision,
+        message,
+        commandId,
+      });
+    },
+    start: async (approval, settings, authorized) => {
+      pendingAppOperations += 1;
+      try {
+        check();
+        authorized();
+        if (
+          updateRestartPrepared ||
+          activeCodexRun ||
+          runPreparing ||
+          (client.state.aiRun &&
+            ['starting', 'running', 'validating'].includes(
+              client.state.aiRun.status,
+            ))
+        )
+          throw Error(
+            '다른 AI 작업 또는 업데이트가 진행 중입니다. 완료 후 다시 승인해주세요.',
+          );
+        await flushDiscordEditors();
+        await propertyQueue.flush();
+        await enqueueMutation(async () => {
+          check();
+          authorized();
+          if (updateRestartPrepared)
+            throw Error('업데이트 재시작을 준비하고 있습니다.');
+          await prepareCodexRun(
+            {
+              approval,
+              taskPath: '',
+              providerId: settings.providerId,
+              modelId: settings.modelId || null,
+            },
+            authorized,
+          );
+        });
+      } finally {
+        pendingAppOperations -= 1;
+      }
+    },
+  };
+};
+
 const registerIpc = () => {
+  // These handlers bypass generic diagnostics: token input must never be logged.
+  for (const operation of ['status', 'configure', 'disconnect'] as const) {
+    ipcMain.handle(`discord-approval:${operation}`, async (event, input) => {
+      if (!isUpdateSender(event))
+        throw Error('앱의 관리자 설정에서만 디스코드를 연결할 수 있습니다.');
+      discordApproval ??= new DiscordApprovalService(
+        new DiscordApprovalStore(app.getPath('userData'), safeStorage),
+        discordContext,
+        async (action, failure) => {
+          const { DiscordBotTransport } = await import('./discord-transport');
+          return new DiscordBotTransport(action, failure);
+        },
+      );
+      if (operation === 'status') return discordApproval.status();
+      const action = discordSettingsQueue
+        .catch(() => undefined)
+        .then(async () => {
+          if (updateRestartPrepared)
+            throw Error('업데이트 재시작을 준비하고 있습니다.');
+          if (operation === 'disconnect') return discordApproval!.disconnect();
+          return discordApproval!.configure(input);
+        });
+      discordSettingsQueue = action;
+      return action;
+    });
+  }
   registerMultiplayerWindows({
     preload: path.join(__dirname, 'multiplayer-player-preload.cjs'),
     credentials: () =>
@@ -4920,6 +5084,16 @@ app.whenReady().then(async () => {
     workspaceRoot = null;
     localWorkspaceBeforeCollaboration = null;
   }
+  discordApproval ??= new DiscordApprovalService(
+    new DiscordApprovalStore(app.getPath('userData'), safeStorage),
+    discordContext,
+    async (action, failure) => {
+      const { DiscordBotTransport } = await import('./discord-transport');
+      return new DiscordBotTransport(action, failure);
+    },
+  );
+  // Restore asynchronously; network outages must not delay showing the app.
+  discordSettingsQueue = discordApproval.resume();
   let presentationError: string | undefined;
   try {
     await createWindow();
@@ -4966,6 +5140,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  discordApproval?.stop();
   documentSaveQueue?.dispose();
   selfHostLifecycle?.dispose();
   stopWebViewerSync();
