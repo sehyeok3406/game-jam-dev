@@ -152,6 +152,16 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
     '[data-ui-id="drawing-tools"]',
   ),
   entry(
+    'drawing-eraser',
+    '지우개 선택 · 삭제 예정',
+    'DrawingToolButtons',
+    'drawing/DrawingControls',
+    '캔버스',
+    project,
+    '[data-ui-id="drawing-eraser"]',
+    ['stroke', 'partial', 'pending', 'unsupported'],
+  ),
+  entry(
     'drawing-inspector',
     '도형 · 그림 속성',
     'DrawingInspector',

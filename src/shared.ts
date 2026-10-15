@@ -755,6 +755,7 @@ export type CollaborationState = {
   projectPurged?: boolean;
   awaitingResume?: boolean;
   drawingsVersion?: number;
+  drawingEraseVersion?: number;
   gameUiVersion?: number;
   propertySync?: boolean;
   deltaSync?: boolean;

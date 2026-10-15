@@ -12,6 +12,8 @@ import {
   snapshotDrawings,
   drawingDelta,
   applyDrawingDelta,
+  mergeDrawingFile,
+  validateErasure,
 } from '../src/drawing-model.ts';
 import {
   shapeFromDrag,
@@ -19,6 +21,9 @@ import {
   drawingBounds,
   strokeHit,
   strokePath,
+  drawingSvg,
+  eraseRegion,
+  rotatePoint,
   DEFAULT_SHAPE_STYLE,
   DEFAULT_PEN_STYLE,
 } from '../src/drawing-geometry.ts';
@@ -110,7 +115,7 @@ test('all seven shapes and pressure strokes round-trip; malformed/untrusted geom
   assert.throws(() => readDrawingFile('{', 'default'), /JSON/);
   assert.throws(() =>
     readDrawingFile(
-      JSON.stringify({ version: 2, canvasId: 'default', objects: [] }),
+      JSON.stringify({ version: 3, canvasId: 'default', objects: [] }),
       'default',
     ),
   );
@@ -446,5 +451,326 @@ test('server accepts independent stale-client edits, idempotent retry, viewer/ol
       objects: [object()],
     }),
     /권한|보기|관리자|뷰어/,
+  );
+});
+
+const erase = (files, o, a, b, radius = 8, id = randomUUID()) =>
+  applyDrawing(files, {
+    action: 'erase',
+    canvasId: 'default',
+    erasures: [
+      {
+        id: o.id,
+        generation: o.generation,
+        expectedTransform: o.transform,
+        expectedGeometry: o.geometry,
+        expectedStrokeWidth: o.style.strokeWidth,
+        region: eraseRegion(o, a, b, radius, id),
+      },
+    ],
+  });
+test('partial eraser removes actual ink, preserves identity/pressure and holes through SVG, transforms and round trip', () => {
+  const o = stroke();
+  o.style.strokeWidth = 40;
+  const source = create({}, [o]);
+  const a = { x: 160, y: 100 };
+  assert.ok(strokeHit(o, a, a, 3));
+  const next = erase(source, o, a, a, 5),
+    cut = get(next, o.id);
+  assert.equal(cut.id, o.id);
+  assert.equal(cut.generation, o.generation);
+  assert.deepEqual(cut.geometry.points, o.geometry.points);
+  assert.equal(JSON.parse(next[file]).version, 2);
+  assert.equal(strokeHit(cut, a, a, 1), false, 'hole is not ink');
+  assert.ok(
+    strokeHit(cut, { x: 160, y: 112 }, { x: 160, y: 112 }, 1),
+    'ink beside the hole remains',
+  );
+  assert.ok(strokePath(cut).includes('Z M'), 'hole has its own ring');
+  assert.deepEqual(
+    readDrawingFile(
+      serializeDrawing(readDrawingFile(next[file], 'default')),
+      'default',
+    ).objects[0].geometry,
+    cut.geometry,
+  );
+  assert.ok(
+    projectForWeb({
+      files: next,
+      libraryId: 'erase-test',
+      name: 'test',
+      source: 'published',
+    }).documents.some((d) => d.image),
+  );
+  const moved = {
+    ...cut,
+    transform: {
+      ...cut.transform,
+      x: 400,
+      y: 300,
+      width: 400,
+      height: 150,
+      rotation: 45,
+    },
+  };
+  const center = { x: 600, y: 375 };
+  const hole = rotatePoint({ x: 520, y: 300 }, 45, center);
+  assert.equal(strokeHit(moved, hole, hole, 0.2), false);
+  const restored = invertEdit(next, source, next, 'undo');
+  assert.ok(strokeHit(get(restored, o.id), a, a, 1));
+  assert.equal(
+    source[file],
+    create({}, [o])[file],
+    'original snapshot unchanged',
+  );
+});
+test('partial eraser sweeps, full deletion, stale geometry and quota failures are atomic', () => {
+  const o = stroke(),
+    source = create({}, [o]);
+  const next = erase(source, o, { x: 200, y: 0 }, { x: 200, y: 400 }, 8);
+  assert.equal(
+    strokeHit(get(next, o.id), { x: 200, y: 90 }, { x: 200, y: 110 }, 1),
+    false,
+  );
+  const full = erase(source, o, { x: 0, y: 0 }, { x: 400, y: 400 }, 400);
+  assert.equal(snapshotDrawings(full).length, 0);
+  assert.equal(JSON.parse(full[file]).version, 2);
+  assert.equal(
+    snapshotDrawings(invertEdit(full, source, full, 'undo')).length,
+    1,
+  );
+  const moved = patch(source, o, { transform: { x: 120 } });
+  assert.throws(
+    () => erase(moved, o, { x: 150, y: 100 }, { x: 150, y: 110 }),
+    /변경/,
+  );
+  const bad = eraseRegion(
+    o,
+    { x: 150, y: 100 },
+    { x: 150, y: 110 },
+    8,
+    randomUUID(),
+  );
+  bad.polygons[0][0][0][0] = NaN;
+  assert.throws(() =>
+    applyDrawing(source, {
+      canvasId: 'default',
+      action: 'erase',
+      erasures: [
+        {
+          id: o.id,
+          generation: o.generation,
+          expectedTransform: o.transform,
+          expectedGeometry: o.geometry,
+          expectedStrokeWidth: o.style.strokeWidth,
+          region: bad,
+        },
+      ],
+    }),
+  );
+  assert.equal(snapshotDrawings(source).length, 1);
+});
+test('two erasers on one stroke merge by region ID, preserve peer style and undo only the local region', () => {
+  const o = stroke();
+  o.style.strokeWidth = 30;
+  const source = create({}, [o]),
+    p = { x: 150, y: 100 },
+    q = { x: 180, y: 100 };
+  const local = erase(source, o, p, p, 4),
+    peer = erase(source, o, q, q, 4);
+  const merged = mergeDrawingFile(file, source[file], local[file], peer[file]);
+  assert.equal(get({ [file]: merged }, o.id).geometry.erasures.length, 2);
+  const styled = patch({ [file]: merged }, get({ [file]: merged }, o.id), {
+    style: { stroke: '#ff0000' },
+  });
+  const undo = mergeDrawingFile(
+    file,
+    local[file],
+    source[file],
+    styled[file],
+    true,
+  );
+  const remaining = get({ [file]: undo }, o.id);
+  assert.equal(remaining.geometry.erasures.length, 1);
+  assert.equal(remaining.style.stroke, '#ff0000');
+  assert.ok(strokeHit(remaining, p, p, 1));
+  assert.equal(strokeHit(remaining, q, q, 1), false);
+  const redo = mergeDrawingFile(file, source[file], local[file], undo, true);
+  assert.equal(get({ [file]: redo }, o.id).geometry.erasures.length, 2);
+});
+
+test('two real clients erase the same stroke, undo independently, reject old clients and retain v2 deltas', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gc-eraser-'));
+  const server = await createCollaborationServer({
+    dataDirectory: directory,
+    port: 0,
+    host: '127.0.0.1',
+  });
+  const clients = [];
+  t.after(async () => {
+    clients.forEach((c) => c.stop());
+    await server.close();
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+  const url = `http://127.0.0.1:${server.port}`;
+  const initial = await CollaborationClient.create(url, '', 'owner', 'erase', {
+    'ideas/a.md': md,
+  });
+  const owner = new CollaborationClient(initial.credentials, () => {});
+  owner.accept(initial.result);
+  clients.push(owner);
+  const joined = await CollaborationClient.join(
+    url,
+    initial.result.code,
+    'peer',
+  );
+  const peer = new CollaborationClient(joined.credentials, () => {});
+  peer.accept(joined.result);
+  clients.push(peer);
+  assert.equal(owner.state.drawingEraseVersion, 1);
+  const o = stroke();
+  o.style.strokeWidth = 30;
+  await owner.command('drawings:apply', {
+    canvasId: 'default',
+    action: 'create',
+    objects: [o],
+  });
+  await peer.refresh();
+  const command = (x) => ({
+    canvasId: 'default',
+    action: 'erase',
+    requestId: randomUUID(),
+    erasures: [
+      {
+        id: o.id,
+        generation: o.generation,
+        expectedTransform: o.transform,
+        expectedGeometry: o.geometry,
+        expectedStrokeWidth: o.style.strokeWidth,
+        region: eraseRegion(o, { x, y: 100 }, { x, y: 100 }, 4, randomUUID()),
+      },
+    ],
+  });
+  const own = command(150),
+    other = command(180);
+  await owner.command('drawings:apply', own);
+  const history = owner.lastCommandHistoryId;
+  await peer.command('drawings:apply', other);
+  await owner.refresh();
+  assert.equal(get(owner.files, o.id).geometry.erasures.length, 2);
+  await owner.changeHistory(history, 'undo');
+  assert.equal(get(owner.files, o.id).geometry.erasures.length, 1);
+  assert.equal(
+    strokeHit(
+      get(owner.files, o.id),
+      { x: 150, y: 100 },
+      { x: 150, y: 100 },
+      1,
+    ),
+    true,
+  );
+  assert.equal(
+    strokeHit(
+      get(owner.files, o.id),
+      { x: 180, y: 100 },
+      { x: 180, y: 100 },
+      1,
+    ),
+    false,
+  );
+  const older = await fetch(
+    `${url}/projects/${owner.credentials.projectId}/state`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${owner.credentials.token}`,
+      },
+      body: JSON.stringify({ drawingsVersion: 1 }),
+    },
+  );
+  assert.equal(older.status, 409);
+  assert.match((await older.json()).error, /부분 지우기.*업데이트/);
+  const joinOld = await fetch(`${url}/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: initial.result.code, nickname: 'old' }),
+  });
+  assert.equal(joinOld.status, 409);
+  await owner.changeHistory(history, 'redo');
+  await peer.refresh();
+  assert.equal(get(peer.files, o.id).geometry.erasures.length, 2);
+  const ack = await peer.request('state', {
+    knownRevision: peer.state.revision - 1,
+    deltaVersion: 1,
+  });
+  assert.equal(ack.delta.drawings[file].version, 2);
+  const count = Object.keys(peer.files).length;
+  await assert.rejects(
+    CollaborationClient.fetch(
+      url,
+      `/projects/${owner.credentials.projectId}/offline-sync`,
+      {
+        id: randomUUID(),
+        drawingsVersion: 1,
+        changes: { [file]: null },
+        revisions: owner.revisions,
+      },
+      owner.credentials.token,
+    ),
+    /업데이트/,
+  );
+  await peer.refresh();
+  assert.equal(Object.keys(peer.files).length, count);
+});
+
+test('point strokes, self crossings, highlighter holes and erasure limits retain safe numeric SVG', () => {
+  for (const points of [
+    [[100, 100, 0.5]],
+    [
+      [100, 100, 0.3],
+      [200, 200, 0.9],
+      [100, 200, 0.5],
+      [200, 100, 0.8],
+    ],
+  ]) {
+    const o = {
+      ...stroke(),
+      ...strokeGeometry(points, 'highlighter', false),
+      style: { ...DEFAULT_PEN_STYLE, strokeWidth: 80, opacity: 0.3 },
+    };
+    const source = create({}, [o]);
+    const cut = erase(source, o, { x: 110, y: 110 }, { x: 110, y: 110 }, 4);
+    const saved = get(cut, o.id);
+    assert.ok(saved);
+    assert.equal(saved.style.opacity, 0.3);
+    const svg = drawingSvg(saved);
+    assert.equal(
+      (svg.match(/<path /g) ?? []).length,
+      1,
+      'all fragments share one path and opacity',
+    );
+    assert.match(svg, /fill-rule="evenodd"/);
+    assert.doesNotMatch(svg, /NaN|Infinity/);
+  }
+  const bad = {
+    id: randomUUID(),
+    polygons: [[Array.from({ length: 2001 }, () => [0, 0])]],
+  };
+  assert.throws(() => validateErasure(bad), /한도/);
+  assert.throws(() =>
+    validateErasure({
+      id: randomUUID(),
+      polygons: [
+        [
+          [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+          ],
+        ],
+      ],
+    }),
   );
 });

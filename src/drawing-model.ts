@@ -7,6 +7,46 @@ import type {
 } from './drawing-types.ts';
 import type { DrawingDelta } from './drawing-types.ts';
 import { SHAPE_NAMES } from './drawing-types.ts';
+import { visibleStroke, withErasure } from './drawing-geometry.ts';
+import type { ErasureRegion, StrokeObject } from './drawing-types.ts';
+export const MAX_ERASURE_VERTICES = 2_000;
+export const MAX_CANVAS_ERASURE_VERTICES = 25_000;
+export const MAX_STROKE_ERASURES = 128;
+export function validateErasure(e: ErasureRegion) {
+  if (
+    !keys(e, ['id', 'polygons']) ||
+    !uuid(e.id) ||
+    !Array.isArray(e.polygons) ||
+    !e.polygons.length
+  )
+    fail('지우기 영역이 올바르지 않습니다.');
+  let count = 0;
+  for (const polygon of e.polygons) {
+    if (!Array.isArray(polygon) || !polygon.length) fail();
+    for (const ring of polygon) {
+      if (
+        !Array.isArray(ring) ||
+        ring.length < 4 ||
+        (count += ring.length) > MAX_ERASURE_VERTICES
+      )
+        fail('지우기 영역의 점 한도입니다. 동작을 나누어 시도해주세요.');
+      for (const p of ring)
+        if (
+          !Array.isArray(p) ||
+          p.length !== 2 ||
+          !p.every((n) => number(n, -1e12, 1e12))
+        )
+          fail();
+      if (JSON.stringify(ring[0]) !== JSON.stringify(ring.at(-1))) fail();
+    }
+  }
+  return count;
+}
+export function baseStrokeGeometry(g: DrawingObject['geometry']) {
+  if (!('erasures' in g)) return g;
+  const { erasures: _erasures, ...base } = g;
+  return base;
+}
 export const DRAWING_DIRECTORY = '.canvas/drawings';
 export const MAX_DRAWING_BYTES = 2_000_000;
 export const MAX_DRAWING_POINTS = 5_000;
@@ -111,6 +151,7 @@ export function validateDrawingObject(o: DrawingObject) {
         'points',
         'pressureEnabled',
         'rendererVersion',
+        'erasures',
       ]) ||
       !['pen', 'highlighter'].includes(g.brush) ||
       !number(g.sourceWidth, 1, 1e5) ||
@@ -134,6 +175,15 @@ export function validateDrawingObject(o: DrawingObject) {
         !number(p[2], 0, 1)
       )
         fail();
+    if (g.erasures !== undefined) {
+      if (
+        !Array.isArray(g.erasures) ||
+        g.erasures.length > MAX_STROKE_ERASURES ||
+        new Set(g.erasures.map((e) => e.id)).size !== g.erasures.length
+      )
+        fail('획의 지우기 횟수 한도입니다.');
+      for (const e of g.erasures) validateErasure(e);
+    }
   } else fail();
 }
 export function readDrawingFile(
@@ -151,28 +201,43 @@ export function readDrawingFile(
   }
   if (
     !keys(f, ['version', 'canvasId', 'objects']) ||
-    f.version !== 1 ||
+    ![1, 2].includes(f.version) ||
     f.canvasId !== canvasId ||
     !Array.isArray(f.objects) ||
     f.objects.length > 1000
   )
     fail('그림 형식·캔버스·객체 한도를 확인해주세요.');
   const ids = new Set<string>();
-  let points = 0;
+  let points = 0,
+    erasePoints = 0;
   for (const o of f.objects) {
     validateDrawingObject(o);
     if (ids.has(o.id)) fail('그림 ID가 중복되었습니다.');
     ids.add(o.id);
-    if (o.kind === 'stroke') points += o.geometry.points.length;
+    if (o.kind === 'stroke') {
+      points += o.geometry.points.length;
+      if (o.geometry.erasures?.length && f.version !== 2)
+        fail('부분 지우기는 그림 형식 2가 필요합니다.');
+      for (const e of o.geometry.erasures ?? [])
+        erasePoints += validateErasure(e);
+    }
   }
   if (points > 50_000)
     fail('캔버스의 그림 점은 50,000개까지 저장할 수 있습니다.');
+  if (erasePoints > MAX_CANVAS_ERASURE_VERTICES)
+    fail('캔버스의 지우기 영역 한도입니다.');
   return f;
 }
 export function serializeDrawing(f: DrawingFile) {
   const raw =
     JSON.stringify({
-      version: 1,
+      version:
+        f.version === 2 ||
+        f.objects.some(
+          (o) => o.kind === 'stroke' && o.geometry.erasures?.length,
+        )
+          ? 2
+          : 1,
       canvasId: f.canvasId,
       objects: [...f.objects].sort(
         (a, b) => a.order - b.order || a.id.localeCompare(b.id),
@@ -206,6 +271,7 @@ export function applyDrawing(files: Snapshot, input: DrawingCommand): Snapshot {
       'patches',
       'targets',
       'targetCanvasId',
+      'erasures',
     ])
   )
     fail();
@@ -223,6 +289,53 @@ export function applyDrawing(files: Snapshot, input: DrawingCommand): Snapshot {
       used.add(o.id);
       f.objects.push(o);
     }
+  } else if (input.action === 'erase') {
+    if (
+      !Array.isArray(input.erasures) ||
+      !input.erasures.length ||
+      input.erasures.length > 1000 ||
+      new Set(input.erasures.map((e) => e.id)).size !== input.erasures.length
+    )
+      fail();
+    for (const e of input.erasures) {
+      if (
+        !keys(e, [
+          'id',
+          'generation',
+          'expectedTransform',
+          'expectedGeometry',
+          'expectedStrokeWidth',
+          'region',
+        ])
+      )
+        fail();
+      validateErasure(e.region);
+      const index = f.objects.findIndex(
+        (o) => o.id === e.id && o.generation === e.generation,
+      );
+      const o = f.objects[index];
+      if (!o || o.kind !== 'stroke') fail('획이 삭제되거나 이동했습니다.');
+      const existing = o.geometry.erasures?.find((v) => v.id === e.region.id);
+      if (existing) {
+        if (!same(existing, e.region)) fail('지우기 작업 ID가 충돌했습니다.');
+        continue;
+      }
+      if (
+        !same(o.transform, e.expectedTransform) ||
+        !same(
+          baseStrokeGeometry(o.geometry),
+          baseStrokeGeometry(e.expectedGeometry),
+        ) ||
+        o.style.strokeWidth !== e.expectedStrokeWidth
+      )
+        fail('획의 위치나 모양이 변경되었습니다. 다시 시도해주세요.');
+      const erased = withErasure(o, e.region);
+      validateDrawingObject(erased);
+      erased.updatedAt = Date.now();
+      if (!visibleStroke(erased).length) f.objects.splice(index, 1);
+      else f.objects[index] = erased;
+    }
+    f.version = 2;
   } else if (input.action === 'patch') {
     if (!input.patches?.length || input.patches.length > 1000) fail();
     for (const p of input.patches) {
@@ -300,6 +413,7 @@ export function drawingDelta(
     a = readDrawingFile(after, c),
     bm = new Map(b.objects.map((o) => [o.id, JSON.stringify(o)]));
   return {
+    version: a.version,
     canvasId: c,
     upsert: a.objects.filter((o) => bm.get(o.id) !== JSON.stringify(o)),
     removed: b.objects
@@ -325,7 +439,11 @@ export function applyDrawingDelta(
     validateDrawingObject(o);
     values.set(o.id, o);
   }
-  files[path] = serializeDrawing({ ...f, objects: [...values.values()] });
+  files[path] = serializeDrawing({
+    ...f,
+    version: f.version === 2 || delta.version === 2 ? 2 : 1,
+    objects: [...values.values()],
+  });
 }
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -395,6 +513,51 @@ export function mergeDrawingFile(
       const merged = { ...now, updatedAt: Date.now() };
       for (const g of groups)
         if (!same(old[g], want[g])) {
+          if (
+            g === 'geometry' &&
+            old.kind === 'stroke' &&
+            want.kind === 'stroke' &&
+            now.kind === 'stroke' &&
+            same(
+              baseStrokeGeometry(old.geometry),
+              baseStrokeGeometry(want.geometry),
+            ) &&
+            same(
+              baseStrokeGeometry(old.geometry),
+              baseStrokeGeometry(now.geometry),
+            )
+          ) {
+            const before = new Map(
+              (old.geometry.erasures ?? []).map((e) => [e.id, e]),
+            );
+            const after = new Map(
+              (want.geometry.erasures ?? []).map((e) => [e.id, e]),
+            );
+            const current = new Map(
+              (now.geometry.erasures ?? []).map((e) => [e.id, e]),
+            );
+            for (const id of new Set([...before.keys(), ...after.keys()])) {
+              if (same(before.get(id), after.get(id))) continue;
+              if (
+                current.has(id) &&
+                !same(current.get(id), before.get(id)) &&
+                !same(current.get(id), after.get(id))
+              ) {
+                if (!choice) fail('같은 지우기 영역의 변경이 충돌했습니다.');
+                if (choice === 'server') continue;
+              }
+              if (after.has(id)) current.set(id, after.get(id)!);
+              else current.delete(id);
+            }
+            const geometry = { ...now.geometry };
+            if (current.size)
+              geometry.erasures = [...current.values()].sort((a, b) =>
+                a.id.localeCompare(b.id),
+              );
+            else delete geometry.erasures;
+            (merged as StrokeObject).geometry = geometry;
+            continue;
+          }
           if (!same(now[g], old[g]) && !same(now[g], want[g])) {
             if (!choice)
               fail(`같은 그림 속성의 이후 변경과 충돌했습니다: ${g}`);
@@ -407,7 +570,7 @@ export function mergeDrawingFile(
   }
   if (!sm.size && desired === undefined) return undefined;
   return serializeDrawing({
-    version: 1,
+    version: b.version === 2 || d.version === 2 || s.version === 2 ? 2 : 1,
     canvasId: c,
     objects: [...sm.values()],
   });
