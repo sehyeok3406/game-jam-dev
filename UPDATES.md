@@ -14,6 +14,10 @@ PC와 앱을 켜고 연결한 공동 프로젝트를 관리자 계정으로 열�
 
 부분 지우기는 그림 파일 v2로 저장합니다. 영역 ID별 병합으로 상대의 지우기를 보존하며 내 작업만 실행 취소합니다. 구버전 클라이언트의 v2 접근·덮어쓰기는 차단합니다. 앱과 실제 사용하는 협업 서버를 함께 갱신해야 합니다. [구현 계획과 검증 기준](ERASER_MODES_IMPLEMENTATION_PLAN.md)
 
+2026-10-16 [v0.27.0 정식 게시·공개 파일 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.27.0). 소스 태그는 `e002fac72f1bfe228cbe6fc5240ba948639de449`입니다. 검증한 Windows 패키지에서 `make --from-package`로 설치 파일을 만들었으며 make 전후 app.asar SHA-256이 일치합니다. `Game.Jam-0.27.0.Setup.exe`(193,520,128바이트), `game_canvas-0.27.0-full.nupkg`(192,611,332바이트), `RELEASES`의 GitHub SHA-256·크기와 공개 접근이 로컬 결과물과 일치하고, RELEASES의 패키지 이름·SHA-1·크기도 일치합니다.
+
+게시 직후 Windows RELEASES 피드는 새 패키지를 안내했지만, 업데이트 확인 JSON 응답은 이전/현재 버전 모두 500이었습니다. **배포 파일 게시·검증 완료, 자동 업데이트 피드 반영 대기**입니다. [Windows 설치 파일 직접 다운로드](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.27.0/Game.Jam-0.27.0.Setup.exe)
+
 검증: 타입·린트·416개 자동 테스트, 전체 Electron/IPC 통합, F12 전체 상태·격리와 native preload 검사, 그리기 실제 입력을 통과했습니다. 최종 Windows 패키지의 부분 지우기 실시간 미리보기·카드 클릭 통과·획 예고/취소·undo/redo·v2 디스크 저장·전체 프로세스 재시작과 개인 설정 복원을 확인했습니다. 내장 Node/협업 서버의 2인 부분 지우기와 독립 undo도 통과했습니다.
 
 별도 서버 번들은 검증한 내장 서버와 동일한 파일을 제공합니다. 이 PC의 관리 서버와 터널은 배포 전 종료 상태여서 자동으로 시작하지 않았습니다. 실제 공동 작업에 사용할 앱과 서버를 함께 갱신해야 합니다.

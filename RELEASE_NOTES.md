@@ -17,7 +17,7 @@
 
 부분 지우기를 저장한 그림은 새 형식(v2)을 사용합니다. 공동 작업에서는 앱과 협업 서버를 함께 업데이트해주세요. 구서버에서는 획 지우개를 사용할 수 있습니다.
 
-Windows x64 설치 파일: `Game.Jam-0.27.0.Setup.exe`.
+Windows x64 설치 파일: `Game.Jam-0.27.0.Setup.exe`. 공개 파일의 해시·크기·다운로드 접근과 RELEASES 검증을 완료했습니다. **자동 업데이트 피드 반영은 대기 중**입니다. [Windows 설치 파일 직접 다운로드](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.27.0/Game.Jam-0.27.0.Setup.exe)
 
 ---
 
