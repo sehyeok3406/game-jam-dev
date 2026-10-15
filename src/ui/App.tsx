@@ -215,7 +215,16 @@ import {
 import { PREVIEW_SANDBOX } from '../preview-permissions';
 import { gamejamTaskInput, type GamejamRequest } from '../gamejam-request';
 import {
+  approvalOperationId,
+  clearApprovalOperation,
+  type ApprovalDetail,
+  type ApprovalStart,
+  type GamejamApproval,
+} from '../gamejam-approval';
+import { GamejamRequestInbox } from './GamejamRequestInbox';
+import {
   clearGamejamDraft,
+  gamejamDraftScope,
   entryRequest,
   loadGamejamDraft,
   saveGamejamDraft,
@@ -1943,6 +1952,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const panPrevious = useRef<CanvasTool | null>(null);
   const snapLatest = useRef<{ id: string; x: number; y: number } | null>(null);
   const [aiRequest, setAiRequest] = useState<GamejamRequest | null>(null);
+  const [approvalInboxOpen, setApprovalInboxOpen] = useState(false);
+  const [editingApproval, setEditingApproval] = useState<{
+    id: string;
+    revision: number;
+  } | null>(null);
+  const [approvalCopyFrom, setApprovalCopyFrom] = useState<
+    string | undefined
+  >();
   const [aiRequestPage, setAiRequestPage] = useState<GamejamPage>(1);
   const [aiRequestVisited, setAiRequestVisited] = useState(1);
   const [aiInstructionPage, setAiInstructionPage] = useState<
@@ -2398,6 +2415,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   } | null>(null);
   const notifiedRuns = useRef(new Set<string>());
   const noticeProject = collaboration.projectId ?? workspace.root;
+  const aiDraftScope = noticeProject
+    ? gamejamDraftScope(
+        noticeProject,
+        collaboration.active ? collaboration.memberId : undefined,
+        editingApproval?.id,
+      )
+    : null;
   const runScopeRef = useRef({ project: noticeProject, home });
   runScopeRef.current = { project: noticeProject, home };
   const [dismissedPanels, setDismissedPanels] = useState(new Set<string>());
@@ -2436,6 +2460,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     setCompletion((current) =>
       current?.project === noticeProject ? current : null,
     );
+    setApprovalInboxOpen(false);
+    setEditingApproval(null);
+    setApprovalCopyFrom(undefined);
   }, [noticeProject]);
   const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
   const documentChoiceForUpdate = (baseDir: string) => {
@@ -2516,6 +2543,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     )
       return;
     const draft: GamejamDraft = {
+      approval: editingApproval ?? undefined,
+      copiedFrom: approvalCopyFrom,
       version: 1,
       request: aiRequest,
       providerId: selectedAiProvider,
@@ -2527,7 +2556,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     };
     const signature = JSON.stringify({ ...draft, updatedAt: 0 });
     if (aiDraftSignatureRef.current === signature) return;
-    if (saveGamejamDraft(localStorage, noticeProject, draft)) {
+    if (saveGamejamDraft(localStorage, aiDraftScope!, draft)) {
       aiDraftSignatureRef.current = signature;
       setAiDraftStatus('작성 내용 자동 저장됨 · 이 기기에 보관');
     } else {
@@ -2543,6 +2572,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     selectedAiModel,
     aiRequestRetryOf,
     noticeProject,
+    aiDraftScope,
+    editingApproval,
+    approvalCopyFrom,
     home,
   ]);
   const [checkingCodex, setCheckingCodex] = useState(false);
@@ -2628,8 +2660,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     !collaboration.active ||
     (collaboration.connected &&
       !collaboration.pendingChanges &&
-      (collaboration.role === 'admin' ||
-        (collaboration.role === 'editor' && collaboration.editorAi)));
+      collaboration.role === 'admin');
+  const submittingApproval =
+    collaboration.active &&
+    (collaboration.role === 'editor' ||
+      !!editingApproval ||
+      !!approvalCopyFrom);
+  const canWriteAiRequest =
+    !collaboration.active ||
+    (!collaboration.accessDenied &&
+      ['admin', 'editor'].includes(collaboration.role ?? ''));
   const canRestoreHistory =
     !collaboration.active ||
     (collaboration.connected &&
@@ -2671,6 +2711,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     });
   const aiRequestIssues = aiRequest
     ? gamejamIssues(aiRequest, {
+        intent: submittingApproval ? 'request' : 'run',
         collaboration,
         multiplayerChoiceRequired,
         provider: selectedAiProvider,
@@ -3723,12 +3764,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     setNotice('AI 작업 요청을 클립보드에 복사했습니다.');
   }, []);
 
-  const runTaskWithCodex = async (task: CanvasDocument) => {
-    if (aiBusy)
+  const runTaskWithCodex = async (
+    task: Pick<CanvasDocument, 'relativePath' | 'title'>,
+    approval?: ApprovalStart,
+  ) => {
+    if (!canRunAi) throw new Error('관리자만 AI를 실행할 수 있습니다.');
+    if (aiBusy) {
+      if (approval)
+        throw new Error(
+          '이미 AI 작업이 진행 중입니다. 완료하거나 중지한 뒤 승인해주세요.',
+        );
       return setNotice(
         '이미 AI 작업이 진행 중입니다. 완료하거나 중지해주세요.',
       );
+    }
     if (locked) {
+      if (approval)
+        throw new Error('프로젝트 연결과 저장 상태를 확인한 뒤 승인해주세요.');
       onBlocked();
       return;
     }
@@ -3737,7 +3789,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         [...editorsRef.current.values()].map((flush) => flush()),
       );
       setPreparingTask(true);
-      const status = codexStatus ?? (await refreshCodexStatus());
+      const status = approval
+        ? await refreshCodexStatus()
+        : (codexStatus ?? (await refreshCodexStatus()));
       if (!status?.available || !status.authenticated)
         throw new Error(
           status?.message ?? '선택한 AI CLI 연결을 확인할 수 없습니다.',
@@ -3745,6 +3799,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       const project = noticeProject;
       if (!project) throw new Error('프로젝트를 먼저 열어주세요.');
       const result = await window.gameCanvas.startCodexRun({
+        approval,
         taskPath: task.relativePath,
         providerId: selectedAiProvider,
         modelId: selectedAiModel || null,
@@ -3779,6 +3834,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       await loadProject(false);
     } catch (error) {
       showError(error);
+      if (approval) throw error;
     } finally {
       setPreparingTask(false);
     }
@@ -4926,8 +4982,17 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     request: GamejamRequest,
     saved?: GamejamSavedRequest,
     draft?: GamejamDraft,
+    approval?: { id: string; revision: number },
   ) => {
     if (!noticeProject) return;
+    const editing = approval ?? draft?.approval;
+    setEditingApproval(editing ?? null);
+    setApprovalCopyFrom(draft?.copiedFrom);
+    const draftScope = gamejamDraftScope(
+      noticeProject,
+      collaboration.active ? collaboration.memberId : undefined,
+      editing?.id,
+    );
     aiRequestLoadRef.current += 1;
     const providerId = saved?.providerId ?? selectedAiProvider;
     const modelId = saved?.modelId ?? selectedAiModel;
@@ -4947,7 +5012,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       instructionPage,
       updatedAt: 0,
     });
-    setSavedAiDraft(loadGamejamDraft(localStorage, noticeProject) ?? null);
+    setSavedAiDraft(loadGamejamDraft(localStorage, draftScope) ?? null);
     setAiDraftStatus(
       saved
         ? '이전 요청을 불러왔습니다. 입력 자료와 결과 설정을 확인해주세요.'
@@ -4966,13 +5031,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     // A reused request also survives closing the dialog before editing anything.
     if (saved) {
       const value: GamejamDraft = {
+        approval: editing,
         ...saved,
         request: restored,
         page,
         instructionPage,
         updatedAt: Date.now(),
       };
-      if (!saveGamejamDraft(localStorage, noticeProject, value))
+      if (!saveGamejamDraft(localStorage, draftScope, value))
         setAiDraftStatus('이전 요청을 불러왔지만 임시 저장에 실패했습니다.');
     }
     requestAnimationFrame(() => {
@@ -5026,7 +5092,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     kind: 'organize' | 'implement' | 'both' = 'both',
     htmlResult?: HtmlResultChoice,
   ) => {
-    if (!canRunAi) {
+    if (!canWriteAiRequest) {
       setNotice(
         collaboration.role === 'editor'
           ? '편집자 AI 실행에는 서버 v0.8.0 이상이 필요합니다.'
@@ -5035,7 +5101,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       return;
     }
     if (creatingTaskRef.current) return;
-    if (locked) {
+    if (locked && !(collaboration.active && collaboration.role === 'editor')) {
       onBlocked();
       return;
     }
@@ -5155,6 +5221,60 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     });
   };
 
+  const editApprovalRequest = (item: GamejamApproval, copy: boolean) => {
+    if (!noticeProject) return;
+    const scope = gamejamDraftScope(
+      noticeProject,
+      collaboration.memberId,
+      copy ? undefined : item.id,
+    );
+    const draft = copy ? undefined : loadGamejamDraft(localStorage, scope);
+    const approval = copy
+      ? undefined
+      : (draft?.approval ?? { id: item.id, revision: item.revision });
+    initializeAiRequest(
+      draft?.request ?? item.request,
+      {
+        version: 1,
+        request: item.request,
+        providerId: selectedAiProvider,
+        modelId: selectedAiModel,
+      },
+      draft,
+      approval,
+    );
+    if (copy) setApprovalCopyFrom(item.id);
+    if (draft?.approval && draft.approval.revision !== item.revision)
+      setAiDraftStatus(
+        '서버 요청이 변경되었습니다. 보관한 초안을 확인한 뒤 새 요청으로 전환하거나 요청함에서 최신 내용을 확인해주세요.',
+      );
+    else
+      setAiDraftStatus(
+        copy
+          ? '이전 요청을 복사했습니다. 내용을 수정해 새 요청으로 등록하세요.'
+          : '수정 저장을 눌러야 공유 요청에 반영됩니다. 구현 시작 전까지 수정할 수 있습니다.',
+      );
+    setApprovalInboxOpen(false);
+  };
+  const startApprovalRequest = async (
+    detail: ApprovalDetail,
+    commandId: string,
+  ) => {
+    if (!detail.reviewToken)
+      throw new Error('최신 요청과 자료를 확인해주세요.');
+    await runTaskWithCodex(
+      {
+        relativePath: '',
+        title: detail.item.request.resultName || '팀원 요청',
+      },
+      {
+        id: detail.item.id,
+        revision: detail.item.revision,
+        reviewToken: detail.reviewToken,
+        commandId,
+      },
+    );
+  };
   const submitAiRequest = async () => {
     if (!aiRequest || aiRequestPage !== 5 || creatingTaskRef.current) return;
     if (aiRequestIssues.length) {
@@ -5168,6 +5288,75 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       await Promise.all(
         [...editorsRef.current.values()].map((flush) => flush()),
       );
+      if (submittingApproval) {
+        const project = noticeProject;
+        const current = await window.gameCanvas.getCollaboration();
+        if (
+          current.projectId !== project ||
+          !current.connected ||
+          current.accessDenied
+        )
+          throw new Error(
+            '프로젝트 연결 상태를 확인해주세요. 작성 내용은 보관됩니다.',
+          );
+        if (current.pendingChanges)
+          throw new Error(
+            '입력 자료의 저장과 동기화를 완료한 뒤 요청해주세요.',
+          );
+        const signature = JSON.stringify([
+          project,
+          editingApproval,
+          aiRequest,
+          approvalCopyFrom,
+        ]);
+        if (
+          !saveGamejamDraft(localStorage, aiDraftScope!, {
+            version: 1,
+            request: aiRequest,
+            providerId: selectedAiProvider,
+            modelId: selectedAiModel,
+            approval: editingApproval ?? undefined,
+            copiedFrom: approvalCopyFrom,
+            page: aiRequestPage,
+            instructionPage: aiInstructionPage,
+            updatedAt: Date.now(),
+          })
+        )
+          throw new Error(
+            '작성 내용을 보관하지 못했습니다. 저장 공간을 확인한 뒤 다시 요청해주세요.',
+          );
+        const commandId = approvalOperationId(
+          localStorage,
+          aiDraftScope!,
+          signature,
+        );
+        await window.gameCanvas.mutateApproval(
+          editingApproval ? 'update' : 'create',
+          {
+            commandId,
+            id: editingApproval?.id,
+            revision: editingApproval?.revision,
+            request: aiRequest,
+            copiedFrom: approvalCopyFrom,
+          },
+        );
+        if (aiDraftScope) {
+          clearGamejamDraft(localStorage, aiDraftScope);
+          clearApprovalOperation(localStorage, aiDraftScope);
+        }
+        if (runScopeRef.current.project !== project || runScopeRef.current.home)
+          return;
+        setSavedAiDraft(null);
+        setAiRequest(null);
+        setEditingApproval(null);
+        setApprovalInboxOpen(true);
+        setNotice(
+          editingApproval
+            ? '요청 수정을 저장했습니다.'
+            : '관리자에게 구현을 요청했습니다.',
+        );
+        return;
+      }
       if (!codexStatus?.available || !codexStatus.authenticated)
         throw new Error(
           'AI 연결 설정에서 선택한 제공자의 연결을 먼저 확인해주세요.',
@@ -5179,7 +5368,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           retryOf: aiRequestRetryOf,
         }),
       );
-      if (noticeProject) clearGamejamDraft(localStorage, noticeProject);
+      if (aiDraftScope) clearGamejamDraft(localStorage, aiDraftScope);
       setSavedAiDraft(null);
       setAiResultPaths([
         ...(aiRequest.organize
@@ -6519,6 +6708,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   });
 
   const legacyModal = !!(
+    approvalInboxOpen ||
     updateOpen ||
     importTarget ||
     aiRequest ||
@@ -6576,7 +6766,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   }, [legacyModal, commandOpen, shortcutsOpen, compareFirst]);
 
   const hasTaskSelection =
-    canRunAi &&
+    canWriteAiRequest &&
     (selectedDocuments.length > 0 ||
       selectedSections.length > 0 ||
       nodes.some((node) => node.selected && node.data.kind === 'preview'));
@@ -6638,13 +6828,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               : collaboration.active
                 ? '서버 저장 완료'
                 : '로컬 저장 완료';
-  const aiDisabledReason = !canRunAi
+  const aiDisabledReason = !canWriteAiRequest
     ? collaboration.connected
       ? collaboration.role === 'editor'
         ? '서버 업데이트 필요 (v0.8.0)'
         : '뷰어는 실행 불가'
       : '서버 연결 필요'
-    : aiBusy
+    : aiBusy && collaboration.role !== 'editor'
       ? 'AI 작업 진행 중'
       : locked
         ? '프로젝트 편집 잠김'
@@ -6845,7 +7035,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       id: 'gamejam',
       title: 'gamejam! · 문서 정리 / HTML 구현',
       shortcut: 'Ctrl+Enter',
-      disabled: locked || !canRunAi || aiBusy,
+      disabled:
+        !canWriteAiRequest ||
+        (collaboration.role !== 'editor' && (locked || aiBusy)),
       reason: aiDisabledReason,
       run: () => void createTask(),
     },
@@ -7938,7 +8130,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               type="button"
               className="header-ai-action header-ai-action--primary"
               aria-label="gamejam!"
-              disabled={locked || !canRunAi || aiBusy}
+              disabled={
+                !canWriteAiRequest ||
+                (collaboration.role !== 'editor' && (locked || aiBusy))
+              }
               onClick={() => void createTask()}
               title={
                 aiDisabledReason ||
@@ -7947,6 +8142,18 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             >
               <Sparkles size={15} /> <span>gamejam!</span>
             </button>
+            {collaboration.active && (
+              <button
+                type="button"
+                onClick={() => setApprovalInboxOpen(true)}
+                title="팀원 구현 요청 확인"
+              >
+                {collaboration.role === 'admin' ? '요청함' : '내 요청'}
+                {collaboration.pendingRequests
+                  ? ` (${collaboration.pendingRequests})`
+                  : ''}
+              </button>
+            )}
             <span className="toolbar-divider" />
             <button
               type="button"
@@ -9299,7 +9506,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   statusLabel={CODEX_STATUS_LABELS[aiHistorySelection.status]}
                   onOpenPath={focusResultPath}
                   onReuse={() => reuseAiEntry(aiHistorySelection)}
-                  reuseDisabled={creatingTask || aiBusy || locked || !canRunAi}
+                  reuseDisabled={
+                    creatingTask ||
+                    !canWriteAiRequest ||
+                    (collaboration.role !== 'editor' && (aiBusy || locked))
+                  }
                   onOpenRetry={(id) => {
                     const previous = historyEntries.find(
                       (entry) => entry.id === id,
@@ -10258,6 +10469,24 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </div>
       )}
 
+      {approvalInboxOpen && !aiRequest && collaboration.active && (
+        <GamejamRequestInbox
+          key={`${noticeProject}:${collaboration.memberId}`}
+          collaboration={collaboration}
+          provider={selectedAiProvider}
+          model={selectedAiModel}
+          aiBusy={aiBusy}
+          setProvider={(value) => {
+            setSelectedAiProvider(value);
+            setCodexStatus(null);
+          }}
+          setModel={setSelectedAiModel}
+          close={() => setApprovalInboxOpen(false)}
+          edit={editApprovalRequest}
+          run={startApprovalRequest}
+          openResult={focusResultPath}
+        />
+      )}
       {aiRequest && (
         <div
           className="dialog-backdrop"
@@ -11227,7 +11456,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 hidden={aiRequestPage !== 5}
               >
                 <h3 className="ai-step-heading" tabIndex={-1}>
-                  <span>5</span> 최종 확인·실행
+                  <span>5</span>{' '}
+                  {submittingApproval ? '최종 확인·요청' : '최종 확인·실행'}
                 </h3>
                 <GamejamReview
                   request={aiRequest}
@@ -11239,14 +11469,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   tabIndex={-1}
                   {...aiFieldProps('status')}
                 >
-                  실행 전 편집 내용을 저장하며, 작업 중에는 관련 파일만
-                  수정·삭제·이동을 제한합니다.
+                  {submittingApproval
+                    ? '저장된 요청을 기준으로 관리자가 검토·실행합니다. 수정 저장 전 내용은 이 기기에만 보관되며, 구현 시작 전까지 수정·취소할 수 있습니다.'
+                    : '실행 전 편집 내용을 저장하며, 작업 중에는 관련 파일만 수정·삭제·이동을 제한합니다.'}
                 </p>
                 <GamejamFieldErrors field="status" issues={aiRequestIssues} />
                 <details
                   id="ai-request-connection"
                   tabIndex={-1}
                   className="ai-advanced-settings"
+                  hidden={submittingApproval}
                   {...aiFieldProps('connection')}
                 >
                   <summary>
@@ -11374,6 +11606,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               <button disabled={creatingTask} onClick={closeAiRequest}>
                 취소
               </button>
+              {editingApproval && (
+                <button
+                  disabled={creatingTask}
+                  onClick={() => {
+                    setApprovalCopyFrom(editingApproval.id);
+                    setEditingApproval(null);
+                    setAiDraftStatus(
+                      '내용을 보존해 새 요청으로 전환했습니다. 기존 요청은 변경하지 않습니다.',
+                    );
+                  }}
+                >
+                  새 요청으로 전환
+                </button>
+              )}
               <span className="gamejam-page-count">{aiRequestPage} / 5</span>
               {(aiRequestPage > 1 ||
                 (aiRequestPage === 3 &&
@@ -11425,7 +11671,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   ) : (
                     <Play size={15} />
                   )}{' '}
-                  {creatingTask ? '준비 중…' : 'gamejam! 실행'}
+                  {creatingTask
+                    ? '준비 중…'
+                    : editingApproval
+                      ? '수정 저장'
+                      : submittingApproval
+                        ? '요청하기'
+                        : '바로 구현하기'}
                 </button>
               )}
             </footer>

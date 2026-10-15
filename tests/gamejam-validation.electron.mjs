@@ -107,7 +107,7 @@ async function run() {
     );
     assert.equal(
       await js(
-        'document.querySelector(".ai-request-dialog > footer").textContent.includes("gamejam! 실행")',
+        'document.querySelector(".ai-request-dialog > footer").textContent.includes("바로 구현하기")',
       ),
       false,
     );
@@ -434,7 +434,7 @@ async function run() {
     await setValue('ai-model-custom', '');
     await js('qaValidation.shared({role:"editor",editorAi:false})');
     await wait(
-      'document.querySelector(".ai-validation-summary").textContent.includes("AI 실행 권한이 꺼져")',
+      'document.querySelector(".ai-validation-summary").textContent.includes("함께 업데이트")',
     );
     await clickRun();
     assert.equal(await js('qaValidation.creates'), 0);
@@ -716,6 +716,9 @@ async function run() {
   } catch (error) {
     exitCode = 1;
     console.error(error);
+    console.error(
+      await js('document.querySelector(".ai-validation-summary")?.textContent'),
+    );
   } finally {
     win.destroy();
     app.exit(exitCode);

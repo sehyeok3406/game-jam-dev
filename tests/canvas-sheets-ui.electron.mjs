@@ -159,7 +159,7 @@ async function run() {
         `!!document.querySelector('[data-gamejam-page="${step + 1}"]:not([hidden])')`,
       );
     }
-    await click('gamejam! 실행');
+    await click('바로 구현하기');
     await wait('!!window.qaLastRequest');
     const request = await js('window.qaLastRequest');
     assert.equal(request.canvasId, combatId);

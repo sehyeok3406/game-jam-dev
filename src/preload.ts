@@ -221,6 +221,10 @@ const api: GameCanvasApi = {
   moveDocumentToSection: (input) =>
     ipcRenderer.invoke('sections:move-document', input),
   createTask: (input) => ipcRenderer.invoke('tasks:create', input),
+  listApprovals: () => ipcRenderer.invoke('requests:list'),
+  readApproval: (id) => ipcRenderer.invoke('requests:read', id),
+  mutateApproval: (action, input) =>
+    ipcRenderer.invoke('requests:mutate', action, input),
   getCodexStatus: () => ipcRenderer.invoke('codex:status'),
   getAiStatus: (providerId) => ipcRenderer.invoke('ai:status', providerId),
   startCodexRun: (input) => ipcRenderer.invoke('codex:start', input),

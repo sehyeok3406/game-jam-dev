@@ -124,7 +124,13 @@ test('connection, role, sync, busy and restart blocks always have a visible reas
   assert.deepEqual(
     gamejamIssues(request, {
       ...context,
-      collaboration: { ...collaboration, role: 'editor', editorAi: true },
+      intent: 'request',
+      collaboration: {
+        ...collaboration,
+        role: 'editor',
+        editorAi: false,
+        requestApprovalVersion: 1,
+      },
     }),
     [],
   );

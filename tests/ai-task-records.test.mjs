@@ -220,10 +220,7 @@ test('collaboration shares task instructions, model, actor and cancellation hist
       (item) => item.id === cancelled.id,
     );
     assert.deepEqual(reread.aiTask, cancelled.aiTask);
-    await assert.rejects(
-      viewer.beginAi(task.relativePath),
-      /뷰어|관리자·편집자/,
-    );
+    await assert.rejects(viewer.beginAi(task.relativePath), /뷰어|관리자/);
   } finally {
     owner.stop();
     viewer.stop();

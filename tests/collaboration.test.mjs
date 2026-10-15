@@ -485,15 +485,16 @@ async function setup(t) {
   };
 }
 
-test('editors execute their own three-provider AI with a single authoritative lease; viewers and other executors cannot submit or cancel', async (t) => {
+test('administrators execute three-provider AI with a single authoritative lease; editors and viewers cannot bypass approval', async (t) => {
   const { url, code, owner, editor, clients, restart } = await setup(t);
   const joined = await CollaborationClient.join(url, code, '다른 편집자');
   const other = new CollaborationClient(joined.credentials, () => {});
   other.accept(joined.result);
   clients.push(other);
+  await owner.setRole(editor.state.memberId, 'admin');
   for (const providerId of ['codex-cli', 'claude-cli', 'gemini-cli']) {
     await editor.refresh();
-    assert.equal(editor.state.editorAi, true);
+    assert.equal(editor.state.editorAi, false);
     assert.equal(editor.state.multiProviderAi, true);
     const task = await editor.command('tasks:create', {
       kind: 'implement',
@@ -506,7 +507,7 @@ test('editors execute their own three-provider AI with a single authoritative le
     assert.equal(editor.state.aiRun.actorId, editor.state.memberId);
     assert.equal(editor.state.aiRun.providerId, providerId);
     await other.refresh();
-    await assert.rejects(other.beginAi(task.relativePath), /이미 AI/);
+    await assert.rejects(other.beginAi(task.relativePath), /관리자/);
     await assert.rejects(other.cancelAi(), /본인이/);
     await assert.rejects(
       other.request('ai-progress', { lease, status: 'running' }),
@@ -590,7 +591,7 @@ test('editors execute their own three-provider AI with a single authoritative le
     /뷰어/,
   );
   await editor.refresh();
-  await assert.rejects(editor.beginAi(task.relativePath), /관리자·편집자/);
+  await assert.rejects(editor.beginAi(task.relativePath), /관리자/);
   await assert.rejects(
     editor.command('tasks:create', {
       kind: 'implement',
@@ -598,7 +599,7 @@ test('editors execute their own three-provider AI with a single authoritative le
       x: 0,
       y: 0,
     }),
-    /뷰어/,
+    /뷰어|관리자/,
   );
   await assert.rejects(editor.request('ai-cancel'), /뷰어/);
   await owner.refresh();
@@ -608,26 +609,29 @@ test('editors execute their own three-provider AI with a single authoritative le
   );
   await other.refresh();
   other.state.editorAi = false;
-  await assert.rejects(other.beginAi(task.relativePath), /v0.8.0/);
-  await assert.rejects(other.command('tasks:create', {}), /v0.8.0/);
+  await assert.rejects(other.beginAi(task.relativePath), /관리자/);
+  await assert.rejects(other.command('tasks:create', {}), /관리자/);
 });
 
 test('invites identify anonymous members, rotate independently of membership and enforce roles on server', async (t) => {
   const { url, owner, editor, code } = await setup(t);
   assert.equal(editor.state.role, 'editor');
   assert.notEqual(editor.state.memberId, owner.state.memberId);
-  await editor.command('tasks:create', {
-    kind: 'implement',
-    inputPaths: ['ideas/a.md'],
-    x: 0,
-    y: 0,
-  });
+  await assert.rejects(
+    editor.command('tasks:create', {
+      kind: 'implement',
+      inputPaths: ['ideas/a.md'],
+      x: 0,
+      y: 0,
+    }),
+    /관리자/,
+  );
   await assert.rejects(
     editor.request('ai-start', {
       taskPath: '.ai/tasks/not-there.md',
       revision: editor.state.revision,
     }),
-    /작업 명세|존재|파일|찾을/,
+    /관리자/,
   );
   await assert.rejects(editor.request('invite'), /관리자/);
   await assert.rejects(

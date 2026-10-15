@@ -152,6 +152,7 @@ test('old servers cannot silently drop the requested result name', async () => {
     () => {},
   );
   client.state.connected = true;
+  client.state.role = 'admin';
   client.state.taskInstructionsEditable = true;
   let sent = false;
   client.request = async () => {

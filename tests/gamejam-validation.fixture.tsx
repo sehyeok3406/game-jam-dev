@@ -48,6 +48,7 @@ const qa = {
       taskResultNaming: true,
       taskInstructionsEditable: true,
       multiProviderAi: true,
+      multiplayerVersion: 1,
       ...change,
     };
     for (const listener of listeners) listener(state);

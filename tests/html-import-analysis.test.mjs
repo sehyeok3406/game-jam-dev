@@ -333,6 +333,7 @@ test('old server capabilities reject HTML import and analysis without transmitti
     () => {},
   );
   client.state.connected = true;
+  client.state.role = 'admin';
   client.state.taskInstructionsEditable = true;
   client.state.taskResultNaming = true;
   try {
@@ -382,7 +383,7 @@ test('real collaboration imports and analyzes one HTML with admin permissions, l
     await owner.refresh();
     assert.equal(owner.files[html], game);
     const input = { ...fixture().input, inputPaths: [html] };
-    await editor.command('tasks:create', input);
+    await assert.rejects(editor.command('tasks:create', input), /관리자/);
     await owner.refresh();
     const task = await owner.command('tasks:create', input);
     await assert.rejects(

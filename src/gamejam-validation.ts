@@ -22,6 +22,7 @@ export type GamejamField =
   | 'status';
 export type GamejamIssue = { field: GamejamField; message: string };
 export type GamejamValidationContext = {
+  intent?: 'run' | 'request' | 'content';
   collaboration: CollaborationState;
   provider: AiProviderId;
   model: string;
@@ -124,6 +125,22 @@ export function gamejamIssues(
       '재료로 선택한 원본 HTML은 덮어쓸 수 없습니다. 새 버전을 선택하거나 다른 결과를 업데이트해주세요.',
     );
   }
+  if (context.intent === 'content') return issues;
+  if (context.intent === 'request') {
+    const shared = context.collaboration;
+    if (context.updateRestarting)
+      add('status', '앱 재시작을 준비하고 있습니다.');
+    if (!shared.connected)
+      add('connection', '서버에 다시 연결한 뒤 요청을 저장해주세요.');
+    if (shared.accessDenied || !['admin', 'editor'].includes(shared.role ?? ''))
+      add('connection', '요청 작성에는 편집자 권한이 필요합니다.');
+    if (shared.requestApprovalVersion !== 1)
+      add(
+        'connection',
+        '요청 기능을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+      );
+    return issues;
+  }
   if (
     context.model.trim() &&
     (context.model.trim().length > 128 ||
@@ -158,14 +175,11 @@ export function gamejamIssues(
         'connection',
         '프로젝트 접근 권한이 없습니다. 관리자에게 참여 권한을 확인해주세요.',
       );
-    else if (
-      shared.role !== 'admin' &&
-      !(shared.role === 'editor' && shared.editorAi)
-    ) {
+    else if (shared.role !== 'admin') {
       add(
         'connection',
         shared.role === 'editor'
-          ? '편집자의 AI 실행 권한이 꺼져 있습니다. 관리자에게 AI 실행 권한을 요청해주세요.'
+          ? '팀원은 요청하기로 등록해주세요. 관리자만 AI를 실행할 수 있습니다.'
           : '현재 역할은 AI 작업을 실행할 수 없습니다. 관리자 또는 AI 실행 권한이 있는 편집자로 참여해주세요.',
       );
     }

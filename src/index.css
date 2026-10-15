@@ -6182,3 +6182,133 @@ kbd {
   margin: 0 8px;
   padding: 6px;
 }
+
+.approval-inbox {
+  width: min(1080px, 94vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid var(--border, #64748b);
+  border-radius: 16px;
+  background: var(--surface-solid);
+  color: var(--text, #e5e7eb);
+}
+.approval-inbox > header,
+.approval-inbox h2,
+.approval-toolbar,
+.approval-actions,
+.approval-results {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.approval-inbox > header {
+  justify-content: space-between;
+}
+.approval-inbox h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.approval-toolbar {
+  margin: 18px 0;
+}
+.approval-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.approval-columns {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  min-height: 0;
+  gap: 24px;
+  overflow: hidden;
+}
+.approval-list,
+.approval-detail {
+  overflow: auto;
+  min-height: 120px;
+  padding: 4px;
+}
+.approval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.approval-list > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 6px;
+  padding: 14px;
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+.approval-list > button[aria-current='true'] {
+  outline: 2px solid var(--accent, #7c9cff);
+  outline-offset: -2px;
+}
+.approval-list small {
+  opacity: 0.7;
+}
+.approval-detail > h3 {
+  margin-top: 0;
+}
+.approval-detail .gamejam-review button {
+  display: none;
+}
+.approval-detail pre,
+.approval-detail blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.approval-admin {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--border, #64748b);
+}
+.approval-admin label {
+  display: grid;
+  gap: 6px;
+}
+.approval-admin textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.approval-error {
+  color: var(--danger, #fca5a5);
+  white-space: pre-wrap;
+}
+.approval-change {
+  padding: 12px;
+  border: 1px solid var(--accent, #7c9cff);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.approval-change button {
+  margin-top: 8px;
+}
+.approval-actions {
+  margin-top: 16px;
+}
+@media (max-width: 700px) {
+  .approval-inbox {
+    padding: 16px;
+  }
+  .approval-columns {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+  .approval-list {
+    max-height: 190px;
+  }
+  .approval-detail {
+    overflow: visible;
+  }
+}

@@ -214,6 +214,7 @@ test('older servers cannot silently drop the second workflow stage', async () =>
     () => {},
   );
   client.state.connected = true;
+  client.state.role = 'admin';
   client.state.taskInstructionsEditable = true;
   client.state.taskResultNaming = true;
   client.state.htmlResultFolders = true;
@@ -266,7 +267,10 @@ test('workflow server gates old executors, enforces admins and one lease, and pu
       }),
       /관리자 앱 v0.7.9/,
     );
-    await editor.command('tasks:create', gamejamTaskInput(request));
+    await assert.rejects(
+      editor.command('tasks:create', gamejamTaskInput(request)),
+      /관리자/,
+    );
     await owner.refresh();
     await owner.beginAi(task.relativePath);
     const concurrent = await editor.command('documents:create-idea', {

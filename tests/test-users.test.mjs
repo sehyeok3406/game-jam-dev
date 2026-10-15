@@ -202,12 +202,12 @@ test('viewer test sessions cannot edit or run AI and admins can promote them', a
       client.command('documents:create-idea', { x: 0, y: 0 }),
       /권한|뷰어/,
     );
-    await assert.rejects(client.beginAi('task.md'), /뷰어|관리자·편집자/);
+    await assert.rejects(client.beginAi('task.md'), /뷰어|관리자/);
   }
   await owner.setRole(windows[0].memberId, 'editor');
   await clients[0].refresh();
   await clients[0].command('documents:create-idea', { x: 0, y: 0 });
-  await assert.rejects(clients[0].beginAi('task.md'), /작업 명세|경로/);
+  await assert.rejects(clients[0].beginAi('task.md'), /관리자/);
 });
 
 test('test launch inputs, administrator permissions, active window limits and capacity are enforced', async (t) => {

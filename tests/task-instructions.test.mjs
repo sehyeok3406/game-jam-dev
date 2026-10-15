@@ -154,6 +154,7 @@ test('older collaboration servers cannot silently discard edited instructions', 
     () => {},
   );
   client.state.connected = true;
+  client.state.role = 'admin';
   let sent = false;
   client.request = async () => {
     sent = true;

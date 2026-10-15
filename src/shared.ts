@@ -298,6 +298,7 @@ export type CodexRunEvent = {
 export type AiProviderId = 'codex-cli' | 'claude-cli' | 'gemini-cli';
 
 export type StartCodexRunInput = {
+  approval?: import('./gamejam-approval').ApprovalStart;
   taskPath: string;
   providerId: AiProviderId;
   modelId: string | null;
@@ -545,6 +546,14 @@ export type GameCanvasApi = {
   ) => Promise<import('./result-structure').ResultMove[]>;
   organizeResults: () => Promise<import('./result-structure').ResultMove[]>;
   listHistory: () => Promise<HistoryEntry[]>;
+  listApprovals: () => Promise<import('./gamejam-approval').ApprovalList>;
+  readApproval: (
+    id: string,
+  ) => Promise<import('./gamejam-approval').ApprovalDetail>;
+  mutateApproval: (
+    action: 'create' | 'update' | 'cancel' | 'feedback',
+    input: import('./gamejam-approval').ApprovalMutation,
+  ) => Promise<import('./gamejam-approval').GamejamApproval>;
   getFileAuthorship: (relativePath: string) => Promise<FileAuthorship>;
   readHistoryFile: (
     id: string,
@@ -717,6 +726,9 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationState = {
+  requestApprovalVersion?: number;
+  requestsVersion?: number;
+  pendingRequests?: number;
   multiplayerVersion?: number;
   filePropertiesVersion?: number;
   documentStatusesVersion?: number;

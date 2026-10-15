@@ -2457,6 +2457,14 @@ const handle = (
           };
         }
         if (channel === 'history:list') return client.history();
+        if (channel === 'requests:list') return client.listApprovals();
+        if (channel === 'requests:read')
+          return client.readApproval(args[0] as string);
+        if (channel === 'requests:mutate')
+          return client.mutateApproval(
+            args[0] as 'create' | 'update' | 'cancel' | 'feedback',
+            args[1] as import('./gamejam-approval').ApprovalMutation,
+          );
         if (channel === 'history:read')
           return client.readHistory(
             args[0] as string,
@@ -2491,11 +2499,22 @@ const handle = (
       if (channel === 'codex:start')
         return enqueueMutation(async () => {
           assertEditable();
-          const taskPath = (args[0] as StartCodexRunInput).taskPath;
-          preparingFileLock = taskFileLock(
-            collaboration?.files ?? (await captureProject(requireWorkspace())),
-            taskPath,
-          );
+          const runInput = args[0] as StartCodexRunInput;
+          if (collaboration) {
+            if (collaboration.state.role !== 'admin')
+              throw new Error('관리자만 AI를 실행할 수 있습니다.');
+            const connection = await getAiStatus(runInput.providerId);
+            if (!connection.available || !connection.authenticated)
+              throw new CanvasError('GC-AI-008', connection.message);
+          }
+          const taskPath = runInput.taskPath;
+          preparingFileLock = runInput.approval
+            ? null
+            : taskFileLock(
+                collaboration?.files ??
+                  (await captureProject(requireWorkspace())),
+                taskPath,
+              );
           runPreparing = true;
           preparationCancelled = false;
           lastRunEvent = null;
@@ -2505,7 +2524,12 @@ const handle = (
                 (args[0] as StartCodexRunInput).taskPath,
                 (args[0] as StartCodexRunInput).modelId,
                 (args[0] as StartCodexRunInput).providerId,
+                runInput.approval,
               );
+              if (runInput.approval) {
+                runInput.taskPath = collaboration.state.aiRun!.taskPath;
+                preparingFileLock = collaboration.state.aiRun?.fileLock ?? null;
+              }
               sharedRunId = collaboration.state.aiRun?.runId ?? null;
               lastSharedRunStatus = '';
               await syncSharedSnapshot(files);
@@ -4414,6 +4438,15 @@ const registerIpc = () => {
     return parseDocument(absolute);
   });
   handle('codex:status', getCodexStatus);
+  handle('requests:list', () => {
+    throw new Error('공동 프로젝트에서 요청함을 열어주세요.');
+  });
+  handle('requests:read', () => {
+    throw new Error('공동 프로젝트에서 요청을 열어주세요.');
+  });
+  handle('requests:mutate', () => {
+    throw new Error('공동 프로젝트에서 요청을 작성해주세요.');
+  });
   handle('ai:status', (_event, providerId) => getAiStatus(providerId));
   handle('codex:start', async (_event, input: StartCodexRunInput) =>
     startCodexRun(input),

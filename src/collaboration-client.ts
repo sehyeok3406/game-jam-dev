@@ -306,6 +306,11 @@ export class CollaborationClient {
       (result.state.revision ?? 0) < (this.state.revision ?? 0)
     )
       return;
+    if (
+      result.state.revision === this.state.revision &&
+      (result.state.requestsVersion ?? 0) < (this.state.requestsVersion ?? 0)
+    )
+      return;
     const changed = result.state.revision !== this.state.revision;
     if (result.delta) {
       if (result.delta.from > (this.state.revision ?? 0)) {
@@ -527,6 +532,7 @@ export class CollaborationClient {
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
         action !== 'ai-start' &&
+        action !== 'requests-start' &&
         !this.offline &&
         !this.outgoing
           ? { deltaVersion: 1, knownRevision: this.state.revision }
@@ -960,14 +966,10 @@ export class CollaborationClient {
           'GC-COLLAB-001',
           '결과물 폴더 구조를 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
         );
-      if (
-        channel === 'tasks:create' &&
-        this.state.role === 'editor' &&
-        !this.state.editorAi
-      )
+      if (channel === 'tasks:create' && this.state.role !== 'admin')
         throw new CanvasError(
           'GC-AI-010',
-          '편집자 AI 실행에는 협업 서버 v0.8.0 이상이 필요합니다.',
+          '관리자만 AI를 직접 실행할 수 있습니다. 팀원은 요청하기로 등록해주세요.',
         );
       if (
         channel === 'tasks:create' &&
@@ -1361,10 +1363,13 @@ export class CollaborationClient {
     taskPath: string,
     modelId?: string | null,
     providerId: import('./shared').AiProviderId = 'codex-cli',
+    approval?: import('./gamejam-approval.ts').ApprovalStart,
   ) {
     return this.serial(async () => {
-      if (!this.state.connected || this.offline || this.state.role === 'viewer')
-        throw new Error('연결된 관리자·편집자만 AI를 실행할 수 있습니다.');
+      if (!this.state.connected || this.offline || this.state.role !== 'admin')
+        throw new Error(
+          '연결된 관리자만 AI를 실행할 수 있습니다. 팀원은 요청하기로 등록해주세요.',
+        );
       if (
         this.files[taskPath] &&
         taskDocumentFormat(this.files[taskPath]) &&
@@ -1383,31 +1388,65 @@ export class CollaborationClient {
           'GC-AI-004',
           '시스템별 문서 생성을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
         );
-      if (
-        (this.state.role === 'editor' && !this.state.editorAi) ||
-        (providerId !== 'codex-cli' && !this.state.multiProviderAi)
-      )
+      if (providerId !== 'codex-cli' && !this.state.multiProviderAi)
         throw new CanvasError(
           'GC-AI-010',
           'AI 실행에는 협업 서버 v0.8.0 이상이 필요합니다.',
         );
-      const result = (await this.request('ai-start', {
-        taskPath,
-        modelId,
-        providerId,
-        gamejamVersion: 1,
-        multiplayerVersion: 1,
-        documentBundleVersion: 1,
-        documentOutputFormatVersion: 1,
-        htmlAnalysisVersion: 1,
-        htmlInputVersion: 1,
-        canvasSheetsVersion: 1,
-        revision: this.state.revision,
-      })) as CollaborationEnvelope & { lease: string };
+      const result = (await this.request(
+        approval ? 'requests-start' : 'ai-start',
+        {
+          ...(approval
+            ? { ...approval, requestRevision: approval.revision }
+            : {}),
+          taskPath,
+          modelId,
+          providerId,
+          gamejamVersion: 1,
+          multiplayerVersion: 1,
+          documentBundleVersion: 1,
+          documentOutputFormatVersion: 1,
+          htmlAnalysisVersion: 1,
+          htmlInputVersion: 1,
+          canvasSheetsVersion: 1,
+          revision: this.state.revision,
+        },
+      )) as CollaborationEnvelope & { lease: string; taskPath?: string };
       this.lease = result.lease;
       this.accept(result);
       return { ...result.files };
     });
+  }
+  async listApprovals() {
+    if (this.state.requestApprovalVersion !== 1)
+      throw new Error('요청 기능을 사용하려면 협업 서버를 업데이트해주세요.');
+    return (await this.request(
+      'requests-list',
+    )) as import('./gamejam-approval.ts').ApprovalList;
+  }
+  async readApproval(id: string) {
+    return (await this.request('requests-read', {
+      id,
+    })) as import('./gamejam-approval.ts').ApprovalDetail;
+  }
+  async mutateApproval(
+    action: 'create' | 'update' | 'cancel' | 'feedback',
+    input: import('./gamejam-approval.ts').ApprovalMutation,
+  ) {
+    if (
+      !this.state.connected ||
+      this.state.accessDenied ||
+      this.state.requestApprovalVersion !== 1
+    )
+      throw new Error(
+        '서버 연결과 요청 기능 지원을 확인해주세요. 작성 내용은 보관됩니다.',
+      );
+    const result = (await this.request(
+      `requests-${action}`,
+      input,
+    )) as import('./gamejam-approval.ts').GamejamApproval;
+    await this.refresh();
+    return result;
   }
   async progress(event: CodexRunEvent) {
     if (

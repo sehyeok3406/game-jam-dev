@@ -1880,55 +1880,96 @@ try {
     code: shared.inviteCode,
     nickname: '앱 편집자',
   });
-  const editorTask = await call('tasks:create', {
-    kind: 'implement',
-    inputPaths: [idea.relativePath],
-    x: 0,
-    y: 0,
-    htmlResult: { mode: 'new', basePath: 'output/index.html' },
-  });
-  const editorRun = await call('codex:start', {
-    taskPath: editorTask.relativePath,
-    providerId: 'codex-cli',
-    modelId: 'fixture-valid',
-  });
-  const editorCompleted = await terminal(editorRun.runId);
-  assert.equal(editorCompleted.status, 'completed', editorCompleted.message);
-  for (const providerId of ['claude-cli', 'gemini-cli']) {
-    const status = await call('ai:status', providerId);
-    assert.equal(status.available, true, status.message);
-    assert.equal(status.authenticated, true, status.message);
-    const task = await call('tasks:create', {
+  await assert.rejects(
+    call('tasks:create', {
       kind: 'implement',
       inputPaths: [idea.relativePath],
       x: 0,
       y: 0,
-      htmlResult: { mode: 'new', basePath: 'output/index.html' },
-    });
-    const run = await call('codex:start', {
-      taskPath: task.relativePath,
-      providerId,
+    }),
+    /관리자/,
+  );
+  await assert.rejects(
+    call('codex:start', {
+      taskPath: '.ai/tasks/bypass.md',
+      providerId: 'codex-cli',
       modelId: 'fixture-valid',
-    });
-    const result = await terminal(run.runId);
-    assert.equal(result.status, 'completed', result.message);
-    assert.equal(result.providerId, providerId);
-    await otherClient.refresh();
-    assert.equal(otherClient.state.aiRun!.providerId, providerId);
-    const history = (await otherClient.history()).find(
-      (entry) =>
-        entry.taskPath === task.relativePath && entry.status === 'completed',
-    );
-    assert.equal(history!.providerId, providerId);
-    assert.equal(history!.actorName, '앱 편집자');
-  }
+    }),
+    /관리자/,
+  );
+  const approvalBody = {
+    organize: false,
+    implement: true,
+    inputPaths: [idea.relativePath],
+    x: 0,
+    y: 0,
+    resultName: '',
+    htmlResult: { mode: 'new', basePath: 'output/index.html' },
+    instructions: {
+      organize: '문서를 정리해줘',
+      implement:
+        '간단한 키보드 게임을 만들어줘. APPROVAL-INSTRUCTION-IPC-PROBE',
+    },
+  };
+  const editorRequest = await call('requests:mutate', 'create', {
+    commandId: crypto.randomUUID(),
+    request: approvalBody,
+  });
+  assert.equal(editorRequest.status, 'pending');
+  assert.ok(
+    (await call('requests:list')).items.some(
+      (item: any) => item.id === editorRequest.id,
+    ),
+  );
   await assert.rejects(
     call('history:restore', (await call('history:list'))[0].id),
     /관리자/,
   );
   await call('collaboration:leave');
+  const recoveredAdmin = await call('collaboration:recover', {
+    serverUrl,
+    projectId: shared.projectId,
+    recoveryKey: shared.recoveryKey,
+  });
+  for (const providerId of ['codex-cli', 'claude-cli', 'gemini-cli']) {
+    await otherClient!.refresh();
+    const item =
+      providerId === 'codex-cli'
+        ? editorRequest
+        : await otherClient!.mutateApproval('create', {
+            commandId: crypto.randomUUID(),
+            request: approvalBody,
+          });
+    const detail = await call('requests:read', item.id);
+    const run = await call('codex:start', {
+      taskPath: '',
+      providerId,
+      modelId: 'fixture-valid',
+      approval: {
+        id: item.id,
+        revision: detail.item.revision,
+        reviewToken: detail.reviewToken,
+        commandId: crypto.randomUUID(),
+      },
+    });
+    const result = await terminal(run.runId);
+    assert.equal(result.status, 'completed', result.message);
+    const finished = await call('requests:read', item.id);
+    assert.equal(finished.item.status, 'completed');
+    assert.equal(finished.item.providerId, providerId);
+    assert.equal(finished.item.approvedBy, recoveredAdmin.memberId);
+    await otherClient!.refresh();
+    assert.equal(otherClient!.state.aiRun!.providerId, providerId);
+    const history = (await otherClient!.history()).find(
+      (entry) =>
+        entry.taskPath === run.taskPath && entry.status === 'completed',
+    );
+    assert.equal(history!.providerId, providerId);
+    assert.equal(history!.actorId, recoveredAdmin.memberId);
+  }
+  await call('collaboration:leave');
   console.log(
-    'PASS: desktop editor creates and executes its own AI but cannot restore history; leaving preserves the original local workspace',
+    'PASS: desktop editor submits requests without execution; administrator approval atomically starts all three mock providers and shares completed results.',
   );
   for (const providerId of ['claude-cli', 'gemini-cli']) {
     const workflow = await call('tasks:create', {

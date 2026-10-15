@@ -155,7 +155,7 @@ async function run() {
     );
     await assert.rejects(
       call('files:import', { x: 300, y: 100, imagePurpose: 'asset' }),
-      /관리자·편집자/,
+      /관리자/,
     );
   }
   await fs.writeFile(

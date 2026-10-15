@@ -6,6 +6,13 @@ import {
   assertWorkflowReferences,
 } from './document-workflow.ts';
 import { SyncStore } from './sync-store.ts';
+import {
+  approvalEditable,
+  parseApprovalRequest,
+  type GamejamApproval,
+  type ApprovalDetail,
+} from './gamejam-approval.ts';
+import { gamejamTaskInput, type GamejamRequest } from './gamejam-request.ts';
 import { attachMultiplayerServer } from './multiplayer/server.ts';
 import {
   TRASH_RETENTION,
@@ -90,6 +97,7 @@ type Member = {
 };
 type StoredHistory = { entry: HistoryEntry; before: Snapshot; after: Snapshot };
 type Job = {
+  requestId?: string;
   fileLock?: import('./shared.ts').AiFileLock;
   providerId?: import('./shared.ts').AiProviderId;
   startedAt?: number;
@@ -104,6 +112,12 @@ type Job = {
   event: CodexRunEvent;
 };
 type Project = {
+  approvals?: Record<string, GamejamApproval>;
+  requestsVersion?: number;
+  approvalReceipts?: Record<
+    string,
+    { memberId: string; fingerprint: string; requestId: string }
+  >;
   lifecycle?: {
     status: 'active' | 'trashing' | 'trashed' | 'restoring' | 'purging';
     version: number;
@@ -182,6 +196,8 @@ class ApiError extends Error {
 }
 const cloneProject = (project: Project): Project => ({
   ...project,
+  approvals: structuredClone(project.approvals ?? {}),
+  approvalReceipts: { ...project.approvalReceipts },
   revisions: { ...project.revisions },
   members: project.members.map((member) => ({ ...member })),
   history: [...project.history],
@@ -190,6 +206,33 @@ const cloneProject = (project: Project): Project => ({
 });
 const digest = (value: string) =>
   createHash('sha256').update(value).digest('hex');
+const planApproval = (
+  project: Project,
+  request: GamejamRequest,
+  providerId: import('./shared.ts').AiProviderId = 'codex-cli',
+  modelId = '',
+) => {
+  const planned = reduceCollaboration(
+    project.files,
+    'tasks:create',
+    gamejamTaskInput(request, { providerId, modelId }),
+  );
+  const taskPath = (planned.result as { relativePath: string }).relativePath;
+  const lock = taskFileLock(planned.files, taskPath);
+  const related = aiLockedSnapshot(project.files, lock);
+  const paths = [...new Set([...lock.paths, ...Object.keys(related)])]
+    .filter((p) => !p.startsWith('.ai/tasks/'))
+    .sort();
+  const reviewToken = digest(
+    JSON.stringify(paths.map((p) => [p, project.files[p] ?? null])),
+  );
+  return {
+    files: planned.files,
+    taskPath,
+    reviewToken,
+    outputs: expectedArtifacts(planned.files[taskPath]),
+  };
+};
 const secret = () => randomBytes(32).toString('base64url');
 const same = (value: string, hash: string) =>
   timingSafeEqual(Buffer.from(digest(value), 'hex'), Buffer.from(hash, 'hex'));
@@ -324,6 +367,36 @@ export async function createCollaborationServer(options: Options) {
     }
   };
   const persist = async (project: Project) => {
+    if (
+      !project.job &&
+      project.lastRun &&
+      ['completed', 'failed', 'cancelled'].includes(project.lastRun.status)
+    ) {
+      const item = Object.values(project.approvals ?? {}).find(
+        (r) =>
+          r.status === 'running' && r.taskPath === project.lastRun!.taskPath,
+      );
+      if (item) {
+        item.status =
+          project.lastRun.status === 'cancelled'
+            ? 'stopped'
+            : (project.lastRun.status as 'completed' | 'failed');
+        item.error =
+          project.lastRun.failure?.message ??
+          (item.status === 'completed' ? undefined : project.lastRun.message);
+        item.updatedAt = Date.now();
+        item.revision++;
+        item.changes.push({
+          at: item.updatedAt,
+          actorId: item.approvedBy!,
+          actorName: item.approvedName!,
+          action: item.status,
+          revision: item.revision,
+          message: item.error,
+        });
+        project.requestsVersion = (project.requestsVersion ?? 0) + 1;
+      }
+    }
     store.save(project);
     if (project.lifecycle)
       await saveLifecycleMarker(
@@ -479,7 +552,12 @@ export async function createCollaborationServer(options: Options) {
       scopedAiLocks: true,
       htmlComposition: true,
       canvasSheets: true,
-      editorAi: true,
+      editorAi: false,
+      requestApprovalVersion: 1,
+      requestsVersion: project.requestsVersion ?? 0,
+      pendingRequests: Object.values(project.approvals ?? {}).filter(
+        (item) => item.status === 'pending',
+      ).length,
       multiProviderAi: true,
       projectId: project.id,
       projectName: project.name,
@@ -1327,6 +1405,146 @@ export async function createCollaborationServer(options: Options) {
             if (lock.memberId === member.id) projectLocks(id).delete(relative);
           return {};
         }
+        if (action.startsWith('requests-') && action !== 'requests-start') {
+          const items = project.approvals ?? {};
+          if (action === 'requests-list')
+            return {
+              items: Object.values(items).sort(
+                (a, b) => b.updatedAt - a.updatedAt,
+              ),
+              version: project.requestsVersion ?? 0,
+            };
+          if (action === 'requests-read') {
+            const item = items[String(input.id)];
+            if (!item) throw new ApiError('요청을 찾을 수 없습니다.', 404);
+            const detail: ApprovalDetail = {
+              item,
+              reviewToken: null,
+              outputs: item.outputs ?? [],
+            };
+            if (approvalEditable(item.status)) {
+              try {
+                const plan = planApproval(project, item.request);
+                detail.reviewToken = plan.reviewToken;
+                detail.outputs = plan.outputs;
+              } catch (error) {
+                detail.reviewError =
+                  error instanceof Error
+                    ? error.message
+                    : '입력 자료를 확인해주세요.';
+              }
+            }
+            return detail;
+          }
+          if (member.role === 'viewer')
+            throw new ApiError('뷰어는 요청을 변경할 수 없습니다.', 403);
+          if (action === 'requests-feedback') admin(member);
+          const commandId = String(input.commandId ?? '');
+          if (!/^[a-f0-9-]{36}$/.test(commandId))
+            throw new ApiError('요청 작업 ID가 올바르지 않습니다.', 400);
+          const fingerprint = digest(
+            JSON.stringify({
+              action,
+              id: input.id,
+              revision: input.revision,
+              request: input.request,
+              message: input.message,
+              copiedFrom: input.copiedFrom,
+            }),
+          );
+          const receipt = project.approvalReceipts?.[commandId];
+          if (receipt) {
+            if (
+              receipt.memberId !== member.id ||
+              receipt.fingerprint !== fingerprint
+            )
+              throw new ApiError('이미 사용한 작업 ID입니다.');
+            return items[receipt.requestId];
+          }
+          const next = cloneProject(project);
+          const at = Date.now();
+          let item: GamejamApproval;
+          if (action === 'requests-create') {
+            if (items[commandId])
+              throw new ApiError(
+                '이미 등록된 요청입니다. 최신 요청을 확인해주세요.',
+              );
+            if (Object.keys(items).length >= 1000)
+              throw new ApiError('프로젝트 요청 보관 한도에 도달했습니다.');
+            const request = parseApprovalRequest(input.request);
+            planApproval(project, request);
+            item = {
+              id: commandId,
+              projectId: id,
+              authorId: member.id,
+              authorName: member.nickname,
+              createdAt: at,
+              updatedAt: at,
+              revision: 1,
+              status: 'pending',
+              request,
+              changes: [],
+            };
+            if (typeof input.copiedFrom === 'string' && items[input.copiedFrom])
+              item.copiedFrom = input.copiedFrom;
+            next.approvals![item.id] = item;
+          } else {
+            item = next.approvals![String(input.id)];
+            if (!item) throw new ApiError('요청을 찾을 수 없습니다.', 404);
+            if (action !== 'requests-feedback' && item.authorId !== member.id)
+              throw new ApiError('본인 요청만 변경할 수 있습니다.', 403);
+            if (!approvalEditable(item.status))
+              throw new ApiError(
+                '이미 구현이 시작되었거나 종료된 요청입니다. 작성 내용은 새 요청으로 등록해주세요.',
+              );
+            if (input.revision !== item.revision)
+              throw new ApiError(
+                '요청 내용이 변경되었습니다. 최신 내용을 다시 확인해주세요.',
+              );
+            if (action === 'requests-update') {
+              const request = parseApprovalRequest(input.request);
+              planApproval(project, request);
+              item.request = request;
+              item.status = 'pending';
+            } else if (action === 'requests-cancel') item.status = 'cancelled';
+            else if (action === 'requests-feedback') {
+              if (
+                typeof input.message !== 'string' ||
+                !input.message.trim() ||
+                input.message.length > 4000
+              )
+                throw new ApiError('보완 의견을 1~4000자로 작성해주세요.', 400);
+              item.feedback = input.message.trim();
+              item.status = 'feedback';
+            } else throw new ApiError('지원하지 않는 요청 작업입니다.', 404);
+            item.revision++;
+            item.updatedAt = at;
+          }
+          item.changes.push({
+            at,
+            actorId: member.id,
+            actorName: member.nickname,
+            action,
+            revision: item.revision,
+            ...(action === 'requests-create' || action === 'requests-update'
+              ? { request: structuredClone(item.request) }
+              : {}),
+            ...(action === 'requests-feedback'
+              ? { message: item.feedback }
+              : {}),
+          });
+          next.requestsVersion = (next.requestsVersion ?? 0) + 1;
+          next.approvalReceipts![commandId] = {
+            memberId: member.id,
+            fingerprint,
+            requestId: item.id,
+          };
+          const keys = Object.keys(next.approvalReceipts!);
+          for (const key of keys.slice(0, Math.max(0, keys.length - 2000)))
+            delete next.approvalReceipts![key];
+          await persist(next);
+          return item;
+        }
         if (action === 'lock') {
           editable(project, member);
           const relative = collaborationPath(input.relativePath);
@@ -1434,6 +1652,7 @@ export async function createCollaborationServer(options: Options) {
         }
         if (action === 'command') {
           const command = input as unknown as CollaborationCommand;
+          if (command.channel === 'tasks:create') admin(member);
           if (
             typeof command.id !== 'string' ||
             !/^[a-f0-9-]{36}$/.test(command.id)
@@ -1803,46 +2022,112 @@ export async function createCollaborationServer(options: Options) {
           await exportCheckpoint(next);
           return envelope(next, member);
         }
-        if (action.startsWith('ai-')) {
+        if (action.startsWith('ai-') || action === 'requests-start') {
           if (member.role === 'viewer')
             throw new ApiError(
               '뷰어는 AI를 실행하거나 중지할 수 없습니다.',
               403,
             );
-          if (action === 'ai-start') {
+          if (action === 'ai-start' || action === 'requests-start') {
+            admin(member);
             const providerId = input.providerId ?? 'codex-cli';
             if (!isAiProvider(providerId))
               throw new CanvasError(
                 'GC-AI-009',
                 '지원하지 않는 AI 제공자입니다.',
               );
+            if (
+              input.modelId !== undefined &&
+              input.modelId !== null &&
+              (typeof input.modelId !== 'string' ||
+                input.modelId.length > 128 ||
+                (input.modelId && !/^[a-zA-Z0-9._:/-]+$/.test(input.modelId)))
+            )
+              throw new ApiError('AI 모델 ID가 올바르지 않습니다.', 400);
+            if (
+              action === 'ai-start' &&
+              Object.values(project.approvals ?? {}).some(
+                (r) => r.taskPath === input.taskPath,
+              )
+            )
+              throw new ApiError(
+                '이미 승인한 작업입니다. 새 요청으로 복사해 다시 시작해주세요.',
+              );
+            let approval: GamejamApproval | undefined;
+            let workingFiles = project.files;
+            if (action === 'requests-start') {
+              approval = project.approvals?.[String(input.id)];
+              if (!approval)
+                throw new ApiError('요청을 찾을 수 없습니다.', 404);
+              if (!/^[a-f0-9-]{36}$/.test(String(input.commandId)))
+                throw new ApiError('요청 작업 ID가 올바르지 않습니다.', 400);
+              if (
+                approval.approvalCommandId === input.commandId &&
+                project.job?.requestId === approval.id &&
+                project.job.memberId === member.id
+              ) {
+                if (
+                  approval.approvedRevision !== input.requestRevision ||
+                  approval.approvedReviewToken !== input.reviewToken ||
+                  approval.providerId !== providerId ||
+                  approval.modelId !== (input.modelId ?? null)
+                )
+                  throw new ApiError(
+                    '같은 작업 ID로 실행 내용을 변경할 수 없습니다.',
+                  );
+                return {
+                  ...envelope(project, member),
+                  lease: project.job.id,
+                  taskPath: project.job.taskPath,
+                };
+              }
+              if (
+                !approvalEditable(approval.status) ||
+                approval.revision !== input.requestRevision
+              )
+                throw new ApiError(
+                  '요청 상태나 내용이 변경되었습니다. 최신 내용을 다시 확인해주세요.',
+                );
+              const plan = planApproval(
+                project,
+                approval.request,
+                providerId,
+                typeof input.modelId === 'string' ? input.modelId : '',
+              );
+              if (!input.reviewToken || plan.reviewToken !== input.reviewToken)
+                throw new ApiError(
+                  '요청의 입력 자료나 출력 대상이 변경되었습니다. 최신 내용을 다시 확인해주세요.',
+                );
+              workingFiles = plan.files;
+              input.taskPath = plan.taskPath;
+            }
             if (project.job)
               throw new ApiError('이미 AI 작업이 진행 중입니다.');
-            if (input.revision !== project.revision)
+            if (action === 'ai-start' && input.revision !== project.revision)
               throw new ApiError(
                 'AI 실행 직전 문서가 변경되었습니다. 최신 내용을 확인하고 다시 실행해주세요.',
               );
             const taskPath = collaborationPath(input.taskPath);
-            if (!taskPath.startsWith('.ai/tasks/') || !project.files[taskPath])
+            if (!taskPath.startsWith('.ai/tasks/') || !workingFiles[taskPath])
               throw new ApiError('AI 작업 명세를 찾을 수 없습니다.');
             if (
-              canvasId(matter(project.files[taskPath]).data.canvas_id) !==
+              canvasId(matter(workingFiles[taskPath]).data.canvas_id) !==
                 'default' &&
               input.canvasSheetsVersion !== 1
             )
               throw new ApiError(
                 '여러 캔버스의 AI 작업에는 앱 v0.11.0 이상이 필요합니다.',
               );
-            const outputs = expectedArtifacts(project.files[taskPath]);
+            const outputs = expectedArtifacts(workingFiles[taskPath]);
             if (
-              matter(project.files[taskPath]).data.multiplayer !== undefined &&
+              matter(workingFiles[taskPath]).data.multiplayer !== undefined &&
               input.multiplayerVersion !== 1
             )
               throw new ApiError(
                 '[GC-MP-001] 멀티플레이 실행을 지원하는 앱으로 업데이트해주세요.',
               );
             if (
-              taskDocumentFormat(project.files[taskPath]) &&
+              taskDocumentFormat(workingFiles[taskPath]) &&
               input.documentOutputFormatVersion !== 1
             )
               throw new CanvasError(
@@ -1850,14 +2135,14 @@ export async function createCollaborationServer(options: Options) {
                 '문서 출력 구성 실행을 지원하는 앱으로 업데이트해주세요.',
               );
             if (
-              documentBundleContract(project.files[taskPath]) &&
+              documentBundleContract(workingFiles[taskPath]) &&
               input.documentBundleVersion !== 1
             )
               throw new CanvasError(
                 'GC-AI-004',
                 '시스템별 문서 생성 실행을 지원하는 앱으로 업데이트해주세요.',
               );
-            const fileLock = taskFileLock(project.files, taskPath);
+            const fileLock = taskFileLock(workingFiles, taskPath);
             try {
               assertAiFilesUnlocked(fileLock, [...projectLocks(id).keys()]);
             } catch {
@@ -1865,9 +2150,9 @@ export async function createCollaborationServer(options: Options) {
                 'AI 작업 관련 문서를 편집 중입니다. 해당 문서를 저장하고 편집을 종료한 뒤 실행해주세요.',
               );
             }
-            validateHtmlAnalysis(project.files[taskPath], project.files);
+            validateHtmlAnalysis(workingFiles[taskPath], workingFiles);
             if (
-              matter(project.files[taskPath]).data.html_inputs_version !==
+              matter(workingFiles[taskPath]).data.html_inputs_version !==
                 undefined &&
               input.htmlInputVersion !== 1
             )
@@ -1876,7 +2161,7 @@ export async function createCollaborationServer(options: Options) {
                 'HTML 재료 통합 실행에는 앱 v0.10.9 이상이 필요합니다.',
               );
             if (
-              matter(project.files[taskPath]).data.source_mode === 'html' &&
+              matter(workingFiles[taskPath]).data.source_mode === 'html' &&
               input.htmlAnalysisVersion !== 1
             )
               throw new CanvasError(
@@ -1884,13 +2169,13 @@ export async function createCollaborationServer(options: Options) {
                 'HTML 분석 실행에는 관리자 앱 v0.7.10 이상이 필요합니다.',
               );
             if (
-              workflowStages(project.files[taskPath]).length &&
+              workflowStages(workingFiles[taskPath]).length &&
               input.gamejamVersion !== 1
             )
               throw new ApiError(
                 '이 연속 작업은 관리자 앱 v0.7.9 이상에서 실행해주세요.',
               );
-            if (newOutputsAlreadyExist(project.files[taskPath], project.files))
+            if (newOutputsAlreadyExist(workingFiles[taskPath], workingFiles))
               throw new ApiError(
                 '이미 생성된 새 버전입니다. 새 작업을 만들어주세요.',
               );
@@ -1899,7 +2184,7 @@ export async function createCollaborationServer(options: Options) {
             recordChanges(
               next,
               member,
-              taskState(next.files, taskPath, 'running'),
+              taskState(workingFiles, taskPath, 'running'),
               'AI 작업 시작',
               'ai',
               {
@@ -1928,6 +2213,7 @@ export async function createCollaborationServer(options: Options) {
               timestamp: Date.now(),
             };
             next.job = {
+              requestId: approval?.id,
               fileLock,
               providerId,
               startedAt: Date.now(),
@@ -1946,8 +2232,34 @@ export async function createCollaborationServer(options: Options) {
               expiresAt: Date.now() + 30_000,
               event,
             };
+            if (approval) {
+              const item = next.approvals![approval.id];
+              item.status = 'running';
+              item.approvedRevision = item.revision;
+              item.approvedBy = member.id;
+              item.approvedName = member.nickname;
+              item.approvedAt = Date.now();
+              item.updatedAt = item.approvedAt;
+              item.executionRequest = structuredClone(item.request);
+              item.approvalCommandId = String(input.commandId);
+              item.approvedReviewToken = String(input.reviewToken);
+              item.runId = runId;
+              item.taskPath = taskPath;
+              item.providerId = providerId;
+              item.modelId = next.job.modelId;
+              item.outputs = outputs;
+              item.revision++;
+              item.changes.push({
+                at: item.updatedAt,
+                actorId: member.id,
+                actorName: member.nickname,
+                action: 'approved',
+                revision: item.revision,
+              });
+              next.requestsVersion = (next.requestsVersion ?? 0) + 1;
+            }
             await persist(next);
-            return { ...envelope(next, member), lease: next.job.id };
+            return { ...envelope(next, member), lease: next.job.id, taskPath };
           }
           const job = project.job;
           if (!job)

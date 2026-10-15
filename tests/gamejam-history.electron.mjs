@@ -148,7 +148,7 @@ async function run() {
     await wait(
       `document.querySelector('.ai-request-dialog > footer > .button-primary').getAttribute('aria-disabled')==='false'`,
     );
-    await click('.ai-request-dialog > footer button', 'gamejam! 실행');
+    await click('.ai-request-dialog > footer button', '바로 구현하기');
     await wait('qaHistory.creates===1');
     assert.equal(
       await js('qaHistory.requests[0].requestSnapshot.retryOf'),

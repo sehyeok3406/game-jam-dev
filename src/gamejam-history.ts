@@ -17,6 +17,8 @@ export type GamejamSavedRequest = {
   retryOf?: string;
 };
 export type GamejamDraft = GamejamSavedRequest & {
+  approval?: { id: string; revision: number };
+  copiedFrom?: string;
   updatedAt: number;
   page: GamejamPage;
   instructionPage: 'organize' | 'implement';
@@ -269,6 +271,12 @@ export function entryRequest(
 }
 
 const draftKey = (project: string) => `game-canvas-gamejam-draft:${project}`;
+export const gamejamDraftScope = (
+  project: string,
+  memberId?: string,
+  requestId?: string,
+) =>
+  memberId ? JSON.stringify([project, memberId, requestId ?? 'new']) : project;
 export function loadGamejamDraft(
   storage: Storage,
   project: string,
@@ -286,6 +294,14 @@ export function loadGamejamDraft(
     return {
       ...saved,
       updatedAt: value.updatedAt,
+      ...(typeof value.copiedFrom === 'string'
+        ? { copiedFrom: value.copiedFrom }
+        : {}),
+      ...(value.approval &&
+      typeof value.approval.id === 'string' &&
+      Number.isSafeInteger(value.approval.revision)
+        ? { approval: value.approval }
+        : {}),
       page: value.page,
       instructionPage: value.instructionPage,
     };

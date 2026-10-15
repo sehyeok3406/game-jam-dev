@@ -477,6 +477,17 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     });
   };
   const api: GameCanvasApi = {
+    listApprovals: async () => ({ items: [], version: 0 }),
+    readApproval: async () => {
+      throw new Error(
+        '요청함은 공동 프로젝트에 연결한 앱에서 사용할 수 있습니다.',
+      );
+    },
+    mutateApproval: async () => {
+      throw new Error(
+        '요청 제출은 공동 프로젝트에 연결한 앱에서 사용할 수 있습니다.',
+      );
+    },
     getDocumentStatuses: async () => ({
       value: statusesRaw
         ? validateStatuses(JSON.parse(statusesRaw))
@@ -1669,8 +1680,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         '개발 화면의 모의 연결입니다. 실제 계정이나 AI를 호출하지 않습니다.',
     }),
     startCodexRun: async ({ taskPath, providerId, modelId }) => {
-      if (collab.active && (!collab.connected || collab.role === 'viewer'))
-        throw new Error('관리자·편집자만 AI를 실행할 수 있습니다.');
+      if (collab.active && (!collab.connected || collab.role !== 'admin'))
+        throw new Error('관리자만 AI를 실행할 수 있습니다.');
       if (activeDevRun) throw new Error('이미 실행 중인 AI 작업이 있습니다.');
       if (!['codex-cli', 'claude-cli', 'gemini-cli'].includes(providerId))
         throw new Error('지원하지 않는 AI 제공자입니다.');
