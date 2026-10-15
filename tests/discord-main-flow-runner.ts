@@ -109,13 +109,34 @@ try {
     ),
     false,
   );
+  const testResult = await call('discord-approval:test');
+  assert.match(testResult.message, /테스트 알림을 보냈/);
+  const testCard = discordMock.messages.find((m) =>
+    m.body.content?.includes('테스트 알림'),
+  )!;
+  const testReplies = await discordMock.click(
+    'gj:test',
+    userId,
+    channelId,
+    testCard.id,
+  );
+  assert.match(testReplies[0].content!, /테스트 버튼을 정상/);
+  assert.equal((await call('requests:read', item.id)).item.status, 'pending');
   await wait(() =>
     discordMock.messages.some(
-      (m) => m.channelId === channelId && m.body.components?.length,
+      (m) =>
+        m.channelId === channelId &&
+        (m.body.components as any[])?.[0]?.components.some((b: any) =>
+          b.custom_id.includes(item.id),
+        ),
     ),
   );
   const card = discordMock.messages.find(
-    (m) => m.channelId === channelId && m.body.components?.length,
+    (m) =>
+      m.channelId === channelId &&
+      (m.body.components as any[])?.[0]?.components.some((b: any) =>
+        b.custom_id.includes(item.id),
+      ),
   )!;
   const components = card.body.components as any[];
   const denied = await discordMock.click(

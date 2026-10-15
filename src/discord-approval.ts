@@ -92,6 +92,7 @@ export class DiscordApprovalService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   private accepting = false;
+  private lastTestAt = 0;
   private reviews = new Map<string, Review>();
   private message = '디스코드가 연결되지 않았습니다.';
   private store: Store;
@@ -198,6 +199,57 @@ export class DiscordApprovalService {
       throw Error(this.message);
     }
     return this.status();
+  }
+  async sendTest() {
+    const saved = this.saved,
+      transport = this.transport;
+    if (!saved || !this.accepting || !transport?.ready())
+      throw Error('먼저 디스코드 설정을 저장하고 연결해주세요.');
+    this.authority(saved);
+    if (Date.now() - this.lastTestAt < 5000)
+      throw Error('테스트 알림을 방금 보냈습니다. 잠시 후 다시 시도해주세요.');
+    this.lastTestAt = Date.now();
+    let messageId: string;
+    try {
+      messageId = await transport.send(saved.settings.channelId, {
+        ...body(
+          `**Game Jam! 테스트 알림**\n프로젝트: ${saved.binding.projectName}\n이 메시지는 연결 확인용입니다. 실제 요청을 등록하거나 AI를 실행하지 않습니다.\n아래 버튼으로 디스코드 버튼 연결도 확인할 수 있습니다.`,
+        ),
+        components: [
+          { type: 1, components: [button('gj:test', '테스트 수신 확인', 1)] },
+        ],
+      });
+    } catch {
+      throw Error(
+        '테스트 알림을 보내지 못했습니다. 비공개 채널 접근과 메시지 보내기 권한·네트워크 상태를 확인해주세요.',
+      );
+    }
+    this.authority(saved);
+    if (saved.settings.threads) {
+      try {
+        const thread = await transport.thread(
+          saved.settings.channelId,
+          messageId,
+          'Game Jam! 테스트 알림',
+        );
+        this.authority(saved);
+        await transport.send(
+          thread,
+          body(
+            '테스트 스레드 전송도 정상입니다. 실제 구현 요청과 AI 실행은 생성하지 않았습니다.',
+          ),
+        );
+      } catch {
+        return {
+          message:
+            '채널에 테스트 알림을 보냈습니다. 스레드 전송은 실패했으니 공개 스레드 만들기·스레드 메시지 보내기 권한을 확인해주세요.',
+        };
+      }
+    }
+    return {
+      message:
+        '테스트 알림을 보냈습니다. 디스코드의 ‘테스트 수신 확인’ 버튼을 눌러 버튼 연결도 확인해주세요.',
+    };
   }
   async disconnect() {
     this.stop();
@@ -427,6 +479,14 @@ export class DiscordApprovalService {
     try {
       let context = this.authority(saved);
       const [, command, id, rawRevision] = action.customId.split(':');
+      if (command === 'test' && action.kind === 'button') {
+        await action.reply(
+          body(
+            '테스트 버튼을 정상적으로 받았습니다. 알림과 버튼 연결이 정상입니다. 실제 요청 등록과 AI 실행은 하지 않았습니다.',
+          ),
+        );
+        return;
+      }
       if (command === 'feedback' && action.kind === 'button') {
         const receipt = saved.notifications[id];
         if (

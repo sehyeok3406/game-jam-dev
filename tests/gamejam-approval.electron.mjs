@@ -87,6 +87,12 @@ async function run() {
     await wait(
       '!!document.querySelector(".discord-approval-settings [role=status]")',
     );
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.discord-settings-actions button')).find(e=>e.textContent.includes('테스트 알림')).disabled`,
+      ),
+      true,
+    );
     await setValue('[aria-label="디스코드 봇 토큰"]', 'ui-test-token');
     await setValue('[aria-label="디스코드 채널 ID"]', '1560275803198193725');
     await setValue(
@@ -109,6 +115,18 @@ async function run() {
       ),
       '',
     );
+    await click('.discord-settings-actions button', '테스트 알림');
+    await wait(
+      'document.querySelector(".discord-approval-settings").textContent.includes("테스트 알림을 보냈습니다")',
+    );
+    await setValue('[aria-label="디스코드 채널 ID"]', '123456789012345678');
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.discord-settings-actions button')).find(e=>e.textContent.includes('테스트 알림')).disabled`,
+      ),
+      true,
+    );
+    await setValue('[aria-label="디스코드 채널 ID"]', '1560275803198193725');
     await fs.mkdir('out/gamejam-approval', { recursive: true });
     await js('document.documentElement.dataset.theme="dark"');
     await pause(150);

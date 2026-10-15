@@ -336,6 +336,7 @@ export type UpdateState = {
 export type GameCanvasApi = {
   discordApproval?: {
     status(): Promise<import('./discord-approval-types').DiscordApprovalStatus>;
+    sendTest(): Promise<{ message: string }>;
     configure(
       input: import('./discord-approval-types').DiscordApprovalInput,
     ): Promise<import('./discord-approval-types').DiscordApprovalStatus>;

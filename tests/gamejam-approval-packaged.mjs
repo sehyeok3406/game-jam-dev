@@ -249,6 +249,10 @@ try {
   await admin.wait(
     `window.gameCanvas.listApprovals().then(r=>r.items.some(i=>i.id===${JSON.stringify(item.id)}))`,
   );
+  await assert.rejects(
+    admin.js('window.gameCanvas.discordApproval.sendTest()'),
+    /먼저.*저장.*연결/,
+  );
   await click(admin, 'header button', '요청함');
   await admin.wait('!!document.querySelector(".approval-list > button")');
   await click(admin, '.approval-list > button', '패키지 요청');

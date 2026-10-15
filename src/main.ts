@@ -2965,7 +2965,12 @@ const discordContext = (): DiscordApprovalContext | null => {
 
 const registerIpc = () => {
   // These handlers bypass generic diagnostics: token input must never be logged.
-  for (const operation of ['status', 'configure', 'disconnect'] as const) {
+  for (const operation of [
+    'status',
+    'configure',
+    'disconnect',
+    'test',
+  ] as const) {
     ipcMain.handle(`discord-approval:${operation}`, async (event, input) => {
       if (!isUpdateSender(event))
         throw Error('앱의 관리자 설정에서만 디스코드를 연결할 수 있습니다.');
@@ -2984,6 +2989,7 @@ const registerIpc = () => {
           if (updateRestartPrepared)
             throw Error('업데이트 재시작을 준비하고 있습니다.');
           if (operation === 'disconnect') return discordApproval!.disconnect();
+          if (operation === 'test') return discordApproval!.sendTest();
           return discordApproval!.configure(input);
         });
       discordSettingsQueue = action;

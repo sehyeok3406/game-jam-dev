@@ -15,6 +15,7 @@ let discordStatus: import('../src/discord-approval-types').DiscordApprovalStatus
     message: '디스코드가 연결되지 않았습니다.',
   };
 api.discordApproval = {
+  sendTest: async () => ({ message: '테스트 알림을 보냈습니다.' }),
   status: async () => structuredClone(discordStatus),
   configure: async ({ token, ...settings }) => {
     if (!token) throw Error('토큰을 입력해주세요.');

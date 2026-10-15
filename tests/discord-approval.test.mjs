@@ -463,6 +463,51 @@ test('a token that cannot be persisted never enables remote approvals', async (t
   assert.equal(f.starts(), 0);
 });
 
+test('test notifications and their button verify delivery without creating requests, runs or receipts', async (t) => {
+  const f = await setup(t);
+  const reply = await f.service.sendTest();
+  assert.match(reply.message, /테스트 알림을 보냈/);
+  const message = f.sent.find(
+    (m) => m.channel === channelId && m.body.content.includes('테스트 알림'),
+  );
+  assert.ok(message);
+  assert.equal(message.body.allowed_mentions.parse.length, 0);
+  assert.equal(message.body.components[0].components[0].custom_id, 'gj:test');
+  assert.equal(f.threads.length, 1);
+  const click = action('gj:test', { messageId: message.id });
+  await f.service.handle(click);
+  assert.match(messageText(click), /테스트 버튼을 정상/);
+  assert.equal((await f.owner.listApprovals()).items.length, 0);
+  assert.equal(f.starts(), 0);
+  assert.deepEqual(f.saved().notifications, {});
+  await assert.rejects(f.service.sendTest(), /잠시 후/);
+  const denied = action('gj:test', { userId: '123456789012345678' });
+  await f.service.handle(denied);
+  assert.match(messageText(denied), /관리자만/);
+});
+
+test('test notifications distinguish failed channel delivery, failed threads, and inactive binding', async (t) => {
+  const f = await setup(t);
+  f.transport.failThread = true;
+  const partial = await f.service.sendTest();
+  assert.match(partial.message, /채널에 테스트 알림.*스레드 전송은 실패/);
+  f.offline();
+  await assert.rejects(f.service.sendTest(), /프로젝트|권한/);
+  await f.service.disconnect();
+  await assert.rejects(f.service.sendTest(), /먼저/);
+  assert.equal(f.starts(), 0);
+  const g = await setup(t);
+  g.transport.send = async () => {
+    throw Error(settings.token);
+  };
+  await assert.rejects(
+    g.service.sendTest(),
+    (error) =>
+      /테스트 알림을 보내지 못/.test(error.message) &&
+      !error.message.includes(settings.token),
+  );
+});
+
 test('encrypted Discord store never falls back to plaintext and survives ordered writes', async (t) => {
   const directory = await fs.mkdtemp(
     path.join(os.tmpdir(), 'gamejam-discord-store-'),
