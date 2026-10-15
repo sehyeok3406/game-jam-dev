@@ -43,3 +43,10 @@
 
 게시 직후 GitHub 최신 릴리스는 v0.28.0이지만 v0.26.1 업데이트 응답과 Windows RELEASES 피드는 v0.27.0을 안내합니다. **배포 파일 게시·검증 완료, 자동 업데이트 피드 반영 대기**입니다. 즉시 적용하려면 [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.28.0/Game.Jam-0.28.0.Setup.exe)을 사용합니다. 별도 `out/collaboration-server/server.mjs`도 검증한 내장 번들과 같은 파일로 갱신했습니다. 현재 로컬 4318 서버는 응답하지 않아 운영 서버와 터널을 자동으로 시작하지 않았습니다. 앱·실제 사용하는 협업 서버를 켜고 업데이트한 뒤 요청함에서 봇 토큰을 입력합니다.
 
+
+## v0.28.1 테스트 알림 배포
+
+2026-10-16 [v0.28.1 정식 배포·공개 검증 완료](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.28.1). 소스 태그는 `c0d6535453040cdc3f3942badf4ffa2223e957cb`입니다. 타입·코드/배포 대상 서식 검사와 자동 테스트 428개, 모의 Discord·실제 협업 서버/앱 실행기 통합, 설정 UI와 실제 Windows 패키지 검사를 통과했습니다. 테스트 전송·버튼 수신·권한·연결 상태·설정 변경·재전송 제한·부분 실패를 확인하고 실제 요청·AI 실행·알림 기록을 만들지 않는 것을 검증했습니다. 실제 Discord 전송은 봇 토큰 입력 후 테스트 버튼으로 확인합니다.
+
+검증한 패키지로 `make --from-package`를 수행했으며 app.asar SHA-256 `985219c34583fa8507fcb645ec6768b148f539cf3d8d352fa904c0b70a5ae2d5`가 make 전후와 nupkg 내부에서 일치합니다. 공개 파일 3개의 GitHub 해시·크기·익명 다운로드 접근(206)과 RELEASES의 패키지 이름·SHA-1·크기·공개 원문 일치를 확인했습니다. v0.28.0 업데이트 응답과 Windows RELEASES 피드가 v0.28.1을 안내하므로 **자동 업데이트 피드 반영도 확인했습니다.** 실제 설치된 앱의 다운로드·재시작 완료는 별도 실사용 확인 대상입니다. [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.28.1/Game.Jam-0.28.1.Setup.exe)
+
