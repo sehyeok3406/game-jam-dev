@@ -10,10 +10,12 @@ export function DiscordApprovalSettings({
   provider,
   model,
   connected,
+  defaultOpen = false,
 }: {
   provider: AiProviderId;
   model: string;
   connected: boolean;
+  defaultOpen?: boolean;
 }) {
   const api = window.gameCanvas.discordApproval;
   const [status, setStatus] = useState<DiscordApprovalStatus | null>(null);
@@ -91,6 +93,7 @@ export function DiscordApprovalSettings({
   };
   return (
     <details
+      open={defaultOpen}
       className="discord-approval-settings"
       data-ui-id="discord-approval-settings"
     >

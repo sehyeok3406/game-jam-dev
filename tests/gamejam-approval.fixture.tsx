@@ -66,6 +66,10 @@ const qa = {
   submits: 0,
   creates: 0,
   runs: 0,
+  local(local: boolean) {
+    state = { ...state, active: !local, connected: !local };
+    publish();
+  },
   role(role: 'admin' | 'editor' | 'viewer') {
     state = { ...state, role, memberId: role === 'admin' ? 'admin' : 'team' };
     publish();

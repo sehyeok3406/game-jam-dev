@@ -6315,7 +6315,15 @@ kbd {
     overflow: visible;
   }
 }
-/* Local administrator configuration, kept inside the request inbox. */
+/* Local administrator configuration, shared by the inbox and direct dialog. */
+.discord-approval-dialog {
+  width: min(680px, 94vw);
+  overflow: auto;
+}
+.discord-approval-dialog .discord-approval-settings {
+  max-height: none;
+  overflow: visible;
+}
 .discord-approval-settings {
   flex-shrink: 0;
   padding: 12px 18px;
@@ -6363,4 +6371,5 @@ kbd {
   grid-column: 1 / -1;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }

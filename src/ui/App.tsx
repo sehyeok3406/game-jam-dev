@@ -226,6 +226,7 @@ import {
   type GamejamApproval,
 } from '../gamejam-approval';
 import { GamejamRequestInbox } from './GamejamRequestInbox';
+import { DiscordApprovalDialog } from './DiscordApprovalDialog';
 import {
   clearGamejamDraft,
   gamejamDraftScope,
@@ -1982,6 +1983,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const snapLatest = useRef<{ id: string; x: number; y: number } | null>(null);
   const [aiRequest, setAiRequest] = useState<GamejamRequest | null>(null);
   const [approvalInboxOpen, setApprovalInboxOpen] = useState(false);
+  const [discordApprovalOpen, setDiscordApprovalOpen] = useState(false);
   const [editingApproval, setEditingApproval] = useState<{
     id: string;
     revision: number;
@@ -2482,9 +2484,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       current?.project === noticeProject ? current : null,
     );
     setApprovalInboxOpen(false);
+    setDiscordApprovalOpen(false);
     setEditingApproval(null);
     setApprovalCopyFrom(undefined);
   }, [noticeProject]);
+  useEffect(() => {
+    if (collaboration.active && collaboration.role !== 'admin')
+      setDiscordApprovalOpen(false);
+  }, [collaboration.active, collaboration.role]);
   const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
   const documentChoiceForUpdate = (baseDir: string) => {
     const group = organizedSets.find((set) => set.baseDir === baseDir);
@@ -6785,6 +6792,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   });
 
   const legacyModal = !!(
+    discordApprovalOpen ||
     approvalInboxOpen ||
     updateOpen ||
     importTarget ||
@@ -6879,7 +6887,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       reasons.push('AI 작업이 진행 중입니다. 완료하거나 중지해주세요.');
     if (loading || editBusy || importingFiles || restoring)
       reasons.push('파일 처리·저장·동기화가 진행 중입니다. 잠시 기다려주세요.');
-    if (aiRequest || sectionRename || importTarget || historyConfirm)
+    if (
+      discordApprovalOpen ||
+      aiRequest ||
+      sectionRename ||
+      importTarget ||
+      historyConfirm
+    )
       reasons.push(
         '열려 있는 작업·편집 대화상자를 먼저 완료하거나 취소해주세요.',
       );
@@ -7836,6 +7850,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           >
             <RefreshCw size={16} /> 앱 업데이트
           </button>
+          {(!collaboration.active || collaboration.role === 'admin') && (
+            <button
+              onClick={() => {
+                setSettingsOpen(false);
+                setDiscordApprovalOpen(true);
+              }}
+            >
+              디스코드 알림 · 테스트
+            </button>
+          )}
           <button onClick={() => void loadProject(false)}>
             <RefreshCw size={16} /> 캔버스 새로고침
           </button>
@@ -8244,6 +8268,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 {collaboration.pendingRequests
                   ? ` (${collaboration.pendingRequests})`
                   : ''}
+              </button>
+            )}
+            {(!collaboration.active || collaboration.role === 'admin') && (
+              <button
+                type="button"
+                aria-label="디스코드 알림 설정 및 테스트"
+                onClick={() => setDiscordApprovalOpen(true)}
+                title="디스코드 연결 설정 · 테스트 알림 보내기"
+              >
+                디스코드 알림
               </button>
             )}
             <span className="toolbar-divider" />
@@ -10606,6 +10640,21 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </div>
       )}
 
+      {discordApprovalOpen &&
+        (!collaboration.active || collaboration.role === 'admin') && (
+          <DiscordApprovalDialog
+            key={`${noticeProject}:${collaboration.memberId}`}
+            collaboration={collaboration}
+            provider={selectedAiProvider}
+            model={selectedAiModel}
+            close={() => setDiscordApprovalOpen(false)}
+            openCollaboration={() => {
+              setDiscordApprovalOpen(false);
+              setCollaborationTab('create');
+              setCollaborationOpen(true);
+            }}
+          />
+        )}
       {approvalInboxOpen && !aiRequest && collaboration.active && (
         <GamejamRequestInbox
           key={`${noticeProject}:${collaboration.memberId}`}

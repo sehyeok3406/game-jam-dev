@@ -53,6 +53,39 @@ async function run() {
     await win.loadURL(process.env.QA_URL);
     await wait('!!document.querySelector(".document-card")');
     await js('localStorage.clear()');
+    assert.equal(
+      await js(
+        `!!document.querySelector('[aria-label="디스코드 알림 설정 및 테스트"]')`,
+      ),
+      false,
+    );
+    await js('qaApproval.role("admin")');
+    await click('header button', '디스코드 알림');
+    await wait(
+      '!!document.querySelector(".discord-approval-dialog details[open]")',
+    );
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.discord-settings-actions button')).find(e=>e.textContent.includes('테스트 알림')).getBoundingClientRect().height > 0`,
+      ),
+      true,
+    );
+    await js(
+      `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+    );
+    await js('qaApproval.local(true)');
+    await click('header button', '디스코드 알림');
+    await wait(
+      'document.querySelector(".discord-approval-dialog")?.textContent.includes("함께 작업 연결하기")',
+    );
+    assert.equal(
+      await js('!!document.querySelector(".discord-settings-actions")'),
+      false,
+    );
+    await js(
+      `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+    );
+    await js('qaApproval.local(false);qaApproval.role("editor")');
     await js(`document.querySelector('[aria-label="gamejam!"]').click()`);
     await wait('!!document.querySelector(".ai-request-dialog")');
     await click('.gamejam-request-history button', '최근 작업 불러오기');
@@ -83,7 +116,8 @@ async function run() {
     await wait('!!document.querySelector(".approval-list > button")');
     await click('.approval-list > button', '팀원 수정 완료');
     await wait('!!document.querySelector(".approval-admin")');
-    await click('.discord-approval-settings summary', '디스코드');
+    await js(`document.querySelector('[aria-label="요청함 닫기"]').click()`);
+    await click('header button', '디스코드 알림');
     await wait(
       '!!document.querySelector(".discord-approval-settings [role=status]")',
     );
@@ -119,6 +153,7 @@ async function run() {
     await wait(
       'document.querySelector(".discord-approval-settings").textContent.includes("테스트 알림을 보냈습니다")',
     );
+    assert.equal(await js('qaApproval.runs'), 0);
     await setValue('[aria-label="디스코드 채널 ID"]', '123456789012345678');
     assert.equal(
       await js(
@@ -145,7 +180,19 @@ async function run() {
     await wait(
       '!document.querySelector(".discord-settings-actions").textContent.includes("연결 해제")',
     );
-    await click('.discord-approval-settings summary', '디스코드');
+    await js(
+      `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+    );
+    await js(`document.querySelector('[title="설정 및 도구"]').click()`);
+    await click('.canvas-settings button', '디스코드 알림');
+    await wait(
+      '!!document.querySelector(".discord-approval-dialog details[open]")',
+    );
+    await js(
+      `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+    );
+    await click('header button', '요청함');
+    await click('.approval-list > button', '팀원 수정 완료');
     await setValue('.approval-admin textarea', '조작 방법을 더 써주세요');
     await click('.approval-admin button', '보완 요청');
     await wait(

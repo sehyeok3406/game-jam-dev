@@ -215,6 +215,16 @@ const click = async (client, selector, text) => {
 try {
   await startServer();
   const admin = await boot('approval-admin');
+  await admin.wait(
+    '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
+  );
+  await click(admin, 'header button', '디스코드 알림');
+  await admin.wait(
+    'document.querySelector(".discord-approval-dialog")?.textContent.includes("함께 작업 연결하기")',
+  );
+  await admin.js(
+    `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+  );
   const source = await call(admin, 'createIdea', { x: 100, y: 100 });
   const shared = await call(admin, 'createCollaboration', {
     serverUrl,
@@ -222,12 +232,31 @@ try {
     nickname: '패키지 관리자',
   });
   const team = await boot('approval-team');
+  await admin.wait(
+    '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
+  );
+  await click(admin, 'header button', '디스코드 알림');
+  await admin.wait(
+    '!!document.querySelector(".discord-approval-dialog details[open]")',
+  );
+  assert.equal(
+    await admin.js(
+      `Array.from(document.querySelectorAll('.discord-settings-actions button')).find(e=>e.textContent.includes('테스트 알림')).disabled`,
+    ),
+    true,
+  );
+  await admin.js(
+    `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+  );
   const joined = await call(team, 'joinCollaboration', {
     serverUrl,
     code: shared.inviteCode,
     nickname: '패키지 팀원',
   });
   assert.equal(joined.role, 'editor');
+  await team.wait(
+    '!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
+  );
   const request = {
     canvasId: 'default',
     organize: false,
