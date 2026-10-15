@@ -549,6 +549,7 @@ export async function createCollaborationServer(options: Options) {
       documentBundles: true,
       documentOutputFormats: true,
       drawingsVersion: 1,
+      drawingEraseVersion: 1,
       gameUiVersion: 2,
       documentStatusesVersion: 1,
       filePropertiesVersion: 1,
@@ -986,6 +987,7 @@ export async function createCollaborationServer(options: Options) {
           documentBundles: true,
           documentOutputFormats: true,
           drawingsVersion: 1,
+          drawingEraseVersion: 1,
           gameUiVersion: 2,
           documentStatusesVersion: 1,
           filePropertiesVersion: 1,
@@ -1124,6 +1126,23 @@ export async function createCollaborationServer(options: Options) {
         throw new ApiError('경로를 찾을 수 없습니다.', 404);
       }
       const input = await body(request);
+      const assertEraseSupport = (files: Snapshot) => {
+        if (input.drawingEraseVersion === 1) return;
+        if (
+          Object.entries(files).some(
+            ([p, raw]) => isDrawingPath(p) && JSON.parse(raw).version === 2,
+          )
+        )
+          throw new ApiError(
+            '부분 지우기가 있는 프로젝트입니다. 앱을 업데이트해주세요.',
+            409,
+          );
+      };
+      if (match) {
+        const existing = projects.get(match[1]);
+        if (existing) assertEraseSupport(existing.files);
+      }
+
       if (url.pathname === '/projects') {
         if (projects.size >= 20)
           throw new ApiError(
@@ -1131,6 +1150,7 @@ export async function createCollaborationServer(options: Options) {
             413,
           );
         checkSnapshot(input.files);
+        assertEraseSupport(input.files);
         const code = invite(),
           token = secret(),
           recoveryKey = secret(),
@@ -1187,6 +1207,7 @@ export async function createCollaborationServer(options: Options) {
         const result = await queue(found.id, async () => {
           const project = structuredClone(projects.get(found.id)!);
           assertActive(project);
+          assertEraseSupport(project.files);
           if (
             project.inviteExpiresAt < Date.now() ||
             !same(code, project.inviteHash)
@@ -1222,6 +1243,7 @@ export async function createCollaborationServer(options: Options) {
             !same(String(input.recoveryKey ?? ''), source.recoveryHash)
           )
             throw new ApiError('복구 정보가 올바르지 않습니다.', 403);
+          assertEraseSupport(source.files);
           const project = structuredClone(source),
             owner = project.members.find((member) => member.owner)!;
           const token = secret(),
@@ -1300,6 +1322,7 @@ export async function createCollaborationServer(options: Options) {
           throw new ApiError('지원하지 않는 휴지통 작업입니다.', 404);
         }
         assertActive(project);
+        assertEraseSupport(project.files);
         if (
           action !== 'state' &&
           (project.lifecycle?.version ?? 0) > 0 &&
@@ -1662,6 +1685,7 @@ export async function createCollaborationServer(options: Options) {
               throw new ApiError('동기화 파일 내용이 올바르지 않습니다.', 400);
           }
           checkSnapshot(nextFiles);
+          assertEraseSupport(nextFiles);
           assertAiMutation(project.job?.fileLock, project.files, nextFiles);
           assertBases(
             project,
@@ -1741,6 +1765,7 @@ export async function createCollaborationServer(options: Options) {
             command.channel,
             command.input,
           );
+          assertEraseSupport(reduced.files);
           if (project.job && command.channel === 'tasks:create')
             throw new ApiError('이미 AI 작업이 진행 중입니다.');
           assertAiMutation(

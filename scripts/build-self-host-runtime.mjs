@@ -29,6 +29,10 @@ export async function buildSelfHostRuntime() {
     },
   });
   await fs.copyFile(process.execPath, path.join(directory, 'node.exe'));
+  await fs.copyFile(
+    path.join(root, 'assets/drawing-third-party-notices.txt'),
+    path.join(directory, 'drawing-third-party-notices.txt'),
+  );
   // Include the runtime license with redistribution.
   const license = path.join(path.dirname(process.execPath), 'LICENSE');
   try {

@@ -7,6 +7,9 @@ export type ShapeKind =
   | 'line'
   | 'arrow';
 export type DrawingTool = ShapeKind | 'pen' | 'highlighter' | 'eraser';
+export type EraserMode = 'stroke' | 'partial';
+export type DrawingPolygon = [number, number][][];
+export type ErasureRegion = { id: string; polygons: DrawingPolygon[] };
 export type DrawingTransform = {
   x: number;
   y: number;
@@ -48,11 +51,12 @@ export type StrokeObject = DrawingBase & {
     points: [number, number, number][];
     pressureEnabled: boolean;
     rendererVersion: 1;
+    erasures?: ErasureRegion[];
   };
 };
 export type DrawingObject = ShapeObject | StrokeObject;
 export type DrawingFile = {
-  version: 1;
+  version: 1 | 2;
   canvasId: string;
   objects: DrawingObject[];
 };
@@ -63,6 +67,7 @@ export type DrawingChanges = {
   signatures: Record<string, string>;
 };
 export type DrawingDelta = {
+  version?: 1 | 2;
   canvasId: string;
   upsert: DrawingObject[];
   removed: string[];
@@ -82,11 +87,20 @@ export type DrawingCommand = {
   scope?: string;
   requestId?: string;
   canvasId: string;
-  action: 'create' | 'patch' | 'delete' | 'move';
+  action: 'create' | 'patch' | 'delete' | 'move' | 'erase';
+  erasures?: DrawingErasure[];
   objects?: DrawingObject[];
   patches?: DrawingPatch[];
   targets?: { id: string; generation: string }[];
   targetCanvasId?: string;
+};
+export type DrawingErasure = {
+  id: string;
+  generation: string;
+  expectedTransform: DrawingTransform;
+  expectedGeometry: StrokeObject['geometry'];
+  expectedStrokeWidth: number;
+  region: ErasureRegion;
 };
 export const SHAPE_NAMES: Record<ShapeKind, string> = {
   rectangle: '사각형',
