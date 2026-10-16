@@ -237,6 +237,7 @@ import {
   type GamejamApproval,
 } from '../gamejam-approval';
 import { GamejamRequestInbox } from './GamejamRequestInbox';
+import { RequestDeletionNotice } from './RequestDeletionNotice';
 import { DiscordApprovalDialog } from './DiscordApprovalDialog';
 import {
   clearGamejamDraft,
@@ -2011,6 +2012,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const snapLatest = useRef<{ id: string; x: number; y: number } | null>(null);
   const [aiRequest, setAiRequest] = useState<GamejamRequest | null>(null);
   const [approvalInboxOpen, setApprovalInboxOpen] = useState(false);
+  const [approvalInboxFocusId, setApprovalInboxFocusId] = useState<string>();
   const [discordApprovalOpen, setDiscordApprovalOpen] = useState(false);
   const [editingApproval, setEditingApproval] = useState<{
     id: string;
@@ -2513,6 +2515,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       current?.project === noticeProject ? current : null,
     );
     setApprovalInboxOpen(false);
+    setApprovalInboxFocusId(undefined);
     setDiscordApprovalOpen(false);
     setEditingApproval(null);
     setApprovalCopyFrom(undefined);
@@ -10771,7 +10774,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         )}
       {approvalInboxOpen && !aiRequest && collaboration.active && (
         <GamejamRequestInbox
-          key={`${noticeProject}:${collaboration.memberId}`}
+          key={`${noticeProject}:${collaboration.memberId}:${approvalInboxFocusId ?? ''}`}
+          initialRequestId={approvalInboxFocusId}
           collaboration={collaboration}
           provider={selectedAiProvider}
           model={selectedAiModel}
@@ -10781,10 +10785,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             setCodexStatus(null);
           }}
           setModel={setSelectedAiModel}
-          close={() => setApprovalInboxOpen(false)}
+          close={() => {
+            setApprovalInboxOpen(false);
+            setApprovalInboxFocusId(undefined);
+          }}
           edit={editApprovalRequest}
           run={startApprovalRequest}
           openResult={focusResultPath}
+        />
+      )}
+      {!home && !legacyModal && (
+        <RequestDeletionNotice
+          collaboration={collaboration}
+          open={(id) => {
+            if (aiRequest) return;
+            setApprovalInboxFocusId(id);
+            setApprovalInboxOpen(true);
+          }}
         />
       )}
       {aiRequest && (

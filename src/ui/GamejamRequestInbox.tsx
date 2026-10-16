@@ -3,6 +3,7 @@ import { X, RefreshCw, Inbox } from 'lucide-react';
 import {
   APPROVAL_STATUS_NAMES,
   approvalEditable,
+  approvalDeletable,
   type ApprovalDetail,
   type ApprovalStatus,
   type GamejamApproval,
@@ -11,8 +12,13 @@ import type { AiProviderId, CollaborationState } from '../shared';
 import { AI_PROVIDERS, aiProvider as getAiProvider } from '../ai-providers';
 import { GamejamReview } from './GamejamWizard';
 import { DiscordApprovalSettings } from './DiscordApprovalSettings';
+import {
+  deletionNoticeScope,
+  markDeletionRead,
+} from '../request-deletion-notices';
 
 type Props = {
+  initialRequestId?: string;
   collaboration: CollaborationState;
   provider: AiProviderId;
   model: string;
@@ -27,6 +33,7 @@ type Props = {
 
 export function GamejamRequestInbox({
   collaboration: c,
+  initialRequestId,
   provider,
   model,
   aiBusy,
@@ -44,6 +51,8 @@ export function GamejamRequestInbox({
   const [detail, setDetail] = useState<ApprovalDetail | null>(null);
   const [changed, setChanged] = useState(false);
   const [message, setMessage] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -108,7 +117,10 @@ export function GamejamRequestInbox({
       const value = await window.gameCanvas.readApproval(id);
       if (!mounted.current || version !== readVersion.current) return;
       setDetail(value);
+      markDeletionRead(deletionNoticeScope(c), value.item);
       setChanged(false);
+      setDeleting(false);
+      setDeleteReason('');
       setMessage('');
       operation.current = null;
     } catch (e) {
@@ -117,7 +129,14 @@ export function GamejamRequestInbox({
       if (mounted.current && version === readVersion.current) setBusy(false);
     }
   };
-  const perform = async (action: 'feedback' | 'cancel' | 'start') => {
+  useEffect(() => {
+    if (!initialRequestId) return;
+    setFilter('deleted');
+    void read(initialRequestId);
+  }, [initialRequestId]);
+  const perform = async (
+    action: 'feedback' | 'cancel' | 'start' | 'delete',
+  ) => {
     if (!detail || busy) return;
     setBusy(true);
     setError('');
@@ -125,7 +144,7 @@ export function GamejamRequestInbox({
       action,
       detail.item.id,
       detail.item.revision,
-      message,
+      action === 'delete' ? deleteReason.trim() : message,
       detail.reviewToken,
       provider,
       model,
@@ -141,7 +160,7 @@ export function GamejamRequestInbox({
           commandId: operation.current.id,
           id: detail.item.id,
           revision: detail.item.revision,
-          message,
+          message: action === 'delete' ? deleteReason.trim() : message,
         });
         if (mounted.current) {
           await read(detail.item.id);
@@ -165,6 +184,13 @@ export function GamejamRequestInbox({
     !!item &&
     item.authorId === c.memberId &&
     approvalEditable(item.status);
+  const visibleItems = items.filter(
+    (r) =>
+      (!mine || r.authorId === c.memberId) &&
+      (filter === 'all'
+        ? !admin || r.status !== 'deleted'
+        : r.status === filter),
+  );
   return (
     <div className="dialog-backdrop" data-ui-id="gamejam-requests">
       <section
@@ -175,7 +201,10 @@ export function GamejamRequestInbox({
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.stopPropagation();
-            if (!busy) close();
+            if (!busy) {
+              if (deleting) setDeleting(false);
+              else close();
+            }
           }
         }}
       >
@@ -238,37 +267,24 @@ export function GamejamRequestInbox({
         <div className="approval-columns">
           <nav aria-label="프로젝트 요청 목록" className="approval-list">
             {loading && <p role="status">요청 불러오는 중…</p>}
-            {!loading &&
-              !items.some(
-                (r) =>
-                  (!mine || r.authorId === c.memberId) &&
-                  (filter === 'all' || r.status === filter),
-              ) && <p>표시할 요청이 없습니다.</p>}
-            {items
-              .filter(
-                (r) =>
-                  (!mine || r.authorId === c.memberId) &&
-                  (filter === 'all' || r.status === filter),
-              )
-              .map((r) => (
-                <button
-                  key={r.id}
-                  disabled={busy}
-                  aria-current={item?.id === r.id ? 'true' : undefined}
-                  onClick={() => void read(r.id)}
-                >
-                  <strong>
-                    {r.request.resultName ||
-                      (r.request.organize
-                        ? '문서 정리 요청'
-                        : 'HTML 구현 요청')}
-                  </strong>
-                  <span>
-                    {APPROVAL_STATUS_NAMES[r.status]} · {r.authorName}
-                  </span>
-                  <small>{new Date(r.updatedAt).toLocaleString('ko-KR')}</small>
-                </button>
-              ))}
+            {!loading && !visibleItems.length && <p>표시할 요청이 없습니다.</p>}
+            {visibleItems.map((r) => (
+              <button
+                key={r.id}
+                disabled={busy}
+                aria-current={item?.id === r.id ? 'true' : undefined}
+                onClick={() => void read(r.id)}
+              >
+                <strong>
+                  {r.request.resultName ||
+                    (r.request.organize ? '문서 정리 요청' : 'HTML 구현 요청')}
+                </strong>
+                <span>
+                  {APPROVAL_STATUS_NAMES[r.status]} · {r.authorName}
+                </span>
+                <small>{new Date(r.updatedAt).toLocaleString('ko-KR')}</small>
+              </button>
+            ))}
           </nav>
           <article className="approval-detail">
             {!item || !detail ? (
@@ -298,6 +314,19 @@ export function GamejamRequestInbox({
                 {item.feedback && (
                   <blockquote>보완 의견: {item.feedback}</blockquote>
                 )}
+                {item.deletion && (
+                  <section
+                    className="approval-deletion-record"
+                    aria-label="요청 삭제 기록"
+                  >
+                    <strong>관리자가 삭제한 요청입니다.</strong>
+                    <p>삭제 이유: {item.deletion.reason}</p>
+                    <small>
+                      {item.deletion.actorName} ·{' '}
+                      {new Date(item.deletion.at).toLocaleString('ko-KR')}
+                    </small>
+                  </section>
+                )}
                 {detail.reviewError && (
                   <p role="alert" className="approval-error">
                     {detail.reviewError}
@@ -313,7 +342,8 @@ export function GamejamRequestInbox({
                   busy
                   navigate={() => {}}
                 />
-                {item.status === 'completed' && (
+                {(item.status === 'completed' ||
+                  item.deletion?.previousStatus === 'completed') && (
                   <div className="approval-results">
                     {item.outputs?.map((path) => (
                       <button
@@ -329,7 +359,31 @@ export function GamejamRequestInbox({
                   </div>
                 )}
                 <div className="approval-actions">
-                  {canEdit && (
+                  {admin && item.status !== 'deleted' && (
+                    <button
+                      disabled={
+                        !writable ||
+                        busy ||
+                        changed ||
+                        !approvalDeletable(item.status) ||
+                        c.requestDeletionVersion !== 1
+                      }
+                      title={
+                        c.requestDeletionVersion !== 1
+                          ? '요청 삭제를 사용하려면 협업 서버를 업데이트해주세요.'
+                          : !approvalDeletable(item.status)
+                            ? '예약 취소 또는 실행 중지 후 삭제할 수 있습니다.'
+                            : undefined
+                      }
+                      onClick={() => {
+                        setDeleting(true);
+                        setDeleteReason('');
+                      }}
+                    >
+                      요청 삭제
+                    </button>
+                  )}
+                  {canEdit && !deleting && (
                     <>
                       <button
                         disabled={busy || changed}
@@ -345,13 +399,59 @@ export function GamejamRequestInbox({
                       </button>
                     </>
                   )}
-                  {writable && !approvalEditable(item.status) && (
+                  {writable && !deleting && !approvalEditable(item.status) && (
                     <button disabled={busy} onClick={() => edit(item, true)}>
                       새 요청으로 복사
                     </button>
                   )}
                 </div>
-                {admin && approvalEditable(item.status) && (
+                {deleting && (
+                  <section
+                    className="approval-delete-confirm"
+                    aria-label="요청 삭제 확인"
+                  >
+                    <h4>요청을 삭제할까요?</h4>
+                    <p>
+                      삭제 이유는 작성자에게 표시됩니다. 요청 기록과 결과 파일은
+                      유지됩니다.
+                    </p>
+                    <label>
+                      삭제 이유
+                      <textarea
+                        autoFocus
+                        aria-label="삭제 이유"
+                        value={deleteReason}
+                        maxLength={1000}
+                        disabled={busy}
+                        onChange={(e) => setDeleteReason(e.target.value)}
+                      />
+                    </label>
+                    <small>{deleteReason.length} / 1000</small>
+                    <div className="approval-actions">
+                      <button
+                        disabled={busy}
+                        onClick={() => setDeleting(false)}
+                      >
+                        돌아가기
+                      </button>
+                      <button
+                        className="button-danger"
+                        disabled={
+                          !writable ||
+                          busy ||
+                          changed ||
+                          !deleteReason.trim() ||
+                          !approvalDeletable(item.status) ||
+                          c.requestDeletionVersion !== 1
+                        }
+                        onClick={() => void perform('delete')}
+                      >
+                        이유 남기고 삭제
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {admin && !deleting && approvalEditable(item.status) && (
                   <div className="approval-admin">
                     <label>
                       보완 의견
@@ -457,6 +557,7 @@ export function GamejamRequestInbox({
                             'requests-update': '요청 수정',
                             'requests-cancel': '요청 취소',
                             'requests-feedback': '보완 요청',
+                            'requests-delete': '요청 삭제',
                             approved: '승인 및 구현 시작',
                             completed: '완료',
                             failed: '실패',

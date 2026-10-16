@@ -239,6 +239,46 @@ async function setup(t) {
   };
 }
 
+test('Discord deletion replaces approval buttons, records a safe reason and rejects an already-open review', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  const review = await f.review(item);
+  const approve = buttons(review).find((b) =>
+    b.custom_id.startsWith('gj:approve:'),
+  );
+  const reason = '@everyone ' + '삭제 이유 '.repeat(150);
+  await f.owner.mutateApproval('delete', {
+    commandId: randomUUID(),
+    id: item.id,
+    revision: 1,
+    message: reason,
+  });
+  await until(
+    () => f.updated.some((m) => m.body.content.includes('삭제 이유')),
+    f.service,
+  );
+  const update = f.updated.at(-1).body;
+  assert.match(update.content, /삭제됨/);
+  assert.ok(update.content.length <= 2000);
+  assert.deepEqual(update.allowed_mentions, { parse: [] });
+  assert.deepEqual(update.components, []);
+  const stale = action(approve.custom_id);
+  await f.service.handle(stale);
+  assert.equal(f.starts(), 0);
+  assert.match(messageText(stale), /변경/);
+  const late = await f.submit();
+  await f.owner.mutateApproval('delete', {
+    commandId: randomUUID(),
+    id: late.id,
+    revision: 1,
+    message: '첫 알림 전에 삭제',
+  });
+  await until(
+    () => f.sent.some((m) => m.body.content.includes('첫 알림 전에 삭제')),
+    f.service,
+  );
+});
+
 test('Discord review uses real server approval, rejects unauthorized clicks, and starts only once', async (t) => {
   const f = await setup(t),
     item = await f.submit();

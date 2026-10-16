@@ -378,12 +378,39 @@ try {
     'out/gamejam-approval/packaged-team-completed.png',
     Buffer.from(png.data, 'base64'),
   );
+  await team.js(`document.querySelector('[aria-label="요청함 닫기"]').click()`);
+  await click(admin, 'header button', '요청함');
+  await click(admin, '.approval-list > button', '패키지 요청 수정');
+  await click(admin, '.approval-actions button', '요청 삭제');
+  assert.equal(
+    await admin.js(
+      `Array.from(document.querySelectorAll('.approval-delete-confirm button')).find(e=>e.textContent.includes('이유 남기고')).disabled`,
+    ),
+    true,
+  );
+  await admin.js(
+    `{const e=document.querySelector('[aria-label="삭제 이유"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'완료된 요청을 정리합니다. 결과는 유지합니다.');e.dispatchEvent(new Event('input',{bubbles:true}));}`,
+  );
+  await click(admin, '.approval-delete-confirm button', '이유 남기고 삭제');
+  await admin.wait('!!document.querySelector(".approval-deletion-record")');
+  await team.wait('!!document.querySelector(".request-deletion-notice")');
+  assert.match(
+    (await call(team, 'readPreview', completed.outputs[0])).content,
+    /패키지 승인 검증 완료/,
+  );
   await stopChild(server);
   await startServer();
   assert.equal(
     (await call(admin, 'readApproval', item.id)).item.status,
-    'completed',
+    'deleted',
   );
+  await team.wait('window.gameCanvas.getCollaboration().then(c=>c.connected)');
+  await click(team, '.request-deletion-notice button', '삭제 이유 확인');
+  await team.wait(
+    'document.querySelector(".approval-deletion-record")?.textContent.includes("완료된 요청을 정리")',
+  );
+  await team.js(`document.querySelector('[aria-label="요청함 닫기"]').click()`);
+  await team.wait('!document.querySelector(".request-deletion-notice")');
   console.log(
     'PASS: final Windows package and bundled Node/server verify independent admin/team IPC, request edit/feedback, stale review, approval via real UI, isolated mock CLI, verified HTML publication, role enforcement and restart persistence.',
   );

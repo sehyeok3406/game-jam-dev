@@ -341,6 +341,15 @@ test('approvals can be queued during another run and become immutable before exe
   assert.equal(repeat.taskId, b.taskId);
   assert.equal((await owner.readApproval(pending.id)).item.status, 'queued');
   await assert.rejects(
+    owner.mutateApproval('delete', {
+      commandId: crypto.randomUUID(),
+      id: pending.id,
+      revision: (await owner.readApproval(pending.id)).item.revision,
+      message: '예약 삭제 시도',
+    }),
+    /취소·중지/,
+  );
+  await assert.rejects(
     owner.mutateApproval('update', {
       id: pending.id,
       revision: (await owner.readApproval(pending.id)).item.revision,
@@ -351,6 +360,14 @@ test('approvals can be queued during another run and become immutable before exe
   );
   await owner.cancelQueuedTask(b.taskId);
   assert.equal((await owner.readApproval(pending.id)).item.status, 'stopped');
+  const stopped = (await owner.readApproval(pending.id)).item;
+  const removed = await owner.mutateApproval('delete', {
+    commandId: crypto.randomUUID(),
+    id: pending.id,
+    revision: stopped.revision,
+    message: '취소한 예약 정리',
+  });
+  assert.equal(removed.status, 'deleted');
   await owner.finishAi('failed');
 });
 

@@ -324,7 +324,12 @@ export class DiscordApprovalService {
       for (const item of list.items) {
         this.authority(saved);
         let receipt = saved.notifications[item.id];
-        if (!receipt && !approvalEditable(item.status)) continue;
+        if (
+          !receipt &&
+          !approvalEditable(item.status) &&
+          item.status !== 'deleted'
+        )
+          continue;
         const signature = JSON.stringify([
           item.revision,
           item.status,
@@ -332,10 +337,13 @@ export class DiscordApprovalService {
           item.runId,
           item.outputs,
           item.error,
+          item.deletion,
         ]);
         const payload: DiscordMessage = {
           ...body(
-            `**${saved.binding.projectName} · ${item.request.resultName || 'Game Jam! 요청'}**\n요청자: ${item.authorName} · 수정 버전 ${item.revision}\n상태: **${APPROVAL_STATUS_NAMES[item.status]}**\n${item.feedback ? `보완 의견: ${item.feedback.slice(0, 500)}\n` : ''}${item.outputs?.length ? `결과: ${item.outputs.join(', ').slice(0, 500)}\n` : ''}${item.error ? `오류: ${item.error.slice(0, 400)}\n` : ''}승인 시 연결된 관리자 PC에서 실행합니다.`,
+            item.status === 'deleted' && item.deletion
+              ? `**${saved.binding.projectName.slice(0, 120)} · ${(item.request.resultName || 'Game Jam! 요청').slice(0, 120)}**\n요청자: ${item.authorName.slice(0, 80)} · 수정 버전 ${item.revision}\n상태: **삭제됨**\n삭제 관리자: ${item.deletion.actorName.slice(0, 80)}\n삭제 이유: ${item.deletion.reason}\n요청 기록과 결과 파일은 앱에서 확인할 수 있습니다.`
+              : `**${saved.binding.projectName} · ${item.request.resultName || 'Game Jam! 요청'}**\n요청자: ${item.authorName} · 수정 버전 ${item.revision}\n상태: **${APPROVAL_STATUS_NAMES[item.status]}**\n${item.feedback ? `보완 의견: ${item.feedback.slice(0, 500)}\n` : ''}${item.outputs?.length ? `결과: ${item.outputs.join(', ').slice(0, 500)}\n` : ''}${item.error ? `오류: ${item.error.slice(0, 400)}\n` : ''}승인 시 연결된 관리자 PC에서 실행합니다.`,
           ),
           components: approvalEditable(item.status)
             ? [
@@ -402,7 +410,9 @@ export class DiscordApprovalService {
             await transport.send(
               receipt.threadId,
               body(
-                `수정 버전 ${item.revision} · ${APPROVAL_STATUS_NAMES[item.status]}${item.outputs?.length ? `\n${item.outputs.join('\n').slice(0, 1400)}` : ''}`,
+                item.status === 'deleted' && item.deletion
+                  ? `수정 버전 ${item.revision} · 삭제됨\n삭제 관리자: ${item.deletion.actorName.slice(0, 80)}\n삭제 이유: ${item.deletion.reason}`
+                  : `수정 버전 ${item.revision} · ${APPROVAL_STATUS_NAMES[item.status]}${item.outputs?.length ? `\n${item.outputs.join('\n').slice(0, 1400)}` : ''}`,
               ),
             );
             this.authority(saved);

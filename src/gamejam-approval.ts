@@ -11,6 +11,7 @@ export type ApprovalStatus =
   | 'completed'
   | 'failed'
   | 'cancelled'
+  | 'deleted'
   | 'stopped';
 export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
   pending: '요청 대기',
@@ -20,10 +21,13 @@ export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
   completed: '완료',
   failed: '실패',
   cancelled: '취소',
+  deleted: '삭제됨',
   stopped: '중지',
 };
 export const approvalEditable = (status: ApprovalStatus) =>
   status === 'pending' || status === 'feedback';
+export const approvalDeletable = (status: ApprovalStatus) =>
+  !['queued', 'running', 'deleted'].includes(status);
 export type ApprovalChange = {
   at: number;
   actorId: string;
@@ -44,6 +48,13 @@ export type GamejamApproval = {
   status: ApprovalStatus;
   request: GamejamRequest;
   feedback?: string;
+  deletion?: {
+    reason: string;
+    actorId: string;
+    actorName: string;
+    at: number;
+    previousStatus: Exclude<ApprovalStatus, 'deleted'>;
+  };
   copiedFrom?: string;
   approvedBy?: string;
   approvedName?: string;

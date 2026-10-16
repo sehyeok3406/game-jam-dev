@@ -534,6 +534,7 @@ export class CollaborationClient {
         gameUiVersion: 2,
         documentStatusesVersion: 1,
         filePropertiesVersion: 1,
+        requestDeletionVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
         action !== 'ai-start' &&
@@ -1514,9 +1515,11 @@ export class CollaborationClient {
     })) as import('./gamejam-approval.ts').ApprovalDetail;
   }
   async mutateApproval(
-    action: 'create' | 'update' | 'cancel' | 'feedback',
+    action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: import('./gamejam-approval.ts').ApprovalMutation,
   ) {
+    if (action === 'delete' && this.state.requestDeletionVersion !== 1)
+      throw new Error('요청 삭제를 사용하려면 협업 서버를 업데이트해주세요.');
     if (
       !this.state.connected ||
       this.state.accessDenied ||

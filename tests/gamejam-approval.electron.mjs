@@ -306,6 +306,72 @@ async function run() {
         'document.querySelector(".approval-inbox").scrollWidth<=document.querySelector(".approval-inbox").clientWidth',
       ),
     );
+    await js(
+      `document.querySelector('[aria-label="요청함 닫기"]').click();qaApproval.addPending();qaApproval.role('admin')`,
+    );
+    await click('header button', '요청함');
+    await click('.approval-list > button', '삭제 대상 요청');
+    await click('.approval-actions button', '요청 삭제');
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.approval-delete-confirm button')).find(e=>e.textContent.includes('이유 남기고')).disabled`,
+      ),
+      true,
+    );
+    await setValue('[aria-label="삭제 이유"]', '   ');
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.approval-delete-confirm button')).find(e=>e.textContent.includes('이유 남기고')).disabled`,
+      ),
+      true,
+    );
+    await click('.approval-delete-confirm button', '돌아가기');
+    await click('.approval-actions button', '요청 삭제');
+    await setValue('[aria-label="삭제 이유"]', '기존 요청과 범위가 겹칩니다.');
+    await js('qaApproval.changeSource()');
+    await wait('!!document.querySelector(".approval-change")');
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.approval-delete-confirm button')).find(e=>e.textContent.includes('이유 남기고')).disabled`,
+      ),
+      true,
+    );
+    await click('.approval-change button', '최신 내용 확인');
+    await click('.approval-actions button', '요청 삭제');
+    await setValue('[aria-label="삭제 이유"]', '기존 요청과 범위가 겹칩니다.');
+    await pause(200);
+    await fs.writeFile(
+      'out/gamejam-approval/delete-confirm.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await click('.approval-delete-confirm button', '이유 남기고 삭제');
+    await wait(
+      'document.querySelector(".approval-deletion-record")?.textContent.includes("기존 요청과")',
+    );
+    assert.equal(
+      await js(
+        `Array.from(document.querySelectorAll('.approval-list > button')).some(e=>e.textContent.includes('삭제 대상 요청'))`,
+      ),
+      false,
+    );
+    await js(
+      `document.querySelector('[aria-label="요청함 닫기"]').click();qaApproval.role('editor')`,
+    );
+    await wait('!!document.querySelector(".request-deletion-notice")');
+    await js('qaApproval.local(true)');
+    await wait('!document.querySelector(".request-deletion-notice")');
+    await js('qaApproval.local(false)');
+    await wait('!!document.querySelector(".request-deletion-notice")');
+    await click('.request-deletion-notice button', '삭제 이유 확인');
+    await wait(
+      'document.querySelector(".approval-deletion-record")?.textContent.includes("기존 요청과")',
+    );
+    await wait('!document.querySelector(".request-deletion-notice")');
+    await pause(200);
+    await fs.writeFile(
+      'out/gamejam-approval/deleted-author.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
     console.log(
       'Approval UI passed: no-login submit, shared edit, feedback, stale review, source changes, admin start, frozen request.',
     );

@@ -2870,7 +2870,7 @@ const handle = (
           return client.readApproval(args[0] as string);
         if (channel === 'requests:mutate')
           return client.mutateApproval(
-            args[0] as 'create' | 'update' | 'cancel' | 'feedback',
+            args[0] as 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
             args[1] as import('./gamejam-approval').ApprovalMutation,
           );
         if (channel === 'history:read')

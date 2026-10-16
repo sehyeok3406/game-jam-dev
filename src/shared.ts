@@ -577,7 +577,7 @@ export type GameCanvasApi = {
     id: string,
   ) => Promise<import('./gamejam-approval').ApprovalDetail>;
   mutateApproval: (
-    action: 'create' | 'update' | 'cancel' | 'feedback',
+    action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: import('./gamejam-approval').ApprovalMutation,
   ) => Promise<import('./gamejam-approval').GamejamApproval>;
   getFileAuthorship: (relativePath: string) => Promise<FileAuthorship>;
@@ -753,6 +753,7 @@ export type CollaborationMember = {
 };
 export type CollaborationState = {
   requestApprovalVersion?: number;
+  requestDeletionVersion?: number;
   requestsVersion?: number;
   pendingRequests?: number;
   multiplayerVersion?: number;
