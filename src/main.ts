@@ -3,6 +3,7 @@ import {
   type DiscordApprovalContext,
 } from './discord-approval';
 import { DiscordApprovalStore } from './discord-approval-store';
+import { discordHelpUrl } from './discord-approval-help';
 import { PropertyQueue } from './property-queue.ts';
 import { AiQueueStore } from './ai-queue-store.ts';
 import {
@@ -3255,6 +3256,10 @@ const discordContext = (): DiscordApprovalContext | null => {
 };
 
 const registerIpc = () => {
+  ipcMain.handle('discord-approval:help', async (event, page: unknown) => {
+    if (!isUpdateSender(event)) throw Error('앱의 설정 도움말에서 열어주세요.');
+    await shell.openExternal(discordHelpUrl(page));
+  });
   // These handlers bypass generic diagnostics: token input must never be logged.
   for (const operation of [
     'status',

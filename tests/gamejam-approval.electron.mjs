@@ -64,6 +64,63 @@ async function run() {
     await wait(
       '!!document.querySelector(".discord-approval-dialog details[open]")',
     );
+    await setValue('[aria-label="디스코드 봇 토큰"]', 'unsaved-guide-token');
+    await click('.discord-guide-entry button', '관리자 설정 도움말');
+    await wait(`!!document.querySelector('[data-guide-step="1"]')`);
+    assert.equal(
+      await js(
+        `document.querySelector('.discord-approval-guide footer button').disabled`,
+      ),
+      true,
+    );
+    for (let step = 1; step <= 7; step++) {
+      await wait(`!!document.querySelector('[data-guide-step="${step}"]')`);
+      assert.equal(
+        await js('document.querySelectorAll("[data-guide-step]").length'),
+        1,
+      );
+      if (step === 2) {
+        await click('.discord-guide-link', 'Developer Portal');
+        assert.equal(await js('qaApproval.helpLink'), 'portal');
+        await click('.discord-approval-guide footer button', '이전');
+        await wait('!!document.querySelector(\'[data-guide-step="1"]\')');
+        await click('.discord-approval-guide footer button', '다음');
+      }
+      if (step === 3) {
+        await fs.mkdir('out/gamejam-approval', { recursive: true });
+        for (const theme of ['dark', 'light']) {
+          await js(`document.documentElement.dataset.theme='${theme}'`);
+          await pause(200);
+          await fs.writeFile(
+            `out/gamejam-approval/discord-guide-${theme}.png`,
+            (await win.webContents.capturePage()).toPNG(),
+          );
+        }
+        await js('document.documentElement.dataset.theme="dark"');
+        win.setSize(620, 700);
+        await pause(200);
+        assert.equal(
+          await js(
+            'document.querySelector(".discord-approval-dialog").scrollWidth <= document.querySelector(".discord-approval-dialog").clientWidth',
+          ),
+          true,
+        );
+        await fs.writeFile(
+          'out/gamejam-approval/discord-guide-small.png',
+          (await win.webContents.capturePage()).toPNG(),
+        );
+        win.setSize(1150, 850);
+      }
+      if (step < 7)
+        await click('.discord-approval-guide footer button', '다음');
+    }
+    await click('.discord-approval-guide footer button', '연결 설정 열기');
+    assert.equal(
+      await js(
+        `document.querySelector('[aria-label="디스코드 봇 토큰"]').value`,
+      ),
+      'unsaved-guide-token',
+    );
     assert.equal(
       await js(
         `Array.from(document.querySelectorAll('.discord-settings-actions button')).find(e=>e.textContent.includes('테스트 알림')).getBoundingClientRect().height > 0`,
@@ -78,6 +135,9 @@ async function run() {
     await wait(
       'document.querySelector(".discord-approval-dialog")?.textContent.includes("함께 작업 연결하기")',
     );
+    await click('.discord-guide-entry button', '관리자 설정 도움말');
+    await wait('!!document.querySelector(\'[data-guide-step="1"]\')');
+    await click('.discord-guide-entry button', '설정으로 돌아가기');
     assert.equal(
       await js('!!document.querySelector(".discord-settings-actions")'),
       false,

@@ -19,6 +19,7 @@ async function playInvoke(channel: string, input?: unknown) {
 
 const api: GameCanvasApi = {
   discordApproval: {
+    openHelp: (page) => ipcRenderer.invoke('discord-approval:help', page),
     status: () => ipcRenderer.invoke('discord-approval:status'),
     sendTest: () => ipcRenderer.invoke('discord-approval:test'),
     configure: (input) =>

@@ -15,6 +15,9 @@ let discordStatus: import('../src/discord-approval-types').DiscordApprovalStatus
     message: '디스코드가 연결되지 않았습니다.',
   };
 api.discordApproval = {
+  openHelp: async (page) => {
+    qa.helpLink = page;
+  },
   sendTest: async () => ({ message: '테스트 알림을 보냈습니다.' }),
   status: async () => structuredClone(discordStatus),
   configure: async ({ token, ...settings }) => {
@@ -63,6 +66,7 @@ const publish = () => {
   listeners.forEach((f) => f({ ...state }));
 };
 const qa = {
+  helpLink: '',
   submits: 0,
   creates: 0,
   runs: 0,

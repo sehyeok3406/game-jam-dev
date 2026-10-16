@@ -6324,6 +6324,112 @@ kbd {
   max-height: none;
   overflow: visible;
 }
+.discord-guide-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 18px 0 10px;
+  font-size: 13px;
+}
+.discord-guide-entry span {
+  color: var(--text-muted);
+}
+.discord-approval-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+.discord-guide-progress {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.discord-guide-progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+.discord-approval-guide article {
+  max-height: 50vh;
+  min-height: min(280px, 32vh);
+  overflow: auto;
+  padding: 0 6px 8px 0;
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.discord-approval-guide h3 {
+  margin: 0 0 14px;
+  font-size: 20px;
+}
+.discord-approval-guide li + li {
+  margin-top: 10px;
+}
+.discord-approval-guide ul,
+.discord-approval-guide ol {
+  padding-left: 22px;
+}
+.discord-approval-guide aside {
+  padding: 12px 14px;
+  background: var(--surface-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+.discord-guide-lead {
+  font-weight: 600;
+}
+.discord-guide-note {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.discord-approval-guide table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.discord-approval-guide caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 8px;
+}
+.discord-approval-guide th,
+.discord-approval-guide td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px;
+  border: 1px solid var(--border);
+}
+.discord-approval-guide th {
+  width: 32%;
+}
+.discord-approval-guide dt {
+  font-weight: 600;
+  margin-top: 12px;
+}
+.discord-approval-guide dd {
+  margin: 4px 0 0;
+}
+.discord-guide-link,
+.discord-approval-guide footer,
+.discord-approval-guide footer button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.discord-approval-guide footer {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.discord-approval-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+}
 .discord-approval-settings {
   flex-shrink: 0;
   padding: 12px 18px;

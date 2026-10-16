@@ -222,6 +222,19 @@ try {
   await admin.wait(
     'document.querySelector(".discord-approval-dialog")?.textContent.includes("함께 작업 연결하기")',
   );
+  await click(admin, '.discord-guide-entry button', '관리자 설정 도움말');
+  for (let step = 1; step <= 7; step++) {
+    await admin.wait(`!!document.querySelector('[data-guide-step="${step}"]')`);
+    if (step < 7)
+      await click(admin, '.discord-approval-guide footer button', '다음');
+  }
+  await click(admin, '.discord-approval-guide footer button', '연결 설정 열기');
+  await assert.rejects(
+    admin.js(
+      `window.gameCanvas.discordApproval.openHelp('https://untrusted.invalid')`,
+    ),
+    /지원하지 않는/,
+  );
   await admin.js(
     `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
   );

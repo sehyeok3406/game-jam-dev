@@ -4,6 +4,8 @@
 
 ## 설정
 
+앱 상단 **디스코드 알림 → 관리자 설정 도움말**에서 단계마다 한 페이지씩 보는 7단계 안내를 제공합니다. 이전·다음으로 이동하고, 중간에 설정으로 돌아가 값을 입력한 뒤 같은 단계부터 이어서 볼 수 있습니다. 개인 프로젝트에서도 도움말을 열 수 있으며, 실제 봇 연결은 공동 프로젝트 관리자 계정에서 진행합니다. 봇 생성·토큰, 서버 설치·권한, 비공개 채널, ID 복사, 앱 연결, 테스트를 차례로 안내합니다. 공식 안내 버튼은 기본 브라우저에서 Discord 공식 페이지만 엽니다.
+
 1. Discord Developer Portal에서 봇을 만들고 팀 서버에 설치합니다. Gateway를 사용하므로 Interactions Endpoint URL을 비워둡니다. 이 기능에는 Message Content·Server Members 같은 privileged intent가 필요하지 않습니다.
 2. 알림용 일반 텍스트 채널을 만듭니다. 비공개 채널이라면 봇 역할에 접근을 허용합니다.
 3. 봇에 **View Channels, Send Messages, Embed Links, Read Message History**를 허용합니다. 요청별 스레드를 사용하면 **Create Public Threads, Send Messages in Threads**도 허용합니다.

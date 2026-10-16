@@ -12,6 +12,7 @@ import {
   ipcMain,
   root,
   events,
+  openedExternalUrls,
 } from './mocks/electron';
 import { discordMock } from './mocks/discord-transport';
 
@@ -37,6 +38,27 @@ const channelId = '1560275803198193725',
   userId = '448449132479381507';
 try {
   await wait(() => createdWindows.length === 1);
+  await call('discord-approval:help', 'portal');
+  assert.equal(
+    openedExternalUrls.at(-1),
+    'https://discord.com/developers/applications',
+  );
+  await assert.rejects(
+    call('discord-approval:help', 'https://untrusted.invalid'),
+    /지원하지 않는/,
+  );
+  await assert.rejects(
+    call('discord-approval:help', '__proto__'),
+    /지원하지 않는/,
+  );
+  await assert.rejects(
+    handlers.get('discord-approval:help')!(
+      { sender: {}, senderFrame: {} },
+      'portal',
+    ),
+    /앱의 설정 도움말/,
+  );
+  assert.equal(openedExternalUrls.length, 1);
   server = await createCollaborationServer({
     dataDirectory: path.join(root, 'server'),
     port: 0,

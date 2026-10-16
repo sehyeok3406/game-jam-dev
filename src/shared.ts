@@ -338,6 +338,9 @@ export type UpdateState = {
 
 export type GameCanvasApi = {
   discordApproval?: {
+    openHelp(
+      page: import('./discord-approval-help').DiscordHelpPage,
+    ): Promise<void>;
     status(): Promise<import('./discord-approval-types').DiscordApprovalStatus>;
     sendTest(): Promise<{ message: string }>;
     configure(
