@@ -5387,6 +5387,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
   const editApprovalRequest = (item: GamejamApproval, copy: boolean) => {
     if (!noticeProject) return;
+    setApprovalInboxFocusId(undefined);
     const scope = gamejamDraftScope(
       noticeProject,
       collaboration.memberId,

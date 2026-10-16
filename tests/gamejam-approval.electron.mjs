@@ -372,6 +372,18 @@ async function run() {
       'out/gamejam-approval/deleted-author.png',
       (await win.webContents.capturePage()).toPNG(),
     );
+    await click('.approval-actions button', '새 요청으로 복사');
+    await finalPage();
+    await setValue('#ai-result-name', '삭제 요청 다시 제출');
+    await click('.ai-request-dialog > footer button', '요청하기');
+    await wait('!!document.querySelector(".approval-inbox")');
+    await wait(
+      'Array.from(document.querySelectorAll(".approval-list > button")).some(e=>e.textContent.includes("삭제 요청 다시 제출"))',
+    );
+    assert.equal(
+      await js('!!document.querySelector(".approval-deletion-record")'),
+      false,
+    );
     console.log(
       'Approval UI passed: no-login submit, shared edit, feedback, stale review, source changes, admin start, frozen request.',
     );
