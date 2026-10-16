@@ -123,7 +123,7 @@ const steps = [
               <th scope="row">기본</th>
               <td>
                 View Channels · Send Messages · Embed Links · Read Message
-                History
+                History · Attach Files
               </td>
             </tr>
             <tr>
@@ -133,8 +133,8 @@ const steps = [
           </tbody>
         </table>
         <p>
-          각각 채널 보기·메시지 보내기·링크 임베드·메시지 기록 보기, 공개 스레드
-          만들기·스레드에서 메시지 보내기 권한입니다.
+          각각 채널 보기·메시지 보내기·링크 임베드·메시지 기록 보기·파일 첨부,
+          공개 스레드 만들기·스레드에서 메시지 보내기 권한입니다.
         </p>
         <p className="discord-guide-note">
           Administrator·투표·반응 추가 권한은 필요하지 않습니다. 승인 버튼에도
@@ -228,8 +228,8 @@ const steps = [
           </dd>
           <dt>요청별 스레드</dt>
           <dd>
-            진행 기록을 스레드로 받으려면 켭니다. 3단계의 추가 권한도
-            필요합니다.
+            요청 이력과 검토 문서 사본을 스레드로 받으려면 켭니다. 3단계의 추가
+            권한도 필요합니다.
           </dd>
         </dl>
         <p>

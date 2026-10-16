@@ -264,6 +264,46 @@ test('delete rejects stale revisions, viewers and servers without deletion suppo
   await assert.rejects(owner.mutateApproval('delete', {}), /서버를 업데이트/);
 });
 
+test('atomic document endpoint requires administrator and matching source/request versions', async (t) => {
+  const { owner, editor } = await setup(t);
+  const item = await create(editor),
+    detail = await owner.readApproval(item.id);
+  const snapshot = await owner.readApprovalDocuments(
+    item.id,
+    item.revision,
+    detail.reviewToken,
+  );
+  assert.deepEqual(
+    snapshot.documents.map((d) => d.path),
+    ['ideas/a.md'],
+  );
+  assert.equal(snapshot.documents[0].content, owner.files['ideas/a.md']);
+  await assert.rejects(
+    editor.readApprovalDocuments(item.id, item.revision, detail.reviewToken),
+    /관리자/,
+  );
+  await assert.rejects(
+    owner.readApprovalDocuments(item.id, 20, detail.reviewToken),
+    /변경/,
+  );
+  await owner.lock('ideas/a.md');
+  await owner.command('documents:save', {
+    relativePath: 'ideas/a.md',
+    title: '아이디어',
+    body: '바뀐 본문',
+  });
+  await owner.unlock('ideas/a.md');
+  await assert.rejects(
+    owner.readApprovalDocuments(item.id, item.revision, detail.reviewToken),
+    /변경/,
+  );
+  owner.state.requestDocumentVersion = undefined;
+  await assert.rejects(
+    owner.readApprovalDocuments(item.id, item.revision, detail.reviewToken),
+    /업데이트/,
+  );
+});
+
 test('request validation needs content and membership but no AI login, free slot, or executor model', () => {
   assert.deepEqual(
     gamejamIssues(request(), {

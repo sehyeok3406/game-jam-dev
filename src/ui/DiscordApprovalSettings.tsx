@@ -109,6 +109,11 @@ export function DiscordApprovalSettings({
         암호화해 저장합니다.
       </p>
       <fieldset disabled={busy}>
+        <p className="discord-document-notice">
+          내용 확인·승인을 누르면 선택한 Markdown 문서의 본문과 검토 사본을 알림
+          채널/스레드에 기록합니다. 봇에 파일 첨부(Attach Files) 권한도
+          허용해주세요.
+        </p>
         <label>
           봇 토큰
           <input

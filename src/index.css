@@ -6498,6 +6498,13 @@ kbd {
   grid-template-columns: 1fr 1fr;
   gap: 10px 16px;
 }
+.discord-approval-settings .discord-document-notice {
+  grid-column: 1 / -1;
+  padding: 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-subtle);
+  margin: 0 0 6px;
+}
 .discord-approval-settings label {
   display: flex;
   flex-direction: column;

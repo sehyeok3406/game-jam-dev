@@ -33,6 +33,7 @@ export type ApprovalChange = {
   actorId: string;
   actorName: string;
   action: string;
+  status?: ApprovalStatus;
   revision: number;
   request?: GamejamRequest;
   message?: string;

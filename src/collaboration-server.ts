@@ -14,6 +14,7 @@ import {
   type ApprovalDetail,
 } from './gamejam-approval.ts';
 import { gamejamTaskInput, type GamejamRequest } from './gamejam-request.ts';
+import { captureApprovalDocuments } from './discord-review-documents.ts';
 import {
   createQueuedTask,
   isQueuePending,
@@ -596,6 +597,7 @@ export async function createCollaborationServer(options: Options) {
       editorAi: false,
       requestApprovalVersion: 1,
       requestDeletionVersion: 1,
+      requestDocumentVersion: 1,
       requestsVersion: project.requestsVersion ?? 0,
       pendingRequests: Object.values(project.approvals ?? {}).filter(
         (item) => item.status === 'pending',
@@ -1498,6 +1500,33 @@ export async function createCollaborationServer(options: Options) {
         }
         if (action.startsWith('requests-') && action !== 'requests-start') {
           const items = project.approvals ?? {};
+          if (action === 'requests-documents') {
+            admin(member);
+            const item = items[String(input.id)];
+            if (
+              !item ||
+              !approvalEditable(item.status) ||
+              item.revision !== input.revision
+            )
+              throw new ApiError(
+                '요청 상태나 내용이 변경되었습니다. 다시 검토해주세요.',
+                409,
+              );
+            const plan = planApproval(project, item.request);
+            if (
+              typeof input.reviewToken !== 'string' ||
+              input.reviewToken !== plan.reviewToken
+            )
+              throw new ApiError(
+                '입력 문서가 변경되었습니다. 다시 검토해주세요.',
+                409,
+              );
+            return captureApprovalDocuments(
+              item,
+              project.files,
+              plan.reviewToken,
+            );
+          }
           const visible = (item: GamejamApproval): GamejamApproval =>
             item.status === 'deleted' && input.requestDeletionVersion !== 1
               ? {
@@ -2183,6 +2212,15 @@ export async function createCollaborationServer(options: Options) {
             approval.status = 'stopped';
             approval.updatedAt = Date.now();
             approval.revision++;
+            approval.changes.push({
+              at: approval.updatedAt,
+              actorId: member.id,
+              actorName: member.nickname,
+              action: 'stopped',
+              status: 'stopped',
+              revision: approval.revision,
+              message: task.message,
+            });
             next.requestsVersion = (next.requestsVersion ?? 0) + 1;
           }
           next.lastRun = {
@@ -2538,6 +2576,7 @@ export async function createCollaborationServer(options: Options) {
                   actorId: member.id,
                   actorName: member.nickname,
                   action: 'approved',
+                  status: item.status,
                   revision: item.revision,
                 });
                 next.requestsVersion = (next.requestsVersion ?? 0) + 1;
@@ -2629,6 +2668,7 @@ export async function createCollaborationServer(options: Options) {
                 actorId: member.id,
                 actorName: member.nickname,
                 action: 'approved',
+                status: item.status,
                 revision: item.revision,
               });
               next.requestsVersion = (next.requestsVersion ?? 0) + 1;
@@ -2639,7 +2679,16 @@ export async function createCollaborationServer(options: Options) {
               );
               if (item) {
                 item.status = 'running';
+                item.updatedAt = Date.now();
                 item.revision++;
+                item.changes.push({
+                  at: item.updatedAt,
+                  actorId: member.id,
+                  actorName: member.nickname,
+                  action: 'running',
+                  status: 'running',
+                  revision: item.revision,
+                });
                 next.requestsVersion = (next.requestsVersion ?? 0) + 1;
               }
             }

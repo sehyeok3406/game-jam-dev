@@ -177,6 +177,26 @@ try {
   const approve = (reviewed.at(-1)!.components as any[])[0].components.find(
     (b: any) => b.label.includes('승인'),
   ).custom_id;
+  const document = discordMock.messages.find((m) =>
+    (m.body.components as any[])?.[0]?.components.some((b: any) =>
+      b.custom_id?.startsWith('gj:doc:'),
+    ),
+  )!;
+  assert.ok(
+    document.body.files?.[0].data.toString('utf8').includes('아이디어'),
+  );
+  const opened = await discordMock.click(
+    (document.body.components as any[])[0].components[0].custom_id,
+    userId,
+    document.channelId,
+    document.id,
+  );
+  assert.ok(opened.some((message) => message.content?.includes('아이디어')));
+  assert.ok(
+    !(opened.at(-1)?.components as any[])
+      ?.flatMap((row) => row.components)
+      .some((b: any) => b.custom_id.startsWith('gj:approve:')),
+  );
   let flushes = 0;
   const window = createdWindows[0],
     originalSend = window.webContents.send;

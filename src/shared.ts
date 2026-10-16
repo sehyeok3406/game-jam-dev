@@ -754,6 +754,7 @@ export type CollaborationMember = {
 export type CollaborationState = {
   requestApprovalVersion?: number;
   requestDeletionVersion?: number;
+  requestDocumentVersion?: number;
   requestsVersion?: number;
   pendingRequests?: number;
   multiplayerVersion?: number;

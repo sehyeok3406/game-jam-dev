@@ -5,6 +5,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { CollaborationClient } from '../src/collaboration-client.ts';
 
 const packageDir = path.resolve(
   process.env.GAMEJAM_PACKAGE_DIR ?? 'out/Game Jam!-win32-x64',
@@ -214,6 +215,44 @@ const click = async (client, selector, text) => {
 };
 try {
   await startServer();
+  const fixture = await CollaborationClient.create(
+    serverUrl,
+    key,
+    '문서 사본 검사',
+    '패키지 문서 검사',
+    {
+      'ideas/a.md':
+        '---\nid: source\ntitle: 선택 문서\ntype: idea\n---\n패키지 문서 사본 😀\n',
+      'ideas/private.md':
+        '---\nid: private\ntitle: 미선택\ntype: idea\n---\n포함하면 안 되는 본문\n',
+    },
+  );
+  const snapshotClient = new CollaborationClient(fixture.credentials, () => {});
+  snapshotClient.accept(fixture.result);
+  assert.equal(snapshotClient.state.requestDocumentVersion, 1);
+  const snapshotRequest = await snapshotClient.mutateApproval('create', {
+    commandId: randomUUID(),
+    request: {
+      organize: false,
+      implement: true,
+      inputPaths: ['ideas/a.md'],
+      x: 0,
+      y: 0,
+      resultName: '문서 검토',
+      htmlResult: { mode: 'new' },
+      instructions: { organize: '', implement: '게임을 만들어줘' },
+    },
+  });
+  const snapshotDetail = await snapshotClient.readApproval(snapshotRequest.id);
+  const captured = await snapshotClient.readApprovalDocuments(
+    snapshotRequest.id,
+    snapshotRequest.revision,
+    snapshotDetail.reviewToken,
+  );
+  assert.equal(captured.documents.length, 1);
+  assert.match(captured.documents[0].content, /패키지 문서 사본/);
+  assert.ok(!JSON.stringify(captured).includes('포함하면 안 되는'));
+  snapshotClient.stop();
   const admin = await boot('approval-admin');
   await admin.wait(
     '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',

@@ -3204,6 +3204,10 @@ const discordContext = (): DiscordApprovalContext | null => {
       check();
       return client.readApproval(id);
     },
+    documents: (id, revision, reviewToken) => {
+      check();
+      return client.readApprovalDocuments(id, revision, reviewToken);
+    },
     feedback: async (id, revision, message, commandId) => {
       check();
       await client.mutateApproval('feedback', {

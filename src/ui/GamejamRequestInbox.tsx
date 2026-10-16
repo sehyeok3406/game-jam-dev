@@ -559,6 +559,7 @@ export function GamejamRequestInbox({
                             'requests-feedback': '보완 요청',
                             'requests-delete': '요청 삭제',
                             approved: '승인 및 구현 시작',
+                            running: '구현 시작',
                             completed: '완료',
                             failed: '실패',
                             stopped: '중지',

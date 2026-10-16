@@ -1514,6 +1514,21 @@ export class CollaborationClient {
       id,
     })) as import('./gamejam-approval.ts').ApprovalDetail;
   }
+  async readApprovalDocuments(
+    id: string,
+    revision: number,
+    reviewToken: string,
+  ) {
+    if (this.state.requestDocumentVersion !== 1)
+      throw new Error(
+        '디스코드 문서 검토를 사용하려면 협업 서버를 업데이트해주세요.',
+      );
+    return (await this.request('requests-documents', {
+      id,
+      revision,
+      reviewToken,
+    })) as import('./discord-review-documents.ts').ApprovalDocuments;
+  }
   async mutateApproval(
     action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: import('./gamejam-approval.ts').ApprovalMutation,
