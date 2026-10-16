@@ -187,7 +187,9 @@ try {
     discordMock.click(approve, userId, channelId),
   ]);
   assert.equal(flushes, 1);
-  assert.ok(responses.flat().some((r) => r.content?.includes('구현을 시작')));
+  assert.ok(
+    responses.flat().some((r) => r.content?.includes('구현 요청을 접수')),
+  );
   const running = (await call('requests:read', item.id)).item;
   await wait(() =>
     events.some(

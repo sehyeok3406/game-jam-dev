@@ -586,7 +586,7 @@ export class DiscordApprovalService {
         );
         await action.edit(
           body(
-            '승인한 버전의 AI 구현을 시작했습니다. 결과는 요청 메시지와 스레드에 반영됩니다.',
+            '승인한 버전의 AI 구현 요청을 접수했습니다. 다른 작업이 있으면 예약 순서대로 실행합니다. 상태와 결과는 요청 메시지와 스레드에 반영됩니다.',
           ),
         );
         void this.poll();

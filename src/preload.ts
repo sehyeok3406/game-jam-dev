@@ -211,6 +211,8 @@ const api: GameCanvasApi = {
     return () => ipcRenderer.removeListener('collaboration:changed', wrapped);
   },
   getActiveRun: () => ipcRenderer.invoke('codex:active'),
+  listAiQueue: () => ipcRenderer.invoke('ai-queue:list'),
+  cancelQueuedTask: (taskId) => ipcRenderer.invoke('ai-queue:cancel', taskId),
   getPreviewWindow: (relativePath) =>
     ipcRenderer.invoke('preview:window', relativePath),
   savePreviewWindow: (state, relativePath) =>

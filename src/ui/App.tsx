@@ -124,7 +124,18 @@ import {
   useStoreApi,
 } from '@xyflow/react';
 import appIcon from '../../assets/icon.png';
-import { AI_FILE_LOCK_MESSAGE, isAiFileLocked } from '../ai-file-lock';
+import {
+  AI_FILE_LOCK_MESSAGE,
+  isAiFileLocked,
+  mergeAiFileLocks,
+} from '../ai-file-lock';
+import {
+  isQueuePending,
+  materialUsage,
+  queueFileLock,
+  type AiQueueTask,
+} from '../ai-task-queue';
+import { AiQueuePanel } from './AiQueuePanel';
 import {
   verticalLayouts,
   NEW_FILE_GAP,
@@ -401,6 +412,7 @@ const getAiModelLabel = (providerId: AiProviderId, modelId: string | null) =>
   '자동 선택';
 
 const CODEX_STATUS_LABELS: Record<CodexRunEvent['status'], string> = {
+  queued: '예약됨',
   validating: '결과 확인 중',
   starting: '시작 중',
   running: '실행 중',
@@ -408,8 +420,10 @@ const CODEX_STATUS_LABELS: Record<CodexRunEvent['status'], string> = {
   failed: '실패',
   cancelled: '취소됨',
 };
+const EMPTY_AI_QUEUE: AiQueueTask[] = [];
 
 type DocumentNodeData = {
+  aiUsage?: string;
   propertyVisibility: FilePropertyVisibility;
   authorshipKey: string;
   statuses: DocumentStatuses;
@@ -465,6 +479,7 @@ function pendingDocument(document: CanvasDocument, state?: DocumentSaveState) {
 }
 
 type PreviewNodeData = {
+  aiUsage?: string;
   propertyVisibility: FilePropertyVisibility;
   authorshipKey: string;
   onDetails: () => void;
@@ -1089,13 +1104,20 @@ function DocumentCard({ data, selected }: NodeProps<DocumentCanvasNode>) {
       )}
       <article
         ref={cardRef}
+        data-ai-usage={data.aiUsage || undefined}
         inert={data.sectionHidden || undefined}
         data-find-document={document.id}
         data-card-color={cardColor(document.backgroundColor)}
         className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}`}
       >
         <header className="document-card__header">
-          <span className="document-type">{TYPE_LABELS[document.type]}</span>
+          {data.aiUsage ? (
+            <span className="ai-material-badge nodrag" title={data.aiUsage}>
+              {data.aiUsage}
+            </span>
+          ) : (
+            <span className="document-type">{TYPE_LABELS[document.type]}</span>
+          )}
           {document.collapsed && (
             <strong className="document-card__collapsed-title">
               {document.title}
@@ -1632,11 +1654,17 @@ function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
       )}
       <section
         ref={cardRef}
+        data-ai-usage={data.aiUsage || undefined}
         inert={data.sectionHidden || undefined}
         data-card-color={cardColor(data.preview.backgroundColor)}
         className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${!collapsed && data.preview.warnings?.length ? ' preview-card--warning' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
       >
         <header className={fullscreen ? 'nodrag' : 'preview-drag-handle'}>
+          {data.aiUsage && (
+            <span className="ai-material-badge nodrag" title={data.aiUsage}>
+              {data.aiUsage}
+            </span>
+          )}
           <strong
             title={data.preview.relativePath}
             data-find-section={previewNodeId(data.preview.relativePath)}
@@ -2429,6 +2457,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   );
   const [codexStatusOpen, setCodexStatusOpen] = useState(false);
   const [codexRun, setCodexRun] = useState<CodexRunView | null>(null);
+  const [aiQueue, setAiQueue] = useState<AiQueueTask[]>([]);
   const [codexRunCollapsed, setCodexRunCollapsed] = useState(true);
   const [completion, setCompletion] = useState<{
     project: string;
@@ -2684,6 +2713,40 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       ['starting', 'running', 'validating'].includes(
         collaboration.aiRun.status,
       ));
+  const queueSupported =
+    !collaboration.active || collaboration.aiQueueVersion === 1;
+  const projectAiQueue = collaboration.active
+    ? (collaboration.aiQueue ?? EMPTY_AI_QUEUE)
+    : aiQueue;
+  useEffect(() => {
+    let active = true;
+    let version = 0;
+    setAiQueue([]);
+    if (
+      !noticeProject ||
+      home ||
+      collaboration.active ||
+      !window.gameCanvas.listAiQueue
+    )
+      return;
+    const refresh = () => {
+      const request = ++version;
+      void window.gameCanvas
+        .listAiQueue()
+        .then((tasks) => {
+          if (active && request === version) setAiQueue(tasks);
+        })
+        .catch(showError);
+    };
+    refresh();
+    const stop = window.gameCanvas.onWorkspaceChanged(refresh);
+    const stopRuns = window.gameCanvas.onCodexRunEvent(refresh);
+    return () => {
+      active = false;
+      stop();
+      stopRuns();
+    };
+  }, [noticeProject, home, collaboration.active]);
   const canRunAi =
     !collaboration.active ||
     (collaboration.connected &&
@@ -2719,11 +2782,24 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       ((!collaboration.connected && !collaboration.offlineSync) ||
         collaboration.accessDenied ||
         collaboration.role === 'viewer'));
-  const aiFileLock = aiBusy
-    ? collaboration.active
-      ? collaboration.aiRun?.fileLock
-      : codexRun?.fileLock
-    : undefined;
+  const aiFileLock = useMemo(
+    () =>
+      mergeAiFileLocks([
+        queueFileLock(projectAiQueue),
+        aiBusy
+          ? collaboration.active
+            ? collaboration.aiRun?.fileLock
+            : codexRun?.fileLock
+          : undefined,
+      ]),
+    [
+      projectAiQueue,
+      aiBusy,
+      collaboration.active,
+      collaboration.aiRun?.fileLock,
+      codexRun?.fileLock,
+    ],
+  );
   const multiplayerChoiceRequired =
     !!aiRequest?.implement &&
     aiRequest.sourceMode === 'html-compose' &&
@@ -2775,6 +2851,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         connection: codexStatus,
         checkingConnection: checkingCodex,
         aiBusy,
+        queueSupported,
         locked,
         updateRestarting,
         availableInputs: [
@@ -3830,7 +3907,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     approval?: ApprovalStart,
   ) => {
     if (!canRunAi) throw new Error('관리자만 AI를 실행할 수 있습니다.');
-    if (aiBusy) {
+    if (aiBusy && !queueSupported) {
       if (approval)
         throw new Error(
           '이미 AI 작업이 진행 중입니다. 완료하거나 중지한 뒤 승인해주세요.',
@@ -3860,6 +3937,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       const project = noticeProject;
       if (!project) throw new Error('프로젝트를 먼저 열어주세요.');
       const result = await window.gameCanvas.startCodexRun({
+        queueVersion: queueSupported ? 1 : undefined,
         approval,
         taskPath: task.relativePath,
         providerId: selectedAiProvider,
@@ -3867,6 +3945,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       });
       if (runScopeRef.current.project !== project || runScopeRef.current.home)
         return;
+      if (result.status === 'queued') {
+        setNotice(
+          `'${task.title}' 작업을 예약했습니다. 등록 순서대로 실행합니다.`,
+        );
+        await loadProject(false);
+        return;
+      }
       setCodexRun((current) =>
         current?.runId === result.runId
           ? {
@@ -3895,7 +3980,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       await loadProject(false);
     } catch (error) {
       showError(error);
-      if (approval) throw error;
+      throw error;
     } finally {
       setPreparingTask(false);
     }
@@ -4429,6 +4514,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           draggable: !layoutLocked,
           data: {
             kind: 'document',
+            aiUsage: materialUsage(projectAiQueue, document.relativePath),
             propertyVisibility: propertyVisibilityFor(document.id),
             authorshipKey: `${personalScope}:${document.id}:${document.modifiedAt}`,
             sectionHidden: !!(parent && sectionCollapsed(parent)),
@@ -4582,6 +4668,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             preview,
             windowState: previewWindow,
             busy: aiBusy && isAiFileLocked(aiFileLock, preview.relativePath),
+            aiUsage: materialUsage(projectAiQueue, preview.relativePath),
             onWindowChange: (state) =>
               updatePreviewWindow(preview.relativePath, state),
             onHistory: () => openHistory(preview.relativePath),
@@ -4813,6 +4900,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     findOpen,
     locked,
     aiBusy,
+    projectAiQueue,
     aiFileLock,
     pathLocked,
     sectionLocked,
@@ -5434,15 +5522,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         throw new Error(
           'AI 연결 설정에서 선택한 제공자의 연결을 먼저 확인해주세요.',
         );
-      const task = await window.gameCanvas.createTask(
-        gamejamTaskInput(aiRequest, {
+      const task = await window.gameCanvas.createTask({
+        ...gamejamTaskInput(aiRequest, {
           providerId: selectedAiProvider,
           modelId: selectedAiModel,
           retryOf: aiRequestRetryOf,
         }),
-      );
-      if (aiDraftScope) clearGamejamDraft(localStorage, aiDraftScope);
-      setSavedAiDraft(null);
+        queueVersion: queueSupported ? 1 : undefined,
+      });
       setAiResultPaths([
         ...(aiRequest.organize
           ? [...task.body.matchAll(/`(docs\/[^`\r\n]+\.md)`/g)]
@@ -5456,8 +5543,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           : []),
       ]);
       await loadProject(false);
-      setAiRequest(null);
       await runTaskWithCodex(task);
+      if (aiDraftScope) clearGamejamDraft(localStorage, aiDraftScope);
+      setSavedAiDraft(null);
+      setAiRequest(null);
     } catch (error) {
       setAiRequestSubmitError(
         error instanceof Error
@@ -6925,7 +7014,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         ? '서버 업데이트 필요 (v0.8.0)'
         : '뷰어는 실행 불가'
       : '서버 연결 필요'
-    : aiBusy && collaboration.role !== 'editor'
+    : aiBusy && !queueSupported && collaboration.role !== 'editor'
       ? 'AI 작업 진행 중'
       : locked
         ? '프로젝트 편집 잠김'
@@ -7128,7 +7217,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       shortcut: 'Ctrl+Enter',
       disabled:
         !canWriteAiRequest ||
-        (collaboration.role !== 'editor' && (locked || aiBusy)),
+        (collaboration.role !== 'editor' &&
+          (locked || (aiBusy && !queueSupported))),
       reason: aiDisabledReason,
       run: () => void createTask(),
     },
@@ -8248,7 +8338,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
               aria-label="gamejam!"
               disabled={
                 !canWriteAiRequest ||
-                (collaboration.role !== 'editor' && (locked || aiBusy))
+                (collaboration.role !== 'editor' &&
+                  (locked || (aiBusy && !queueSupported)))
               }
               onClick={() => void createTask()}
               title={
@@ -8288,9 +8379,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             >
               <History size={15} />
             </button>
-            {aiBusy && (
+            {(aiBusy || projectAiQueue.some(isQueuePending)) && (
               <span className="workspace-lock-label">
-                AI 작업 중 · 관련 파일 보호
+                AI 작업{' '}
+                {projectAiQueue.filter(
+                  (t) => isQueuePending(t) && t.status !== 'queued',
+                ).length || (aiBusy ? 1 : 0)}{' '}
+                · 예약{' '}
+                {projectAiQueue.filter((t) => t.status === 'queued').length}
               </span>
             )}
             <button
@@ -9192,6 +9288,23 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </aside>
       )}
 
+      {!home && (
+        <AiQueuePanel
+          tasks={projectAiQueue}
+          canCancel={canRunAi}
+          cancel={async (task) => {
+            if (task.status === 'queued')
+              await window.gameCanvas.cancelQueuedTask(task.taskId);
+            else await window.gameCanvas.cancelCodexRun(task.runId);
+            if (!collaboration.active)
+              setAiQueue(await window.gameCanvas.listAiQueue());
+          }}
+          open={(task) => {
+            if (codexRun?.runId === task.runId) setCodexRunCollapsed(false);
+            else openHistory(task.taskPath, true);
+          }}
+        />
+      )}
       {runPanelVisible && codexRun && (
         <aside
           className={`codex-run-panel floating-surface${codexRunCollapsed ? ' codex-run-panel--collapsed' : ''}`}
@@ -9680,7 +9793,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   reuseDisabled={
                     creatingTask ||
                     !canWriteAiRequest ||
-                    (collaboration.role !== 'editor' && (aiBusy || locked))
+                    (collaboration.role !== 'editor' &&
+                      ((aiBusy && !queueSupported) || locked))
                   }
                   onOpenRetry={(id) => {
                     const previous = historyEntries.find(
@@ -11863,7 +11977,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       ? '수정 저장'
                       : submittingApproval
                         ? '요청하기'
-                        : '바로 구현하기'}
+                        : queueSupported &&
+                            (aiBusy || projectAiQueue.some(isQueuePending))
+                          ? '예약하기'
+                          : '바로 구현하기'}
                 </button>
               )}
             </footer>

@@ -6,6 +6,7 @@ import { gamejamIssues } from './gamejam-validation.ts';
 export type ApprovalStatus =
   | 'pending'
   | 'feedback'
+  | 'queued'
   | 'running'
   | 'completed'
   | 'failed'
@@ -14,6 +15,7 @@ export type ApprovalStatus =
 export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
   pending: '요청 대기',
   feedback: '보완 요청',
+  queued: '예약됨',
   running: '구현 중',
   completed: '완료',
   failed: '실패',

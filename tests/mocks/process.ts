@@ -179,10 +179,12 @@ export function spawn(
           }
           if (
             mode === 'fixture-html-compose' ||
+            mode === 'fixture-queue-html-compose' ||
             mode === 'fixture-gamejam-html-compose'
           ) {
-            if (spec.html_input_sources?.length !== 3)
-              throw new Error('Expected three HTML materials');
+            const count = mode === 'fixture-queue-html-compose' ? 1 : 3;
+            if (spec.html_input_sources?.length !== count)
+              throw new Error(`Expected ${count} HTML materials`);
             for (const source of spec.html_input_sources) {
               await fs.readFile(path.join(stage, source.path));
               for (const file of source.files)

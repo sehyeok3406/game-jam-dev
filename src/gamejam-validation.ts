@@ -29,6 +29,7 @@ export type GamejamValidationContext = {
   connection: CodexConnectionStatus | null;
   checkingConnection: boolean;
   aiBusy: boolean;
+  queueSupported?: boolean;
   locked: boolean;
   updateRestarting: boolean;
   availableInputs?: string[];
@@ -154,7 +155,7 @@ export function gamejamIssues(
   const shared = context.collaboration;
   if (context.updateRestarting)
     add('status', '앱 업데이트를 위한 재시작을 준비하고 있습니다.');
-  if (context.aiBusy)
+  if (context.aiBusy && !context.queueSupported)
     add(
       'status',
       '이 프로젝트에서 AI 작업이 진행 중입니다. 완료하거나 중지한 뒤 실행해주세요.',

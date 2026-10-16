@@ -211,6 +211,7 @@ export type MoveDocumentSectionInput = {
 };
 
 export type CreateTaskInput = {
+  queueVersion?: 1;
   multiplayer?: import('./multiplayer/types').MultiplayerSettings | null;
   requestSnapshot?: import('./gamejam-history').GamejamSavedRequest;
   canvasId?: string;
@@ -268,6 +269,7 @@ export type CodexConnectionStatus = {
 };
 
 export type CodexRunStatus =
+  | 'queued'
   | 'starting'
   | 'running'
   | 'validating'
@@ -298,6 +300,7 @@ export type CodexRunEvent = {
 export type AiProviderId = 'codex-cli' | 'claude-cli' | 'gemini-cli';
 
 export type StartCodexRunInput = {
+  queueVersion?: 1;
   approval?: import('./gamejam-approval').ApprovalStart;
   taskPath: string;
   providerId: AiProviderId;
@@ -551,6 +554,8 @@ export type GameCanvasApi = {
     listener: (state: CollaborationState) => void,
   ) => () => void;
   getActiveRun: () => Promise<CodexRunEvent | null>;
+  listAiQueue: () => Promise<import('./ai-task-queue').AiQueueTask[]>;
+  cancelQueuedTask: (taskId: string) => Promise<void>;
   getPreviewWindow: (
     relativePath?: string,
   ) => Promise<PreviewWindowState | null>;
@@ -790,6 +795,8 @@ export type CollaborationState = {
   recoveryKey?: string;
   revision?: number;
   aiRun?: CodexRunEvent | null;
+  aiQueueVersion?: 1;
+  aiQueue?: import('./ai-task-queue').AiQueueTask[];
   message?: string;
   taskInstructionsEditable?: boolean;
   taskResultNaming?: boolean;

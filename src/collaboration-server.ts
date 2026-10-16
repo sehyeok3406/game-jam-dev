@@ -13,6 +13,14 @@ import {
   type ApprovalDetail,
 } from './gamejam-approval.ts';
 import { gamejamTaskInput, type GamejamRequest } from './gamejam-request.ts';
+import {
+  createQueuedTask,
+  isQueuePending,
+  nextQueuedTasks,
+  queueFileLock,
+  queueTaskView,
+  validateQueuedInputs,
+} from './ai-task-queue.ts';
 import { attachMultiplayerServer } from './multiplayer/server.ts';
 import { PlayDiagnostics, diagnosticRef } from './multiplayer/diagnostics.ts';
 import packageInfo from '../package.json' with { type: 'json' };
@@ -67,6 +75,7 @@ import {
   assertAiFilesUnlocked,
   assertAiMutation,
   aiLockedSnapshot,
+  mergeAiFileLocks,
 } from './ai-file-lock.ts';
 import {
   CanvasError,
@@ -99,6 +108,8 @@ type Member = {
 };
 type StoredHistory = { entry: HistoryEntry; before: Snapshot; after: Snapshot };
 type Job = {
+  claimId?: string;
+  queueTaskId?: string;
   requestId?: string;
   fileLock?: import('./shared.ts').AiFileLock;
   providerId?: import('./shared.ts').AiProviderId;
@@ -114,6 +125,7 @@ type Job = {
   event: CodexRunEvent;
 };
 type Project = {
+  aiQueue?: import('./ai-task-queue.ts').StoredAiQueueTask[];
   approvals?: Record<string, GamejamApproval>;
   requestsVersion?: number;
   approvalReceipts?: Record<
@@ -205,7 +217,13 @@ const cloneProject = (project: Project): Project => ({
   history: [...project.history],
   applied: [...project.applied],
   job: project.job ? structuredClone(project.job) : null,
+  aiQueue: structuredClone(project.aiQueue ?? []),
 });
+const protectedFiles = (project: Project) =>
+  mergeAiFileLocks([
+    project.job?.fileLock,
+    queueFileLock(project.aiQueue ?? []),
+  ]);
 const digest = (value: string) =>
   createHash('sha256').update(value).digest('hex');
 const planApproval = (
@@ -373,6 +391,20 @@ export async function createCollaborationServer(options: Options) {
     }
   };
   const persist = async (project: Project) => {
+    for (const task of project.aiQueue ?? []) {
+      const event =
+        project.job?.queueTaskId === task.taskId
+          ? project.job.event
+          : project.lastRun?.runId === task.runId
+            ? project.lastRun
+            : null;
+      if (event && isQueuePending(task)) {
+        task.status = event.status;
+        task.message = event.message;
+        task.updatedAt = event.timestamp;
+      }
+      if (!isQueuePending(task)) task.baseline = {};
+    }
     if (
       !project.job &&
       project.lastRun &&
@@ -380,7 +412,8 @@ export async function createCollaborationServer(options: Options) {
     ) {
       const item = Object.values(project.approvals ?? {}).find(
         (r) =>
-          r.status === 'running' && r.taskPath === project.lastRun!.taskPath,
+          (r.status === 'running' || r.status === 'queued') &&
+          r.taskPath === project.lastRun!.taskPath,
       );
       if (item) {
         item.status =
@@ -591,6 +624,8 @@ export async function createCollaborationServer(options: Options) {
             ?.nickname ?? '참여자',
       })),
       aiRun: project.job?.event ?? project.lastRun,
+      aiQueueVersion: 1,
+      aiQueue: (project.aiQueue ?? []).map(queueTaskView),
       inviteExpiresAt:
         member.role === 'admin' ? project.inviteExpiresAt : undefined,
     },
@@ -1602,7 +1637,7 @@ export async function createCollaborationServer(options: Options) {
         if (action === 'lock') {
           editable(project, member);
           const relative = collaborationPath(input.relativePath);
-          assertAiFilesUnlocked(project.job?.fileLock, [relative]);
+          assertAiFilesUnlocked(protectedFiles(project), [relative]);
           if (
             !project.files[relative] ||
             !relative.endsWith('.md') ||
@@ -1686,7 +1721,7 @@ export async function createCollaborationServer(options: Options) {
           }
           checkSnapshot(nextFiles);
           assertEraseSupport(nextFiles);
-          assertAiMutation(project.job?.fileLock, project.files, nextFiles);
+          assertAiMutation(protectedFiles(project), project.files, nextFiles);
           assertBases(
             project,
             project.files,
@@ -1766,10 +1801,14 @@ export async function createCollaborationServer(options: Options) {
             command.input,
           );
           assertEraseSupport(reduced.files);
-          if (project.job && command.channel === 'tasks:create')
+          if (
+            project.job &&
+            command.channel === 'tasks:create' &&
+            (command.input as { queueVersion?: number })?.queueVersion !== 1
+          )
             throw new ApiError('이미 AI 작업이 진행 중입니다.');
           assertAiMutation(
-            project.job?.fileLock,
+            protectedFiles(project),
             project.files,
             reduced.files,
             command.channel,
@@ -1954,7 +1993,7 @@ export async function createCollaborationServer(options: Options) {
             record.after,
             input.direction,
           );
-          assertAiMutation(project.job?.fileLock, project.files, files);
+          assertAiMutation(protectedFiles(project), project.files, files);
           checkSnapshot(files);
           const next = cloneProject(project);
           recordChanges(
@@ -2072,10 +2111,47 @@ export async function createCollaborationServer(options: Options) {
             else files[key] = value;
           }
           checkSnapshot(files);
-          assertAiMutation(project.job?.fileLock, project.files, files);
+          assertAiMutation(protectedFiles(project), project.files, files);
           recordChanges(next, member, files, '이전 버전 복원', 'restore');
           await persist(next);
           await exportCheckpoint(next);
+          return envelope(next, member);
+        }
+        if (action === 'ai-queue-cancel') {
+          admin(member);
+          const next = cloneProject(project);
+          const task = next.aiQueue?.find((t) => t.taskId === input.taskId);
+          if (!task) throw new ApiError('예약을 찾을 수 없습니다.', 404);
+          if (task.status === 'cancelled') return envelope(project, member);
+          if (task.status !== 'queued')
+            throw new ApiError('실행 중인 작업은 작업 중지를 사용해주세요.');
+          task.status = 'cancelled';
+          task.message = '예약을 취소했습니다.';
+          task.updatedAt = Date.now();
+          const approval = Object.values(next.approvals ?? {}).find(
+            (a) => a.taskPath === task.taskPath && a.status === 'queued',
+          );
+          if (approval) {
+            approval.status = 'stopped';
+            approval.updatedAt = Date.now();
+            approval.revision++;
+            next.requestsVersion = (next.requestsVersion ?? 0) + 1;
+          }
+          next.lastRun = {
+            ...task,
+            kind: 'status',
+            timestamp: task.updatedAt,
+            message: task.message,
+          };
+          recordChanges(
+            next,
+            member,
+            taskState(next.files, task.taskPath, 'cancelled'),
+            'AI 예약 취소',
+            'ai',
+            { status: 'cancelled', taskPath: task.taskPath },
+          );
+          await persist(next);
           return envelope(next, member);
         }
         if (action.startsWith('ai-') || action === 'requests-start') {
@@ -2084,8 +2160,65 @@ export async function createCollaborationServer(options: Options) {
               '뷰어는 AI를 실행하거나 중지할 수 없습니다.',
               403,
             );
-          if (action === 'ai-start' || action === 'requests-start') {
+          if (
+            action === 'ai-start' ||
+            action === 'requests-start' ||
+            action === 'ai-claim'
+          ) {
             admin(member);
+            let claimed:
+              | import('./ai-task-queue.ts').StoredAiQueueTask
+              | undefined;
+            if (action === 'ai-claim') {
+              if (!/^[a-f0-9-]{36}$/.test(String(input.claimId)))
+                throw new ApiError('실행 요청 ID가 올바르지 않습니다.', 400);
+              if (project.job) {
+                const own =
+                  project.job.queueTaskId === input.taskId &&
+                  project.job.memberId === member.id &&
+                  project.job.claimId === input.claimId;
+                return {
+                  ...envelope(project, member),
+                  lease: own ? project.job.id : null,
+                  runId: own ? project.job.event.runId : undefined,
+                };
+              }
+              claimed = nextQueuedTasks(
+                project.aiQueue ?? [],
+              )[0] as typeof claimed;
+              if (!claimed || claimed.taskId !== input.taskId)
+                return { ...envelope(project, member), lease: null };
+              try {
+                validateQueuedInputs(claimed, project.files);
+              } catch (error) {
+                const next = cloneProject(project);
+                const task = next.aiQueue!.find(
+                  (t) => t.taskId === claimed!.taskId,
+                )!;
+                task.status = 'failed';
+                task.updatedAt = Date.now();
+                task.message = (error as Error).message;
+                next.lastRun = {
+                  ...task,
+                  kind: 'error',
+                  timestamp: task.updatedAt,
+                  message: task.message,
+                };
+                recordChanges(
+                  next,
+                  member,
+                  taskState(next.files, task.taskPath, 'failed'),
+                  'AI 예약 검증 실패',
+                  'ai',
+                  { status: 'failed', taskPath: task.taskPath },
+                );
+                await persist(next);
+                return { ...envelope(next, member), lease: null };
+              }
+              input.taskPath = claimed.taskPath;
+              input.providerId = claimed.providerId;
+              input.modelId = claimed.modelId;
+            }
             const providerId = input.providerId ?? 'codex-cli';
             if (!isAiProvider(providerId))
               throw new CanvasError(
@@ -2100,6 +2233,24 @@ export async function createCollaborationServer(options: Options) {
                 (input.modelId && !/^[a-zA-Z0-9._:/-]+$/.test(input.modelId)))
             )
               throw new ApiError('AI 모델 ID가 올바르지 않습니다.', 400);
+            if (action === 'ai-start' && input.queueVersion === 1) {
+              const previous = project.aiQueue?.find(
+                (t) => t.taskPath === input.taskPath,
+              );
+              if (previous) {
+                if (
+                  previous.providerId !== providerId ||
+                  previous.modelId !== (input.modelId ?? null)
+                )
+                  throw new ApiError(
+                    '이미 등록한 작업의 실행 설정을 변경할 수 없습니다.',
+                  );
+                return {
+                  ...envelope(project, member),
+                  queuedTask: queueTaskView(previous),
+                };
+              }
+            }
             if (
               action === 'ai-start' &&
               Object.values(project.approvals ?? {}).some(
@@ -2117,6 +2268,28 @@ export async function createCollaborationServer(options: Options) {
                 throw new ApiError('요청을 찾을 수 없습니다.', 404);
               if (!/^[a-f0-9-]{36}$/.test(String(input.commandId)))
                 throw new ApiError('요청 작업 ID가 올바르지 않습니다.', 400);
+              const reserved = project.aiQueue?.find(
+                (t) => t.taskPath === approval!.taskPath,
+              );
+              if (
+                input.queueVersion === 1 &&
+                approval.approvalCommandId === input.commandId &&
+                reserved
+              ) {
+                if (
+                  approval.approvedRevision !== input.requestRevision ||
+                  approval.approvedReviewToken !== input.reviewToken ||
+                  approval.providerId !== providerId ||
+                  approval.modelId !== (input.modelId ?? null)
+                )
+                  throw new ApiError(
+                    '같은 작업 ID로 실행 내용을 변경할 수 없습니다.',
+                  );
+                return {
+                  ...envelope(project, member),
+                  queuedTask: queueTaskView(reserved),
+                };
+              }
               if (
                 approval.approvalCommandId === input.commandId &&
                 project.job?.requestId === approval.id &&
@@ -2157,7 +2330,7 @@ export async function createCollaborationServer(options: Options) {
               workingFiles = plan.files;
               input.taskPath = plan.taskPath;
             }
-            if (project.job)
+            if (project.job && input.queueVersion !== 1)
               throw new ApiError('이미 AI 작업이 진행 중입니다.');
             if (action === 'ai-start' && input.revision !== project.revision)
               throw new ApiError(
@@ -2235,8 +2408,104 @@ export async function createCollaborationServer(options: Options) {
               throw new ApiError(
                 '이미 생성된 새 버전입니다. 새 작업을 만들어주세요.',
               );
+            if (input.queueVersion === 1 && action !== 'ai-claim') {
+              const existing = project.aiQueue?.find(
+                (t) => t.taskPath === taskPath,
+              );
+              if (existing) {
+                if (
+                  existing.providerId !== providerId ||
+                  existing.modelId !== (input.modelId ?? null)
+                )
+                  throw new ApiError(
+                    '이미 등록한 작업의 실행 설정을 변경할 수 없습니다.',
+                  );
+                return {
+                  ...envelope(project, member),
+                  queuedTask: queueTaskView(existing),
+                };
+              }
+              const next = cloneProject(project);
+              const queuedFiles = taskState(workingFiles, taskPath, 'queued');
+              const task = createQueuedTask(
+                queuedFiles,
+                {
+                  taskPath,
+                  providerId,
+                  modelId: (input.modelId as string) || null,
+                  actorId: member.id,
+                  title: String(
+                    matter(workingFiles[taskPath]).data.title ?? taskPath,
+                  ),
+                },
+                randomUUID(),
+                next.aiQueue ?? [],
+              );
+              if (
+                project.job &&
+                !(project.aiQueue ?? []).some(
+                  (t) => t.runId === project.job!.event.runId,
+                )
+              ) {
+                const active = createQueuedTask(
+                  project.files,
+                  {
+                    taskPath: project.job.taskPath,
+                    providerId: project.job.providerId ?? 'codex-cli',
+                    modelId: project.job.modelId ?? null,
+                  },
+                  project.job.event.runId,
+                  [],
+                );
+                createQueuedTask(queuedFiles, task, task.taskId, [active]);
+              }
+              recordChanges(next, member, queuedFiles, 'AI 작업 예약', 'ai', {
+                status: 'queued',
+                taskPath,
+                providerId,
+                modelId: task.modelId,
+              });
+              (next.aiQueue ??= []).push(task);
+              if (approval) {
+                const item = next.approvals![approval.id];
+                Object.assign(item, {
+                  status: 'queued',
+                  approvedRevision: item.revision,
+                  approvedBy: member.id,
+                  approvedName: member.nickname,
+                  approvedAt: Date.now(),
+                  updatedAt: Date.now(),
+                  executionRequest: structuredClone(item.request),
+                  approvalCommandId: String(input.commandId),
+                  approvedReviewToken: String(input.reviewToken),
+                  runId: task.runId,
+                  taskPath,
+                  providerId,
+                  modelId: task.modelId,
+                  outputs,
+                });
+                item.revision++;
+                item.changes.push({
+                  at: item.updatedAt,
+                  actorId: member.id,
+                  actorName: member.nickname,
+                  action: 'approved',
+                  revision: item.revision,
+                });
+                next.requestsVersion = (next.requestsVersion ?? 0) + 1;
+              }
+              await persist(next);
+              return {
+                ...envelope(next, member),
+                queuedTask: queueTaskView(task),
+              };
+            }
+            if (!claimed && (project.aiQueue ?? []).some(isQueuePending))
+              throw new ApiError(
+                '예약된 AI 작업이 있습니다. 예약 실행을 지원하는 앱을 사용해주세요.',
+              );
             const next = cloneProject(project),
-              runId = randomUUID();
+              runId = claimed?.runId ?? randomUUID();
             recordChanges(
               next,
               member,
@@ -2269,6 +2538,8 @@ export async function createCollaborationServer(options: Options) {
               timestamp: Date.now(),
             };
             next.job = {
+              claimId: claimed ? String(input.claimId) : undefined,
+              queueTaskId: claimed?.taskId,
               requestId: approval?.id,
               fileLock,
               providerId,
@@ -2314,8 +2585,23 @@ export async function createCollaborationServer(options: Options) {
               });
               next.requestsVersion = (next.requestsVersion ?? 0) + 1;
             }
+            if (claimed) {
+              const item = Object.values(next.approvals ?? {}).find(
+                (a) => a.taskPath === taskPath && a.status === 'queued',
+              );
+              if (item) {
+                item.status = 'running';
+                item.revision++;
+                next.requestsVersion = (next.requestsVersion ?? 0) + 1;
+              }
+            }
             await persist(next);
-            return { ...envelope(next, member), lease: next.job.id, taskPath };
+            return {
+              ...envelope(next, member),
+              lease: next.job.id,
+              taskPath,
+              runId,
+            };
           }
           const job = project.job;
           if (!job)
@@ -2323,6 +2609,8 @@ export async function createCollaborationServer(options: Options) {
               'AI 작업이 끝났거나 실행 권한이 만료되었습니다.',
             );
           if (action === 'ai-cancel') {
+            if (job.queueTaskId && input.runId !== job.event.runId)
+              throw new ApiError('중지할 작업 ID를 지정해주세요.');
             if (member.role !== 'admin' && job.memberId !== member.id)
               throw new ApiError(
                 '본인이 실행한 작업만 중지할 수 있습니다. 다른 작업은 관리자에게 요청해주세요.',
@@ -2370,6 +2658,7 @@ export async function createCollaborationServer(options: Options) {
               message: `${member.nickname}님 · ${status === 'validating' ? '결과 검증 중' : 'AI 실행 중'}`,
               timestamp: Date.now(),
             };
+            await persist(project);
             return envelope(project, member);
           }
           if (action === 'ai-finish') {

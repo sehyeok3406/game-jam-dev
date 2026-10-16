@@ -420,7 +420,9 @@ export function GamejamRequestInbox({
                     </p>
                     {aiBusy && (
                       <p role="status">
-                        다른 AI 작업이 끝난 뒤 승인할 수 있습니다.
+                        {c.aiQueueVersion === 1
+                          ? '승인한 작업은 예약 목록에 추가됩니다.'
+                          : '다른 AI 작업이 끝난 뒤 승인할 수 있습니다.'}
                       </p>
                     )}
                     <button
@@ -429,12 +431,16 @@ export function GamejamRequestInbox({
                         !writable ||
                         busy ||
                         changed ||
-                        aiBusy ||
+                        (aiBusy && c.aiQueueVersion !== 1) ||
                         !detail.reviewToken
                       }
                       onClick={() => void perform('start')}
                     >
-                      {busy ? '처리 중…' : '승인하고 구현하기'}
+                      {busy
+                        ? '처리 중…'
+                        : aiBusy && c.aiQueueVersion === 1
+                          ? '승인하고 예약하기'
+                          : '승인하고 구현하기'}
                     </button>
                   </div>
                 )}

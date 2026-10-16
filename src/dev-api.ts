@@ -53,7 +53,16 @@ import {
   type GamejamSavedRequest,
 } from './gamejam-history';
 import { cardColor } from './card-colors';
-import { assertAiFilesUnlocked } from './ai-file-lock';
+import { assertAiFilesUnlocked, mergeAiFileLocks } from './ai-file-lock';
+import {
+  createQueuedTask,
+  isQueuePending,
+  nextQueuedTasks,
+  queueFileLock,
+  queueTaskView,
+  validateQueuedInputs,
+  type StoredAiQueueTask,
+} from './ai-task-queue';
 import {
   verticalLayouts,
   NEW_FILE_GAP,
@@ -301,8 +310,42 @@ let activeDevRun: {
   providerId: import('./shared').AiProviderId;
 } | null = null;
 const emitRun = (event: CodexRunEvent) => {
+  const queued = devAiQueue.find((t) => t.runId === event.runId);
+  if (queued) {
+    queued.status = event.status;
+    queued.message = event.message;
+    queued.updatedAt = event.timestamp;
+  }
   lastDevEvent = event;
   runListeners.forEach((listener) => listener(event));
+};
+const devAiQueue: StoredAiQueueTask[] = [];
+const devQueueFiles = () => devFiles(devSnapshot());
+const devQueueScopes = (taskPath: string) => {
+  const target = taskOutputs.get(taskPath);
+  const read = {
+    paths: [
+      ...(taskInputs.get(taskPath) ?? []),
+      ...(target?.base ? [target.base] : []),
+    ],
+    folders: [] as string[],
+  };
+  for (const p of read.paths) {
+    const image = documents.find((d) => d.relativePath === p)?.asset;
+    if (image) read.paths.push(image.path);
+    const section = sections.find((s) => s.relativePath === p);
+    for (const member of section?.members ?? [])
+      if (!read.paths.includes(member.path)) read.paths.push(member.path);
+  }
+  const write = {
+    paths: [
+      taskPath,
+      ...(taskDocumentOutputs.get(taskPath)?.outputs ?? []),
+      ...(target ? [target.output] : []),
+    ],
+    folders: [] as string[],
+  };
+  return { read, write, protectedScope: mergeAiFileLocks([read, write]) };
 };
 
 export function createDevGameCanvasApi(): GameCanvasApi {
@@ -449,6 +492,35 @@ export function createDevGameCanvasApi(): GameCanvasApi {
   const saveRecords = new Map<string, DocumentSaveRecord>();
   const saveListeners = new Set<(state: DocumentSaveState) => void>();
   let publicApi: GameCanvasApi;
+  const pumpDevQueue = () => {
+    if (activeDevRun) return;
+    const task = nextQueuedTasks(devAiQueue)[0] as
+      | StoredAiQueueTask
+      | undefined;
+    if (!task) return;
+    try {
+      validateQueuedInputs(task, devQueueFiles());
+    } catch (error) {
+      task.status = 'failed';
+      task.message = (error as Error).message;
+      notify();
+      queueMicrotask(pumpDevQueue);
+      return;
+    }
+    task.status = 'starting';
+    void publicApi
+      .startCodexRun({
+        taskPath: task.taskPath,
+        providerId: task.providerId,
+        modelId: task.modelId,
+      })
+      .catch((error) => {
+        task.status = 'failed';
+        task.message = String(error);
+        notify();
+        queueMicrotask(pumpDevQueue);
+      });
+  };
   const saveScope = 'local:dev-workspace';
   let previewClipboardId: string | undefined;
   const saveQueue = new DocumentSaveQueue(
@@ -934,6 +1006,17 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       };
     },
     getActiveRun: async () => (activeDevRun ? lastDevEvent : null),
+    listAiQueue: async () => structuredClone(devAiQueue.map(queueTaskView)),
+    cancelQueuedTask: async (taskId) => {
+      const task = devAiQueue.find(
+        (t) => t.taskId === taskId && t.status === 'queued',
+      );
+      if (!task) throw new Error('취소할 예약을 찾을 수 없습니다.');
+      task.status = 'cancelled';
+      task.message = '예약을 취소했습니다.';
+      task.updatedAt = Date.now();
+      notify();
+    },
     getPreviewWindow: async (relative = DEFAULT_PREVIEW_PATH) =>
       structuredClone(previewWindows.get(assertPreviewPath(relative)) ?? null),
     savePreviewWindow: async (state, relative = DEFAULT_PREVIEW_PATH) => {
@@ -1561,7 +1644,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       thenImplement,
       requestSnapshot,
     }) => {
-      const id = `${thenImplement ? 'gamejam' : kind}-task-${Date.now()}`;
+      const id = `${thenImplement ? 'gamejam' : kind}-task-${crypto.randomUUID()}`;
       const commandText = taskInstructions(kind, instructions);
       const htmlChoice = thenImplement?.htmlResult ?? htmlResult;
       const output =
@@ -1679,13 +1762,43 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       message:
         '개발 화면의 모의 연결입니다. 실제 계정이나 AI를 호출하지 않습니다.',
     }),
-    startCodexRun: async ({ taskPath, providerId, modelId }) => {
+    startCodexRun: async ({ taskPath, providerId, modelId, queueVersion }) => {
       if (collab.active && (!collab.connected || collab.role !== 'admin'))
         throw new Error('관리자만 AI를 실행할 수 있습니다.');
+      if (queueVersion === 1) {
+        let task = devAiQueue.find((t) => t.taskPath === taskPath);
+        if (!task) {
+          task = createQueuedTask(
+            devQueueFiles(),
+            {
+              taskPath,
+              providerId,
+              modelId,
+              title: documents.find((d) => d.relativePath === taskPath)?.title,
+            },
+            crypto.randomUUID(),
+            devAiQueue,
+            devQueueScopes(taskPath),
+          );
+          devAiQueue.push(task);
+        }
+        notify();
+        setTimeout(pumpDevQueue, 0);
+        return {
+          runId: task.runId,
+          taskPath,
+          status: task.status,
+          providerId,
+          modelId,
+        };
+      }
       if (activeDevRun) throw new Error('이미 실행 중인 AI 작업이 있습니다.');
       if (!['codex-cli', 'claude-cli', 'gemini-cli'].includes(providerId))
         throw new Error('지원하지 않는 AI 제공자입니다.');
-      const runId = `dev-run-${Date.now()}`;
+      const runId =
+        devAiQueue.find(
+          (t) => t.taskPath === taskPath && t.status === 'starting',
+        )?.runId ?? `dev-run-${crypto.randomUUID()}`;
       const before = devSnapshot();
       const target = taskOutputs.get(taskPath);
       const docTarget = taskDocumentOutputs.get(taskPath);
@@ -1887,6 +2000,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         send('completed', 'result', '개발 모드 Codex 작업이 완료되었습니다.');
         activeDevRun = null;
         notify();
+        queueMicrotask(pumpDevQueue);
       }, 2_900);
       return { runId, taskPath, status: 'starting', providerId, modelId };
     },
@@ -1915,6 +2029,8 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         actorId: collab.memberId,
         timestamp: Date.now(),
       });
+      notify();
+      queueMicrotask(pumpDevQueue);
     },
     readPreview: async (relative = DEFAULT_PREVIEW_PATH) =>
       structuredClone(
@@ -1978,19 +2094,31 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           throw new Error('관리자만 사용할 수 있습니다.');
         if (
           activeDevRun &&
-          ['createTask', 'selectWorkspace'].includes(property)
+          (property === 'selectWorkspace' ||
+            (property === 'createTask' &&
+              (args[0] as { queueVersion?: number })?.queueVersion !== 1))
         )
           throw new Error(
             '현재 AI가 문서 정리 또는 HTML 구현을 진행하고 있습니다. 문서 추가·수정·삭제와 배치 변경을 잠시 사용할 수 없습니다.',
           );
         const before = devSnapshot();
         const result = await Reflect.apply(method, target, args);
-        if (activeDevRun) {
+        if (activeDevRun || devAiQueue.some(isQueuePending)) {
           const left = devFiles(before),
             right = devFiles(devSnapshot());
           try {
             assertAiFilesUnlocked(
-              activeDevRun.fileLock,
+              queueFileLock([
+                ...(activeDevRun
+                  ? [
+                      {
+                        ...activeDevRun,
+                        status: 'running' as const,
+                      } as StoredAiQueueTask,
+                    ]
+                  : []),
+                ...devAiQueue,
+              ]),
               Object.keys({ ...left, ...right }).filter(
                 (path) => left[path] !== right[path],
               ),

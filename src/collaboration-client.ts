@@ -1428,6 +1428,79 @@ export class CollaborationClient {
       return { ...result.files };
     });
   }
+  async enqueueAi(input: import('./shared').StartCodexRunInput) {
+    return this.serial(async () => {
+      if (this.state.aiQueueVersion !== 1)
+        throw new Error('예약 실행을 사용하려면 협업 서버를 업데이트해주세요.');
+      const action = input.approval ? 'requests-start' : 'ai-start';
+      const command = {
+        ...input,
+        ...(input.approval
+          ? { ...input.approval, requestRevision: input.approval.revision }
+          : {}),
+        queueVersion: 1,
+        revision: this.state.revision,
+        gamejamVersion: 1,
+        multiplayerVersion: 1,
+        documentBundleVersion: 1,
+        documentOutputFormatVersion: 1,
+        htmlAnalysisVersion: 1,
+        htmlInputVersion: 1,
+        canvasSheetsVersion: 1,
+      };
+      let response: unknown;
+      try {
+        response = await this.request(action, command);
+      } catch (error) {
+        if (!retryableTransport(error)) throw error;
+        response = await this.request(action, command);
+      }
+      const result = response as CollaborationEnvelope & {
+        queuedTask: import('./ai-task-queue').AiQueueTask;
+      };
+      this.accept(result);
+      return result.queuedTask;
+    });
+  }
+  async claimAi(taskId: string) {
+    return this.serial(async () => {
+      const command = {
+        taskId,
+        claimId: randomUUID(),
+        gamejamVersion: 1,
+        multiplayerVersion: 1,
+        documentBundleVersion: 1,
+        documentOutputFormatVersion: 1,
+        htmlAnalysisVersion: 1,
+        htmlInputVersion: 1,
+        canvasSheetsVersion: 1,
+      };
+      let response: unknown;
+      try {
+        response = await this.request('ai-claim', command);
+      } catch (error) {
+        if (!retryableTransport(error)) throw error;
+        response = await this.request('ai-claim', command);
+      }
+      const result = response as CollaborationEnvelope & {
+        lease: string | null;
+        runId?: string;
+        taskPath?: string;
+      };
+      if (result.lease) this.lease = result.lease;
+      this.accept(result);
+      return { ...result, files: { ...this.files } };
+    });
+  }
+  async cancelQueuedTask(taskId: string) {
+    await this.serial(async () =>
+      this.accept(
+        (await this.request('ai-queue-cancel', {
+          taskId,
+        })) as CollaborationEnvelope,
+      ),
+    );
+  }
   async listApprovals() {
     if (this.state.requestApprovalVersion !== 1)
       throw new Error('요청 기능을 사용하려면 협업 서버를 업데이트해주세요.');
@@ -1492,8 +1565,10 @@ export class CollaborationClient {
       this.lease = null;
     }
   }
-  async cancelAi() {
-    this.accept((await this.request('ai-cancel')) as CollaborationEnvelope);
+  async cancelAi(runId?: string) {
+    this.accept(
+      (await this.request('ai-cancel', { runId })) as CollaborationEnvelope,
+    );
     this.lease = null;
   }
 }

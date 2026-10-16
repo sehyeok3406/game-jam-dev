@@ -4,6 +4,15 @@ import {
 } from './discord-approval';
 import { DiscordApprovalStore } from './discord-approval-store';
 import { PropertyQueue } from './property-queue.ts';
+import { AiQueueStore } from './ai-queue-store.ts';
+import {
+  createQueuedTask,
+  isQueuePending,
+  nextQueuedTasks,
+  queueFileLock,
+  validateQueuedInputs,
+  type AiQueueTask,
+} from './ai-task-queue.ts';
 import {
   snapshotDrawings,
   DRAWING_DIRECTORY,
@@ -49,6 +58,7 @@ import {
   assertAiFilesUnlocked,
   assertAiMutation,
   changedAiFile,
+  mergeAiFileLocks,
 } from './ai-file-lock';
 import fs from 'node:fs/promises';
 import { mkdirSync, existsSync } from 'node:fs';
@@ -313,7 +323,7 @@ const registerUpdates = async () => {
       updateBlockers({
         aiBusy:
           runPreparing ||
-          !!activeCodexRun ||
+          !!currentCodexRun() ||
           !!(
             collaboration?.state.aiRun &&
             ['starting', 'running', 'validating'].includes(
@@ -575,16 +585,17 @@ const collaborationChanged = (state: CollaborationState, changed: boolean) => {
       console.error('공동 프로젝트 캐시 저장 실패', error),
     );
   }
+  const run = sharedRunId ? activeCodexRuns.get(sharedRunId) : null;
   if (
-    activeCodexRun &&
+    run &&
     sharedRunId &&
     state.aiRun?.runId === sharedRunId &&
     (!state.connected ||
       state.aiRun?.status === 'cancelled' ||
       state.aiRun?.status === 'failed')
   ) {
-    activeCodexRun.cancelRequested = true;
-    void terminateProcessTree(activeCodexRun.child);
+    run.cancelRequested = true;
+    void terminateProcessTree(run.child);
   }
 };
 const collaborationSessionFile = () =>
@@ -665,7 +676,7 @@ const leaveCollaboration = async () => {
     throw new Error(
       '미동기화 작업을 먼저 반영하거나 충돌을 해결해주세요. 홈으로 돌아가기는 작업과 세션을 보관합니다.',
     );
-  if (activeCodexRun || runPreparing)
+  if (currentCodexRun() || runPreparing)
     throw new Error('AI 작업을 먼저 중지해주세요.');
   await collaboration?.leave();
   resetClipboardContext();
@@ -720,15 +731,42 @@ const enqueueMutation = <T>(operation: () => Promise<T>): Promise<T> => {
 };
 const aiIsActive = () =>
   runPreparing ||
-  !!activeCodexRun ||
+  !!currentCodexRun() ||
   (!!collaboration?.state.aiRun &&
     ['starting', 'running', 'validating'].includes(
       collaboration.state.aiRun.status,
     ));
-const currentAiFileLock = () =>
-  activeCodexRun?.fileLock ??
+const executionFileLock = () =>
+  currentCodexRun()?.fileLock ??
   preparingFileLock ??
   (aiIsActive() ? collaboration?.state.aiRun?.fileLock : null);
+const queueStores = new Map<string, Promise<AiQueueStore>>();
+const loadedQueues = new Map<string, AiQueueStore>();
+const localQueue = (root: string) => {
+  let pending = queueStores.get(root);
+  if (!pending) {
+    const filename = path.join(
+      app.getPath('userData'),
+      'ai-queues',
+      `${createHash('sha256').update(root).digest('hex')}.json`,
+    );
+    pending = new AiQueueStore(filename).load().then((store) => {
+      loadedQueues.set(root, store);
+      return store;
+    });
+    queueStores.set(root, pending);
+  }
+  return pending;
+};
+const currentAiFileLock = () =>
+  mergeAiFileLocks([
+    executionFileLock(),
+    queueFileLock(
+      collaboration
+        ? (collaboration.state.aiQueue ?? [])
+        : (loadedQueues.get(workspaceRoot ?? '')?.tasks ?? []),
+    ),
+  ]);
 const assertEditable = () => {
   if (aiIsActive())
     throw new Error(
@@ -758,16 +796,23 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
     if (scope && scope !== documentSaveScope())
       throw new Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
   }
-  if (!aiIsActive()) return;
+  if (!collaboration && workspaceRoot) await localQueue(workspaceRoot);
   if (
-    channel === 'tasks:create' ||
+    !aiIsActive() &&
+    !currentAiFileLock().paths.length &&
+    !currentAiFileLock().folders.length
+  )
+    return;
+  if (
+    (channel === 'tasks:create' &&
+      (args[0] as CreateTaskInput)?.queueVersion !== 1) ||
     channel === 'workspace:select' ||
     channel.startsWith('projects:')
   )
     return assertEditable();
   const lock = currentAiFileLock();
   // Older servers still enforce a project lease; retain their protection.
-  if (!lock) return assertEditable();
+  if (aiIsActive() && !executionFileLock()) return assertEditable();
   if (channel === 'files:import' || channel === 'clipboard:canvas-paste')
     return;
   if (
@@ -816,7 +861,7 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
   const reduced = reduceCollaboration(before, channel, input);
   assertAiMutation(lock, before, reduced.files, channel, input);
 };
-let activeCodexRun: {
+type ActiveCodexRun = {
   fileLock: import('./shared').AiFileLock;
   lockBaseline: Snapshot;
   runId: string;
@@ -831,7 +876,10 @@ let activeCodexRun: {
   modelId: string | null;
   providerId: import('./shared').AiProviderId;
   finalizing: boolean;
-} | null = null;
+};
+const activeCodexRuns = new Map<string, ActiveCodexRun>();
+const currentCodexRun = (): ActiveCodexRun | null =>
+  activeCodexRuns.values().next().value ?? null;
 
 type ProcessResult = {
   code: number | null;
@@ -1423,9 +1471,10 @@ const emitCodexRunEvent = (
   failure?: FailureInfo,
 ) => {
   const event: CodexRunEvent = {
-    fileLock: currentAiFileLock() ?? undefined,
-    providerId: activeCodexRun?.providerId ?? executionProvider,
-    modelId: activeCodexRun?.modelId ?? executionModelId,
+    fileLock:
+      activeCodexRuns.get(runId)?.fileLock ?? preparingFileLock ?? undefined,
+    providerId: activeCodexRuns.get(runId)?.providerId ?? executionProvider,
+    modelId: activeCodexRuns.get(runId)?.modelId ?? executionModelId,
     actorId: collaboration?.state.memberId,
     runId,
     taskPath,
@@ -1441,6 +1490,18 @@ const emitCodexRunEvent = (
   if (runTimelines.size > 3)
     runTimelines.delete(runTimelines.keys().next().value!);
   lastRunEvent = event;
+  if (!collaboration && workspaceRoot) {
+    const store = loadedQueues.get(workspaceRoot);
+    const task = store?.tasks.find((t) => t.runId === runId);
+    if (task && (task.status !== status || kind !== 'log')) {
+      task.status = status;
+      task.message = event.message;
+      task.updatedAt = event.timestamp;
+      void store!
+        .save()
+        .catch((error) => console.error('AI 예약 저장 실패', error));
+    }
+  }
   mainWindow?.webContents.send('codex:run-event', event);
   if (
     collaboration?.lease &&
@@ -1517,8 +1578,9 @@ const describeCodexJsonEvent = (value: unknown) => {
 
 const startCodexRun = async (
   input: StartCodexRunInput,
+  queuedTask?: AiQueueTask,
 ): Promise<StartCodexRunResult> => {
-  if (activeCodexRun) throw new Error('이미 실행 중인 AI 작업이 있습니다.');
+  if (currentCodexRun()) throw new Error('이미 실행 중인 AI 작업이 있습니다.');
   if (!isAiProvider(input.providerId))
     throw new CanvasError('GC-AI-009', '지원하지 않는 AI 제공자입니다.');
   const modelId = input.modelId?.trim() || null;
@@ -1536,7 +1598,7 @@ const startCodexRun = async (
   if (taskDocument.type !== 'ai-task')
     throw new Error('AI 작업 Markdown 파일만 실행할 수 있습니다.');
 
-  const runId = sharedRunId ?? historyId();
+  const runId = sharedRunId ?? queuedTask?.runId ?? historyId();
   const createdAt = Date.now();
   emitCodexRunEvent(
     runId,
@@ -1664,7 +1726,7 @@ const startCodexRun = async (
       env: process.env,
     });
   let child = spawnPhase();
-  activeCodexRun = {
+  const runContext: ActiveCodexRun = {
     fileLock,
     lockBaseline,
     runId,
@@ -1680,6 +1742,7 @@ const startCodexRun = async (
     providerId: input.providerId,
     finalizing: false,
   };
+  activeCodexRuns.set(runId, runContext);
 
   emitCodexRunEvent(
     runId,
@@ -1759,7 +1822,7 @@ const startCodexRun = async (
     if (finalized) return;
     finalized = true;
     if (stdoutBuffer.trim()) emitJsonLine(stdoutBuffer);
-    const currentRun = activeCodexRun?.runId === runId ? activeCodexRun : null;
+    const currentRun = activeCodexRuns.get(runId) ?? null;
     const cancelled = currentRun?.cancelRequested === true;
     let status: CodexRunStatus = cancelled
       ? 'cancelled'
@@ -2015,9 +2078,11 @@ const startCodexRun = async (
           : errorMessage,
       failure,
     );
-    if (activeCodexRun?.runId === runId) activeCodexRun = null;
+    activeCodexRuns.delete(runId);
     sharedRunId = null;
+    if (!collaboration) await loadedQueues.get(root)?.save();
     notifyWorkspaceChanged();
+    void pumpAiQueue();
   };
 
   const attachPhase = (process: ChildProcessWithoutNullStreams) => {
@@ -2032,7 +2097,7 @@ const startCodexRun = async (
       if (
         code === 0 &&
         !error &&
-        !activeCodexRun?.cancelRequested &&
+        !runContext.cancelRequested &&
         input.providerId !== 'codex-cli'
       ) {
         try {
@@ -2065,7 +2130,7 @@ const startCodexRun = async (
         emitJsonLine(stdoutBuffer);
         stdoutBuffer = '';
       }
-      const run = activeCodexRun?.runId === runId ? activeCodexRun : null;
+      const run = activeCodexRuns.get(runId) ?? null;
       if (
         stages.length &&
         stageIndex === 0 &&
@@ -2197,6 +2262,7 @@ function drawingChanges(files: Snapshot, known: Record<string, string> = {}) {
 const prepareCodexRun = async (
   runInput: StartCodexRunInput,
   authorized?: () => void,
+  queuedTask?: AiQueueTask,
 ) => {
   assertEditable();
   if (collaboration) {
@@ -2219,21 +2285,27 @@ const prepareCodexRun = async (
   try {
     authorized?.();
     if (collaboration) {
-      const files = await collaboration.beginAi(
-        runInput.taskPath,
-        runInput.modelId,
-        runInput.providerId,
-        runInput.approval,
-      );
+      const claimed = queuedTask
+        ? await collaboration.claimAi(queuedTask.taskId)
+        : null;
+      if (queuedTask && !claimed?.lease) return null;
+      const files =
+        claimed?.files ??
+        (await collaboration.beginAi(
+          runInput.taskPath,
+          runInput.modelId,
+          runInput.providerId,
+          runInput.approval,
+        ));
       if (runInput.approval) {
         runInput.taskPath = collaboration.state.aiRun!.taskPath;
         preparingFileLock = collaboration.state.aiRun?.fileLock ?? null;
       }
-      sharedRunId = collaboration.state.aiRun?.runId ?? null;
+      sharedRunId = claimed?.runId ?? collaboration.state.aiRun?.runId ?? null;
       lastSharedRunStatus = '';
       await syncSharedSnapshot(files);
     }
-    return await startCodexRun(runInput);
+    return await startCodexRun(runInput, queuedTask);
   } catch (error) {
     const run = lastRunEvent as CodexRunEvent | null;
     const failure = preparationCancelled
@@ -2308,8 +2380,220 @@ const prepareCodexRun = async (
   } finally {
     runPreparing = false;
     preparingFileLock = null;
-    if (!activeCodexRun) sharedRunId = null;
+    if (!currentCodexRun()) sharedRunId = null;
   }
+};
+
+let pumpingAiQueue = false;
+let queueShutdown = false;
+const pumpAiQueue = async () => {
+  if (
+    pumpingAiQueue ||
+    queueShutdown ||
+    !workspaceRoot ||
+    currentCodexRun() ||
+    runPreparing ||
+    updateRestartPrepared
+  )
+    return;
+  pumpingAiQueue = true;
+  const root = workspaceRoot,
+    client = collaboration;
+  try {
+    if (
+      client &&
+      (!client.state.connected ||
+        client.state.role !== 'admin' ||
+        client.state.pendingChanges ||
+        client.state.aiQueueVersion !== 1 ||
+        ['starting', 'running', 'validating'].includes(
+          client.state.aiRun?.status ?? '',
+        ))
+    )
+      return;
+    const store = client ? null : await localQueue(root);
+    if (store?.persistenceFailed) await store.save();
+    const task = nextQueuedTasks(client?.state.aiQueue ?? store!.tasks)[0];
+    if (!task) return;
+    const connection = await getAiStatus(task.providerId);
+    if (!connection.available || !connection.authenticated) {
+      if (store) {
+        const item = store.tasks.find((t) => t.taskId === task.taskId)!;
+        const message = `실행 대기 · ${connection.message}`;
+        if (item.message !== message) {
+          item.message = message;
+          await store.save();
+          notifyWorkspaceChanged();
+        }
+      }
+      return;
+    }
+    await enqueueMutation(async () => {
+      if (
+        root !== workspaceRoot ||
+        client !== collaboration ||
+        currentCodexRun() ||
+        runPreparing ||
+        queueShutdown ||
+        updateRestartPrepared
+      )
+        return;
+      const item = store?.tasks.find((t) => t.taskId === task.taskId);
+      if (item) {
+        if (item.status !== 'queued') return;
+        try {
+          validateQueuedInputs(item, await captureProject(root));
+        } catch (error) {
+          await finishWaitingTask(
+            store!,
+            item,
+            'failed',
+            (error as Error).message,
+            root,
+          );
+          return;
+        }
+        item.status = 'starting';
+        item.updatedAt = Date.now();
+        await store!.save();
+      }
+      try {
+        await prepareCodexRun(
+          {
+            taskPath: task.taskPath,
+            providerId: task.providerId,
+            modelId: task.modelId,
+          },
+          undefined,
+          task,
+        );
+      } catch (error) {
+        console.error('AI 예약 준비 실패', error);
+        if (item && isQueuePending(item)) {
+          await finishWaitingTask(
+            store!,
+            item,
+            'failed',
+            (error as Error).message,
+            root,
+          );
+        }
+        notifyWorkspaceChanged();
+      }
+    });
+  } catch (error) {
+    console.error('AI 예약 실행 확인 실패', error);
+  } finally {
+    pumpingAiQueue = false;
+  }
+};
+
+const finishWaitingTask = async (
+  store: AiQueueStore,
+  task: AiQueueTask,
+  status: 'failed' | 'cancelled',
+  message: string,
+  root: string,
+) => {
+  const previous = { ...task };
+  Object.assign(task, { status, message, updatedAt: Date.now() });
+  try {
+    await store.save();
+  } catch (error) {
+    Object.assign(task, previous);
+    throw error;
+  }
+  const record = store.tasks.find((t) => t.taskId === task.taskId);
+  await saveHistory(
+    root,
+    {},
+    {},
+    {
+      id: task.runId,
+      label: task.title,
+      kind: 'ai',
+      status,
+      createdAt: task.createdAt,
+      finishedAt: task.updatedAt,
+      taskPath: task.taskPath,
+      providerId: task.providerId,
+      modelId: task.modelId,
+      error: message,
+      aiTask: taskHistoryRecord(record?.baseline[task.taskPath]),
+    },
+  ).catch((error) => console.error('AI 예약 기록 저장 실패', error));
+  notifyWorkspaceChanged();
+};
+
+const enqueueAiTask = async (
+  input: StartCodexRunInput,
+): Promise<StartCodexRunResult> => {
+  if (
+    !isAiProvider(input.providerId) ||
+    (input.modelId &&
+      (input.modelId.length > 128 ||
+        !/^[a-zA-Z0-9._:/-]+$/.test(input.modelId)))
+  )
+    throw new Error('AI 제공자와 모델을 확인해주세요.');
+  let task: AiQueueTask;
+  if (collaboration) task = await collaboration.enqueueAi(input);
+  else {
+    const root = requireWorkspace();
+    const store = await localQueue(root);
+    const previous = store.tasks.find((t) => t.taskPath === input.taskPath);
+    if (previous) {
+      if (
+        previous.providerId !== input.providerId ||
+        previous.modelId !== input.modelId
+      )
+        throw new Error('이미 등록한 작업의 실행 설정을 변경할 수 없습니다.');
+      task = previous;
+    } else {
+      const files = await captureProject(root);
+      task = createQueuedTask(
+        files,
+        {
+          ...input,
+          title: String(
+            matter(files[input.taskPath] ?? '').data.title ?? input.taskPath,
+          ),
+        },
+        historyId(),
+        store.tasks,
+      );
+      for (const run of activeCodexRuns.values()) {
+        if (run.root !== root || store.tasks.some((t) => t.runId === run.runId))
+          continue;
+        const legacy = createQueuedTask(
+          run.baseline,
+          {
+            taskPath: run.taskPath,
+            providerId: run.providerId,
+            modelId: run.modelId,
+          },
+          run.runId,
+          [],
+        );
+        legacy.status = 'running';
+        createQueuedTask(files, task, task.taskId, [legacy]);
+      }
+      store.tasks.push(task as import('./ai-task-queue').StoredAiQueueTask);
+      try {
+        await store.save();
+      } catch (error) {
+        store.tasks.pop();
+        throw error;
+      }
+    }
+  }
+  notifyWorkspaceChanged();
+  return {
+    runId: task.runId,
+    taskPath: task.taskPath,
+    status: task.status,
+    providerId: task.providerId,
+    modelId: task.modelId,
+  };
 };
 
 const handle = (
@@ -2601,15 +2885,16 @@ const handle = (
             args[2] as string,
           );
         if (channel === 'codex:active')
-          return activeCodexRun || runPreparing
+          return currentCodexRun() || runPreparing
             ? lastRunEvent
             : (client.state.aiRun ?? null);
         if (channel === 'codex:cancel')
           return (async () => {
-            await client.cancelAi();
-            if (activeCodexRun) {
-              activeCodexRun.cancelRequested = true;
-              await terminateProcessTree(activeCodexRun.child);
+            await client.cancelAi(args[0] as string);
+            const run = activeCodexRuns.get(args[0] as string);
+            if (run) {
+              run.cancelRequested = true;
+              await terminateProcessTree(run.child);
             }
             if (runPreparing) preparationCancelled = true;
           })();
@@ -2621,8 +2906,13 @@ const handle = (
       }
       if (channel === 'codex:start')
         return enqueueMutation(() =>
-          prepareCodexRun(args[0] as StartCodexRunInput),
-        );
+          (args[0] as StartCodexRunInput).queueVersion === 1
+            ? enqueueAiTask(args[0] as StartCodexRunInput)
+            : prepareCodexRun(args[0] as StartCodexRunInput),
+        ).then((result) => {
+          void pumpAiQueue();
+          return result;
+        });
       if (
         !guardedChannels.has(channel) &&
         !channel.startsWith('projects:') &&
@@ -2929,12 +3219,13 @@ const discordContext = (): DiscordApprovalContext | null => {
         authorized();
         if (
           updateRestartPrepared ||
-          activeCodexRun ||
-          runPreparing ||
-          (client.state.aiRun &&
-            ['starting', 'running', 'validating'].includes(
-              client.state.aiRun.status,
-            ))
+          (client.state.aiQueueVersion !== 1 &&
+            (!!currentCodexRun() ||
+              runPreparing ||
+              (client.state.aiRun &&
+                ['starting', 'running', 'validating'].includes(
+                  client.state.aiRun.status,
+                ))))
         )
           throw Error(
             '다른 AI 작업 또는 업데이트가 진행 중입니다. 완료 후 다시 승인해주세요.',
@@ -2946,15 +3237,15 @@ const discordContext = (): DiscordApprovalContext | null => {
           authorized();
           if (updateRestartPrepared)
             throw Error('업데이트 재시작을 준비하고 있습니다.');
-          await prepareCodexRun(
-            {
-              approval,
-              taskPath: '',
-              providerId: settings.providerId,
-              modelId: settings.modelId || null,
-            },
-            authorized,
-          );
+          const input = {
+            approval,
+            taskPath: '',
+            providerId: settings.providerId,
+            modelId: settings.modelId || null,
+          };
+          if (client.state.aiQueueVersion === 1)
+            await enqueueAiTask({ ...input, queueVersion: 1 });
+          else await prepareCodexRun(input, authorized);
         });
       } finally {
         pendingAppOperations -= 1;
@@ -3525,7 +3816,7 @@ const registerIpc = () => {
     },
   );
   const suspendProject = async () => {
-    if (activeCodexRun || runPreparing)
+    if (currentCodexRun() || runPreparing)
       throw new Error('AI 작업을 먼저 종료해주세요.');
     resetClipboardContext();
     await sharedCacheQueue;
@@ -4020,7 +4311,7 @@ const registerIpc = () => {
       _event,
       input: { serverUrl: string; serverKey: string; nickname: string },
     ) => {
-      if (collaboration || activeCodexRun || runPreparing)
+      if (collaboration || currentCodexRun() || runPreparing)
         throw new Error('현재 공동 프로젝트나 AI 작업을 먼저 종료해주세요.');
       projectLibrary.assertSecureSession();
       const localRoot = requireWorkspace();
@@ -4054,7 +4345,7 @@ const registerIpc = () => {
       _event,
       input: { serverUrl: string; code: string; nickname: string },
     ) => {
-      if (activeCodexRun || runPreparing)
+      if (currentCodexRun() || runPreparing)
         throw new Error('AI 작업을 먼저 종료해주세요.');
       projectLibrary.assertSecureSession();
       const joined = await CollaborationClient.join(
@@ -4074,7 +4365,7 @@ const registerIpc = () => {
       _event,
       input: { serverUrl: string; projectId: string; recoveryKey: string },
     ) => {
-      if (activeCodexRun || runPreparing)
+      if (currentCodexRun() || runPreparing)
         throw new Error('AI 작업을 먼저 종료해주세요.');
       projectLibrary.assertSecureSession();
       const recovered = await CollaborationClient.recover(
@@ -4101,6 +4392,7 @@ const registerIpc = () => {
     },
   );
   handle('collaboration:lock', async (_event, relativePath: string) => {
+    if (!collaboration && workspaceRoot) await localQueue(workspaceRoot);
     assertAiFilesUnlocked(currentAiFileLock(), [relativePath]);
     await collaboration?.lock(relativePath);
   });
@@ -4130,7 +4422,7 @@ const registerIpc = () => {
     },
   );
   handle('codex:active', () =>
-    activeCodexRun || runPreparing ? lastRunEvent : null,
+    currentCodexRun() || runPreparing ? lastRunEvent : null,
   );
   handle('preview:window', async (_event, relative = DEFAULT_PREVIEW_PATH) => {
     const windowPath = previewWindowPath(relative);
@@ -4615,6 +4907,31 @@ const registerIpc = () => {
     return parseDocument(absolute);
   });
   handle('codex:status', getCodexStatus);
+  handle('ai-queue:list', async () => {
+    if (collaboration) return collaboration.state.aiQueue ?? [];
+    if (!workspaceRoot) return [];
+    return (await localQueue(workspaceRoot)).views();
+  });
+  handle('ai-queue:cancel', (_event, taskId: string) =>
+    enqueueMutation(async () => {
+      if (collaboration) {
+        await collaboration.cancelQueuedTask(taskId);
+        return;
+      }
+      const store = await localQueue(requireWorkspace());
+      const task = store.tasks.find((t) => t.taskId === taskId);
+      if (task?.status === 'cancelled') return;
+      if (!task || task.status !== 'queued')
+        throw new Error('취소할 예약을 찾을 수 없습니다.');
+      await finishWaitingTask(
+        store,
+        task,
+        'cancelled',
+        '예약을 취소했습니다.',
+        requireWorkspace(),
+      );
+    }),
+  );
   handle('requests:list', () => {
     throw new Error('공동 프로젝트에서 요청함을 열어주세요.');
   });
@@ -4629,22 +4946,22 @@ const registerIpc = () => {
     startCodexRun(input),
   );
   handle('codex:cancel', async (_event, runId: string) => {
-    if (runPreparing && lastRunEvent?.runId === runId && !activeCodexRun) {
+    if (runPreparing && lastRunEvent?.runId === runId && !currentCodexRun()) {
       preparationCancelled = true;
       return;
     }
-    if (!activeCodexRun || activeCodexRun.runId !== runId) return;
-    if (activeCodexRun.cancelRequested) return;
-    activeCodexRun.cancelRequested = true;
-    if (activeCodexRun.finalizing) return;
+    const run = activeCodexRuns.get(runId);
+    if (!run || run.cancelRequested) return;
+    run.cancelRequested = true;
+    if (run.finalizing) return;
     emitCodexRunEvent(
-      activeCodexRun.runId,
-      activeCodexRun.taskPath,
+      run.runId,
+      run.taskPath,
       'running',
       'status',
       'AI 프로세스를 중지하고 있습니다.',
     );
-    await terminateProcessTree(activeCodexRun.child);
+    await terminateProcessTree(run.child);
   });
   handle('preview:list', async (): Promise<PreviewResult[]> => {
     const snapshot = await captureProject(requireWorkspace());
@@ -5135,17 +5452,20 @@ app.whenReady().then(async () => {
       void createWindow().catch(console.error);
   });
   appUpdates.start();
+  const aiQueueTimer = setInterval(() => void pumpAiQueue(), 1500);
+  aiQueueTimer.unref();
 });
 
 app.on('window-all-closed', () => {
-  if (activeCodexRun) {
-    activeCodexRun.cancelRequested = true;
-    void terminateProcessTree(activeCodexRun.child);
+  for (const run of activeCodexRuns.values()) {
+    run.cancelRequested = true;
+    void terminateProcessTree(run.child);
   }
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  queueShutdown = true;
   discordApproval?.stop();
   documentSaveQueue?.dispose();
   selfHostLifecycle?.dispose();
