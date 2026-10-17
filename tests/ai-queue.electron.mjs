@@ -40,6 +40,7 @@ async function run() {
   try {
     await win.loadURL(process.env.QA_URL);
     await wait('!!document.querySelector(".document-card")');
+    await js(`document.querySelector('[aria-label="AI 작업 패널"]').click()`);
     const tasks = await js(
       'Promise.all([qaQueue.enqueue(),qaQueue.enqueue(),qaQueue.enqueue()])',
     );

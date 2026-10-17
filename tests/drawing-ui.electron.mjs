@@ -177,15 +177,21 @@ async function run() {
     await wait(
       '(async()=> (await window.gameCanvas.listDrawings()).length===2)()',
     );
-    // The popup sits above the eraser and partial erasure persists without splitting objects.
+    // The grouped eraser menu stays inside the viewport; partial erasure preserves objects.
     await js(
       'document.querySelector("[data-ui-id=drawing-eraser] > button").click()',
     );
     await wait('!!document.querySelector(".drawing-eraser-menu__popup")');
+    await js('document.querySelector(".canvas-drawing-group").open=true');
     const popup = await js(
-      '(()=>{const p=document.querySelector(".drawing-eraser-menu__popup").getBoundingClientRect(),b=document.querySelector("[data-ui-id=drawing-eraser] > button").getBoundingClientRect();return {bottom:p.bottom,top:b.top}})()',
+      '(()=>{const p=document.querySelector(".drawing-eraser-menu__popup").getBoundingClientRect(),b=document.querySelector("[data-ui-id=drawing-eraser] > button").getBoundingClientRect();return {bottom:p.bottom,top:p.top,left:p.left,right:p.right,width:innerWidth,height:innerHeight}})()',
     );
-    assert.ok(popup.bottom < popup.top);
+    assert.ok(
+      popup.top >= 0 &&
+        popup.bottom <= popup.height &&
+        popup.left >= 0 &&
+        popup.right <= popup.width,
+    );
     await js('document.querySelector("input[value=partial]").click()');
     await wait('!!document.querySelector(".drawing-eraser-menu__size input")');
     await fs.writeFile(
@@ -245,8 +251,9 @@ async function run() {
       '(async()=> (await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
     );
     await key('Escape');
-    await mouse('mouseDown', 760, 512);
-    await mouse('mouseUp', 760, 512);
+    const selectionTarget = await center('.canvas-drawing-node');
+    await mouse('mouseDown', selectionTarget.x, selectionTarget.y);
+    await mouse('mouseUp', selectionTarget.x, selectionTarget.y);
     await wait(
       '(async()=>{if(document.querySelector(".react-flow__node-document.selected"))return true; const n=document.querySelector(".canvas-drawing-node.selected");return n && (await window.gameCanvas.listDrawings()).some(o=>`drawing:${o.id}`===n.dataset.id && o.kind==="shape")})()',
     );
@@ -408,6 +415,11 @@ async function run() {
       'Array.from(document.querySelectorAll(".drawing-overlap-menu button")).find(b=>b.textContent.includes("사각형")).click()',
     );
     await wait('!!document.querySelector(".drawing-handles")');
+    if (
+      !(await js('!!document.querySelector(".canvas-dock .drawing-inspector")'))
+    )
+      await js(`document.querySelector('[aria-label="속성 패널"]').click()`);
+    await wait('!!document.querySelector(".drawing-inspector")');
     // A peer's geometry edit during our resize must survive the transform save.
     const peerObject = await js(
       '(async()=>{const id=document.querySelector(".canvas-drawing-node.selected").dataset.id.slice(8);return (await window.gameCanvas.listDrawings()).find(o=>o.id===id)})()',

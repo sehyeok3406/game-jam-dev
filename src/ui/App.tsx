@@ -112,7 +112,6 @@ import { canvasId, readCanvasSheets } from '../canvas-sheets';
 import type { CanvasSheets, CanvasSheetCommand } from '../shared';
 import {
   Background,
-  Controls,
   NodeResizer,
   ReactFlow,
   ReactFlowProvider,
@@ -136,6 +135,15 @@ import {
   type AiQueueTask,
 } from '../ai-task-queue';
 import { AiQueuePanel } from './AiQueuePanel';
+import { CanvasPanel, useCanvasPanel, useCanvasRegions } from './CanvasChrome';
+import {
+  Map as MapIcon,
+  Maximize,
+  ZoomIn,
+  ZoomOut,
+  MoreHorizontal,
+  Clock3,
+} from 'lucide-react';
 import {
   verticalLayouts,
   NEW_FILE_GAP,
@@ -274,7 +282,7 @@ import {
 } from './GamejamValidation';
 import { documentSets } from '../document-output';
 import { MAX_RESULT_NAME } from '../result-name';
-import { CollaborationPanel, ROLE_NAMES } from './CollaborationPanel';
+import { CollaborationPanel } from './CollaborationPanel';
 import {
   CanvasNavigator,
   CommandPalette,
@@ -1904,6 +1912,35 @@ const nodeTypes: NodeTypes = {
 
 function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const flowStore = useStoreApi<CanvasNode>();
+  const {
+    panel: dockPanel,
+    setPanel: setDockPanel,
+    restoreScope: restorePanelScope,
+    setHistoryOpen,
+    setSettingsOpen,
+    setPluginPanelOpen,
+  } = useCanvasPanel();
+  const [minimapVisible, setMinimapVisible] = useState(() => {
+    try {
+      return localStorage.getItem('gamejam:minimap-visible') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [compactChrome, setCompactChrome] = useState(
+    () => window.innerWidth <= 1200,
+  );
+  useEffect(() => {
+    const media = matchMedia('(max-width: 1200px)');
+    const update = () => setCompactChrome(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  const [gameUiPanelHost, setGameUiPanelHost] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [gameUiPanelActive, setGameUiPanelActive] = useState(false);
+  const [noticeVisible, setNoticeVisible] = useState(false);
   const [home, setHome] = useState(preview ? preview.scope === 'home' : true);
   const [selfHostOpen, setSelfHostOpen] = useState(false);
   useEffect(
@@ -1937,7 +1974,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpen = dockPanel === 'settings';
   const [updateOpen, setUpdateOpen] = useState(false);
   const updatePrompted = useRef(false);
   useEffect(() => {
@@ -2180,7 +2217,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     kanbanLayoutsRef.current = next;
     updateKanbanLayouts(next);
   };
-  const [pluginPanelOpen, setPluginPanelOpen] = useState(false);
+  const pluginPanelOpen = dockPanel === 'plugins';
   const [pluginPanelPage, setPluginPanelPage] =
     useState<PluginPanelPage>('plugins');
   const [pluginPanelGeometry, updatePluginPanelGeometry] = usePersonalValue(
@@ -2244,7 +2281,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const creatingTaskRef = useRef(false);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
   const [preparingTask, setPreparingTask] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyOpen = dockPanel === 'activity';
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historyAiOnly, setHistoryAiOnly] = useState(false);
@@ -2379,6 +2416,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     [drawing.submit],
   );
   const chooseDrawingTool = (next: DrawingTool) => {
+    if (!dockPanel || dockPanel === 'properties') setDockPanel('properties');
     if (collaboration.active && collaboration.drawingsVersion !== 1) {
       setNotice('도형 · 그림 편집을 사용하려면 협업 서버를 업데이트해주세요.');
       return;
@@ -2469,6 +2507,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   } | null>(null);
   const notifiedRuns = useRef(new Set<string>());
   const noticeProject = collaboration.projectId ?? workspace.root;
+  useEffect(() => {
+    restorePanelScope(home ? null : (noticeProject ?? null));
+  }, [home, noticeProject, restorePanelScope]);
   const aiDraftScope = noticeProject
     ? gamejamDraftScope(
         noticeProject,
@@ -2646,6 +2687,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       : 'dark';
   });
   const flowRef = useRef<ReactFlowInstance<CanvasNode> | null>(null);
+  useCanvasRegions(home, flowRef);
   const documentSaveStates = useRef(new Map<string, DocumentSaveState>());
   const reportEdit = useCallback(
     (id: string, state: { dirty: boolean; saving: boolean; failed: boolean }) =>
@@ -2657,22 +2699,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     [],
   );
   useEffect(() => {
-    if (inspectorId) {
-      setHistoryOpen(false);
-      setSettingsOpen(false);
-      setCodexRunCollapsed(true);
-    }
-  }, [inspectorId]);
+    if (inspectorId) setDockPanel('properties');
+  }, [inspectorId, setDockPanel]);
   useEffect(() => {
-    if (settingsOpen) {
-      setInspectorId(null);
-      setHistoryOpen(false);
-      setCodexRunCollapsed(true);
+    try {
+      localStorage.setItem('gamejam:minimap-visible', String(minimapVisible));
+    } catch {
+      /* Layout remains usable without persistence. */
     }
-  }, [settingsOpen]);
+  }, [minimapVisible]);
   useEffect(() => {
-    if (navigatorOpen) setHistoryOpen(false);
-  }, [navigatorOpen]);
+    setNoticeVisible(true);
+    const timer = window.setTimeout(() => setNoticeVisible(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const codexLogsRef = useRef<HTMLDivElement>(null);
   const canvasClipboardRef = useRef<{
     documents: { id: string; path: string }[];
@@ -7422,6 +7462,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     if (!preview || loading || previewSeeded.current) return;
     previewSeeded.current = true;
     const { id, state } = preview;
+    if (id === 'ai-run' || id === 'completion') setDockPanel('ai');
+    if (id === 'drawing-inspector') setDockPanel('properties');
+    if (id === 'minimap' || id === 'minimap-settings') setMinimapVisible(true);
+    if (id === 'drawing-eraser')
+      document.querySelector('.canvas-drawing-group')?.setAttribute('open', '');
     if (id === 'note-drawing') {
       setTool('note');
       setNoteDraft({ start: { x: 440, y: 220 }, end: { x: 800, y: 470 } });
@@ -7725,8 +7770,1193 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
   return (
     <main
-      className={`app-shell app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
+      className={`app-shell canvas-workspace${nodes.some((n) => n.selected) && !uiHidden ? ' canvas-workspace--selection' : ''}${uiHidden ? ' canvas-workspace--focus' : ''}${dockPanel && !uiHidden ? ' canvas-workspace--panel' : ''}${navigatorOpen && !uiHidden ? ' canvas-workspace--navigator' : ''} app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
     >
+      {!uiHidden && dockPanel && (
+        <CanvasPanel
+          active={dockPanel}
+          change={(id) => {
+            if (id === 'ai') setCodexRunCollapsed(false);
+            if (id === 'activity') openHistory();
+            else setDockPanel(id);
+          }}
+          close={() => setDockPanel(null)}
+        >
+          {dockPanel === 'navigation' && (
+            <CanvasMiniMap
+              theme={theme}
+              preferences={minimapPreferences}
+              change={updateMiniMapPreferences}
+            />
+          )}
+          {dockPanel === 'ai' && (
+            <>
+              {!projectAiQueue.length && !codexRun && (
+                <p className="canvas-panel-empty">
+                  진행 중인 AI 작업이 없습니다. gamejam!에서 새 작업을
+                  시작하세요.
+                </p>
+              )}
+              {!home && (
+                <AiQueuePanel
+                  tasks={projectAiQueue}
+                  canCancel={canRunAi}
+                  cancel={async (task) => {
+                    if (task.status === 'queued')
+                      await window.gameCanvas.cancelQueuedTask(task.taskId);
+                    else await window.gameCanvas.cancelCodexRun(task.runId);
+                    if (!collaboration.active)
+                      setAiQueue(await window.gameCanvas.listAiQueue());
+                  }}
+                  open={(task) => {
+                    if (codexRun?.runId === task.runId)
+                      setCodexRunCollapsed(false);
+                    else openHistory(task.taskPath, true);
+                  }}
+                />
+              )}
+              {runPanelVisible && codexRun && (
+                <aside
+                  className={`codex-run-panel floating-surface${codexRunCollapsed ? ' codex-run-panel--collapsed' : ''}`}
+                  aria-live="polite"
+                >
+                  <header>
+                    <div className="codex-run-panel__title">
+                      {codexRun.status === 'starting' ||
+                      codexRun.status === 'running' ||
+                      codexRun.status === 'validating' ? (
+                        <LoaderCircle className="spin" size={16} />
+                      ) : codexRun.status === 'completed' ? (
+                        <CheckCircle2 size={16} />
+                      ) : (
+                        <AlertCircle size={16} />
+                      )}
+                      <div>
+                        <strong>
+                          {getAiProvider(codexRun.providerId).label} 작업
+                        </strong>
+                        <span>
+                          {CODEX_STATUS_LABELS[codexRun.status]} ·{' '}
+                          {getAiModelLabel(
+                            codexRun.providerId,
+                            codexRun.modelId,
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="codex-run-panel__header-actions">
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title="AI 작업 기록 열기"
+                        onClick={() => openHistory(codexRun.taskPath, true)}
+                      >
+                        <History size={14} />
+                      </button>
+                      {codexRun.status === 'completed' && (
+                        <button
+                          title="생성 결과로 이동"
+                          onClick={() => {
+                            const paths = runOutputPaths;
+                            const result = previews
+                              .filter((preview) =>
+                                paths.includes(preview.relativePath),
+                              )
+                              .at(-1);
+                            if (result)
+                              jumpTo(previewNodeId(result.relativePath));
+                            else {
+                              const ids = documents
+                                .filter((doc) =>
+                                  paths.includes(doc.relativePath),
+                                )
+                                .map((doc) => ({ id: doc.id }));
+                              if (ids.length)
+                                void flowRef.current?.fitView({
+                                  nodes: ids,
+                                  padding: 0.2,
+                                  duration: 300,
+                                });
+                              else setNavigatorOpen(true);
+                            }
+                          }}
+                        >
+                          <Play size={13} /> 결과 보기
+                        </button>
+                      )}
+                      {(codexRun.status === 'starting' ||
+                        codexRun.status === 'running' ||
+                        codexRun.status === 'validating') && (
+                        <button
+                          type="button"
+                          className="icon-button"
+                          onClick={() => void cancelCodexRun()}
+                          disabled={cancellingCodexRun || !canStopAi}
+                          title="현재 AI 작업 중지"
+                        >
+                          {cancellingCodexRun ? (
+                            <LoaderCircle className="spin" size={14} />
+                          ) : (
+                            <Square size={13} />
+                          )}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => {
+                          if (codexRunCollapsed) {
+                            setInspectorId(null);
+                            setSettingsOpen(false);
+                            setHistoryOpen(false);
+                          }
+                          setCodexRunCollapsed((current) => !current);
+                        }}
+                        title={
+                          codexRunCollapsed
+                            ? '작업 패널 펼치기'
+                            : '작업 패널 최소화'
+                        }
+                      >
+                        {codexRunCollapsed ? (
+                          <Maximize2 size={14} />
+                        ) : (
+                          <Minimize2 size={14} />
+                        )}
+                      </button>
+                      {codexRun.status !== 'starting' &&
+                        codexRun.status !== 'running' &&
+                        codexRun.status !== 'validating' && (
+                          <button
+                            type="button"
+                            className="icon-button"
+                            onClick={closeRunPanel}
+                            title="실행 패널 닫기"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                    </div>
+                  </header>
+                  {!codexRunCollapsed && (
+                    <>
+                      <ol className="ai-stages" aria-label="AI 진행 단계">
+                        {[
+                          ['starting', '준비'],
+                          ['running', '실행'],
+                          ['validating', '검증'],
+                          ['completed', '완료'],
+                        ].map(([status, label], index) => (
+                          <li
+                            key={status}
+                            className={
+                              codexRun.status === status
+                                ? 'is-current'
+                                : [
+                                      'starting',
+                                      'running',
+                                      'validating',
+                                      'completed',
+                                    ].indexOf(codexRun.status) > index
+                                  ? 'is-done'
+                                  : ''
+                            }
+                          >
+                            <span>{index + 1}</span>
+                            {label}
+                          </li>
+                        ))}
+                      </ol>
+                      <code className="codex-run-panel__task">
+                        {codexRun.taskPath}
+                      </code>
+                      {runFailure && (
+                        <section
+                          className="ai-failure-details"
+                          aria-label="AI 오류 진단"
+                        >
+                          <strong>
+                            {runFailure.code} · {runFailure.stage}
+                          </strong>
+                          <p>{runFailure.message}</p>
+                          <p>{runFailure.hint}</p>
+                          <small>실행 ID: {codexRun.runId}</small>
+                          <div>
+                            <button
+                              onClick={() => {
+                                void window.gameCanvas
+                                  .copyText(
+                                    JSON.stringify(
+                                      {
+                                        runId: codexRun.runId,
+                                        taskPath: codexRun.taskPath,
+                                        provider: codexRun.providerId,
+                                        model: codexRun.modelId,
+                                        ...runFailure,
+                                      },
+                                      null,
+                                      2,
+                                    ),
+                                  )
+                                  .then(() =>
+                                    setNotice('오류 진단 정보를 복사했습니다.'),
+                                  )
+                                  .catch(showError);
+                              }}
+                            >
+                              진단 정보 복사
+                            </button>
+                            {runFailure.diagnosticPath && (
+                              <button
+                                onClick={() => {
+                                  void window.gameCanvas
+                                    .revealPath(runFailure.diagnosticPath!)
+                                    .catch(showError);
+                                }}
+                              >
+                                진단 파일 보기
+                              </button>
+                            )}
+                          </div>
+                        </section>
+                      )}
+                      <div
+                        ref={codexLogsRef}
+                        className="codex-run-panel__logs nowheel"
+                        role="log"
+                        aria-label="AI 작업 진행 로그"
+                      >
+                        {codexRun.events.length === 0 ? (
+                          <p>AI 프로세스의 응답을 기다리고 있습니다.</p>
+                        ) : (
+                          codexRun.events.map((event, index) => (
+                            <p
+                              key={`${event.timestamp}-${index}`}
+                              className={`codex-log codex-log--${event.kind}`}
+                            >
+                              <time>
+                                {new Date(event.timestamp).toLocaleTimeString(
+                                  'ko-KR',
+                                  {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                  },
+                                )}
+                              </time>
+                              <span>{event.message}</span>
+                            </p>
+                          ))
+                        )}
+                      </div>
+                      {(codexRun.status === 'starting' ||
+                        codexRun.status === 'running' ||
+                        codexRun.status === 'validating') && (
+                        <footer>
+                          <span>
+                            새 로그가 추가되면 자동으로 최신 위치를 표시합니다.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void cancelCodexRun()}
+                            disabled={cancellingCodexRun || !canStopAi}
+                          >
+                            {cancellingCodexRun ? (
+                              <LoaderCircle className="spin" size={13} />
+                            ) : (
+                              <Square size={13} />
+                            )}{' '}
+                            {cancellingCodexRun ? '중지 중' : '작업 중지'}
+                          </button>
+                        </footer>
+                      )}
+                    </>
+                  )}
+                </aside>
+              )}
+
+              {completion && completion.project === noticeProject && (
+                <section
+                  className={`ai-completion-toast floating-surface${completion.status === 'failed' ? ' ai-completion-toast--failed' : ''}`}
+                  role="status"
+                  aria-live="polite"
+                  aria-label="AI 작업 완료 알림"
+                >
+                  <button
+                    className="icon-button ai-completion-toast__close"
+                    title="완료 알림 닫기"
+                    onClick={closeCompletion}
+                  >
+                    <X size={14} />
+                  </button>
+                  <strong>
+                    {completion.status === 'completed' ? (
+                      <>
+                        <CheckCircle2 size={18} /> 완료!
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle size={18} /> 작업 실패 ·{' '}
+                        {runFailure?.code ?? '진단 확인'}
+                      </>
+                    )}
+                  </strong>
+                  <p>
+                    {completion.status === 'completed'
+                      ? `${completion.taskPath.includes('/gamejam-') ? '문서 정리 + HTML 구현' : completion.taskPath.includes('/organize-') ? '문서 정리' : 'HTML 구현'} 결과를 검증하고 저장했습니다.`
+                      : '기존 결과는 유지했습니다. 오류 진단을 확인해주세요.'}
+                  </p>
+                  <div>
+                    <button
+                      onClick={() => {
+                        setCodexRunCollapsed(false);
+                        setInspectorId(null);
+                        setHistoryOpen(false);
+                        setSettingsOpen(false);
+                      }}
+                    >
+                      {completion.status === 'completed'
+                        ? '작업 내용 보기'
+                        : '오류 진단 보기'}
+                    </button>
+                    {completion.status === 'completed' && (
+                      <button
+                        onClick={() => {
+                          const ids = nodes
+                            .filter((node) =>
+                              node.data.kind === 'document'
+                                ? runOutputPaths.includes(
+                                    node.data.document.relativePath,
+                                  )
+                                : node.data.kind === 'preview'
+                                  ? runOutputPaths.includes(
+                                      node.data.preview.relativePath,
+                                    )
+                                  : false,
+                            )
+                            .map((node) => ({ id: node.id }));
+                          if (ids.length)
+                            void flowRef.current?.fitView({
+                              nodes: ids,
+                              padding: 0.2,
+                              duration: 300,
+                            });
+                          else setNavigatorOpen(true);
+                        }}
+                      >
+                        결과로 이동
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+          {dockPanel === 'properties' && (
+            <>
+              <div
+                ref={setGameUiPanelHost}
+                className="canvas-game-ui-host"
+                hidden={!gameUiPanelActive}
+              />
+              {inspectorId &&
+                (() => {
+                  const item = canvasItems.find(
+                      (item) => item.id === inspectorId,
+                    ),
+                    doc = documents.find((doc) => doc.id === inspectorId),
+                    section = sections.find(
+                      (section) => sectionNodeId(section.id) === inspectorId,
+                    ),
+                    preview = previews.find(
+                      (preview) =>
+                        previewNodeId(preview.relativePath) === inspectorId,
+                    );
+                  if (!item) return null;
+                  return (
+                    <aside
+                      className="object-inspector floating-surface"
+                      aria-label="선택 항목 상세 정보"
+                    >
+                      <header>
+                        <strong>상세 정보</strong>
+                        <button
+                          className="icon-button"
+                          title="상세 정보 닫기"
+                          onClick={() => setInspectorId(null)}
+                        >
+                          <X size={16} />
+                        </button>
+                      </header>
+                      <h3>{item.title}</h3>
+                      <dl>
+                        <dt>파일</dt>
+                        <dd>
+                          <code>{item.path}</code>
+                        </dd>
+                        {(doc || section || preview?.sourceId) && (
+                          <>
+                            <dt>ID</dt>
+                            <dd>
+                              <code>
+                                {doc?.id ?? section?.id ?? preview?.sourceId}
+                              </code>
+                            </dd>
+                          </>
+                        )}
+                        {doc && (
+                          <>
+                            <dt>문서 유형</dt>
+                            <dd>
+                              {TYPE_LABELS[doc.type]} ·{' '}
+                              {statusLabel(doc.status)}
+                            </dd>
+                            <dt>위치 · 크기</dt>
+                            <dd>
+                              {doc.x}, {doc.y} · {doc.width} × {doc.height}
+                            </dd>
+                            <dt>최근 변경</dt>
+                            <dd>
+                              {new Date(doc.modifiedAt).toLocaleString('ko-KR')}
+                            </dd>
+                            <dt>소속 섹션</dt>
+                            <dd>{item.parent ?? '섹션 없음'}</dd>
+                          </>
+                        )}
+                      </dl>
+                      {((doc && doc.type !== 'ai-task') || preview) && (
+                        <FilePropertiesEditor
+                          key={doc?.id ?? preview!.sourceId}
+                          document={doc ?? preview!}
+                          statuses={statusSettings.value}
+                          authorship={
+                            inspectorAuthorship?.path === item.path
+                              ? inspectorAuthorship.value
+                              : undefined
+                          }
+                          visibility={propertyVisibilityFor(
+                            doc?.id ?? preview!.sourceId!,
+                            preview?.propertyPreviousIds ?? [],
+                          )}
+                          disabled={
+                            !workflowEditable ||
+                            workflowBusy ||
+                            pathLocked(item.path) ||
+                            pathLocked(preview?.sourcePath ?? '')
+                          }
+                          reason={
+                            workflowReason ||
+                            (pathLocked(item.path) ||
+                            pathLocked(preview?.sourcePath ?? '')
+                              ? 'AI 작업이 이 파일을 보호하고 있습니다.'
+                              : undefined)
+                          }
+                          change={async (value) => {
+                            const file = doc ?? preview!;
+                            await workflowChange({
+                              relativePath: item.path,
+                              objectId: doc?.id ?? preview!.sourceId!,
+                              expectedEnabled: statusPropertyApplied(file),
+                              expectedStatus: file.workflowStatusId,
+                              workflowRevision: doc?.workflowRevision,
+                              structureRevision: doc?.structureRevision,
+                              ...value,
+                            });
+                          }}
+                          display={(id, visible) => {
+                            const key = doc?.id ?? preview!.sourceId!;
+                            const aliases = preview?.propertyPreviousIds ?? [];
+                            const value = {
+                              ...propertyVisibilityFor(key, aliases),
+                              [id]: visible,
+                            };
+                            updateFilePropertyViews({
+                              version: 1,
+                              files: {
+                                ...filePropertyViews.files,
+                                ...Object.fromEntries(
+                                  [key, ...aliases].map((alias) => [
+                                    alias,
+                                    value,
+                                  ]),
+                                ),
+                              },
+                            });
+                          }}
+                          manage={() => setStatusManagerOpen(true)}
+                        />
+                      )}
+                      {!((doc && doc.type !== 'ai-task') || preview) && (
+                        <dl className="inspector-authorship">
+                          <dt>생성한 사람</dt>
+                          <dd>
+                            {inspectorAuthorship?.path === item.path &&
+                            inspectorAuthorship.value
+                              ? authorLabel(inspectorAuthorship.value.createdBy)
+                              : inspectorAuthorship?.path === item.path &&
+                                  inspectorAuthorship.error
+                                ? '정보를 불러오지 못했습니다'
+                                : '기록 불러오는 중…'}
+                            {inspectorAuthorship?.path === item.path &&
+                              inspectorAuthorship.value?.createdAt && (
+                                <small>
+                                  {new Date(
+                                    inspectorAuthorship.value.createdAt,
+                                  ).toLocaleString('ko-KR')}
+                                </small>
+                              )}
+                          </dd>
+                          <dt title="본문·제목·위치·크기·섹션 등 파일 변경을 포함합니다">
+                            마지막으로 편집한 사람
+                          </dt>
+                          <dd>
+                            {inspectorAuthorship?.path === item.path &&
+                            inspectorAuthorship.value
+                              ? authorLabel(
+                                  inspectorAuthorship.value.lastEditedBy,
+                                )
+                              : inspectorAuthorship?.path === item.path &&
+                                  inspectorAuthorship.error
+                                ? '정보를 불러오지 못했습니다'
+                                : '기록 불러오는 중…'}
+                            {inspectorAuthorship?.path === item.path &&
+                              inspectorAuthorship.value?.lastEditedAt && (
+                                <small>
+                                  {new Date(
+                                    inspectorAuthorship.value.lastEditedAt,
+                                  ).toLocaleString('ko-KR')}
+                                </small>
+                              )}
+                          </dd>
+                        </dl>
+                      )}
+                      {doc?.sources.length ? (
+                        <div className="inspector-sources">
+                          <strong>
+                            참고한 원본 자료 {doc.sources.length}개
+                          </strong>
+                          {doc.sources.map((source) => (
+                            <button
+                              key={source.id}
+                              title={source.contribution}
+                              onClick={() => focusSource(source.id)}
+                            >
+                              {documents.find((doc) => doc.id === source.id)
+                                ?.title ??
+                                previews.find(
+                                  (preview) => preview.sourceId === source.id,
+                                )?.title ??
+                                source.id}
+                              <small>{source.contribution}</small>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {section && (
+                        <>
+                          <button
+                            disabled={locked}
+                            onClick={() =>
+                              setSectionRename({
+                                section,
+                                title: section.title,
+                              })
+                            }
+                          >
+                            섹션 이름 변경
+                          </button>
+                          <strong>포함 문서 {section.members.length}개</strong>
+                          {section.members.map((member) => (
+                            <button
+                              key={member.id}
+                              onClick={() => jumpTo(member.id)}
+                            >
+                              {documents.find((doc) => doc.id === member.id)
+                                ?.title ?? member.path}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {!section && (
+                        <div
+                          className="inspector-sources"
+                          aria-label="관련 AI 작업 기록"
+                        >
+                          <strong>관련 AI 작업 기록</strong>
+                          {inspectorAiRecords?.path !== item.path ||
+                          !inspectorAiRecords.entries ? (
+                            <small>
+                              {inspectorAiRecords?.error
+                                ? '기록을 불러오지 못했습니다.'
+                                : '기록 불러오는 중…'}
+                            </small>
+                          ) : (
+                            (() => {
+                              const entries = relatedAiEntries(
+                                inspectorAiRecords.entries,
+                                item.path,
+                                taskDocuments,
+                                previews.find(
+                                  (preview) =>
+                                    preview.relativePath === item.path,
+                                )?.previousPaths,
+                              );
+                              return entries.length ? (
+                                <>
+                                  {entries.slice(0, 3).map((entry) => (
+                                    <button
+                                      key={entry.id}
+                                      onClick={() =>
+                                        openHistory(item.path, true, entry)
+                                      }
+                                    >
+                                      {entryTaskRecord(entry, taskDocuments)
+                                        ?.title ?? entry.label}
+                                      <small>
+                                        {new Date(
+                                          entry.createdAt,
+                                        ).toLocaleString('ko-KR')}{' '}
+                                        · {CODEX_STATUS_LABELS[entry.status]} ·{' '}
+                                        {entry.actorName ?? '로컬 사용자'}
+                                      </small>
+                                    </button>
+                                  ))}
+                                  <button
+                                    onClick={() => openHistory(item.path, true)}
+                                  >
+                                    AI 작업 기록 전체 보기 ({entries.length})
+                                  </button>
+                                </>
+                              ) : (
+                                <small>
+                                  이 결과와 연결된 AI 실행 기록이 없습니다.
+                                </small>
+                              );
+                            })()
+                          )}
+                        </div>
+                      )}
+                      <div className="inspector-actions">
+                        <button
+                          onClick={() =>
+                            void window.gameCanvas.revealPath(item.path)
+                          }
+                        >
+                          <Folder size={14} /> 파일 보기
+                        </button>
+                        <button onClick={() => void openHistory(item.path)}>
+                          <History size={14} /> 히스토리
+                        </button>
+                        {preview && (
+                          <button
+                            onClick={() =>
+                              setCompareFirst(preview.relativePath)
+                            }
+                          >
+                            <Columns2 size={14} /> 버전 비교
+                          </button>
+                        )}
+                      </div>
+                    </aside>
+                  );
+                })()}
+              {!inspectorId && !gameUiPanelActive && (
+                <>
+                  {(tool === 'drawing' || selectedDrawings.length > 0) && (
+                    <DrawingInspector
+                      eraserMode={eraserMode}
+                      objects={drawing.items.filter((o) =>
+                        selectedDrawings.some((s) => s.id === o.id),
+                      )}
+                      tool={drawingTool}
+                      style={drawingStyle}
+                      onStyle={setDrawingStyle}
+                      submit={submitDrawing}
+                      disabled={locked || drawing.saving}
+                      onDuplicate={() => duplicateDrawings()}
+                      allObjects={drawing.items}
+                      onDelete={deleteDrawings}
+                      pressure={drawingPressure}
+                      onPressure={setDrawingPressure}
+                      touch={drawingTouch}
+                      onTouch={setDrawingTouch}
+                      continuous={drawingContinuous}
+                      onContinuous={setDrawingContinuous}
+                      canvases={canvasSheets.canvases}
+                      canvasId={activeCanvas}
+                    />
+                  )}
+                </>
+              )}
+              {!inspectorId &&
+                tool !== 'drawing' &&
+                !selectedDrawings.length &&
+                !gameUiPanelActive && (
+                  <p className="canvas-panel-empty">
+                    항목의 속성 버튼을 누르거나 도형·그리기 도구를 선택하세요.
+                  </p>
+                )}
+            </>
+          )}
+          {settingsOpen && (
+            <aside
+              className="canvas-settings floating-surface"
+              aria-label="캔버스 설정"
+            >
+              <header>
+                <strong>설정 및 도구</strong>
+                <button
+                  className="icon-button"
+                  title="설정 닫기"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  <X size={16} />
+                </button>
+              </header>
+              <button
+                disabled={!workflowEditable || workflowBusy}
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setStatusManagerOpen(true);
+                }}
+              >
+                상태 속성 옵션 관리
+              </button>
+              {statusError && (
+                <p className="workflow-error" role="alert">
+                  {statusError}
+                </p>
+              )}
+              <button
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setCodexStatusOpen(true);
+                }}
+              >
+                <Bot size={16} /> AI 연결 설정{' '}
+                <small>
+                  {codexStatus?.available && codexStatus.authenticated
+                    ? '연결됨'
+                    : '연결 필요'}
+                </small>
+              </button>
+              <button
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setUpdateOpen(true);
+                }}
+              >
+                <RefreshCw size={16} /> 앱 업데이트
+              </button>
+              {(!collaboration.active || collaboration.role === 'admin') && (
+                <button
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setDiscordApprovalOpen(true);
+                  }}
+                >
+                  디스코드 알림 · 테스트
+                </button>
+              )}
+              <button onClick={() => void loadProject(false)}>
+                <RefreshCw size={16} /> 캔버스 새로고침
+              </button>
+              <button onClick={() => void window.gameCanvas.openWorkspace()}>
+                <FolderOpen size={16} /> 프로젝트 폴더 열기
+              </button>
+              <button
+                disabled={locked || editBusy || movingResults}
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setResultFolderPrompt('legacy');
+                }}
+              >
+                <FolderOpen size={16} /> 기존 결과물 폴더 정리
+              </button>
+              <button
+                aria-pressed={snapEnabled}
+                onClick={() => setSnapEnabled((value) => !value)}
+              >
+                <Frame size={16} /> 스마트 정렬 가이드{' '}
+                <small>{snapEnabled ? '켜짐' : '꺼짐'}</small>
+              </button>
+              <button
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setShortcutsOpen(true);
+                }}
+              >
+                <Keyboard size={16} /> 단축키 안내 <kbd>?</kbd>
+              </button>
+            </aside>
+          )}
+          {!home && pluginPanelOpen && (
+            <PluginControlPanel
+              page={pluginPanelPage}
+              navigate={setPluginPanelPage}
+              enabled={(id) =>
+                id === 'builtin.game-ui'
+                  ? gameUiSettings.enabled
+                  : kanbanVisibilityValue.enabled
+              }
+              toggle={(id, value) =>
+                id === 'builtin.game-ui'
+                  ? setGameUiSettings({ enabled: value })
+                  : toggleKanban(value)
+              }
+              geometry={pluginPanelGeometry}
+              updateGeometry={updatePluginPanelGeometry}
+              canvasName={
+                canvasSheets.canvases.find((c) => c.id === activeCanvas)
+                  ?.name ?? '현재 캔버스'
+              }
+              close={() => setPluginPanelOpen(false)}
+            >
+              {pluginPanelPage === 'builtin.game-ui' ? (
+                <GameUiControls
+                  frames={gameUi.frames}
+                  canvasId={activeCanvas}
+                  occupied={[
+                    ...documents.filter(
+                      (d) => (d.canvasId ?? 'default') === activeCanvas,
+                    ),
+                    ...gameUi.frames
+                      .filter((f) => f.canvasId === activeCanvas)
+                      .map((f) => ({
+                        x: f.x,
+                        y: f.y,
+                        width: f.width + 320,
+                        height: gameUiHeight(f),
+                      })),
+                  ]}
+                  disabled={
+                    locked ||
+                    !gameUiSettings.enabled ||
+                    (collaboration.active && collaboration.gameUiVersion !== 2)
+                  }
+                  submit={gameUi.submit}
+                  focus={(id) => {
+                    setPluginPanelOpen(false);
+                    setTimeout(
+                      () =>
+                        void flowRef.current?.fitView({
+                          nodes: [{ id: `game-ui:${id}` }],
+                          padding: 0.35,
+                          maxZoom: 1,
+                          duration: 200,
+                        }),
+                      100,
+                    );
+                  }}
+                />
+              ) : (
+                <KanbanControls
+                  preferences={kanbanPreferences}
+                  activationEnabled={kanbanVisibilityValue.enabled}
+                  visibilityPicker={
+                    <CanvasVisibilityPicker
+                      value={kanbanVisibilityValue}
+                      canvases={canvasSheets.canvases}
+                      change={updateKanbanVisibility}
+                    />
+                  }
+                  update={updateKanbanPreferences}
+                  toggle={toggleKanban}
+                  focus={revealKanban}
+                  manage={() => setStatusManagerOpen(true)}
+                  appearance={() => setKanbanAppearanceOpen(true)}
+                  manageDisabled={
+                    !workflowEditable || workflowBusy || !!kanbanViewError
+                  }
+                  reason={workflowReason}
+                />
+              )}
+            </PluginControlPanel>
+          )}
+          {historyOpen && (
+            <aside
+              className={`history-panel floating-surface${aiHistorySelection || historySelection ? ' history-panel--has-detail' : ''}`}
+              aria-label="프로젝트 히스토리"
+            >
+              <header>
+                <strong>
+                  {historyFilter
+                    ? `${historyFilter} 히스토리`
+                    : '프로젝트 히스토리'}
+                </strong>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="히스토리 닫기"
+                  onClick={() => {
+                    historyRequest.current += 1;
+                    setHistoryOpen(false);
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </header>
+              <div
+                className="history-tabs"
+                role="group"
+                aria-label="히스토리 보기 방식"
+              >
+                <button
+                  aria-pressed={!historyAiOnly}
+                  onClick={() => {
+                    setHistoryAiOnly(false);
+                    setAiHistorySelection(null);
+                    setHistorySelection(null);
+                    historyRequest.current++;
+                  }}
+                >
+                  전체 히스토리
+                </button>
+                <button
+                  aria-pressed={historyAiOnly}
+                  onClick={() => {
+                    setHistoryAiOnly(true);
+                    setAiHistorySelection(null);
+                    setHistorySelection(null);
+                    historyRequest.current++;
+                  }}
+                >
+                  AI 작업 기록
+                </button>
+              </div>
+              <div className="history-panel__body">
+                <div className="history-panel__entries">
+                  {filteredHistoryEntries.map((entry) => (
+                    <div
+                      className="history-entry"
+                      data-history-kind={entry.kind}
+                      key={entry.id}
+                    >
+                      <strong>{entry.label}</strong>
+                      <small>
+                        {new Date(entry.createdAt).toLocaleString()} ·{' '}
+                        {CODEX_STATUS_LABELS[entry.status]}
+                        {entry.modelId ? ` · ${entry.modelId}` : ''}
+                        {` · ${entry.actorName ?? '로컬 사용자'}`}
+                      </small>
+                      {entry.error && (
+                        <p className="history-error">{entry.error}</p>
+                      )}
+                      {(historyTaskPath(entry) || entry.kind === 'ai') && (
+                        <button
+                          type="button"
+                          className="history-ai-record-button"
+                          aria-pressed={aiHistorySelection?.id === entry.id}
+                          onClick={() => {
+                            historyRequest.current++;
+                            setHistorySelection(null);
+                            setAiHistorySelection(entry);
+                          }}
+                        >
+                          <Bot size={13} /> 작업 지시 · 실행 상세 보기
+                        </button>
+                      )}
+                      {entry.files
+                        .filter((file) => !isAiTaskPath(file.relativePath))
+                        .map((file) => (
+                          <button
+                            type="button"
+                            key={file.relativePath}
+                            onClick={() => {
+                              const target = documents.find(
+                                (document) =>
+                                  document.relativePath === file.relativePath,
+                              );
+                              if (target) focusSource(target.id);
+                              void inspectHistory(
+                                entry,
+                                file.relativePath,
+                                file.after ? 'after' : 'before',
+                              );
+                            }}
+                          >
+                            {file.after
+                              ? file.before
+                                ? '수정'
+                                : '생성'
+                              : '삭제'}{' '}
+                            · {file.relativePath}
+                          </button>
+                        ))}
+                      {entry.status === 'completed' &&
+                        entry.files.some(
+                          (file) => !isAiTaskPath(file.relativePath),
+                        ) && (
+                          <button
+                            type="button"
+                            disabled={restoring || !canRestoreHistory}
+                            onClick={() => {
+                              if (locked) onBlocked();
+                              else setHistoryConfirm({ entry });
+                            }}
+                          >
+                            이 기록의 파일 함께 복원
+                          </button>
+                        )}
+                    </div>
+                  ))}
+                  {!filteredHistoryEntries.length && (
+                    <p>
+                      {historyAiOnly
+                        ? '아직 연결된 AI 작업 기록이 없습니다.'
+                        : '아직 저장된 버전이 없습니다.'}
+                    </p>
+                  )}
+                </div>
+                {aiHistorySelection && (
+                  <div className="history-preview">
+                    <AiTaskDetails
+                      entry={aiHistorySelection}
+                      record={entryTaskRecord(
+                        aiHistorySelection,
+                        taskDocuments,
+                      )}
+                      statusLabel={
+                        CODEX_STATUS_LABELS[aiHistorySelection.status]
+                      }
+                      onOpenPath={focusResultPath}
+                      onReuse={() => reuseAiEntry(aiHistorySelection)}
+                      reuseDisabled={
+                        creatingTask ||
+                        !canWriteAiRequest ||
+                        (collaboration.role !== 'editor' &&
+                          ((aiBusy && !queueSupported) || locked))
+                      }
+                      onOpenRetry={(id) => {
+                        const previous = historyEntries.find(
+                          (entry) => entry.id === id,
+                        );
+                        if (previous) setAiHistorySelection(previous);
+                        else setNotice('이전 요청 기록을 찾을 수 없습니다.');
+                      }}
+                    />
+                  </div>
+                )}
+                {historySelection && (
+                  <div className="history-preview">
+                    <strong>{historySelection.path}</strong>
+                    <div className="history-preview__actions">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void inspectHistory(
+                            historySelection.entry,
+                            historySelection.path,
+                            'before',
+                          )
+                        }
+                      >
+                        변경 전
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void inspectHistory(
+                            historySelection.entry,
+                            historySelection.path,
+                            'after',
+                          )
+                        }
+                      >
+                        변경 후
+                      </button>
+                      {!historySelection.entry.files.some(
+                        (file) =>
+                          file.relativePath.startsWith('sections/') ||
+                          file.relativePath.startsWith('assets/images/'),
+                      ) &&
+                        historySelection.entry.status === 'completed' && (
+                          <button
+                            type="button"
+                            disabled={restoring || !canRestoreHistory}
+                            onClick={() => {
+                              if (locked) onBlocked();
+                              else
+                                setHistoryConfirm({
+                                  entry: historySelection.entry,
+                                  path: historySelection.path,
+                                  version: historySelection.version,
+                                });
+                            }}
+                          >
+                            이 파일 버전 복원
+                          </button>
+                        )}
+                    </div>
+                    <small>
+                      {historySelection.version === 'before'
+                        ? '변경 전 내용'
+                        : '변경 후 내용'}{' '}
+                      · 파일 복원은 지금 보고 있는 버전을 사용합니다.
+                    </small>
+                    {historySelection.content === null ? (
+                      <p>이 시점에는 파일이 없습니다.</p>
+                    ) : historySelection.path.startsWith('assets/images/') ? (
+                      <img
+                        className="project-image"
+                        src={historySelection.content}
+                        alt="이전 이미지 원본"
+                      />
+                    ) : historySelection.path.endsWith('.html') ? (
+                      <iframe
+                        title="이전 HTML 결과"
+                        sandbox="allow-scripts"
+                        srcDoc={historySelection.content}
+                      />
+                    ) : (
+                      <pre>{historySelection.content}</pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
+          {dockPanel === 'collaboration' && (
+            <section className="canvas-collaboration">
+              <h3>협업</h3>
+              <p>
+                {collaboration.active
+                  ? collaboration.connected
+                    ? '공동 프로젝트에 연결되어 있습니다.'
+                    : '협업 연결을 확인해주세요.'
+                  : '함께 작업할 사람을 초대하세요.'}
+              </p>
+              <button
+                onClick={() => {
+                  setCollaborationTab('create');
+                  setCollaborationOpen(true);
+                }}
+              >
+                <Users size={16} /> 참여자 · 초대 관리
+              </button>
+              {collaboration.active && (
+                <button onClick={() => setApprovalInboxOpen(true)}>
+                  {collaboration.role === 'admin' ? '요청함' : '내 요청'}{' '}
+                  {collaboration.pendingRequests
+                    ? '(' + collaboration.pendingRequests + ')'
+                    : ''}
+                </button>
+              )}
+              {(!collaboration.active || collaboration.role === 'admin') && (
+                <button
+                  aria-label="디스코드 알림 설정 및 테스트"
+                  onClick={() => setDiscordApprovalOpen(true)}
+                >
+                  디스코드 알림
+                </button>
+              )}
+              {collaboration.active && (
+                <MultiplayerLobby key={collaboration.projectId} projectOnly />
+              )}
+            </section>
+          )}
+        </CanvasPanel>
+      )}
       {uiDebug}
       {selfHostDialog}
       <UpdatePanel
@@ -7758,7 +8988,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         />
       )}
       {collaborationDialog}
-      {navigatorOpen && (
+      {navigatorOpen && !uiHidden && (
         <CanvasNavigator
           items={canvasItems}
           activeCanvas={activeCanvas}
@@ -7784,89 +9014,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           onCompare={compareWindows}
           close={() => setCompareFirst(null)}
         />
-      )}
-      {!home && pluginPanelOpen && (
-        <PluginControlPanel
-          page={pluginPanelPage}
-          navigate={setPluginPanelPage}
-          enabled={(id) =>
-            id === 'builtin.game-ui'
-              ? gameUiSettings.enabled
-              : kanbanVisibilityValue.enabled
-          }
-          toggle={(id, value) =>
-            id === 'builtin.game-ui'
-              ? setGameUiSettings({ enabled: value })
-              : toggleKanban(value)
-          }
-          geometry={pluginPanelGeometry}
-          updateGeometry={updatePluginPanelGeometry}
-          canvasName={
-            canvasSheets.canvases.find((c) => c.id === activeCanvas)?.name ??
-            '현재 캔버스'
-          }
-          close={() => setPluginPanelOpen(false)}
-        >
-          {pluginPanelPage === 'builtin.game-ui' ? (
-            <GameUiControls
-              frames={gameUi.frames}
-              canvasId={activeCanvas}
-              occupied={[
-                ...documents.filter(
-                  (d) => (d.canvasId ?? 'default') === activeCanvas,
-                ),
-                ...gameUi.frames
-                  .filter((f) => f.canvasId === activeCanvas)
-                  .map((f) => ({
-                    x: f.x,
-                    y: f.y,
-                    width: f.width + 320,
-                    height: gameUiHeight(f),
-                  })),
-              ]}
-              disabled={
-                locked ||
-                !gameUiSettings.enabled ||
-                (collaboration.active && collaboration.gameUiVersion !== 2)
-              }
-              submit={gameUi.submit}
-              focus={(id) => {
-                setPluginPanelOpen(false);
-                setTimeout(
-                  () =>
-                    void flowRef.current?.fitView({
-                      nodes: [{ id: `game-ui:${id}` }],
-                      padding: 0.35,
-                      maxZoom: 1,
-                      duration: 200,
-                    }),
-                  100,
-                );
-              }}
-            />
-          ) : (
-            <KanbanControls
-              preferences={kanbanPreferences}
-              activationEnabled={kanbanVisibilityValue.enabled}
-              visibilityPicker={
-                <CanvasVisibilityPicker
-                  value={kanbanVisibilityValue}
-                  canvases={canvasSheets.canvases}
-                  change={updateKanbanVisibility}
-                />
-              }
-              update={updateKanbanPreferences}
-              toggle={toggleKanban}
-              focus={revealKanban}
-              manage={() => setStatusManagerOpen(true)}
-              appearance={() => setKanbanAppearanceOpen(true)}
-              manageDisabled={
-                !workflowEditable || workflowBusy || !!kanbanViewError
-              }
-              reason={workflowReason}
-            />
-          )}
-        </PluginControlPanel>
       )}
       {kanbanAppearanceOpen && (
         <KanbanAppearanceManager
@@ -7894,376 +9041,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           }}
         />
       )}
-      {settingsOpen && (
-        <aside
-          className="canvas-settings floating-surface"
-          aria-label="캔버스 설정"
-        >
-          <header>
-            <strong>설정 및 도구</strong>
-            <button
-              className="icon-button"
-              title="설정 닫기"
-              onClick={() => setSettingsOpen(false)}
-            >
-              <X size={16} />
-            </button>
-          </header>
-          <button
-            disabled={!workflowEditable || workflowBusy}
-            onClick={() => {
-              setSettingsOpen(false);
-              setStatusManagerOpen(true);
-            }}
-          >
-            상태 속성 옵션 관리
-          </button>
-          {statusError && (
-            <p className="workflow-error" role="alert">
-              {statusError}
-            </p>
-          )}
-          <button
-            onClick={() => {
-              setSettingsOpen(false);
-              setCodexStatusOpen(true);
-            }}
-          >
-            <Bot size={16} /> AI 연결 설정{' '}
-            <small>
-              {codexStatus?.available && codexStatus.authenticated
-                ? '연결됨'
-                : '연결 필요'}
-            </small>
-          </button>
-          <button
-            onClick={() => {
-              setSettingsOpen(false);
-              setUpdateOpen(true);
-            }}
-          >
-            <RefreshCw size={16} /> 앱 업데이트
-          </button>
-          {(!collaboration.active || collaboration.role === 'admin') && (
-            <button
-              onClick={() => {
-                setSettingsOpen(false);
-                setDiscordApprovalOpen(true);
-              }}
-            >
-              디스코드 알림 · 테스트
-            </button>
-          )}
-          <button onClick={() => void loadProject(false)}>
-            <RefreshCw size={16} /> 캔버스 새로고침
-          </button>
-          <button onClick={() => void window.gameCanvas.openWorkspace()}>
-            <FolderOpen size={16} /> 프로젝트 폴더 열기
-          </button>
-          <button
-            disabled={locked || editBusy || movingResults}
-            onClick={() => {
-              setSettingsOpen(false);
-              setResultFolderPrompt('legacy');
-            }}
-          >
-            <FolderOpen size={16} /> 기존 결과물 폴더 정리
-          </button>
-          <button
-            aria-pressed={snapEnabled}
-            onClick={() => setSnapEnabled((value) => !value)}
-          >
-            <Frame size={16} /> 스마트 정렬 가이드{' '}
-            <small>{snapEnabled ? '켜짐' : '꺼짐'}</small>
-          </button>
-          <button
-            onClick={() => {
-              setSettingsOpen(false);
-              setShortcutsOpen(true);
-            }}
-          >
-            <Keyboard size={16} /> 단축키 안내 <kbd>?</kbd>
-          </button>
-        </aside>
-      )}
-      {inspectorId &&
-        (() => {
-          const item = canvasItems.find((item) => item.id === inspectorId),
-            doc = documents.find((doc) => doc.id === inspectorId),
-            section = sections.find(
-              (section) => sectionNodeId(section.id) === inspectorId,
-            ),
-            preview = previews.find(
-              (preview) => previewNodeId(preview.relativePath) === inspectorId,
-            );
-          if (!item) return null;
-          return (
-            <aside
-              className="object-inspector floating-surface"
-              aria-label="선택 항목 상세 정보"
-            >
-              <header>
-                <strong>상세 정보</strong>
-                <button
-                  className="icon-button"
-                  title="상세 정보 닫기"
-                  onClick={() => setInspectorId(null)}
-                >
-                  <X size={16} />
-                </button>
-              </header>
-              <h3>{item.title}</h3>
-              <dl>
-                <dt>파일</dt>
-                <dd>
-                  <code>{item.path}</code>
-                </dd>
-                {(doc || section || preview?.sourceId) && (
-                  <>
-                    <dt>ID</dt>
-                    <dd>
-                      <code>{doc?.id ?? section?.id ?? preview?.sourceId}</code>
-                    </dd>
-                  </>
-                )}
-                {doc && (
-                  <>
-                    <dt>문서 유형</dt>
-                    <dd>
-                      {TYPE_LABELS[doc.type]} · {statusLabel(doc.status)}
-                    </dd>
-                    <dt>위치 · 크기</dt>
-                    <dd>
-                      {doc.x}, {doc.y} · {doc.width} × {doc.height}
-                    </dd>
-                    <dt>최근 변경</dt>
-                    <dd>{new Date(doc.modifiedAt).toLocaleString('ko-KR')}</dd>
-                    <dt>소속 섹션</dt>
-                    <dd>{item.parent ?? '섹션 없음'}</dd>
-                  </>
-                )}
-              </dl>
-              {((doc && doc.type !== 'ai-task') || preview) && (
-                <FilePropertiesEditor
-                  key={doc?.id ?? preview!.sourceId}
-                  document={doc ?? preview!}
-                  statuses={statusSettings.value}
-                  authorship={
-                    inspectorAuthorship?.path === item.path
-                      ? inspectorAuthorship.value
-                      : undefined
-                  }
-                  visibility={propertyVisibilityFor(
-                    doc?.id ?? preview!.sourceId!,
-                    preview?.propertyPreviousIds ?? [],
-                  )}
-                  disabled={
-                    !workflowEditable ||
-                    workflowBusy ||
-                    pathLocked(item.path) ||
-                    pathLocked(preview?.sourcePath ?? '')
-                  }
-                  reason={
-                    workflowReason ||
-                    (pathLocked(item.path) ||
-                    pathLocked(preview?.sourcePath ?? '')
-                      ? 'AI 작업이 이 파일을 보호하고 있습니다.'
-                      : undefined)
-                  }
-                  change={async (value) => {
-                    const file = doc ?? preview!;
-                    await workflowChange({
-                      relativePath: item.path,
-                      objectId: doc?.id ?? preview!.sourceId!,
-                      expectedEnabled: statusPropertyApplied(file),
-                      expectedStatus: file.workflowStatusId,
-                      workflowRevision: doc?.workflowRevision,
-                      structureRevision: doc?.structureRevision,
-                      ...value,
-                    });
-                  }}
-                  display={(id, visible) => {
-                    const key = doc?.id ?? preview!.sourceId!;
-                    const aliases = preview?.propertyPreviousIds ?? [];
-                    const value = {
-                      ...propertyVisibilityFor(key, aliases),
-                      [id]: visible,
-                    };
-                    updateFilePropertyViews({
-                      version: 1,
-                      files: {
-                        ...filePropertyViews.files,
-                        ...Object.fromEntries(
-                          [key, ...aliases].map((alias) => [alias, value]),
-                        ),
-                      },
-                    });
-                  }}
-                  manage={() => setStatusManagerOpen(true)}
-                />
-              )}
-              {!((doc && doc.type !== 'ai-task') || preview) && (
-                <dl className="inspector-authorship">
-                  <dt>생성한 사람</dt>
-                  <dd>
-                    {inspectorAuthorship?.path === item.path &&
-                    inspectorAuthorship.value
-                      ? authorLabel(inspectorAuthorship.value.createdBy)
-                      : inspectorAuthorship?.path === item.path &&
-                          inspectorAuthorship.error
-                        ? '정보를 불러오지 못했습니다'
-                        : '기록 불러오는 중…'}
-                    {inspectorAuthorship?.path === item.path &&
-                      inspectorAuthorship.value?.createdAt && (
-                        <small>
-                          {new Date(
-                            inspectorAuthorship.value.createdAt,
-                          ).toLocaleString('ko-KR')}
-                        </small>
-                      )}
-                  </dd>
-                  <dt title="본문·제목·위치·크기·섹션 등 파일 변경을 포함합니다">
-                    마지막으로 편집한 사람
-                  </dt>
-                  <dd>
-                    {inspectorAuthorship?.path === item.path &&
-                    inspectorAuthorship.value
-                      ? authorLabel(inspectorAuthorship.value.lastEditedBy)
-                      : inspectorAuthorship?.path === item.path &&
-                          inspectorAuthorship.error
-                        ? '정보를 불러오지 못했습니다'
-                        : '기록 불러오는 중…'}
-                    {inspectorAuthorship?.path === item.path &&
-                      inspectorAuthorship.value?.lastEditedAt && (
-                        <small>
-                          {new Date(
-                            inspectorAuthorship.value.lastEditedAt,
-                          ).toLocaleString('ko-KR')}
-                        </small>
-                      )}
-                  </dd>
-                </dl>
-              )}
-              {doc?.sources.length ? (
-                <div className="inspector-sources">
-                  <strong>참고한 원본 자료 {doc.sources.length}개</strong>
-                  {doc.sources.map((source) => (
-                    <button
-                      key={source.id}
-                      title={source.contribution}
-                      onClick={() => focusSource(source.id)}
-                    >
-                      {documents.find((doc) => doc.id === source.id)?.title ??
-                        previews.find(
-                          (preview) => preview.sourceId === source.id,
-                        )?.title ??
-                        source.id}
-                      <small>{source.contribution}</small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {section && (
-                <>
-                  <button
-                    disabled={locked}
-                    onClick={() =>
-                      setSectionRename({ section, title: section.title })
-                    }
-                  >
-                    섹션 이름 변경
-                  </button>
-                  <strong>포함 문서 {section.members.length}개</strong>
-                  {section.members.map((member) => (
-                    <button key={member.id} onClick={() => jumpTo(member.id)}>
-                      {documents.find((doc) => doc.id === member.id)?.title ??
-                        member.path}
-                    </button>
-                  ))}
-                </>
-              )}
-              {!section && (
-                <div
-                  className="inspector-sources"
-                  aria-label="관련 AI 작업 기록"
-                >
-                  <strong>관련 AI 작업 기록</strong>
-                  {inspectorAiRecords?.path !== item.path ||
-                  !inspectorAiRecords.entries ? (
-                    <small>
-                      {inspectorAiRecords?.error
-                        ? '기록을 불러오지 못했습니다.'
-                        : '기록 불러오는 중…'}
-                    </small>
-                  ) : (
-                    (() => {
-                      const entries = relatedAiEntries(
-                        inspectorAiRecords.entries,
-                        item.path,
-                        taskDocuments,
-                        previews.find(
-                          (preview) => preview.relativePath === item.path,
-                        )?.previousPaths,
-                      );
-                      return entries.length ? (
-                        <>
-                          {entries.slice(0, 3).map((entry) => (
-                            <button
-                              key={entry.id}
-                              onClick={() =>
-                                openHistory(item.path, true, entry)
-                              }
-                            >
-                              {entryTaskRecord(entry, taskDocuments)?.title ??
-                                entry.label}
-                              <small>
-                                {new Date(entry.createdAt).toLocaleString(
-                                  'ko-KR',
-                                )}{' '}
-                                · {CODEX_STATUS_LABELS[entry.status]} ·{' '}
-                                {entry.actorName ?? '로컬 사용자'}
-                              </small>
-                            </button>
-                          ))}
-                          <button onClick={() => openHistory(item.path, true)}>
-                            AI 작업 기록 전체 보기 ({entries.length})
-                          </button>
-                        </>
-                      ) : (
-                        <small>이 결과와 연결된 AI 실행 기록이 없습니다.</small>
-                      );
-                    })()
-                  )}
-                </div>
-              )}
-              <div className="inspector-actions">
-                <button
-                  onClick={() => void window.gameCanvas.revealPath(item.path)}
-                >
-                  <Folder size={14} /> 파일 보기
-                </button>
-                <button onClick={() => void openHistory(item.path)}>
-                  <History size={14} /> 히스토리
-                </button>
-                {preview && (
-                  <button onClick={() => setCompareFirst(preview.relativePath)}>
-                    <Columns2 size={14} /> 버전 비교
-                  </button>
-                )}
-              </div>
-            </aside>
-          );
-        })()}
       <button
         type="button"
         className={`ui-tools-toggle floating-surface icon-button${uiHidden ? ' ui-reveal-button' : ''}`}
         onClick={() => setUiHidden((value) => !value)}
         aria-pressed={!uiHidden}
-        title={
-          uiHidden
-            ? '상단 메뉴·캔버스 탭 보이기 (Ctrl+\\)'
-            : '상단 메뉴·캔버스 탭 숨기기 (Ctrl+\\)'
-        }
+        title={uiHidden ? '집중 모드 종료 (Ctrl+\\)' : '집중 모드 (Ctrl+\\)'}
       >
         {uiHidden ? <Eye size={16} /> : <EyeOff size={16} />}
       </button>
@@ -8309,33 +9092,35 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             </button>
           </div>
 
-          <div className="header-actions floating-surface">
+          <div className="header-undo" aria-label="편집 기록">
             <button
-              type="button"
-              className="collaboration-top-button"
-              onClick={() => {
-                setCollaborationTab('create');
-                setCollaborationOpen(true);
-              }}
+              aria-label="실행 취소"
+              className="icon-button"
               title={
-                collaboration.active
-                  ? `${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'} · 참여자·초대 관리`
-                  : '초대 코드로 함께 작업하기'
+                undoState.undo
+                  ? `실행 취소 · ${undoState.undo} (Ctrl+Z)`
+                  : '되돌릴 작업 없음'
               }
+              disabled={!undoState.undo || locked || editBusy}
+              onClick={() => void changeEdit('undo')}
             >
-              <Users size={15} />
-              <span>
-                {collaboration.active
-                  ? `${collaboration.members.filter((member) => member.online).length}명 · ${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'}`
-                  : '함께 작업'}
-              </span>
-              {collaboration.active && (
-                <i
-                  className={`member-dot ${collaboration.connected ? 'online' : ''}`}
-                />
-              )}
+              <Undo2 size={16} />
             </button>
-            <span className="toolbar-divider" />
+            <button
+              aria-label="다시 실행"
+              className="icon-button"
+              title={
+                undoState.redo
+                  ? `다시 실행 · ${undoState.redo} (Ctrl+Shift+Z)`
+                  : '다시 실행할 작업 없음'
+              }
+              disabled={!undoState.redo || locked || editBusy}
+              onClick={() => void changeEdit('redo')}
+            >
+              <Redo2 size={16} />
+            </button>
+          </div>
+          <div className="header-actions floating-surface">
             <button
               type="button"
               className="header-ai-action header-ai-action--primary"
@@ -8353,62 +9138,112 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             >
               <Sparkles size={15} /> <span>gamejam!</span>
             </button>
-            {collaboration.active && (
-              <button
-                type="button"
-                onClick={() => setApprovalInboxOpen(true)}
-                title="팀원 구현 요청 확인"
-              >
-                {collaboration.role === 'admin' ? '요청함' : '내 요청'}
-                {collaboration.pendingRequests
-                  ? ` (${collaboration.pendingRequests})`
-                  : ''}
-              </button>
-            )}
-            {(!collaboration.active || collaboration.role === 'admin') && (
-              <button
-                type="button"
-                aria-label="디스코드 알림 설정 및 테스트"
-                onClick={() => setDiscordApprovalOpen(true)}
-                title="디스코드 연결 설정 · 테스트 알림 보내기"
-              >
-                디스코드 알림
-              </button>
-            )}
-            <span className="toolbar-divider" />
             <button
-              type="button"
-              onClick={() => openHistory()}
-              title="프로젝트 히스토리"
+              className="canvas-ai-summary"
+              aria-label="AI 작업 패널"
+              aria-expanded={dockPanel === 'ai'}
+              onClick={() => {
+                setDockPanel(dockPanel === 'ai' ? null : 'ai');
+                setCodexRunCollapsed(false);
+              }}
             >
-              <History size={15} />
+              <Clock3 size={16} /> AI 작업
+              {aiBusy || projectAiQueue.some(isQueuePending) ? (
+                <span>
+                  실행{' '}
+                  {projectAiQueue.filter(
+                    (t) => isQueuePending(t) && t.status !== 'queued',
+                  ).length || (aiBusy ? 1 : 0)}{' '}
+                  · 예약{' '}
+                  {projectAiQueue.filter((t) => t.status === 'queued').length}
+                </span>
+              ) : completion ? (
+                <span>
+                  {completion.status === 'failed' ? '실패 · 확인 필요' : '완료'}
+                </span>
+              ) : null}
             </button>
-            {(aiBusy || projectAiQueue.some(isQueuePending)) && (
-              <span className="workspace-lock-label">
-                AI 작업{' '}
-                {projectAiQueue.filter(
-                  (t) => isQueuePending(t) && t.status !== 'queued',
-                ).length || (aiBusy ? 1 : 0)}{' '}
-                · 예약{' '}
-                {projectAiQueue.filter((t) => t.status === 'queued').length}
+            <button
+              className="collaboration-top-button"
+              aria-label="협업 패널"
+              aria-expanded={dockPanel === 'collaboration'}
+              onClick={() =>
+                setDockPanel(
+                  dockPanel === 'collaboration' ? null : 'collaboration',
+                )
+              }
+            >
+              <Users size={16} />
+              <span>
+                협업
+                {collaboration.active
+                  ? ' · ' + collaboration.members.filter((m) => m.online).length
+                  : ''}
+                {collaboration.pendingRequests
+                  ? ' (' + collaboration.pendingRequests + ')'
+                  : ''}
               </span>
-            )}
+              {collaboration.active && (
+                <i
+                  className={
+                    'member-dot ' + (collaboration.connected ? 'online' : '')
+                  }
+                />
+              )}
+            </button>
             <button
               className="icon-button"
-              title="설정 및 도구"
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen((value) => !value)}
+              aria-label="속성 패널"
+              title="속성"
+              onClick={() =>
+                setDockPanel(dockPanel === 'properties' ? null : 'properties')
+              }
             >
               <Settings2 size={17} />
             </button>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={toggleTheme}
-              title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
-            >
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
+            <details className="canvas-main-menu">
+              <summary aria-label="더보기">
+                <MoreHorizontal size={19} />
+              </summary>
+              <div role="menu">
+                <button
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.currentTarget.closest('details')?.removeAttribute('open');
+                    openHistory();
+                  }}
+                >
+                  <History size={16} /> 프로젝트 히스토리
+                </button>
+                <button
+                  role="menuitem"
+                  data-plugin-launcher
+                  onClick={(e) => {
+                    e.currentTarget.closest('details')?.removeAttribute('open');
+                    setPluginPanelPage('plugins');
+                    setPluginPanelOpen(true);
+                  }}
+                >
+                  <Puzzle size={16} /> 플러그인
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.currentTarget.closest('details')?.removeAttribute('open');
+                    setSettingsOpen(true);
+                  }}
+                >
+                  <Settings2 size={16} /> 설정 및 도구
+                </button>
+                <button role="menuitem" onClick={toggleTheme}>
+                  {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}{' '}
+                  {theme === 'dark' ? '라이트 모드' : '다크 모드'}
+                </button>
+                <button role="menuitem" onClick={() => setShortcutsOpen(true)}>
+                  <Keyboard size={16} /> 단축키 안내
+                </button>
+              </div>
+            </details>
           </div>
         </header>
       )}
@@ -8548,8 +9383,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         <GameUiInspectorProvider
           key={personalScope + ':' + activeCanvas}
           scope={personalScope}
-          suspended={!!inspectorId || pluginPanelOpen}
+          embedded
+          externalHost={gameUiPanelHost}
+          onActiveChange={setGameUiPanelActive}
+          suspended={
+            !!inspectorId || (dockPanel !== null && dockPanel !== 'properties')
+          }
           onOpen={() => {
+            setDockPanel('properties');
             setInspectorId(null);
             setPluginPanelOpen(false);
           }}
@@ -8834,13 +9675,15 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   gap={24}
                   size={1}
                 />
-                <Controls position="bottom-left" showInteractive={false} />
-                <CanvasMiniMap
-                  theme={theme}
-                  preferences={minimapPreferences}
-                  change={updateMiniMapPreferences}
-                  previewOpen={preview?.id === 'minimap-settings'}
-                />
+
+                {minimapVisible && !compactChrome && !uiHidden && (
+                  <CanvasMiniMap
+                    theme={theme}
+                    preferences={minimapPreferences}
+                    change={updateMiniMapPreferences}
+                    previewOpen={preview?.id === 'minimap-settings'}
+                  />
+                )}
                 <DrawingInputLayer
                   eraserMode={eraserMode}
                   eraserSize={eraserSize}
@@ -8915,52 +9758,74 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           }}
         />
       )}
-      <div className="canvas-utility floating-surface">
+      <div className="canvas-utility floating-surface" aria-label="화면 조작">
         <button
           className="icon-button"
-          title={
-            undoState.undo
-              ? `실행 취소 · ${undoState.undo} (Ctrl+Z)`
-              : '되돌릴 작업 없음'
+          aria-label="미니맵 전환"
+          aria-pressed={
+            compactChrome ? dockPanel === 'navigation' : minimapVisible
           }
-          disabled={!undoState.undo || locked || editBusy}
-          onClick={() => void changeEdit('undo')}
+          onClick={() => {
+            if (compactChrome)
+              setDockPanel(dockPanel === 'navigation' ? null : 'navigation');
+            else setMinimapVisible((v) => !v);
+          }}
         >
-          <Undo2 size={16} />
+          <MapIcon size={16} />
         </button>
         <button
           className="icon-button"
-          title={
-            undoState.redo
-              ? `다시 실행 · ${undoState.redo} (Ctrl+Shift+Z)`
-              : '다시 실행할 작업 없음'
-          }
-          disabled={!undoState.redo || locked || editBusy}
-          onClick={() => void changeEdit('redo')}
+          aria-label="축소"
+          onClick={() => void flowRef.current?.zoomOut()}
         >
-          <Redo2 size={16} />
+          <ZoomOut size={16} />
         </button>
-        <span className="toolbar-divider" />
+        <details className="canvas-zoom-menu">
+          <summary aria-label="확대율 메뉴">
+            {Math.round(viewZoom * 100)}%
+          </summary>
+          <div>
+            <button onClick={() => void flowRef.current?.zoomTo(1)}>
+              100%로 보기
+            </button>
+            <button
+              onClick={() => {
+                const selected = flowRef.current
+                  ?.getNodes()
+                  .filter((n) => n.selected);
+                if (selected?.length)
+                  void flowRef.current?.fitView({
+                    nodes: selected,
+                    padding: 0.2,
+                  });
+              }}
+            >
+              선택 항목 맞춤
+            </button>
+          </div>
+        </details>
         <button
+          className="icon-button"
+          aria-label="확대"
+          onClick={() => void flowRef.current?.zoomIn()}
+        >
+          <ZoomIn size={16} />
+        </button>
+        <button
+          className="icon-button"
+          aria-label="캔버스 전체 맞춤"
           title="캔버스 전체 보기 (Shift+1)"
           onClick={() =>
             void flowRef.current?.fitView({
               nodes: flowRef.current
-                ?.getNodes()
+                .getNodes()
                 .filter((n) => !n.className?.includes('section-member-hidden')),
               padding: 0.16,
               duration: 250,
             })
           }
         >
-          {Math.round(viewZoom * 100)}%
-        </button>
-        <button
-          className="icon-button"
-          title="단축키 안내 (?)"
-          onClick={() => setShortcutsOpen(true)}
-        >
-          <Keyboard size={16} />
+          <Maximize size={16} />
         </button>
       </div>
 
@@ -9138,42 +10003,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
       <nav className="bottom-toolbar floating-surface" aria-label="캔버스 도구">
         <button
           type="button"
-          data-plugin-launcher
-          className={pluginPanelOpen ? 'active' : ''}
-          aria-expanded={pluginPanelOpen}
-          title="플러그인 관리"
-          onClick={() => {
-            setPluginPanelPage('plugins');
-            setPluginPanelOpen(!pluginPanelOpen);
-          }}
-        >
-          <Puzzle size={19} />
-          <span>플러그인</span>
-        </button>
-        <span className="toolbar-divider toolbar-divider--vertical" />
-
-        <DrawingToolButtons
-          eraserMode={eraserMode}
-          eraserSize={eraserSize}
-          onEraser={(mode, size) => setEraserSettings({ mode, size })}
-          partialSupported={
-            partialEraseSupported &&
-            !(
-              preview?.id === 'drawing-eraser' &&
-              preview.state === 'unsupported'
-            )
-          }
-          active={tool === 'drawing'}
-          tool={drawingTool}
-          onTool={chooseDrawingTool}
-          disabled={
-            locked ||
-            !workspace.root ||
-            (collaboration.active && collaboration.drawingsVersion !== 1)
-          }
-        />
-        <button
-          type="button"
           className={tool === 'select' ? 'active' : ''}
           aria-pressed={tool === 'select'}
           onClick={() => setTool('select')}
@@ -9206,56 +10035,72 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           <span>새 메모</span>
           <kbd>N</kbd>
         </button>
-        <span className="toolbar-divider toolbar-divider--vertical" />
-        <button
-          type="button"
-          disabled={selectedDocuments.length === 0 || selectionLocked}
-          onClick={() => {
-            setSectionTitle('새 섹션');
-            setSectionDialogOpen(true);
+        <DrawingToolButtons
+          eraserMode={eraserMode}
+          eraserSize={eraserSize}
+          onEraser={(mode, size) => setEraserSettings({ mode, size })}
+          partialSupported={
+            partialEraseSupported &&
+            !(
+              preview?.id === 'drawing-eraser' &&
+              preview.state === 'unsupported'
+            )
+          }
+          grouped
+          active={tool === 'drawing'}
+          tool={drawingTool}
+          onTool={(t) => {
+            chooseDrawingTool(t);
           }}
-          title="선택한 파일을 하나의 섹션으로 묶기 (Shift+S / Ctrl+G)"
-        >
-          <Frame size={19} />
-          <span>섹션</span>
-          <kbd>⇧S</kbd>
-        </button>
-        <button
-          type="button"
-          onClick={() => openImport()}
-          disabled={locked || importingFiles}
-          title="Markdown · HTML 게임 · 이미지 파일 불러오기 (Ctrl+I)"
-        >
-          <Upload size={19} />
-          <span>불러오기</span>
-          <kbd>Ctrl I</kbd>
-        </button>
+          disabled={
+            locked ||
+            !workspace.root ||
+            (collaboration.active && collaboration.drawingsVersion !== 1)
+          }
+        />
+        <details className="canvas-tool-more">
+          <summary aria-label="추가 편집 도구">
+            <MoreHorizontal size={19} />
+            <span>더보기</span>
+          </summary>
+          <div>
+            <button
+              type="button"
+              disabled={selectedDocuments.length === 0 || selectionLocked}
+              onClick={() => {
+                setSectionTitle('새 섹션');
+                setSectionDialogOpen(true);
+              }}
+              title="선택한 파일을 하나의 섹션으로 묶기 (Shift+S / Ctrl+G)"
+            >
+              <Frame size={19} />
+              <span>섹션</span>
+              <kbd>⇧S</kbd>
+            </button>
+            <button
+              type="button"
+              onClick={() => openImport()}
+              disabled={locked || importingFiles}
+              title="Markdown · HTML 게임 · 이미지 파일 불러오기 (Ctrl+I)"
+            >
+              <Upload size={19} />
+              <span>불러오기</span>
+              <kbd>Ctrl I</kbd>
+            </button>
+            <button
+              data-plugin-launcher
+              onClick={() => {
+                setPluginPanelPage('plugins');
+                setPluginPanelOpen(true);
+              }}
+            >
+              <Puzzle size={19} />
+              <span>플러그인</span>
+            </button>
+          </div>
+        </details>
       </nav>
 
-      {(tool === 'drawing' || selectedDrawings.length > 0) && (
-        <DrawingInspector
-          eraserMode={eraserMode}
-          objects={drawing.items.filter((o) =>
-            selectedDrawings.some((s) => s.id === o.id),
-          )}
-          tool={drawingTool}
-          style={drawingStyle}
-          onStyle={setDrawingStyle}
-          submit={submitDrawing}
-          disabled={locked || drawing.saving}
-          onDuplicate={() => duplicateDrawings()}
-          allObjects={drawing.items}
-          onDelete={deleteDrawings}
-          pressure={drawingPressure}
-          onPressure={setDrawingPressure}
-          touch={drawingTouch}
-          onTouch={setDrawingTouch}
-          continuous={drawingContinuous}
-          onContinuous={setDrawingContinuous}
-          canvases={canvasSheets.canvases}
-          canvasId={activeCanvas}
-        />
-      )}
       {(gameUi.error || gameUi.saving) && (
         <aside className="drawing-save-alert floating-surface" role="status">
           {gameUi.error || '게임 UI 저장 중…'}
@@ -9292,341 +10137,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </aside>
       )}
 
-      {!home && (
-        <AiQueuePanel
-          tasks={projectAiQueue}
-          canCancel={canRunAi}
-          cancel={async (task) => {
-            if (task.status === 'queued')
-              await window.gameCanvas.cancelQueuedTask(task.taskId);
-            else await window.gameCanvas.cancelCodexRun(task.runId);
-            if (!collaboration.active)
-              setAiQueue(await window.gameCanvas.listAiQueue());
-          }}
-          open={(task) => {
-            if (codexRun?.runId === task.runId) setCodexRunCollapsed(false);
-            else openHistory(task.taskPath, true);
-          }}
-        />
-      )}
-      {runPanelVisible && codexRun && (
-        <aside
-          className={`codex-run-panel floating-surface${codexRunCollapsed ? ' codex-run-panel--collapsed' : ''}`}
-          aria-live="polite"
-        >
-          <header>
-            <div className="codex-run-panel__title">
-              {codexRun.status === 'starting' ||
-              codexRun.status === 'running' ||
-              codexRun.status === 'validating' ? (
-                <LoaderCircle className="spin" size={16} />
-              ) : codexRun.status === 'completed' ? (
-                <CheckCircle2 size={16} />
-              ) : (
-                <AlertCircle size={16} />
-              )}
-              <div>
-                <strong>{getAiProvider(codexRun.providerId).label} 작업</strong>
-                <span>
-                  {CODEX_STATUS_LABELS[codexRun.status]} ·{' '}
-                  {getAiModelLabel(codexRun.providerId, codexRun.modelId)}
-                </span>
-              </div>
-            </div>
-            <div className="codex-run-panel__header-actions">
-              <button
-                type="button"
-                className="icon-button"
-                title="AI 작업 기록 열기"
-                onClick={() => openHistory(codexRun.taskPath, true)}
-              >
-                <History size={14} />
-              </button>
-              {codexRun.status === 'completed' && (
-                <button
-                  title="생성 결과로 이동"
-                  onClick={() => {
-                    const paths = runOutputPaths;
-                    const result = previews
-                      .filter((preview) => paths.includes(preview.relativePath))
-                      .at(-1);
-                    if (result) jumpTo(previewNodeId(result.relativePath));
-                    else {
-                      const ids = documents
-                        .filter((doc) => paths.includes(doc.relativePath))
-                        .map((doc) => ({ id: doc.id }));
-                      if (ids.length)
-                        void flowRef.current?.fitView({
-                          nodes: ids,
-                          padding: 0.2,
-                          duration: 300,
-                        });
-                      else setNavigatorOpen(true);
-                    }
-                  }}
-                >
-                  <Play size={13} /> 결과 보기
-                </button>
-              )}
-              {(codexRun.status === 'starting' ||
-                codexRun.status === 'running' ||
-                codexRun.status === 'validating') && (
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => void cancelCodexRun()}
-                  disabled={cancellingCodexRun || !canStopAi}
-                  title="현재 AI 작업 중지"
-                >
-                  {cancellingCodexRun ? (
-                    <LoaderCircle className="spin" size={14} />
-                  ) : (
-                    <Square size={13} />
-                  )}
-                </button>
-              )}
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => {
-                  if (codexRunCollapsed) {
-                    setInspectorId(null);
-                    setSettingsOpen(false);
-                    setHistoryOpen(false);
-                  }
-                  setCodexRunCollapsed((current) => !current);
-                }}
-                title={
-                  codexRunCollapsed ? '작업 패널 펼치기' : '작업 패널 최소화'
-                }
-              >
-                {codexRunCollapsed ? (
-                  <Maximize2 size={14} />
-                ) : (
-                  <Minimize2 size={14} />
-                )}
-              </button>
-              {codexRun.status !== 'starting' &&
-                codexRun.status !== 'running' &&
-                codexRun.status !== 'validating' && (
-                  <button
-                    type="button"
-                    className="icon-button"
-                    onClick={closeRunPanel}
-                    title="실행 패널 닫기"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-            </div>
-          </header>
-          {!codexRunCollapsed && (
-            <>
-              <ol className="ai-stages" aria-label="AI 진행 단계">
-                {[
-                  ['starting', '준비'],
-                  ['running', '실행'],
-                  ['validating', '검증'],
-                  ['completed', '완료'],
-                ].map(([status, label], index) => (
-                  <li
-                    key={status}
-                    className={
-                      codexRun.status === status
-                        ? 'is-current'
-                        : [
-                              'starting',
-                              'running',
-                              'validating',
-                              'completed',
-                            ].indexOf(codexRun.status) > index
-                          ? 'is-done'
-                          : ''
-                    }
-                  >
-                    <span>{index + 1}</span>
-                    {label}
-                  </li>
-                ))}
-              </ol>
-              <code className="codex-run-panel__task">{codexRun.taskPath}</code>
-              {runFailure && (
-                <section
-                  className="ai-failure-details"
-                  aria-label="AI 오류 진단"
-                >
-                  <strong>
-                    {runFailure.code} · {runFailure.stage}
-                  </strong>
-                  <p>{runFailure.message}</p>
-                  <p>{runFailure.hint}</p>
-                  <small>실행 ID: {codexRun.runId}</small>
-                  <div>
-                    <button
-                      onClick={() => {
-                        void window.gameCanvas
-                          .copyText(
-                            JSON.stringify(
-                              {
-                                runId: codexRun.runId,
-                                taskPath: codexRun.taskPath,
-                                provider: codexRun.providerId,
-                                model: codexRun.modelId,
-                                ...runFailure,
-                              },
-                              null,
-                              2,
-                            ),
-                          )
-                          .then(() =>
-                            setNotice('오류 진단 정보를 복사했습니다.'),
-                          )
-                          .catch(showError);
-                      }}
-                    >
-                      진단 정보 복사
-                    </button>
-                    {runFailure.diagnosticPath && (
-                      <button
-                        onClick={() => {
-                          void window.gameCanvas
-                            .revealPath(runFailure.diagnosticPath!)
-                            .catch(showError);
-                        }}
-                      >
-                        진단 파일 보기
-                      </button>
-                    )}
-                  </div>
-                </section>
-              )}
-              <div
-                ref={codexLogsRef}
-                className="codex-run-panel__logs nowheel"
-                role="log"
-                aria-label="AI 작업 진행 로그"
-              >
-                {codexRun.events.length === 0 ? (
-                  <p>AI 프로세스의 응답을 기다리고 있습니다.</p>
-                ) : (
-                  codexRun.events.map((event, index) => (
-                    <p
-                      key={`${event.timestamp}-${index}`}
-                      className={`codex-log codex-log--${event.kind}`}
-                    >
-                      <time>
-                        {new Date(event.timestamp).toLocaleTimeString('ko-KR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </time>
-                      <span>{event.message}</span>
-                    </p>
-                  ))
-                )}
-              </div>
-              {(codexRun.status === 'starting' ||
-                codexRun.status === 'running' ||
-                codexRun.status === 'validating') && (
-                <footer>
-                  <span>
-                    새 로그가 추가되면 자동으로 최신 위치를 표시합니다.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void cancelCodexRun()}
-                    disabled={cancellingCodexRun || !canStopAi}
-                  >
-                    {cancellingCodexRun ? (
-                      <LoaderCircle className="spin" size={13} />
-                    ) : (
-                      <Square size={13} />
-                    )}{' '}
-                    {cancellingCodexRun ? '중지 중' : '작업 중지'}
-                  </button>
-                </footer>
-              )}
-            </>
-          )}
-        </aside>
-      )}
-
-      {completionVisible && completion && (
-        <section
-          className={`ai-completion-toast floating-surface${completion.status === 'failed' ? ' ai-completion-toast--failed' : ''}`}
-          role="status"
-          aria-live="polite"
-          aria-label="AI 작업 완료 알림"
-        >
-          <button
-            className="icon-button ai-completion-toast__close"
-            title="완료 알림 닫기"
-            onClick={closeCompletion}
-          >
-            <X size={14} />
-          </button>
-          <strong>
-            {completion.status === 'completed' ? (
-              <>
-                <CheckCircle2 size={18} /> 완료!
-              </>
-            ) : (
-              <>
-                <AlertCircle size={18} /> 작업 실패 ·{' '}
-                {runFailure?.code ?? '진단 확인'}
-              </>
-            )}
-          </strong>
-          <p>
-            {completion.status === 'completed'
-              ? `${completion.taskPath.includes('/gamejam-') ? '문서 정리 + HTML 구현' : completion.taskPath.includes('/organize-') ? '문서 정리' : 'HTML 구현'} 결과를 검증하고 저장했습니다.`
-              : '기존 결과는 유지했습니다. 오류 진단을 확인해주세요.'}
-          </p>
-          <div>
-            <button
-              onClick={() => {
-                setCodexRunCollapsed(false);
-                setInspectorId(null);
-                setHistoryOpen(false);
-                setSettingsOpen(false);
-              }}
-            >
-              {completion.status === 'completed'
-                ? '작업 내용 보기'
-                : '오류 진단 보기'}
-            </button>
-            {completion.status === 'completed' && (
-              <button
-                onClick={() => {
-                  const ids = nodes
-                    .filter((node) =>
-                      node.data.kind === 'document'
-                        ? runOutputPaths.includes(
-                            node.data.document.relativePath,
-                          )
-                        : node.data.kind === 'preview'
-                          ? runOutputPaths.includes(
-                              node.data.preview.relativePath,
-                            )
-                          : false,
-                    )
-                    .map((node) => ({ id: node.id }));
-                  if (ids.length)
-                    void flowRef.current?.fitView({
-                      nodes: ids,
-                      padding: 0.2,
-                      duration: 300,
-                    });
-                  else setNavigatorOpen(true);
-                }}
-              >
-                결과로 이동
-              </button>
-            )}
-          </div>
-        </section>
-      )}
       {blockedMessage && (
         <div
           data-ui-id="blocked"
@@ -9655,240 +10165,6 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </div>
       )}
 
-      {historyOpen && (
-        <aside
-          className={`history-panel floating-surface${aiHistorySelection || historySelection ? ' history-panel--has-detail' : ''}`}
-          aria-label="프로젝트 히스토리"
-        >
-          <header>
-            <strong>
-              {historyFilter
-                ? `${historyFilter} 히스토리`
-                : '프로젝트 히스토리'}
-            </strong>
-            <button
-              type="button"
-              className="icon-button"
-              title="히스토리 닫기"
-              onClick={() => {
-                historyRequest.current += 1;
-                setHistoryOpen(false);
-              }}
-            >
-              <X size={16} />
-            </button>
-          </header>
-          <div
-            className="history-tabs"
-            role="group"
-            aria-label="히스토리 보기 방식"
-          >
-            <button
-              aria-pressed={!historyAiOnly}
-              onClick={() => {
-                setHistoryAiOnly(false);
-                setAiHistorySelection(null);
-                setHistorySelection(null);
-                historyRequest.current++;
-              }}
-            >
-              전체 히스토리
-            </button>
-            <button
-              aria-pressed={historyAiOnly}
-              onClick={() => {
-                setHistoryAiOnly(true);
-                setAiHistorySelection(null);
-                setHistorySelection(null);
-                historyRequest.current++;
-              }}
-            >
-              AI 작업 기록
-            </button>
-          </div>
-          <div className="history-panel__body">
-            <div className="history-panel__entries">
-              {filteredHistoryEntries.map((entry) => (
-                <div
-                  className="history-entry"
-                  data-history-kind={entry.kind}
-                  key={entry.id}
-                >
-                  <strong>{entry.label}</strong>
-                  <small>
-                    {new Date(entry.createdAt).toLocaleString()} ·{' '}
-                    {CODEX_STATUS_LABELS[entry.status]}
-                    {entry.modelId ? ` · ${entry.modelId}` : ''}
-                    {` · ${entry.actorName ?? '로컬 사용자'}`}
-                  </small>
-                  {entry.error && (
-                    <p className="history-error">{entry.error}</p>
-                  )}
-                  {(historyTaskPath(entry) || entry.kind === 'ai') && (
-                    <button
-                      type="button"
-                      className="history-ai-record-button"
-                      aria-pressed={aiHistorySelection?.id === entry.id}
-                      onClick={() => {
-                        historyRequest.current++;
-                        setHistorySelection(null);
-                        setAiHistorySelection(entry);
-                      }}
-                    >
-                      <Bot size={13} /> 작업 지시 · 실행 상세 보기
-                    </button>
-                  )}
-                  {entry.files
-                    .filter((file) => !isAiTaskPath(file.relativePath))
-                    .map((file) => (
-                      <button
-                        type="button"
-                        key={file.relativePath}
-                        onClick={() => {
-                          const target = documents.find(
-                            (document) =>
-                              document.relativePath === file.relativePath,
-                          );
-                          if (target) focusSource(target.id);
-                          void inspectHistory(
-                            entry,
-                            file.relativePath,
-                            file.after ? 'after' : 'before',
-                          );
-                        }}
-                      >
-                        {file.after ? (file.before ? '수정' : '생성') : '삭제'}{' '}
-                        · {file.relativePath}
-                      </button>
-                    ))}
-                  {entry.status === 'completed' &&
-                    entry.files.some(
-                      (file) => !isAiTaskPath(file.relativePath),
-                    ) && (
-                      <button
-                        type="button"
-                        disabled={restoring || !canRestoreHistory}
-                        onClick={() => {
-                          if (locked) onBlocked();
-                          else setHistoryConfirm({ entry });
-                        }}
-                      >
-                        이 기록의 파일 함께 복원
-                      </button>
-                    )}
-                </div>
-              ))}
-              {!filteredHistoryEntries.length && (
-                <p>
-                  {historyAiOnly
-                    ? '아직 연결된 AI 작업 기록이 없습니다.'
-                    : '아직 저장된 버전이 없습니다.'}
-                </p>
-              )}
-            </div>
-            {aiHistorySelection && (
-              <div className="history-preview">
-                <AiTaskDetails
-                  entry={aiHistorySelection}
-                  record={entryTaskRecord(aiHistorySelection, taskDocuments)}
-                  statusLabel={CODEX_STATUS_LABELS[aiHistorySelection.status]}
-                  onOpenPath={focusResultPath}
-                  onReuse={() => reuseAiEntry(aiHistorySelection)}
-                  reuseDisabled={
-                    creatingTask ||
-                    !canWriteAiRequest ||
-                    (collaboration.role !== 'editor' &&
-                      ((aiBusy && !queueSupported) || locked))
-                  }
-                  onOpenRetry={(id) => {
-                    const previous = historyEntries.find(
-                      (entry) => entry.id === id,
-                    );
-                    if (previous) setAiHistorySelection(previous);
-                    else setNotice('이전 요청 기록을 찾을 수 없습니다.');
-                  }}
-                />
-              </div>
-            )}
-            {historySelection && (
-              <div className="history-preview">
-                <strong>{historySelection.path}</strong>
-                <div className="history-preview__actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void inspectHistory(
-                        historySelection.entry,
-                        historySelection.path,
-                        'before',
-                      )
-                    }
-                  >
-                    변경 전
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void inspectHistory(
-                        historySelection.entry,
-                        historySelection.path,
-                        'after',
-                      )
-                    }
-                  >
-                    변경 후
-                  </button>
-                  {!historySelection.entry.files.some(
-                    (file) =>
-                      file.relativePath.startsWith('sections/') ||
-                      file.relativePath.startsWith('assets/images/'),
-                  ) &&
-                    historySelection.entry.status === 'completed' && (
-                      <button
-                        type="button"
-                        disabled={restoring || !canRestoreHistory}
-                        onClick={() => {
-                          if (locked) onBlocked();
-                          else
-                            setHistoryConfirm({
-                              entry: historySelection.entry,
-                              path: historySelection.path,
-                              version: historySelection.version,
-                            });
-                        }}
-                      >
-                        이 파일 버전 복원
-                      </button>
-                    )}
-                </div>
-                <small>
-                  {historySelection.version === 'before'
-                    ? '변경 전 내용'
-                    : '변경 후 내용'}{' '}
-                  · 파일 복원은 지금 보고 있는 버전을 사용합니다.
-                </small>
-                {historySelection.content === null ? (
-                  <p>이 시점에는 파일이 없습니다.</p>
-                ) : historySelection.path.startsWith('assets/images/') ? (
-                  <img
-                    className="project-image"
-                    src={historySelection.content}
-                    alt="이전 이미지 원본"
-                  />
-                ) : historySelection.path.endsWith('.html') ? (
-                  <iframe
-                    title="이전 HTML 결과"
-                    sandbox="allow-scripts"
-                    srcDoc={historySelection.content}
-                  />
-                ) : (
-                  <pre>{historySelection.content}</pre>
-                )}
-              </div>
-            )}
-          </div>
-        </aside>
-      )}
       {historyConfirm && (
         <div data-ui-id="history-confirm" className="dialog-backdrop">
           <section
@@ -12467,7 +12743,11 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         </div>
       )}
 
-      <div className="status-toast floating-surface">
+      <div
+        className="status-toast floating-surface"
+        hidden={!noticeVisible && !hasTaskSelection}
+        role="status"
+      >
         <span className="status-dot" />
         <span>{notice}</span>
         {hasTaskSelection && (

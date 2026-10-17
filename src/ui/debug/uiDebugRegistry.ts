@@ -188,7 +188,7 @@ export const UI_DEBUG_ENTRIES: UiDebugEntry[] = [
     'App',
     '캔버스',
     project,
-    '.react-flow__controls',
+    '.canvas-utility',
   ),
   entry(
     'minimap',

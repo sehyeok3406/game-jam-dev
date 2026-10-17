@@ -22,6 +22,7 @@ import {
   DEFAULT_SHAPE_STYLE,
 } from '../../drawing-geometry';
 export function DrawingToolButtons({
+  grouped = false,
   active,
   tool,
   onTool,
@@ -31,6 +32,7 @@ export function DrawingToolButtons({
   onEraser,
   partialSupported = true,
 }: {
+  grouped?: boolean;
   active: boolean;
   tool: DrawingTool;
   onTool: (t: DrawingTool) => void;
@@ -40,33 +42,8 @@ export function DrawingToolButtons({
   onEraser?: (mode: EraserMode, size: number) => void;
   partialSupported?: boolean;
 }) {
-  return (
+  const drawingButtons = (
     <>
-      <details className="drawing-tool-menu" data-ui-id="drawing-tools">
-        <summary
-          className={active && Object.hasOwn(SHAPE_NAMES, tool) ? 'active' : ''}
-          aria-label="도형 삽입"
-        >
-          <Shapes size={19} />
-          <span>도형</span>
-          <kbd>D</kbd>
-        </summary>
-        <div className="drawing-tool-menu__items">
-          {Object.entries(SHAPE_NAMES).map(([k, label]) => (
-            <button
-              type="button"
-              key={k}
-              disabled={disabled}
-              onClick={(e) => {
-                onTool(k as DrawingTool);
-                e.currentTarget.closest('details')?.removeAttribute('open');
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </details>
       <button
         type="button"
         disabled={disabled}
@@ -98,6 +75,59 @@ export function DrawingToolButtons({
         onActivate={() => onTool('eraser')}
         onChange={onEraser}
       />
+    </>
+  );
+  return (
+    <>
+      <details className="drawing-tool-menu" data-ui-id="drawing-tools">
+        <summary
+          className={active && Object.hasOwn(SHAPE_NAMES, tool) ? 'active' : ''}
+          aria-label="도형 삽입"
+        >
+          <Shapes size={19} />
+          <span>도형</span>
+          <kbd>D</kbd>
+        </summary>
+        <div className="drawing-tool-menu__items">
+          {Object.entries(SHAPE_NAMES).map(([k, label]) => (
+            <button
+              type="button"
+              key={k}
+              disabled={disabled}
+              onClick={(e) => {
+                onTool(k as DrawingTool);
+                e.currentTarget.closest('details')?.removeAttribute('open');
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </details>
+      {grouped ? (
+        <details className="canvas-drawing-group">
+          <summary
+            className={
+              active && ['pen', 'highlighter', 'eraser'].includes(tool)
+                ? 'active'
+                : ''
+            }
+            aria-label="그리기 도구"
+          >
+            <Pencil size={19} />
+            <span>
+              {active && tool === 'highlighter'
+                ? '형광펜'
+                : active && tool === 'eraser'
+                  ? '지우개'
+                  : '그리기'}
+            </span>
+          </summary>
+          <div>{drawingButtons}</div>
+        </details>
+      ) : (
+        drawingButtons
+      )}
     </>
   );
 }

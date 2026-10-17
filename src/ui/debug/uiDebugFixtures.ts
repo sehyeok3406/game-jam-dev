@@ -586,6 +586,7 @@ export function createUiPreviewApi(
     onUpdateChanged: subscribe,
     onUpdateRestartRequested: subscribe,
     onUpdateRestartReleased: subscribe,
+    discordApproval: undefined,
   } satisfies Partial<GameCanvasApi>;
   return new Proxy(reads, {
     get(target, property) {

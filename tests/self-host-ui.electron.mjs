@@ -41,7 +41,7 @@ async function run() {
     await win.loadURL(process.env.QA_URL);
     await wait('!!document.querySelector(".home-entry-actions")');
     await capture('self-host-home');
-    await click('협업 서버 열기 이 PC에서 서버 설정 · 실행 · 관리');
+    await click('협업 서버 열기');
     await wait('!!document.querySelector(".self-host-dialog[open]")');
     await wait(
       'document.querySelector(".self-host-status").textContent.includes("GC-HOST-004")',
@@ -104,7 +104,7 @@ async function run() {
     await wait('selfHostQa.applied.length===1');
     await wait('!document.querySelector(".connection-info-dialog")');
     await click('라이트 모드');
-    await click('협업 서버 열기 이 PC에서 서버 설정 · 실행 · 관리');
+    await click('협업 서버 열기');
     await wait('!!document.querySelector(".self-host-dialog[open]")');
     await capture('self-host-light');
     assert.equal(

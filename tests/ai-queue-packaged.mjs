@@ -230,6 +230,9 @@ try {
       modelId: null,
     });
   };
+  await admin.js(
+    `document.querySelector('[aria-label="AI 작업 패널"]').click()`,
+  );
   const a = await enqueue();
   await admin.wait(
     `window.gameCanvas.listAiQueue().then(ts=>ts.some(t=>t.runId===${JSON.stringify(a.runId)}&&t.status==='starting'))`,
