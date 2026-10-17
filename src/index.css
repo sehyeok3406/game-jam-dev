@@ -6706,7 +6706,7 @@ kbd {
 .canvas-workspace {
   --chrome-top: 52px;
   --chrome-bottom: 40px;
-  --chrome-tools: 56px;
+  --chrome-tools: 0px;
   --chrome-navigator: 0px;
   --chrome-panel: 0px;
   --canvas-dock-shift: 0px;
@@ -6787,20 +6787,21 @@ kbd {
   color: var(--text-muted);
 }
 .canvas-workspace .bottom-toolbar {
-  left: 0;
-  top: var(--chrome-top);
-  bottom: var(--chrome-bottom);
-  width: var(--chrome-tools);
-  padding: 10px 5px;
-  transform: none;
+  left: calc((100% + var(--chrome-navigator) - var(--chrome-panel)) / 2);
+  top: auto;
+  bottom: calc(var(--chrome-bottom) + 12px);
+  width: max-content;
+  max-width: calc(100% - var(--chrome-navigator) - var(--chrome-panel) - 24px);
+  height: 52px;
+  padding: 5px;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border: 0;
-  border-right: 1px solid var(--border);
-  border-radius: 0;
+  flex-direction: row;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--surface-solid);
-  box-shadow: none;
+  box-shadow: 0 4px 16px #0001;
   overflow: visible;
 }
 .canvas-workspace .bottom-toolbar > button,
@@ -6808,8 +6809,9 @@ kbd {
   width: 44px;
   min-width: 44px;
   max-width: 44px;
-  min-height: 48px;
-  padding: 7px 2px;
+  min-height: 40px;
+  height: 40px;
+  padding: 4px 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6850,9 +6852,9 @@ kbd {
 .canvas-workspace .canvas-drawing-group > div,
 .canvas-workspace .drawing-tool-menu__items {
   position: absolute;
-  top: 0;
-  left: 52px;
-  bottom: auto;
+  top: auto;
+  left: 0;
+  bottom: calc(100% + 12px);
   width: 210px;
   display: grid;
   padding: 8px;
@@ -6883,14 +6885,17 @@ kbd {
 }
 .canvas-workspace .drawing-eraser-menu__popup {
   left: 0;
-  bottom: auto;
-  top: 100%;
+  right: auto;
+  bottom: calc(100% + 8px);
+  top: auto;
   max-height: calc(100vh - 180px);
   overflow: auto;
 }
 .canvas-workspace .canvas-tool-more > div {
   top: auto;
-  bottom: 0;
+  left: auto;
+  right: 0;
+  bottom: calc(100% + 12px);
 }
 .canvas-workspace .canvas-tabs {
   right: 270px;
@@ -7124,7 +7129,7 @@ kbd {
 }
 .canvas-workspace .canvas-minimap-panel {
   right: 12px;
-  bottom: 12px;
+  bottom: 80px;
   margin: 0;
 }
 .canvas-workspace .selection-context {
@@ -7143,7 +7148,7 @@ kbd {
 }
 .canvas-workspace .status-toast {
   left: calc(var(--chrome-tools) + var(--chrome-navigator) + 12px);
-  bottom: calc(var(--chrome-bottom) + 12px);
+  bottom: calc(var(--chrome-bottom) + 76px);
   max-width: calc(
     100% - var(--chrome-tools) - var(--chrome-navigator) - var(--chrome-panel) -
       24px
@@ -7263,7 +7268,6 @@ kbd {
   --chrome-context: 0px;
 }
 
-.canvas-workspace .bottom-toolbar,
 .canvas-workspace .canvas-navigator,
 .canvas-workspace .canvas-dock {
   top: var(--chrome-header);

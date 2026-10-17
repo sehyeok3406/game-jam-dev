@@ -1,3 +1,4 @@
+import { assertCanvasToolbar } from './canvas-toolbar-check.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -114,7 +115,7 @@ try {
   await wait('!!document.querySelector(".home-project-open")');
   assert.match(
     await js('document.querySelector(".home-app-version").textContent'),
-    /0\.32\.0/,
+    /0\.32\.1/,
   );
   assert.ok(
     await js(
@@ -175,6 +176,7 @@ try {
           selector,
         );
       }
+      await assertCanvasToolbar(js);
       await capture(`canvas-${width}-${theme}`);
       await click('[aria-label="작업 패널 닫기"]');
     }
@@ -193,6 +195,7 @@ try {
         '(()=>{const c=document.querySelector(".canvas-shell").getBoundingClientRect(),p=document.querySelector(".canvas-dock").getBoundingClientRect();return c.right<=p.left+1})()',
       ),
     );
+    await assertCanvasToolbar(js);
     await capture('scale-' + factor);
     await click('[aria-label="작업 패널 닫기"]');
   }
@@ -232,7 +235,7 @@ try {
     /패널 재배치 후 저장 검증/,
   );
   const report = {
-    version: '0.32.0',
+    version: '0.32.1',
     viewportEmulation: true,
     sizes: [
       [980, 640],

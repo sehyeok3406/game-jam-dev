@@ -1,3 +1,4 @@
+import { assertCanvasToolbar } from './canvas-toolbar-check.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -40,8 +41,9 @@ async function run() {
     );
   };
   const unobscured = async () => {
+    await assertCanvasToolbar(js);
     const result = await js(`(()=>{
-    const selectors=['.header-undo button','.canvas-utility [aria-label="縮小"]','.canvas-utility [aria-label="축소"]','.canvas-utility [aria-label="확대"]','.canvas-utility [aria-label="캔버스 전체 맞춤"]'];
+    const selectors=['.header-undo button','.canvas-utility [aria-label="축소"]','.canvas-utility [aria-label="확대"]','.canvas-utility [aria-label="캔버스 전체 맞춤"]'];
     return selectors.filter(s=>document.querySelector(s)).map(s=>{const e=document.querySelector(s),r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {s,visible:r.width>=30&&r.height>=30&&r.x>=0&&r.bottom<=innerHeight,hit:hit===e||e.contains(hit)};});
   })()`);
     assert.equal(result.length, 4);
@@ -103,7 +105,49 @@ async function run() {
       await click('[aria-label="AI 작업 패널"]');
       await wait('!!document.querySelector(".canvas-dock")');
       await unobscured();
+      await click('[title="문서 목록 (L)"]');
+      await pause();
+      await unobscured();
+      await click('[title="문서 목록 (L)"]');
+      await pause();
       await capture(`canvas-ai-${size[0]}`);
+      for (const group of [
+        '.drawing-tool-menu',
+        '.canvas-drawing-group',
+        '.canvas-tool-more',
+      ]) {
+        await click(group + ' > summary');
+        const menu = await js(
+          `(()=>{const r=document.querySelector('${group} > div').getBoundingClientRect(),b=document.querySelector('.bottom-toolbar').getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,barTop:b.top,width:innerWidth};})()`,
+        );
+        assert.ok(
+          menu.top >= 0 &&
+            menu.bottom <= menu.barTop &&
+            menu.left >= 0 &&
+            menu.right <= menu.width,
+          JSON.stringify(menu),
+        );
+        if (group === '.canvas-drawing-group') {
+          await click('[data-ui-id="drawing-eraser"] > button');
+          await wait('!!document.querySelector(".drawing-eraser-menu__popup")');
+          const eraser = await js(
+            '(()=>{const r=document.querySelector(".drawing-eraser-menu__popup").getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:innerWidth,height:innerHeight};})()',
+          );
+          assert.ok(
+            eraser.top >= 0 &&
+              eraser.bottom <= eraser.height &&
+              eraser.left >= 0 &&
+              eraser.right <= eraser.width,
+            JSON.stringify(eraser),
+          );
+          await js(
+            'window.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}))',
+          );
+          await wait('!document.querySelector(".drawing-eraser-menu__popup")');
+        }
+        await click(group + ' > summary');
+      }
+
       await click('[aria-label="작업 패널 닫기"]');
       if (size[0] === 980) {
         await click('[aria-label="미니맵 전환"]');
