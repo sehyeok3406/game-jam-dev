@@ -139,15 +139,16 @@ try {
   await click('[aria-label="프로젝트 추가 닫기"]');
   await click('.home-project-open');
   await wait('!!document.querySelector(".document-card")');
-  const windowId = (await send('Browser.getWindowForTarget')).windowId;
   for (const [width, height] of [
     [980, 640],
     [1280, 720],
     [1920, 1080],
   ]) {
-    await send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { width, height },
+    await send('Emulation.setDeviceMetricsOverride', {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false,
     });
     await pause(200);
     for (const theme of ['light', 'dark']) {
@@ -196,9 +197,11 @@ try {
     await click('[aria-label="작업 패널 닫기"]');
   }
   await send('Emulation.clearDeviceMetricsOverride');
-  await send('Browser.setWindowBounds', {
-    windowId,
-    bounds: { width: 1280, height: 800 },
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
   });
   await pause(200);
   await click('[aria-label="도형 삽입"]');
@@ -230,6 +233,7 @@ try {
   );
   const report = {
     version: '0.32.0',
+    viewportEmulation: true,
     sizes: [
       [980, 640],
       [1280, 720],

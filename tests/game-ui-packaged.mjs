@@ -234,23 +234,15 @@ try {
   const panelWidth = await js(
     'document.querySelector(".game-ui-inspector").getBoundingClientRect().width',
   );
-  await js(
-    `document.querySelector('[aria-label="속성 패널 너비"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))`,
+  assert.ok(
+    await js(
+      '!!document.querySelector(".canvas-dock .canvas-game-ui-host .game-ui-inspector")',
+    ),
   );
-  await wait(
-    `document.querySelector('.game-ui-inspector').getBoundingClientRect().width===${panelWidth + 16}`,
-  );
-  await js(
-    `document.querySelector('[aria-label="속성 패널 배치 전환"]').click()`,
-  );
-  await wait(
-    `document.querySelector('.game-ui-inspector-host').dataset.layout==='floating'`,
-  );
-  await js(
-    `document.querySelector('[aria-label="속성 패널 배치 전환"]').click()`,
-  );
-  await wait(
-    `document.querySelector('.game-ui-inspector-host').dataset.layout==='docked'`,
+  assert.ok(
+    await js(
+      '(()=>{const c=document.querySelector(".canvas-shell").getBoundingClientRect(),p=document.querySelector(".canvas-dock").getBoundingClientRect();return c.right<=p.left+1})()',
+    ),
   );
   await js(
     `(()=>{const el=document.querySelector('[aria-label="UI 너비"]');el.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'invalid');el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))})()`,
@@ -336,7 +328,7 @@ try {
     await js(
       'document.querySelector(".game-ui-inspector").getBoundingClientRect().width',
     ),
-    panelWidth + 16,
+    panelWidth,
   );
   assert.deepEqual(
     await js('window.gameCanvas.listGameUi().then(f=>f[0])'),
@@ -349,7 +341,7 @@ try {
     /실제 패키지에서 편집한 한글 설명/,
   );
   console.log(
-    'PASS: actual Windows package verifies the independent inspector, personal width/floating layout, invalid drafts/Escape, atomic range/Undo, UI/Markdown persistence, custom descriptions and full process restart.',
+    'PASS: actual Windows package verifies the independent inspector, shared reserved panel layout, invalid drafts/Escape, atomic range/Undo, UI/Markdown persistence, custom descriptions and full process restart.',
   );
 } finally {
   await stop();
