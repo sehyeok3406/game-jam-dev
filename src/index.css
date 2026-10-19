@@ -7272,3 +7272,88 @@ kbd {
 .canvas-workspace .canvas-dock {
   top: var(--chrome-header);
 }
+.material-selection-bar {
+  position: absolute;
+  z-index: 100;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 24px));
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+.material-selection-bar > div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.material-selection-bar small,
+.material-selection-bar span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.material-selection-bar button {
+  flex-shrink: 0;
+}
+.app-shell--material-picker .react-flow__node > * {
+  pointer-events: none !important;
+}
+.app-shell--material-picker .react-flow__node {
+  cursor: pointer;
+}
+.app-shell--material-picker .react-flow__node.material-focus {
+  outline: 3px dashed var(--accent, #7c6cf2);
+  outline-offset: 6px;
+}
+.app-shell--material-picker .react-flow__nodesselection,
+.app-shell--material-picker .react-flow__nodesselection-rect {
+  pointer-events: none;
+}
+.app-shell--material-picker
+  :is(
+    .canvas-dock,
+    .workspace-topbar,
+    .workspace-rail,
+    .bottom-toolbar,
+    .selection-context,
+    .canvas-context-menu,
+    .object-inspector,
+    .canvas-utility,
+    .canvas-main-menu,
+    .canvas-minimap
+  ) {
+  pointer-events: none;
+  opacity: 0.35;
+}
+.app-shell--material-picker .canvas-shell {
+  outline: none;
+}
+.ai-material-actions,
+.ai-destination {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ai-material-actions button {
+  justify-self: start;
+}
+.ai-destination label {
+  font-weight: 600;
+}
+.ai-destination small {
+  line-height: 1.5;
+}
+@media (max-width: 640px) {
+  .material-selection-bar {
+    flex-wrap: wrap;
+  }
+  .material-selection-bar > div {
+    flex-basis: 100%;
+  }
+}

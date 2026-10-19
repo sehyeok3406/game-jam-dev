@@ -54,8 +54,8 @@ export function GameFeatureLibrary({
           className="multiplayer-module"
           aria-label="온라인 멀티플레이 모듈"
         >
-          <small>멀티플레이·협동 · 사용 가능</small>
-          <h4>프로젝트 온라인 멀티플레이</h4>
+          <small>이번 게임에 추가할 기능</small>
+          <h4>온라인 멀티플레이</h4>
           <p>
             2~4인 협동 게임을 만들고 프로젝트 참여자와 함께 플레이합니다. 혼자
             연습도 지원합니다.
@@ -65,7 +65,7 @@ export function GameFeatureLibrary({
             복사하거나 어려운 설정을 입력할 필요가 없습니다.
           </p>
           <p>
-            작업 지시에 온라인 멀티플레이를 적어도 자동으로 적용합니다. 여기서는
+            요청 내용에 온라인 멀티플레이를 적어도 자동으로 적용합니다. 여기서는
             참여 인원을 직접 지정할 수 있습니다.
           </p>
           {multiplayer ? (
@@ -90,7 +90,7 @@ export function GameFeatureLibrary({
               </label>
               <p>이번 구현에 포함 · 온라인 최소 2명 · 혼자 연습 가능</p>
               <button type="button" onClick={() => onMultiplayerChange(null)}>
-                함께 플레이 빼기
+                온라인 멀티플레이 제외
               </button>
             </>
           ) : (
@@ -103,14 +103,14 @@ export function GameFeatureLibrary({
           )}
           {!implementing && (
             <p>
-              HTML 구현을 선택하면 적용됩니다. 현재 설정은 초안에 보관합니다.
+              게임 만들기을 선택하면 적용됩니다. 현재 설정은 초안에 보관합니다.
             </p>
           )}
           {requiresChoice && !multiplayer && (
             <p>
               입력에 멀티 게임이 포함되어 있습니다.{' '}
               <button type="button" onClick={() => onMultiplayerChange(null)}>
-                개인 게임으로 만들기
+                혼자 플레이하는 게임으로 만들기
               </button>
               {multiplayer === null ? ' · 개인 게임 선택됨' : ''}
             </p>
@@ -119,8 +119,8 @@ export function GameFeatureLibrary({
       )}
       <p className="gamejam-preview-notice">
         <Eye size={16} aria-hidden="true" />
-        아래 목록은 기능 예시입니다. 참고 예시 선택은 HTML 구현에 반영되지
-        않습니다.
+        아래는 참고할 기능 아이디어입니다. 예시를 선택해도 게임에 자동으로
+        추가되지는 않습니다.
       </p>
       <div
         className="game-feature-views"
@@ -132,7 +132,7 @@ export function GameFeatureLibrary({
           aria-pressed={view === 'features'}
           onClick={() => setView('features')}
         >
-          기능별 폴더
+          기능별 둘러보기
         </button>
         <button
           type="button"
@@ -252,7 +252,7 @@ export function GameFeatureLibrary({
             </div>
             <aside
               className="game-feature-detail"
-              aria-label="기능 상세 설명"
+              aria-label="기능 아이디어 설명"
               aria-live="polite"
             >
               <span className="game-feature-path">
@@ -288,7 +288,7 @@ export function GameFeatureLibrary({
                 설정은 실제 모듈을 제공할 때 안내합니다.
               </p>
               <button type="button" disabled>
-                HTML 구현에 적용 · 준비 중
+                게임 만들기에 적용 · 준비 중
               </button>
             </aside>
           </div>
@@ -328,7 +328,8 @@ export function GameFeatureLibrary({
       <section className="game-feature-selection" aria-label="선택한 게임 기능">
         <div className="game-feature-selection-heading">
           <h4>
-            선택한 기능 예시 <span role="status">{selectedIds.length}개</span>
+            관심 있는 기능 예시{' '}
+            <span role="status">{selectedIds.length}개</span>
           </h4>
           {selectedIds.length > 0 && (
             <button type="button" onClick={() => setSelectedIds([])}>
@@ -358,12 +359,12 @@ export function GameFeatureLibrary({
           </ul>
         ) : (
           <p>
-            선택한 기능이 없습니다. 기능 이름이나 체크박스로 여러 기능을
-            선택하세요.
+            관심 있는 기능 예시를 골라보세요. 기능 이름이나 체크박스로 여러
+            기능을 선택하세요.
           </p>
         )}
         <p className="game-feature-selection-note">
-          선택 목록은 단계 이동 중 유지됩니다. 미리보기 선택이며 HTML 구현에는
+          선택 목록은 단계 이동 중 유지됩니다. 미리보기 선택이며 게임 만들기에는
           아직 반영되지 않습니다.
         </p>
       </section>

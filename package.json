@@ -1,7 +1,7 @@
 {
   "name": "game-canvas",
   "productName": "Game Jam!",
-  "version": "0.32.1",
+  "version": "0.33.0",
   "private": true,
   "description": "A local-first Markdown canvas for turning game ideas into HTML prototypes.",
   "keywords": [],
@@ -46,7 +46,8 @@
     "lint:fix": "oxlint --fix && oxfmt --write",
     "typecheck": "tsc --noEmit",
     "test:multiplayer-diagnostics": "node tests/run-multiplayer-diagnostics.mjs",
-    "test:canvas-chrome:ui": "node tests/run-canvas-chrome.mjs"
+    "test:canvas-chrome:ui": "node tests/run-canvas-chrome.mjs",
+    "test:gamejam-materials": "node tests/run-gamejam-materials.mjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",

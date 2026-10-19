@@ -1,10 +1,10 @@
 import type { GamejamField } from './gamejam-validation';
 
 export const GAMEJAM_PAGES = [
-  { number: 1, label: '작업·입력' },
+  { number: 1, label: '작업과 자료' },
   { number: 2, label: '결과 설정' },
-  { number: 3, label: '작업 지침' },
-  { number: 4, label: '기능 라이브러리' },
+  { number: 3, label: '요청 내용' },
+  { number: 4, label: '게임 기능' },
   { number: 5, label: '최종 확인' },
 ] as const;
 export type GamejamPage = (typeof GAMEJAM_PAGES)[number]['number'];

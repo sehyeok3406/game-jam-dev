@@ -163,7 +163,7 @@ async function run() {
     assert.equal(await visiblePages(), 1);
     assert(
       await js(
-        `document.querySelector('[data-gamejam-page="4"] .ai-step-heading').textContent.includes('모듈·기능 예시')`,
+        `document.querySelector('[data-gamejam-page="4"] .ai-step-heading').textContent.includes('추가할 기능과 참고 예시')`,
       ),
     );
     assert(
@@ -599,7 +599,7 @@ async function run() {
     await js('qaValidation.shared({})');
     await goTo(2);
     await js(
-      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('시스템별 자동 분리')).click()`,
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('게임 시스템별로 나누기')).click()`,
     );
     await goTo(5);
     await js('qaValidation.shared({documentBundles:false})');
@@ -619,7 +619,7 @@ async function run() {
     assert.equal(await js('qaValidation.runs'), 0);
     await goTo(2);
     await js(
-      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('직접 구성 편집')).click()`,
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('문서 직접 구성하기')).click()`,
     );
     await js(`document.querySelector('[aria-label="문서 3 제거"]').click()`);
     assert.equal(
@@ -627,7 +627,7 @@ async function run() {
       2,
     );
     await js(
-      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('기본 3개로 복원')).click()`,
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('기본 문서 3개로 되돌리기')).click()`,
     );
     await js(
       `Array.from(document.querySelectorAll('#ai-document-format > button')).find(e=>e.textContent.includes('문서 추가')).click()`,

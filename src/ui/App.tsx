@@ -263,6 +263,7 @@ import {
 } from '../document-format';
 import { gamejamFieldPage, type GamejamPage } from '../gamejam-wizard';
 import { GamejamProgress, GamejamReview } from './GamejamWizard';
+import { GamejamMaterialSelection } from './GamejamMaterialSelection';
 import { GameFeatureLibrary } from './GameFeatureLibrary';
 import { withMultiplayerSdk } from '../multiplayer/sdk';
 import { readMultiplayerManifest } from '../multiplayer/contract';
@@ -2058,6 +2059,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   const [approvalCopyFrom, setApprovalCopyFrom] = useState<
     string | undefined
   >();
+  const [materialPicker, setMaterialPicker] = useState<string[] | null>(null);
+  const [materialFocus, setMaterialFocus] = useState<string | null>(null);
+  const materialMarquee = useRef<Set<string> | null>(null);
   const [aiRequestPage, setAiRequestPage] = useState<GamejamPage>(1);
   const [aiRequestVisited, setAiRequestVisited] = useState(1);
   const [aiInstructionPage, setAiInstructionPage] = useState<
@@ -5231,6 +5235,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     setSelectedAiProvider(providerId);
     setSelectedAiModel(modelId);
     setHistoryOpen(false);
+    setMaterialPicker(null);
     setAiRequest(restored);
     // A reused request also survives closing the dialog before editing anything.
     if (saved) {
@@ -6752,6 +6757,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (document.querySelector('.ui-debug-console[open]')) return;
+      if (materialPicker !== null) return;
       const target = event.target as HTMLElement | null;
       if (document.fullscreenElement?.classList.contains('preview-card'))
         return;
@@ -6929,7 +6935,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
     approvalInboxOpen ||
     updateOpen ||
     importTarget ||
-    aiRequest ||
+    (aiRequest && materialPicker === null) ||
     sectionRename ||
     deleteManyPrompt ||
     sectionDialogOpen ||
@@ -7120,13 +7126,71 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         (sheet) => sheet.id === canvasId(preview.canvasId),
       )?.name,
       id: previewNodeId(preview.relativePath),
-      title: `HTML ${preview.title ?? previewLabel(preview.relativePath)}`,
+      title: preview.title ?? previewLabel(preview.relativePath),
       kind: 'html',
       path: preview.relativePath,
       description: previewWindows[preview.relativePath]
         ? `${previewViewport(previewWindows[preview.relativePath]).width} × ${previewViewport(previewWindows[preview.relativePath]).height}`
         : '',
     });
+  const materialName = (path: string) =>
+    canvasItems.find((item) => item.path === path)?.title ??
+    path
+      .split('/')
+      .at(-1)
+      ?.replace(/\.[^.]+$/, '') ??
+    '이름 없는 자료';
+  const documentSetName = (baseDir?: string) => {
+    const set = organizedSets.find((set) => set.baseDir === baseDir);
+    return set ? materialName(set.paths[0]) : '문서를 선택해주세요';
+  };
+  const materialPath = (node: CanvasNode) =>
+    node.data.kind === 'document' && node.data.document.type !== 'ai-task'
+      ? node.data.document.relativePath
+      : node.data.kind === 'preview'
+        ? node.data.preview.relativePath
+        : node.data.kind === 'section'
+          ? node.data.section.relativePath
+          : undefined;
+  const toggleMaterial = (path: string) =>
+    setMaterialPicker((current) =>
+      current === null
+        ? null
+        : current.includes(path)
+          ? current.filter((item) => item !== path)
+          : [...current, path],
+    );
+  const finishMaterialSelection = (apply: boolean) => {
+    if (apply && materialPicker !== null) {
+      const paths = [
+        ...new Set(
+          materialPicker.flatMap((path) => [
+            path,
+            ...(sections
+              .find((section) => section.relativePath === path)
+              ?.members.map((member) => member.path) ?? []),
+          ]),
+        ),
+      ];
+      setAiRequest((current) =>
+        current
+          ? {
+              ...current,
+              inputPaths: paths,
+              sourceMode: paths.some(isPreviewPath)
+                ? 'html-compose'
+                : undefined,
+            }
+          : current,
+      );
+    }
+    materialMarquee.current = null;
+    setMaterialPicker(null);
+    setMaterialFocus(null);
+    requestAnimationFrame(() =>
+      document.getElementById('ai-select-on-canvas')?.focus(),
+    );
+  };
   const inspectorPath = canvasItems.find(
     (item) => item.id === inspectorId,
   )?.path;
@@ -7770,7 +7834,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
   return (
     <main
-      className={`app-shell canvas-workspace${nodes.some((n) => n.selected) && !uiHidden ? ' canvas-workspace--selection' : ''}${uiHidden ? ' canvas-workspace--focus' : ''}${dockPanel && !uiHidden ? ' canvas-workspace--panel' : ''}${navigatorOpen && !uiHidden ? ' canvas-workspace--navigator' : ''} app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
+      className={`app-shell${materialPicker !== null ? ' app-shell--material-picker' : ''} canvas-workspace${nodes.some((n) => n.selected) && !uiHidden ? ' canvas-workspace--selection' : ''}${uiHidden ? ' canvas-workspace--focus' : ''}${dockPanel && !uiHidden ? ' canvas-workspace--panel' : ''}${navigatorOpen && !uiHidden ? ' canvas-workspace--navigator' : ''} app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
     >
       {!uiHidden && dockPanel && (
         <CanvasPanel
@@ -9250,6 +9314,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
 
       <div
         className="canvas-shell"
+        tabIndex={-1}
         onClickCapture={(event) => {
           const id = (event.target as Element)
             .closest('.react-flow__node')
@@ -9337,6 +9402,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
         }}
         onLostPointerCapture={cancelNoteDrawing}
         onContextMenuCapture={(event) => {
+          if (materialPicker !== null) {
+            event.preventDefault();
+            return;
+          }
           if (!event.altKey || tool !== 'select') return;
           const point = flowRef.current?.screenToFlowPosition({
             x: event.clientX,
@@ -9414,7 +9483,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             >
               <ReactFlow<CanvasNode>
                 key={activeCanvas}
-                nodes={nodes}
+                nodes={
+                  materialPicker === null
+                    ? nodes
+                    : nodes.map((node) => ({
+                        ...node,
+                        selected:
+                          !!materialPath(node) &&
+                          materialPicker.includes(materialPath(node)!),
+                        selectable:
+                          !!materialPath(node) && node.selectable !== false,
+                        draggable: false,
+                        className:
+                          (node.className ?? '') +
+                          (node.id === materialFocus ? ' material-focus' : ''),
+                      }))
+                }
                 edges={[]}
                 nodeTypes={nodeTypes}
                 onInit={(instance) => {
@@ -9460,8 +9544,47 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     });
                   }
                 }}
-                onNodesChange={onNodesChange}
+                onNodesChange={(changes) => {
+                  if (materialPicker === null) {
+                    onNodesChange(changes);
+                    return;
+                  }
+                  onNodesChange(
+                    changes.filter((change) => change.type === 'dimensions'),
+                  );
+                  if (!materialMarquee.current) return;
+                  const keep = materialMarquee.current;
+                  setMaterialPicker((current) => {
+                    if (current === null) return current;
+                    const next = new Set(current);
+                    for (const change of changes) {
+                      if (change.type !== 'select') continue;
+                      const node = nodes.find((node) => node.id === change.id);
+                      const path = node && materialPath(node);
+                      if (!path) continue;
+                      if (change.selected) next.add(path);
+                      else if (!keep.has(path)) next.delete(path);
+                    }
+                    const result = [...next];
+                    return sameIds(current, result) ? current : result;
+                  });
+                }}
+                onSelectionStart={() => {
+                  if (materialPicker !== null)
+                    materialMarquee.current = new Set(materialPicker);
+                }}
+                onSelectionEnd={() => {
+                  materialMarquee.current = null;
+                }}
                 onNodeClick={(event, node) => {
+                  if (materialPicker !== null) {
+                    const path = materialPath(node);
+                    if (path) {
+                      toggleMaterial(path);
+                      setMaterialFocus(node.id);
+                    }
+                    return;
+                  }
                   acknowledgeNewFile(node.id);
                   if (inspectorId && !event.shiftKey) setInspectorId(node.id);
                   setDocumentContextMenu(null);
@@ -9481,6 +9604,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 }}
                 onNodeContextMenu={(event, node) => {
                   event.preventDefault();
+                  if (materialPicker !== null) return;
                   setContextMenu(null);
                   setPreviewContextMenu(null);
                   if (node.data.kind === 'kanban') {
@@ -9612,6 +9736,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   void persistDraggedNodes(target, moved).catch(showError);
                 }}
                 onSelectionChange={({ nodes: selected }) => {
+                  if (materialPicker !== null) return;
                   const nextIds = selected.flatMap((node) =>
                     node.data.kind === 'document'
                       ? [node.data.document.id]
@@ -9637,6 +9762,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 }}
                 onPaneContextMenu={(event) => {
                   event.preventDefault();
+                  if (materialPicker !== null) return;
                   openCanvasMenu(event.clientX, event.clientY);
                 }}
                 onMoveStart={() => {
@@ -9656,9 +9782,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 }}
                 selectionOnDrag={tool === 'select'}
                 panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
-                nodesDraggable={tool === 'select'}
+                nodesDraggable={materialPicker === null && tool === 'select'}
                 elementsSelectable={tool === 'select'}
                 multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
+                disableKeyboardA11y={materialPicker !== null}
                 fitView={false}
                 zoomOnScroll={!noteDraft && !drawingGesture}
                 zoomOnPinch={!noteDraft && !drawingGesture}
@@ -9724,6 +9851,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       setTool('select');
                   }}
                 />
+                {materialPicker !== null && (
+                  <GamejamMaterialSelection
+                    items={canvasItems.filter(
+                      (item) =>
+                        item.kind !== 'task' && item.canvasId === activeCanvas,
+                    )}
+                    paths={materialPicker}
+                    focused={materialFocus}
+                    focus={setMaterialFocus}
+                    toggle={toggleMaterial}
+                    finish={() => finishMaterialSelection(true)}
+                    cancel={() => finishMaterialSelection(false)}
+                  />
+                )}
               </ReactFlow>
             </EraserPreviewContext.Provider>
           </DocumentLinksProvider>
@@ -10692,11 +10833,12 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
             ])
           }
           readOnly={
-            collaboration.active &&
-            (collaboration.role === 'viewer' ||
-              !collaboration.connected ||
-              !collaboration.canvasSheets ||
-              !!collaboration.pendingChanges)
+            materialPicker !== null ||
+            (collaboration.active &&
+              (collaboration.role === 'viewer' ||
+                !collaboration.connected ||
+                !collaboration.canvasSheets ||
+                !!collaboration.pendingChanges))
           }
           switchTo={switchCanvasTo}
           change={changeSheets}
@@ -11081,7 +11223,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
           }}
         />
       )}
-      {aiRequest && (
+      {aiRequest && materialPicker === null && (
         <div
           className="dialog-backdrop"
           onMouseDown={(event) => {
@@ -11210,7 +11352,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                             })
                           }
                         >
-                          {path} · 입력에서 제외
+                          {materialName(path)} · 자료에서 제외
                         </button>
                       ))}
                   </div>
@@ -11240,8 +11382,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       <strong>문서 정리</strong>
                       <small>
                         {aiRequest.sourceMode
-                          ? '선택한 HTML 게임을 분석해 Markdown 추출'
-                          : '선택 메모를 Markdown 문서로 정리'}
+                          ? '선택한 게임을 분석해 문서로 정리'
+                          : '선택한 메모와 자료를 문서로 정리'}
                       </small>
                     </span>
                   </label>
@@ -11259,21 +11401,38 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     />
                     <Code2 size={18} />
                     <span>
-                      <strong>HTML 구현</strong>
-                      <small>실행 가능한 게임 프로토타입 생성</small>
+                      <strong>게임 만들기</strong>
+                      <small>
+                        선택한 자료를 바탕으로 플레이할 수 있는 게임 만들기
+                      </small>
                     </span>
                   </label>
                 </div>
                 <GamejamFieldErrors field="steps" issues={aiRequestIssues} />
+                <section
+                  className="ai-material-actions"
+                  aria-label="AI가 참고할 자료"
+                >
+                  <strong>AI가 참고할 자료</strong>
+                  <button
+                    id="ai-select-on-canvas"
+                    type="button"
+                    disabled={creatingTask}
+                    onClick={() => {
+                      void flushEditors()
+                        .then(() => {
+                          setTool('select');
+                          setMaterialFocus(null);
+                          setMaterialPicker([...aiRequest.inputPaths]);
+                        })
+                        .catch(showError);
+                    }}
+                  >
+                    캔버스에서 선택하기
+                  </button>
+                </section>
                 <details className="canvas-material-picker">
-                  <summary>
-                    프로젝트 전체에서 재료 선택 · 도착:{' '}
-                    {
-                      canvasSheets.canvases.find(
-                        (sheet) => sheet.id === canvasId(aiRequest.canvasId),
-                      )?.name
-                    }
-                  </summary>
+                  <summary>목록에서 자료 추가하기</summary>
                   {canvasSheets.canvases.map((sheet) => (
                     <fieldset key={sheet.id}>
                       <legend>{sheet.name}</legend>
@@ -11331,40 +11490,36 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 </details>
                 <p className="gamejam-flow-summary" role="status">
                   {aiRequest.organize && aiRequest.implement
-                    ? '1. 문서 정리 및 검증 → 2. 이번에 정리한 문서로 HTML 구현 → 전체 결과 반영'
+                    ? '1. 문서 정리 및 검증 → 2. 이번에 정리한 문서로 게임 만들기 → 전체 결과 반영'
                     : aiRequest.organize
                       ? aiRequest.sourceMode
-                        ? 'HTML 코드 분석 → 게임 개요·핵심 플레이 흐름·확인 필요 사항 추출. 원본 HTML은 변경하지 않습니다.'
+                        ? '선택한 게임을 분석해 게임 개요와 플레이 흐름을 문서로 정리합니다. 원본 게임은 유지됩니다.'
                         : '선택한 메모·파일을 문서로 정리합니다.'
                       : aiRequest.implement
-                        ? '선택한 메모·MD·HTML·이미지와 구현 지침으로 HTML을 만듭니다.'
+                        ? '선택한 자료와 요청 내용을 바탕으로 게임을 만듭니다.'
                         : '실행할 작업을 하나 이상 선택해주세요.'}
                 </p>
                 {aiRequest.implement && (
                   <small>
-                    새 HTML은 게임 이름·버전별 전용 폴더에 저장합니다. 결과
-                    폴더만 복사해도 실행할 수 있습니다. 기존 결과 업데이트는
-                    원래 위치를 유지합니다.
+                    새 버전을 만들면 기존 게임은 유지됩니다. 기존 게임을
+                    수정하면 이전 내용은 작업 기록에 남깁니다.
                   </small>
                 )}
                 {aiRequest.sourceMode && (
                   <small>
-                    코드에서 확인한 구현, AI의 추정, 확인 불가를 구분합니다.
-                    자동 플레이 분석은 하지 않습니다. 구현 단계에는 선택한 HTML
-                    원본과 관련 파일을 전달하며, 문서 정리도 실행하면 추출
-                    문서를 함께 사용합니다.
+                    AI는 게임 코드를 읽어 분석하며 직접 플레이하지는 않습니다.
+                    확인된 내용과 추정한 내용을 구분해 정리합니다.
                   </small>
                 )}
                 {aiRequest.sourceMode === 'html-compose' && (
                   <small>
-                    연결 규칙은 3단계 HTML 구현 지침에 작성하세요. 별도 메모
-                    없이 HTML만 선택해도 실행할 수 있습니다. 원본은 유지하고 새
-                    결과를 만듭니다.
+                    여러 게임을 골랐다면 기능을 어떻게 합칠지 요청 내용에
+                    적어주세요. 메모 없이 게임만 선택해도 됩니다.
                   </small>
                 )}
                 <details open className="ai-input-scope">
                   <summary>
-                    입력 범위 · 문서{' '}
+                    선택한 자료 · 문서{' '}
                     {
                       aiRequest.inputPaths.filter(
                         (path) =>
@@ -11393,28 +11548,42 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         }}
                       >
                         <FileText size={14} />
-                        <span>
-                          {documents.find((doc) => doc.relativePath === path)
-                            ?.title ??
-                            previews.find(
-                              (preview) => preview.relativePath === path,
-                            )?.title ??
-                            sections.find(
-                              (section) => section.relativePath === path,
-                            )?.title ??
-                            path}
-                        </span>
-                        <small>
-                          {path.startsWith('sections/')
-                            ? '섹션'
-                            : path.endsWith('.html')
-                              ? 'HTML 게임'
-                              : '문서'}
-                        </small>
+                        <span>{materialName(path)}</span>
                       </button>
                     ))}
                   </div>
                 </details>
+                <section
+                  className="ai-destination"
+                  aria-label="결과를 놓을 캔버스"
+                >
+                  <label htmlFor="ai-destination-canvas">
+                    결과를 놓을 캔버스
+                  </label>
+                  <select
+                    id="ai-destination-canvas"
+                    value={canvasId(aiRequest.canvasId)}
+                    disabled={creatingTask}
+                    onChange={(event) =>
+                      setAiRequest({
+                        ...aiRequest,
+                        canvasId: event.target.value,
+                        x: 120,
+                        y: 120,
+                      })
+                    }
+                  >
+                    {canvasSheets.canvases.map((sheet) => (
+                      <option key={sheet.id} value={sheet.id}>
+                        {sheet.name}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    새 결과는 선택한 캔버스에 놓습니다. 기존 결과를 수정하면
+                    원래 캔버스와 위치를 유지합니다.
+                  </small>
+                </section>
               </section>
               <section
                 className="gamejam-page"
@@ -11451,8 +11620,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         }
                       >
                         <Plus size={17} />
-                        <strong>새 문서 버전 만들기</strong>
-                        <small>기존 문서 유지 · 새 Markdown 묶음</small>
+                        <strong>새 문서 만들기</strong>
+                        <small>기존 문서는 유지하고 새 문서를 만듭니다</small>
                       </button>
                       <button
                         aria-pressed={
@@ -11469,15 +11638,17 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         }
                       >
                         <RefreshCw size={17} />
-                        <strong>기존 문서 업데이트</strong>
-                        <small>선택 묶음 갱신 · 이전 내용은 히스토리</small>
+                        <strong>기존 문서 수정하기</strong>
+                        <small>
+                          선택한 문서를 수정하고 이전 내용은 기록에 남깁니다
+                        </small>
                       </button>
                     </div>
                     {aiRequest.documentResult?.mode === 'update' ? (
                       <label>
-                        업데이트할 문서 묶음
+                        수정할 문서 묶음
                         <select
-                          aria-label="업데이트할 문서 묶음"
+                          aria-label="수정할 문서 묶음"
                           value={aiRequest.documentResult.baseDir}
                           disabled={creatingTask}
                           onChange={(event) =>
@@ -11491,15 +11662,14 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         >
                           {organizedSets.map((set) => (
                             <option key={set.baseDir} value={set.baseDir}>
-                              {set.label} · {set.paths.length}개 문서 ·{' '}
-                              {set.baseDir}
+                              {documentSetName(set.baseDir)}
                             </option>
                           ))}
                         </select>
                         <small>
-                          기존 문서의 ID를 유지해 갱신합니다. 시스템별 문서
-                          묶음은 새 시스템 문서를 추가할 수 있으며, 이전 세 문서
-                          묶음은 기존 구성을 유지합니다.
+                          기존 문서를 수정하고 이전 내용은 기록에 남깁니다.
+                          시스템별 문서 묶음은 새 시스템 문서를 추가할 수
+                          있으며, 이전 세 문서 묶음은 기존 구성을 유지합니다.
                         </small>
                       </label>
                     ) : (
@@ -11516,10 +11686,10 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       {...aiFieldProps('document-format')}
                     >
                       <div className="document-output-format__heading">
-                        <strong>문서 출력 구성</strong>
+                        <strong>만들 문서</strong>
                         <span>
                           {aiRequest.documentResult?.structure === 'systems'
-                            ? '시스템별 자동 분리'
+                            ? '게임 시스템별로 나누기'
                             : aiRequest.documentResult?.structure === 'custom'
                               ? `${aiRequest.documentResult.documents?.length ?? 0}개 문서`
                               : '기존 세 문서'}
@@ -11541,7 +11711,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                               })
                             }
                           >
-                            기본 3개로 복원
+                            기본 문서 3개로 되돌리기
                           </button>
                           <button
                             type="button"
@@ -11560,7 +11730,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                               })
                             }
                           >
-                            시스템별 자동 분리
+                            게임 시스템별로 나누기
                           </button>
                           {aiRequest.documentResult?.structure ===
                             'systems' && (
@@ -11581,7 +11751,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                                 })
                               }
                             >
-                              직접 구성 편집
+                              문서 직접 구성하기
                             </button>
                           )}
                         </div>
@@ -11784,7 +11954,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       >
                         <Plus size={17} />
                         <strong>새 버전 만들기</strong>
-                        <small>기존 결과 유지 · 새 파일과 창</small>
+                        <small>기존 게임은 유지하고 새 버전을 만듭니다</small>
                       </button>
                       <button
                         aria-pressed={aiRequest.htmlResult?.mode === 'update'}
@@ -11803,18 +11973,20 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         }
                       >
                         <RefreshCw size={17} />
-                        <strong>기존 결과 업데이트</strong>
-                        <small>선택 결과 갱신 · 이전 내용은 히스토리</small>
+                        <strong>기존 게임 수정하기</strong>
+                        <small>
+                          선택한 게임을 수정하고 이전 내용은 기록에 남깁니다
+                        </small>
                       </button>
                     </div>
                     <label>
                       {aiRequest.htmlResult?.mode === 'update'
-                        ? '업데이트할 결과'
-                        : '새 버전을 만들 원본 HTML'}
+                        ? '수정할 게임'
+                        : '어떤 게임을 바탕으로 만들까요?'}
                       <select
                         id="ai-html-result"
                         {...aiFieldProps('html-result')}
-                        aria-label="기준 HTML 결과"
+                        aria-label="바탕이 될 게임"
                         value={aiRequest.htmlResult?.basePath ?? ''}
                         disabled={creatingTask}
                         onChange={(event) =>
@@ -11829,26 +12001,22 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         }
                       >
                         {aiRequest.htmlResult?.mode !== 'update' && (
-                          <option value="">
-                            기준 없음 · 선택 재료로 새 게임 만들기
-                          </option>
+                          <option value="">기존 게임 없이 새로 만들기</option>
                         )}
                         {previews.map((preview) => (
                           <option
                             value={preview.relativePath}
                             key={preview.relativePath}
                           >
-                            {preview.title ? `${preview.title} · ` : ''}
-                            {previewLabel(preview.relativePath)} ·{' '}
-                            {preview.relativePath}
+                            {materialName(preview.relativePath)}
                           </option>
                         ))}
                       </select>
                       {aiRequest.htmlResult?.mode !== 'update' && (
                         <small className="ai-request-help">
-                          선택한 HTML을 바탕으로 수정본을 새 파일로 만듭니다.
-                          원본은 그대로 유지하며, 선택하지 않으면 재료를 사용해
-                          새 HTML을 만듭니다.
+                          선택한 게임을 바탕으로 새 버전을 만듭니다. 기존 버전은
+                          유지됩니다. 선택하지 않으면 참고 자료로 새 게임을
+                          만듭니다.
                         </small>
                       )}
                     </label>
@@ -11862,7 +12030,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   <label htmlFor="ai-result-name">
                     {aiRequest.implement
                       ? aiRequest.organize
-                        ? '프로토타입 이름 · 문서에도 적용'
+                        ? '이름 · 문서와 게임에 함께 사용'
                         : '게임 이름'
                       : '문서 묶음 이름'}
                   </label>
@@ -11885,9 +12053,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     }
                   />
                   <small>
-                    새 버전은 이름을 실제 파일명에 반영합니다(공백은 하이픈으로
-                    변환). 기존 파일 업데이트는 경로를 유지하고 제목에
-                    반영합니다. 비워두면 기존 기본 이름을 사용합니다.
+                    결과물에 사용할 이름입니다. 비워두면 기본 이름을 사용합니다.
                     {aiRequest.organize &&
                       ' 문서 정리는 선택한 출력 구성의 제목과 포함할 내용을 따릅니다.'}
                   </small>
@@ -11900,13 +12066,13 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 hidden={aiRequestPage !== 3}
               >
                 <h3 className="ai-step-heading" tabIndex={-1}>
-                  <span>3</span> 작업 지침
+                  <span>3</span> AI에게 요청할 내용
                 </h3>
                 {aiRequest.organize && aiRequest.implement && (
                   <div
                     className="gamejam-instruction-progress"
                     role="group"
-                    aria-label="작업 지침 페이지"
+                    aria-label="AI에게 요청할 내용 페이지"
                   >
                     <button
                       type="button"
@@ -11914,7 +12080,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       aria-pressed={activeAiInstruction === 'organize'}
                       onClick={() => navigateAiPage(3, 'organize')}
                     >
-                      1. 문서 정리 지침
+                      1. 문서 정리 요청
                     </button>
                     <button
                       type="button"
@@ -11928,7 +12094,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                         else navigateAiPage(3, 'implement');
                       }}
                     >
-                      2. HTML 구현 지침
+                      2. 게임 만들기 요청
                     </button>
                   </div>
                 )}
@@ -11943,8 +12109,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       <div className="ai-instructions-heading">
                         <label htmlFor={`ai-task-instructions-${kind}`}>
                           {kind === 'organize'
-                            ? '문서 정리 지시'
-                            : 'HTML 구현 지시'}
+                            ? '문서를 어떻게 정리할까요?'
+                            : '게임을 어떻게 만들까요?'}
                         </label>
                         <button
                           type="button"
@@ -12001,8 +12167,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                       />
                       <div className="ai-instructions-meta">
                         <small id={`ai-instructions-help-${kind}`}>
-                          기본 지시를 수정하거나 추가하세요. 히스토리의 AI 작업
-                          기록에 보관됩니다.
+                          원하는 내용을 자유롭게 수정하거나 추가하세요. 요청
+                          내용은 작업 기록에 남습니다.
                         </small>
                         <small>
                           {aiRequest.instructions[kind].length.toLocaleString()}{' '}
@@ -12016,8 +12182,8 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                     </div>
                   ))}
                 <p className="ai-instructions-protection">
-                  입력 문서 보호, 선택 범위, 결과 파일 및 버전 규칙과 역할별
-                  권한은 지시를 수정해도 유지됩니다.
+                  선택한 자료는 원본을 유지합니다. AI는 정해진 결과물만 만들거나
+                  수정하며, 프로젝트 권한은 그대로 적용됩니다.
                 </p>
               </section>
               <section
@@ -12026,9 +12192,9 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 hidden={aiRequestPage !== 4}
               >
                 <h3 className="ai-step-heading" tabIndex={-1}>
-                  <span>4</span> 게임 기능 라이브러리{' '}
+                  <span>4</span> 게임에 넣을 기능{' '}
                   <small className="gamejam-preview-badge">
-                    모듈·기능 예시
+                    추가할 기능과 참고 예시
                   </small>
                 </h3>
                 <GameFeatureLibrary
@@ -12055,6 +12221,16 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                 </h3>
                 <GamejamReview
                   request={effectiveAiRequest!}
+                  nameForPath={materialName}
+                  documentName={documentSetName(
+                    effectiveAiRequest?.documentResult?.baseDir,
+                  )}
+                  canvasName={
+                    canvasSheets.canvases.find(
+                      (sheet) =>
+                        sheet.id === canvasId(effectiveAiRequest?.canvasId),
+                    )?.name ?? '캔버스를 선택해주세요'
+                  }
                   busy={creatingTask}
                   navigate={navigateAiPage}
                 />
@@ -12244,7 +12420,7 @@ function WorkspaceCanvas({ preview }: { preview?: UiDebugSelection }) {
                   aiRequest.organize &&
                   aiRequest.implement &&
                   activeAiInstruction === 'organize'
-                    ? 'HTML 구현 지침'
+                    ? '게임 만들기 요청'
                     : '다음'}{' '}
                   <ArrowRight size={15} />
                 </button>
