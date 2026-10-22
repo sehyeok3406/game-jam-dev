@@ -10,7 +10,19 @@ gamejam!의 새 버전 만들기/기존 게임 수정하기 목록에서 내부 
 
 자동 테스트 969개, root/contracts/core 타입·린트/형식 검사, 게임 이름·텍스트·서버 관리 UI와 기존 도형 회귀 검증을 통과했다. 실제 Windows 패키지에서 텍스트·목록의 디스크 저장과 전체 프로세스 재시작 후 복원, 자동 실행 On의 관리 화면 표시/Off의 표시 없음, 내장 Node·서버의 두 참가자 목록 동기화도 확인했다. 버전을 올린 배포 소스와 결과물은 별도로 확인하고 게시한다.
 
-이번 배포의 소스·빌드·검증·공개 파일 증거는 로컬 `out/release-v0.35.0`에 보존한다. 공개 게시와 자동 업데이트 피드 반영 결과는 검증 후 기록한다.
+2026-10-23 [v0.35.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.0)를 게시했다. 태그는 검증한 제품 소스 `1c32c33fb791599bea9dfbe739a94a491363df48`을 가리킨다. [GitHub CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/39871631712)의 타입·린트·Windows 테스트와 Linux 서버 검증이 모두 통과했다. 최종 버전의 로컬 자동 테스트 969개(실패/skip 0), Electron/IPC 통합과 실제 Windows 패키지의 텍스트·서버 자동 실행·게임 이름·내장 서버 검증도 통과했다.
+
+제품 입력 559개의 지문은 `75da125ba80aa16b42cb135712536dcaf4a0ea2b20500d458e86fc0af0ede3c5`다. 최종 패키지를 검증한 뒤 `make --from-package`로 설치 파일을 만들었다. app.asar SHA-256 `6ada272e87390bda673af35fa2778a618d8594c7f7556ff5be1fe014c07ef079`와 내장 서버 런타임 45개 파일의 해시·크기가 nupkg 내부까지 일치한다.
+
+| 공개 파일                     | 크기(바이트) | SHA-256                                                          |
+| ----------------------------- | -----------: | ---------------------------------------------------------------- |
+| Game.Jam-0.35.0.Setup.exe     |    194458112 | c998698f3f162458ae9cb272e844d8c32a0ce5d56897662195adf49a6001020a |
+| game_canvas-0.35.0-full.nupkg |    193555170 | ba16c08fb0a2005a16bbccdd440c937a3cb1fc5c40227a06affca415b2255f34 |
+| RELEASES                      |           83 | 2145c86a0649a449d97bb05524d25519ad4827590a74e0d9f447334c8e99a7e1 |
+
+GitHub 자산 SHA-256·크기가 로컬 파일과 같고, 세 파일의 인증 없는 공개 다운로드 접근은 모두 200이다. 공개 RELEASES의 바이트·패키지 이름·SHA-1 `D2F490207FE084B94B427E8C8FFCEF532EB4183E`·크기 193555170바이트도 확인했다. 기존과 같은 업로드·검증 경로를 사용했으므로 대용량 파일을 전체 재다운로드하지 않았다.
+
+게시 직후 v0.34.0과 v0.35.0의 Windows RELEASES 피드는 모두 200으로 v0.35.0 패키지의 공개 URL·SHA-1·크기를 반환했다. **배포 파일 게시·검증과 자동 업데이트 피드 반영을 모두 확인했다.** [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.0/Game.Jam-0.35.0.Setup.exe). 소스·빌드·검증·공개 파일 증거는 로컬 `out/release-v0.35.0`의 source-snapshot.json, final-validation.json, release-artifacts.json, ci-status.json, publication-verification.json에 보존한다. 실제 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상이다.
 
 ## v0.34.0 리팩토링 통합과 복구 검증
 
@@ -500,8 +512,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.34.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.34.0)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.34.0/Game.Jam-0.34.0.Setup.exe)
+- [v0.35.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.0)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.0/Game.Jam-0.35.0.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
