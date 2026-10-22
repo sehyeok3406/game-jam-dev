@@ -42,8 +42,18 @@ export function GamejamReview({
   request,
   busy,
   navigate,
+  nameForPath = (path) =>
+    path
+      .split('/')
+      .at(-1)
+      ?.replace(/\.[^.]+$/, '') || '이름 없는 자료',
+  documentName = '선택한 문서',
+  canvasName,
 }: {
   request: GamejamRequest;
+  nameForPath?: (path: string) => string;
+  documentName?: string;
+  canvasName?: string;
   busy: boolean;
   navigate: (page: GamejamPage) => void;
 }) {
@@ -52,23 +62,23 @@ export function GamejamReview({
       <p>입력 자료와 설정을 확인한 뒤 실행하세요.</p>
       <section>
         <div className="gamejam-review-heading">
-          <strong>작업·입력</strong>
+          <strong>작업과 자료</strong>
           <button type="button" disabled={busy} onClick={() => navigate(1)}>
             수정
           </button>
         </div>
         <p>
           {request.organize && request.implement
-            ? '문서 정리 → HTML 구현'
+            ? '문서 정리 → 게임 만들기'
             : request.organize
               ? '문서 정리'
               : request.implement
-                ? 'HTML 구현'
+                ? '게임 만들기'
                 : '선택한 작업 없음'}
         </p>
         <ul className="gamejam-review-inputs">
           {request.inputPaths.map((path) => (
-            <li key={path}>{path}</li>
+            <li key={path}>{nameForPath(path)}</li>
           ))}
         </ul>
         {!request.inputPaths.length && <p>선택한 입력 자료가 없습니다.</p>}
@@ -81,6 +91,12 @@ export function GamejamReview({
           </button>
         </div>
         <dl>
+          {canvasName && (
+            <>
+              <dt>결과를 놓을 캔버스</dt>
+              <dd>{canvasName}</dd>
+            </>
+          )}
           <dt>이름</dt>
           <dd>{request.resultName.trim() || '기본 이름 사용'}</dd>
           {request.organize && (
@@ -88,8 +104,8 @@ export function GamejamReview({
               <dt>문서</dt>
               <dd>
                 {request.documentResult?.mode === 'update'
-                  ? `기존 문서 업데이트 · ${request.documentResult.baseDir ?? '묶음 선택 필요'}`
-                  : '새 문서 버전 만들기'}
+                  ? `기존 문서 수정 · ${documentName}`
+                  : '새 문서 만들기'}
                 {request.documentResult?.structure === 'custom' && (
                   <ul>
                     {request.documentResult.documents?.map((doc) => (
@@ -108,17 +124,17 @@ export function GamejamReview({
           )}
           {request.implement && (
             <>
-              <dt>HTML</dt>
+              <dt>게임</dt>
               <dd>
                 {request.htmlResult?.mode === 'update'
-                  ? `기존 결과 업데이트 · ${request.htmlResult.basePath ?? 'output/index.html'}`
-                  : '새 HTML 버전 만들기'}
+                  ? `기존 게임 수정 · ${request.htmlResult.basePath ? nameForPath(request.htmlResult.basePath) : '게임을 선택해주세요'}`
+                  : '새 게임 버전 만들기'}
               </dd>
               {request.htmlResult?.mode !== 'update' &&
                 request.htmlResult?.basePath && (
                   <>
                     <dt>기준 결과</dt>
-                    <dd>{request.htmlResult.basePath}</dd>
+                    <dd>{nameForPath(request.htmlResult.basePath)}</dd>
                   </>
                 )}
             </>
@@ -127,7 +143,7 @@ export function GamejamReview({
       </section>
       <section>
         <div className="gamejam-review-heading">
-          <strong>작업 지침</strong>
+          <strong>AI에게 요청할 내용</strong>
           <button type="button" disabled={busy} onClick={() => navigate(3)}>
             수정
           </button>
@@ -137,7 +153,7 @@ export function GamejamReview({
           .map((kind) => (
             <details key={kind}>
               <summary>
-                {kind === 'organize' ? '문서 정리 지침' : 'HTML 구현 지침'}
+                {kind === 'organize' ? '문서 정리 요청' : '게임 만들기 요청'}
               </summary>
               <pre>{request.instructions[kind]}</pre>
             </details>
@@ -149,15 +165,15 @@ export function GamejamReview({
           <p>
             프로젝트 온라인 멀티플레이 · 최대 {request.multiplayer.maxPlayers}명
             · 혼자 연습 지원
-            {!request.implement ? ' · HTML 구현 선택 시 적용' : ''}
+            {!request.implement ? ' · 게임 만들기 선택 시 적용' : ''}
           </p>
           <button type="button" disabled={busy} onClick={() => navigate(4)}>
-            모듈 설정 수정
+            추가할 기능 수정
           </button>
         </section>
       )}
       {request.multiplayer === null && (
-        <p>기존 멀티 모듈 제거 · 다음 HTML 결과에 반영</p>
+        <p>온라인 멀티플레이 제외 · 다음 게임에 반영</p>
       )}
       <p className="gamejam-preview-notice">
         <Eye size={15} aria-hidden="true" />

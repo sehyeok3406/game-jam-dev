@@ -55,6 +55,68 @@
 .drawing-tool-menu {
   position: relative;
 }
+.drawing-eraser-menu {
+  position: relative;
+}
+.drawing-eraser-menu__popup {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  right: 0;
+  width: 240px;
+  max-width: calc(100vw - 32px);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: 0 8px 32px #0003;
+  z-index: 50;
+}
+.drawing-eraser-menu__popup [role='radiogroup'] {
+  display: grid;
+  gap: 12px;
+}
+.drawing-eraser-menu__popup [role='radiogroup'] label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.drawing-eraser-menu__popup label span {
+  display: grid;
+  gap: 3px;
+}
+.drawing-eraser-menu__popup small {
+  display: block;
+  font-size: 11px;
+  opacity: 0.75;
+  line-height: 1.5;
+}
+.drawing-eraser-menu__size {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  font-size: 12px;
+}
+.drawing-eraser-menu__size input {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.drawing-eraser-menu__sample {
+  grid-column: 1 / -1;
+  height: 84px;
+  place-items: center;
+  border-radius: 6px;
+  background: #64748b15;
+}
+.drawing-eraser-menu__sample i {
+  display: block;
+  border-radius: 50%;
+  border: 1px solid #64748b;
+  background: #64748b22;
+}
 .drawing-tool-menu summary {
   display: flex;
   align-items: center;
@@ -187,4 +249,17 @@
     width: 220px;
     right: 10px;
   }
+}
+
+.drawing-eraser-menu > button {
+  position: relative;
+}
+.drawing-eraser-menu > button > small {
+  position: absolute;
+  right: 4px;
+  top: 3px;
+  font-size: 9px;
+}
+.drawing-eraser-menu > button > span {
+  white-space: nowrap;
 }

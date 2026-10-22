@@ -1,3 +1,4 @@
+import { assertEraseSupport } from './drawing-capabilities.ts';
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { CollaborationCommand } from '../../contracts/collaboration.ts';
 import type { Snapshot } from '../../contracts/project.ts';
@@ -124,6 +125,7 @@ export function createCommandService<
     )
       throw new ApiError('오래된 수정 요청입니다. 최신 변경을 유지합니다.');
     const reduced = ports.reduce(project.files, command.channel, command.input);
+    assertEraseSupport(reduced.files, command);
     if (
       project.job &&
       command.channel === 'tasks:create' &&

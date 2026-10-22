@@ -7,6 +7,7 @@ export function serverCapabilities() {
     documentBundles: true,
     documentOutputFormats: true,
     drawingsVersion: 1,
+    drawingEraseVersion: 1,
     gameUiVersion: 2,
     documentStatusesVersion: 1,
     filePropertiesVersion: 1,

@@ -1,3 +1,9 @@
+import { WorkspaceDock } from '../shell/WorkspaceDock';
+import { WorkspaceChrome } from '../shell/WorkspaceChrome';
+import { useCanvasRegions } from '../CanvasChrome';
+import type { EraserMode } from '../../drawing-types';
+import type { EraserPreview } from '../drawing/eraserPreview';
+import { isPreviewPath } from '../../preview-output';
 import type { NodeTypes, ReactFlowInstance } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -70,7 +76,6 @@ import { useAiRequestCommands } from '../ai/useAiRequestCommands';
 import { useAiRun } from '../ai/useAiRun';
 import { useGamejamRequest } from '../ai/useGamejamRequest';
 import { WorkspaceAiDialogs } from '../ai/WorkspaceAiDialogs';
-import { WorkspaceAiPanels } from '../ai/WorkspaceAiPanels';
 import {
   sectionViewCollapsed,
   type CollapseTarget,
@@ -104,7 +109,6 @@ import {
   useScopedPrompt,
 } from '../canvas/useSelectionActions';
 import { WorkspaceCanvas } from '../canvas/WorkspaceCanvas';
-import { WorkspaceCanvasTools } from '../canvas/WorkspaceCanvasTools';
 import { WorkspaceContextMenus } from '../canvas/WorkspaceContextMenus';
 import type { CanvasCommand } from '../CanvasOverlays';
 import { CanvasTabs } from '../CanvasTabs';
@@ -130,13 +134,10 @@ import { ProjectHome } from '../ProjectHome';
 import { requireDesktopApi } from '../runtime/desktop-api';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { usePanelState } from '../shell/usePanelState';
-import { WorkspaceHeader } from '../shell/WorkspaceHeader';
-import { WorkspaceInspector } from '../shell/WorkspaceInspector';
 import {
   WorkspacePanels,
   type WorkspacePanelsProps,
 } from '../shell/WorkspacePanels';
-import { WorkspaceSettings } from '../shell/WorkspaceSettings';
 import { useCanvasKanban } from '../../features/kanban/useCanvasKanban';
 import { useProjectLoading } from './useProjectLoading';
 import { useWorkspaceData } from './useWorkspaceData';
@@ -170,6 +171,29 @@ const nodeTypes: NodeTypes = {
 export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const { api, preferences, capabilities } = useRuntime();
   const panelState = usePanelState();
+  const { dockPanel, setDockPanel, restorePanelScope } = panelState;
+  const [minimapVisible, setMinimapVisible] = useState(() => {
+    try {
+      return preferences.getItem('gamejam:minimap-visible') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [compactChrome, setCompactChrome] = useState(
+    () => window.innerWidth <= 1200,
+  );
+  useEffect(() => {
+    const media = matchMedia('(max-width: 1200px)');
+    const update = () => setCompactChrome(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  const [gameUiPanelHost, setGameUiPanelHost] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [gameUiPanelActive, setGameUiPanelActive] = useState(false);
+  const [noticeVisible, setNoticeVisible] = useState(false);
+
   const {
     setSelfHostOpen,
     findOpen,
@@ -198,6 +222,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     setCodexStatusOpen,
   } = panelState;
 
+  const [materialPicker, setMaterialPicker] = useState<string[] | null>(null);
+  const [materialFocus, setMaterialFocus] = useState<string | null>(null);
+  const materialMarquee = useRef<Set<string> | null>(null);
+  const [approvalInboxFocusId, setApprovalInboxFocusId] = useState<string>();
+  const [discordApprovalOpen, setDiscordApprovalOpen] = useState(false);
   const [home, setHome] = useState(preview ? preview.scope === 'home' : true);
   useEffect(
     () =>
@@ -564,6 +593,20 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     { enabled: true },
   );
 
+  const [eraserSettings, setEraserSettings] = usePersonalValue<{
+    mode: EraserMode;
+    size: number;
+  }>(`drawing.eraser:${personalScope}`, { mode: 'stroke', size: 24 });
+  const partialEraseSupported =
+    !collaboration.active || collaboration.drawingEraseVersion === 1;
+  const eraserMode: EraserMode =
+    partialEraseSupported && eraserSettings.mode === 'partial'
+      ? 'partial'
+      : 'stroke';
+  const eraserSize = Number.isFinite(eraserSettings.size)
+    ? Math.max(4, Math.min(80, Math.round(eraserSettings.size)))
+    : 24;
+  const [eraserPreview, setEraserPreview] = useState<EraserPreview>(new Map());
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('rectangle');
   const [drawingStyle, setDrawingStyle] = useState<DrawingStyle>({
     ...DEFAULT_SHAPE_STYLE,
@@ -605,12 +648,14 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     (command: Omit<DrawingCommand, 'canvasId' | 'scope'>) => {
       void drawing.submit(command).catch((e) => {
         createdDrawingSelection.current = null;
+        setEraserPreview(new Map());
         setNotice(e instanceof Error ? e.message : String(e));
       });
     },
     [drawing.submit],
   );
   const chooseDrawingTool = (next: DrawingTool) => {
+    if (!dockPanel || dockPanel === 'properties') setDockPanel('properties');
     if (collaboration.active && collaboration.drawingsVersion !== 1) {
       setNotice('도형 · 그림 편집을 사용하려면 협업 서버를 업데이트해주세요.');
       return;
@@ -703,6 +748,35 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     showError,
   }));
   const noticeProject = collaboration.projectId ?? workspace.root;
+  useEffect(() => {
+    restorePanelScope(home ? null : noticeProject);
+  }, [home, noticeProject, restorePanelScope]);
+  useEffect(() => {
+    setApprovalInboxFocusId(undefined);
+    setDiscordApprovalOpen(false);
+    setMaterialPicker(null);
+    setMaterialFocus(null);
+    setEraserPreview(new Map());
+  }, [noticeProject]);
+  useEffect(() => {
+    if (collaboration.active && collaboration.role !== 'admin')
+      setDiscordApprovalOpen(false);
+  }, [collaboration.active, collaboration.role]);
+  useEffect(() => {
+    try {
+      preferences.setItem('gamejam:minimap-visible', String(minimapVisible));
+    } catch {
+      /* Layout storage is optional. */
+    }
+  }, [minimapVisible]);
+  useEffect(() => {
+    setNoticeVisible(true);
+    const timer = window.setTimeout(() => setNoticeVisible(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => {
+    if (inspectorId) setDockPanel('properties');
+  }, [inspectorId, setDockPanel]);
   const {
     aiRequest,
     setAiRequest,
@@ -752,6 +826,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     onProviderChanged: () => setCodexStatus(null),
     onOpen: () => setHistoryOpen(false),
   });
+  useEffect(() => {
+    setMaterialPicker(null);
+    setMaterialFocus(null);
+  }, [aiRequest === null, editingApproval?.id]);
   const runScopeRef = useRef({
     project: noticeProject,
     home,
@@ -1049,6 +1127,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       : 'dark';
   });
   const flowRef = useRef<ReactFlowInstance<CanvasNode> | null>(null);
+  useCanvasRegions(home, flowRef);
   const documentSaveStates = useRef(new Map<string, DocumentSaveState>());
   const reportEdit = useCallback(
     (id: string, state: { dirty: boolean; saving: boolean; failed: boolean }) =>
@@ -2326,7 +2405,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     else setNotice('삭제할 메모·파일·HTML 결과 또는 섹션 하나를 선택해주세요.');
   };
   useCanvasCommands({
-    home,
+    home: home || materialPicker !== null,
     findOpen,
     find: () => {
       if (!findOpen)
@@ -2459,10 +2538,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   });
 
   const legacyModal = !!(
+    discordApprovalOpen ||
     approvalInboxOpen ||
     updateOpen ||
     importTarget ||
-    aiRequest ||
+    (aiRequest && materialPicker === null) ||
     sectionRename ||
     deleteManyPrompt ||
     sectionDialogOpen ||
@@ -2512,7 +2592,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       reasons.push('AI 작업이 진행 중입니다. 완료하거나 중지해주세요.');
     if (loading || editBusy || importingFiles || restoring)
       reasons.push('파일 처리·저장·동기화가 진행 중입니다. 잠시 기다려주세요.');
-    if (aiRequest || sectionRename || importTarget || historyConfirm)
+    if (
+      discordApprovalOpen ||
+      aiRequest ||
+      sectionRename ||
+      importTarget ||
+      historyConfirm
+    )
       reasons.push(
         '열려 있는 작업·편집 대화상자를 먼저 완료하거나 취소해주세요.',
       );
@@ -2565,6 +2651,74 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       workspace,
       codexRun,
     });
+  const selectMaterials = () => {
+    void flushEditors()
+      .then(() => {
+        if (!aiRequest) return;
+        setTool('select');
+        setMaterialFocus(null);
+        setMaterialPicker([...aiRequest.inputPaths]);
+      })
+      .catch(showError);
+  };
+  const materialName = (path: string) =>
+    canvasItems.find((item) => item.path === path)?.title ??
+    path
+      .split('/')
+      .at(-1)
+      ?.replace(/\.[^.]+$/, '') ??
+    '이름 없는 자료';
+  const documentSetName = (baseDir?: string) => {
+    const set = organizedSets.find((set) => set.baseDir === baseDir);
+    return set ? materialName(set.paths[0]) : '문서를 선택해주세요';
+  };
+  const materialPath = (node: CanvasNode) =>
+    node.data.kind === 'document' && node.data.document.type !== 'ai-task'
+      ? node.data.document.relativePath
+      : node.data.kind === 'preview'
+        ? node.data.preview.relativePath
+        : node.data.kind === 'section'
+          ? node.data.section.relativePath
+          : undefined;
+  const toggleMaterial = (path: string) =>
+    setMaterialPicker((current) =>
+      current === null
+        ? null
+        : current.includes(path)
+          ? current.filter((item) => item !== path)
+          : [...current, path],
+    );
+  const finishMaterialSelection = (apply: boolean) => {
+    if (apply && materialPicker !== null) {
+      const paths = [
+        ...new Set(
+          materialPicker.flatMap((path) => [
+            path,
+            ...(sections
+              .find((section) => section.relativePath === path)
+              ?.members.map((member) => member.path) ?? []),
+          ]),
+        ),
+      ];
+      setAiRequest((current) =>
+        current
+          ? {
+              ...current,
+              inputPaths: paths,
+              sourceMode: paths.some(isPreviewPath)
+                ? 'html-compose'
+                : undefined,
+            }
+          : current,
+      );
+    }
+    materialMarquee.current = null;
+    setMaterialPicker(null);
+    setMaterialFocus(null);
+    requestAnimationFrame(() =>
+      document.getElementById('ai-select-on-canvas')?.focus(),
+    );
+  };
   const filteredHistoryEntries = historyEntries.filter(
     (entry) =>
       (!historyAiOnly || entry.kind === 'ai' || !!historyTaskPath(entry)) &&
@@ -2836,6 +2990,9 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
   useWorkspacePreview(
     () => ({
+      setDockPanel,
+      setMinimapVisible,
+      setEraserSettings,
       loading,
       setTool,
       setNoteDraft,
@@ -2956,12 +3113,227 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
   return (
     <main
-      className={`app-shell app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
+      className={`app-shell${materialPicker !== null ? ' app-shell--material-picker' : ''} canvas-workspace${nodes.some((n) => n.selected) && !uiHidden ? ' canvas-workspace--selection' : ''}${uiHidden ? ' canvas-workspace--focus' : ''}${dockPanel && !uiHidden ? ' canvas-workspace--panel' : ''}${navigatorOpen && !uiHidden ? ' canvas-workspace--navigator' : ''} app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
     >
+      <WorkspaceDock
+        {...{
+          activeCanvas,
+          aiBusy,
+          aiHistorySelection,
+          api,
+          canRestoreHistory,
+          canRunAi,
+          canStopAi,
+          canWriteAiRequest,
+          cancelCodexRun,
+          cancellingCodexRun,
+          canvasItems,
+          canvasSheets,
+          closeCompletion,
+          closeRunPanel,
+          codexLogsRef,
+          codexRun,
+          codexRunCollapsed,
+          codexStatus,
+          collaboration,
+          completion,
+          creatingTask,
+          deleteDrawings,
+          dockPanel,
+          documents,
+          drawing,
+          drawingContinuous,
+          drawingPressure,
+          drawingStyle,
+          drawingTool,
+          drawingTouch,
+          duplicateDrawings,
+          editBusy,
+          eraserMode,
+          filePropertyViews,
+          filteredHistoryEntries,
+          flowRef,
+          focusResultPath,
+          focusSource,
+          gameUi,
+          gameUiPanelActive,
+          gameUiSettings,
+          historyAiOnly,
+          historyEntries,
+          historyFilter,
+          historyOpen,
+          historyRequest,
+          historySelection,
+          home,
+          inspectHistory,
+          inspectorAiRecords,
+          inspectorAuthorship,
+          inspectorId,
+          jumpTo,
+          kanbanPreferences,
+          kanbanViewError,
+          kanbanVisibilityValue,
+          loadProject,
+          locked,
+          minimapPreferences,
+          movingResults,
+          nodes,
+          noticeProject,
+          onBlocked,
+          openHistory,
+          pathLocked,
+          pluginPanelGeometry,
+          pluginPanelOpen,
+          pluginPanelPage,
+          previews,
+          projectAiQueue,
+          propertyVisibilityFor,
+          queueSupported,
+          restoring,
+          reuseAiEntry,
+          revealKanban,
+          runFailure,
+          runOutputPaths,
+          runPanelVisible,
+          sections,
+          selectedDrawings,
+          setAiHistorySelection,
+          setAiQueue,
+          setApprovalInboxOpen,
+          setCodexRunCollapsed,
+          setCodexStatusOpen,
+          setCollaborationOpen,
+          setCollaborationTab,
+          setCompareFirst,
+          setDiscordApprovalOpen,
+          setDockPanel,
+          setDrawingContinuous,
+          setDrawingPressure,
+          setDrawingStyle,
+          setDrawingTouch,
+          setGameUiPanelHost,
+          setGameUiSettings,
+          setHistoryAiOnly,
+          setHistoryConfirm,
+          setHistoryOpen,
+          setHistorySelection,
+          setInspectorId,
+          setKanbanAppearanceOpen,
+          setNavigatorOpen,
+          setNotice,
+          setPluginPanelOpen,
+          setPluginPanelPage,
+          setResultFolderPrompt,
+          setSectionRename,
+          setSettingsOpen,
+          setShortcutsOpen,
+          setSnapEnabled,
+          setStatusManagerOpen,
+          setUpdateOpen,
+          settingsOpen,
+          showError,
+          snapEnabled,
+          statusError,
+          statusSettings,
+          submitDrawing,
+          taskDocuments,
+          theme,
+          toggleKanban,
+          tool,
+          uiHidden,
+          updateFilePropertyViews,
+          updateKanbanPreferences,
+          updateKanbanVisibility,
+          updateMiniMapPreferences,
+          updatePluginPanelGeometry,
+          workflowBusy,
+          workflowChange,
+          workflowEditable,
+          workflowReason,
+        }}
+      />
+      <WorkspaceChrome
+        {...{
+          aiBusy,
+          aiDisabledReason,
+          arrangeSelection,
+          arrangementItems,
+          beginCanvasMove,
+          canWriteAiRequest,
+          canvasSheets,
+          changeEdit,
+          chooseDrawingTool,
+          collaboration,
+          compactChrome,
+          completion,
+          createTask,
+          dockPanel,
+          drawing,
+          drawingTool,
+          duplicateSelection,
+          editBusy,
+          eraserMode,
+          eraserSize,
+          flowRef,
+          gameUi,
+          hasTaskSelection,
+          importingFiles,
+          inputSelection,
+          locked,
+          minimapVisible,
+          minimizeSelection,
+          navigatorOpen,
+          nodes,
+          notice,
+          noticeVisible,
+          openHistory,
+          openImport,
+          openKanbanControls,
+          partialEraseSupported,
+          preview,
+          projectAiQueue,
+          queueSupported,
+          relevantEdits,
+          requestDelete,
+          returnHome,
+          saveLabel,
+          selectedDocuments,
+          selectedDrawings,
+          selectedPreviews,
+          selectedSections,
+          selectionLocked,
+          setCodexRunCollapsed,
+          setCommandOpen,
+          setDockPanel,
+          setEraserSettings,
+          setInspectorId,
+          setMinimapVisible,
+          setNavigatorOpen,
+          setPluginPanelOpen,
+          setPluginPanelPage,
+          setSectionDialogOpen,
+          setSectionRename,
+          setSectionTitle,
+          setSettingsOpen,
+          setShortcutsOpen,
+          setTool,
+          setUiHidden,
+          showError,
+          theme,
+          toggleTheme,
+          tool,
+          uiHidden,
+          undoState,
+          viewZoom,
+          workspace,
+        }}
+      />
       {uiDebug}
       <WorkspacePanels
         {...workspacePanelProps}
         workspace={{
+          docked: true,
+          uiHidden,
           restarting: updateRestarting,
           offline: {
             state: collaboration,
@@ -3093,94 +3465,30 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           },
         }}
       />
-      <WorkspaceSettings
-        {...{
-          settingsOpen,
-          setSettingsOpen,
-          workflowEditable,
-          workflowBusy,
-          setStatusManagerOpen,
-          statusError,
-          setCodexStatusOpen,
-          codexStatus,
-          capabilities,
-          setUpdateOpen,
-          loadProject,
-          api,
-          locked,
-          editBusy,
-          movingResults,
-          setResultFolderPrompt,
-          snapEnabled,
-          setSnapEnabled,
-          setShortcutsOpen,
-        }}
-      />
-
-      <WorkspaceInspector
-        {...{
-          inspectorId,
-          canvasItems,
-          documents,
-          sections,
-          previews,
-          setInspectorId,
-          statusSettings,
-          inspectorAuthorship,
-          propertyVisibilityFor,
-          workflowEditable,
-          workflowBusy,
-          pathLocked,
-          workflowReason,
-          workflowChange,
-          updateFilePropertyViews,
-          filePropertyViews,
-          setStatusManagerOpen,
-          focusSource,
-          locked,
-          setSectionRename,
-          jumpTo,
-          inspectorAiRecords,
-          taskDocuments,
-          openHistory,
-          api,
-          setCompareFirst,
-        }}
-      />
-
-      <WorkspaceHeader
-        {...{
-          uiHidden,
-          setUiHidden,
-          collaboration,
-          workspace,
-          relevantEdits,
-          saveLabel,
-          returnHome,
-          navigatorOpen,
-          setNavigatorOpen,
-          setCommandOpen,
-          capabilities,
-          setCollaborationTab,
-          setCollaborationOpen,
-          canWriteAiRequest,
-          locked,
-          aiBusy,
-          queueSupported,
-          createTask,
-          aiDisabledReason,
-          setApprovalInboxOpen,
-          openHistory,
-          projectAiQueue,
-          settingsOpen,
-          setSettingsOpen,
-          toggleTheme,
-          theme,
-        }}
-      />
 
       <WorkspaceCanvas
         {...{
+          canvasItems,
+          compactChrome,
+          dockPanel,
+          eraserMode,
+          eraserPreview,
+          eraserSize,
+          finishMaterialSelection,
+          gameUiPanelHost,
+          materialFocus,
+          materialMarquee,
+          materialPath,
+          materialPicker,
+          minimapVisible,
+          setDockPanel,
+          setEraserPreview,
+          setGameUiPanelActive,
+          setMaterialFocus,
+          setMaterialPicker,
+          setNotice,
+          toggleMaterial,
+          uiHidden,
           acknowledgeNewFile,
           tool,
           flowRef,
@@ -3247,100 +3555,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         }}
       />
 
-      <WorkspaceCanvasTools
-        {...{
-          undoState,
-          locked,
-          editBusy,
-          changeEdit,
-          flowRef,
-          viewZoom,
-          setShortcutsOpen,
-          nodes,
-          selectionLocked,
-          canvasSheets,
-          selectedDocuments,
-          selectedSections,
-          selectedPreviews,
-          selectedDrawings,
-          beginCanvasMove,
-          inputSelection,
-          openKanbanControls,
-          setInspectorId,
-          minimizeSelection,
-          duplicateSelection,
-          requestDelete,
-          setSectionRename,
-          arrangementItems,
-          arrangeSelection,
-          pluginPanelOpen,
-          setPluginPanelPage,
-          setPluginPanelOpen,
-          tool,
-          drawingTool,
-          chooseDrawingTool,
-          workspace,
-          collaboration,
-          setTool,
-          setSectionTitle,
-          setSectionDialogOpen,
-          openImport,
-          importingFiles,
-          drawing,
-          drawingStyle,
-          setDrawingStyle,
-          submitDrawing,
-          duplicateDrawings,
-          deleteDrawings,
-          drawingPressure,
-          setDrawingPressure,
-          drawingTouch,
-          setDrawingTouch,
-          drawingContinuous,
-          setDrawingContinuous,
-          activeCanvas,
-          gameUi,
-          showError,
-        }}
-      />
-
-      <WorkspaceAiPanels
-        {...{
-          home,
-          projectAiQueue,
-          canRunAi,
-          api,
-          collaboration,
-          setAiQueue,
-          codexRun,
-          setCodexRunCollapsed,
-          openHistory,
-          runPanelVisible,
-          codexRunCollapsed,
-          runOutputPaths,
-          previews,
-          jumpTo,
-          documents,
-          flowRef,
-          setNavigatorOpen,
-          cancelCodexRun,
-          cancellingCodexRun,
-          canStopAi,
-          setInspectorId,
-          setSettingsOpen,
-          setHistoryOpen,
-          closeRunPanel,
-          runFailure,
-          setNotice,
-          showError,
-          codexLogsRef,
-          completionVisible,
-          completion,
-          closeCompletion,
-          nodes,
-        }}
-      />
-
       {blockedMessage && (
         <div
           data-ui-id="blocked"
@@ -3371,7 +3585,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceHistoryPanels
         {...{
-          historyOpen,
+          historyOpen: false,
           aiHistorySelection,
           historySelection,
           historyFilter,
@@ -3469,11 +3683,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
             ])
           }
           readOnly={
-            collaboration.active &&
-            (collaboration.role === 'viewer' ||
-              !collaboration.connected ||
-              !collaboration.canvasSheets ||
-              !!collaboration.pendingChanges)
+            materialPicker !== null ||
+            (collaboration.active &&
+              (collaboration.role === 'viewer' ||
+                !collaboration.connected ||
+                !collaboration.canvasSheets ||
+                !!collaboration.pendingChanges))
           }
           switchTo={switchCanvasTo}
           change={changeSheets}
@@ -3517,6 +3732,18 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceAiDialogs
         {...{
+          selectMaterials,
+          materialPicker,
+          materialName,
+          documentSetName,
+          discordApprovalOpen,
+          setDiscordApprovalOpen,
+          approvalInboxFocusId,
+          setApprovalInboxFocusId,
+          setCollaborationTab,
+          setCollaborationOpen,
+          home,
+          legacyModal,
           codexStatusOpen,
           setCodexStatusOpen,
           selectedAiProvider,
@@ -3659,16 +3886,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         deleteDocument={deleteDocument}
         confirmDeleteMany={confirmDeleteMany}
       />
-
-      <div className="status-toast floating-surface">
-        <span className="status-dot" />
-        <span>{notice}</span>
-        {hasTaskSelection && (
-          <strong>
-            파일 {selectedDocuments.length} · 섹션 {selectedSections.length}
-          </strong>
-        )}
-      </div>
     </main>
   );
 }

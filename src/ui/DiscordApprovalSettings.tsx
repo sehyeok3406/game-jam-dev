@@ -12,10 +12,12 @@ export function DiscordApprovalSettings({
   provider,
   model,
   connected,
+  defaultOpen = false,
 }: {
   provider: AiProviderId;
   model: string;
   connected: boolean;
+  defaultOpen?: boolean;
 }) {
   const { api: runtimeApi } = useRuntime();
 
@@ -31,6 +33,7 @@ export function DiscordApprovalSettings({
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   useEffect(() => {
     if (!api) return;
     let active = true;
@@ -61,6 +64,7 @@ export function DiscordApprovalSettings({
   const perform = async (disconnect: boolean) => {
     setBusy(true);
     setError('');
+    setNotice('');
     try {
       setStatus(
         disconnect
@@ -74,8 +78,26 @@ export function DiscordApprovalSettings({
       setBusy(false);
     }
   };
+  const dirty =
+    !!status?.configured &&
+    (!!token || JSON.stringify(settings) !== JSON.stringify(status.settings));
+  const testNotification = async () => {
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      setNotice((await api.sendTest()).message);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : '테스트 알림을 보내지 못했습니다.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <details
+      open={defaultOpen}
       className="discord-approval-settings"
       data-ui-id="discord-approval-settings"
     >
@@ -91,6 +113,11 @@ export function DiscordApprovalSettings({
         암호화해 저장합니다.
       </p>
       <fieldset disabled={busy}>
+        <p className="discord-document-notice">
+          내용 확인·승인을 누르면 선택한 Markdown 문서의 본문과 검토 사본을 알림
+          채널/스레드에 기록합니다. 봇에 파일 첨부(Attach Files) 권한도
+          허용해주세요.
+        </p>
         <label>
           봇 토큰
           <input
@@ -206,6 +233,14 @@ export function DiscordApprovalSettings({
           >
             {busy ? '처리 중…' : '저장하고 연결'}
           </button>
+          <button
+            disabled={
+              !connected || !status?.configured || !status.connected || dirty
+            }
+            onClick={() => void testNotification()}
+          >
+            테스트 알림 보내기
+          </button>
           {status?.configured && (
             <button onClick={() => void perform(true)}>
               연결 해제·토큰 삭제
@@ -213,6 +248,13 @@ export function DiscordApprovalSettings({
           )}
         </div>
       </fieldset>
+      {dirty && (
+        <p>
+          변경한 설정을 먼저 저장하고 연결해주세요. 테스트는 저장된 연결 설정을
+          사용합니다.
+        </p>
+      )}
+      {notice && <p role="status">{notice}</p>}
       {status && (
         <p role="status">
           {status.projectName ? `${status.projectName} · ` : ''}

@@ -85,7 +85,11 @@ export const safeStorage = {
   decryptString: (buffer: Buffer) => buffer.toString(),
 };
 export const revealedPaths: string[] = [];
+export const openedExternalUrls: string[] = [];
 export const shell = {
+  openExternal: async (url: string) => {
+    openedExternalUrls.push(url);
+  },
   trashItem: async (target: string) => {
     let destination = `${target}.trashed`;
     try {

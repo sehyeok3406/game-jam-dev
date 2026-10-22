@@ -2024,3 +2024,13 @@ native F12의 기존 settings 소스 경로 기대값은 실제 추출 위치로
 증거는 out/r10-followup-tests.log, out/r10-followup-types-initial.log, out/r10-followup-lint-\*.log, out/r10-followup-bundle-initial.log, out/r10-followup-package-suites.json, out/r10-followup-verification.json과 최신 out/r10-packaged-server.json이다. 기존 42절의 917개/9개 package suite 기록은 당시 소스의 기록으로 유지하며 이번 소스에서 재실행한 범위와 혼동하지 않는다.
 
 **남은 조건:** 실제 Linux에서 확장 archive의 복원/재시작·OS SIGTERM 검증, 실제 외부 S3 복구 실증, 별도 Render 운영 배포 검증, 별도 R08 캐시 성능 최적화는 유지한다. 사용자 운영 데이터·터널·외부 계정은 변경하지 않았고 commit/push/make/release/게시·운영 배포·유료 자원 생성·WSL 설치와 F01~F04 구현은 수행하지 않았다.
+
+## 45. v0.34.0 배포 통합 — 2026-10-22
+
+사용자의 Windows 앱 배포·커밋·푸시 요청에 따라 기존 리팩토링 커밋과 원격 main의 v0.33.0까지 24개 커밋을 통합했다. 중단된 작업 파일과 기존 패키지는 out/release-restart-2026-10-22에 보존했다. 서비스·contracts·runtime 분리를 유지하면서 부분 지우기, 요청 삭제 이력, 디스코드 검토 문서, 캔버스 도구 배치와 자료 선택을 연결했다. 자료 이름의 이전 접두사를 제거했고, 협업 패널이 닫혀 있어도 멀티플레이 방 알림을 수신하도록 발견 구독을 유지했다.
+
+통합 소스의 전체 자동 테스트 942개(실패/skip 0), root/contracts/core 타입, 린트/형식 검사를 통과했다. 데스크톱 저장·AI·오프라인 재연결·멀티 사용자·실제 Chromium HTML/마우스 잠금, 캔버스 전환/저장·IME, FIFO 예약/추론 강도, 프로젝트 세션, 디스코드 승인 IPC, 멀티플레이 진단 통합 검사도 통과했다. 외부 AI/디스코드 계정 대신 격리된 모의 실행을 사용한 범위는 유지한다.
+
+새 실제 Windows schema 2 백업 샘플과 독립 서버 번들 실행/재시작/복원·짧은 부하 검증을 통과했다. 서버 번들 SHA-256은 b3410bea9680bb7407d17f824246b8f9f6d3df2ad32af26232a3fd1cc63fc361이다. 실제 패키지의 Node/server·SQLite 장애 복구·TLS S3 protocol 백업/복원·부분 지우기 서버 검사를 통과했으며, 이후 UI 수정으로 패키지를 갱신할 때 그 내장 서버 런타임 전체 파일의 SHA-256/크기 일치를 확인해 검사를 재사용했다. 화면·자료 선택·부분 지우기의 최종 실제 패키지 검사도 통과했다. 다른 패키지 UI 검사와 설치 파일 게시 검증은 진행 중이다.
+
+원격 CI의 실제 Linux 결과, 외부 비공개 S3 복구, Render 운영 서버 전환은 위 로컬 검증과 구분한다. 실제 외부 S3와 Render 운영 변경은 이번 Windows 릴리스에서 수행하지 않는다. 게시 결과와 최종 검증은 UPDATES.md의 v0.34.0 기록에서 확인한다.

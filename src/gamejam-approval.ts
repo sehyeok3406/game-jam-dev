@@ -18,8 +18,11 @@ export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
   completed: '완료',
   failed: '실패',
   cancelled: '취소',
+  deleted: '삭제됨',
   stopped: '중지',
 };
+export const approvalDeletable = (status: ApprovalStatus) =>
+  !['queued', 'running', 'deleted'].includes(status);
 export const approvalEditable = (status: ApprovalStatus) =>
   status === 'pending' || status === 'feedback';
 export const canSubmitApproval = (role?: CollaborationRole) =>

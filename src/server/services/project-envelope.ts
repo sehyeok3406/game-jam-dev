@@ -29,6 +29,8 @@ export const projectEnvelope = (
 
     editorAi: false,
     requestApprovalVersion: 1,
+    requestDeletionVersion: 1,
+    requestDocumentVersion: 1,
     requestsVersion: project.requestsVersion ?? 0,
     pendingRequests: Object.values(project.approvals ?? {}).filter(
       (item) => item.status === 'pending',

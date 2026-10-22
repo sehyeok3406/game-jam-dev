@@ -133,4 +133,6 @@
 node --test tests/ai-file-lock.test.mjs tests/gamejam-workflow.test.mjs tests/html-composition.test.mjs tests/gamejam-validation.test.mjs tests/gamejam-approval.test.mjs tests/gamejam-history.test.mjs
 ```
 
-현재 완료 범위는 조사와 설계다. 예약·병렬 기능 소스는 아직 구현하지 않았다. 기존 협업·그림 관련 미커밋 변경을 보존하며 실제 구현 시 연관 부분과 조정한다.
+2026-10-16 구현: 예약 레코드·영속 저장, FIFO 스케줄러, 재료 점유, 원자적 서버 claim, 중복 응답 재시도, 개별 취소, 글로우·작업 목록과 관련 자동/실행/패키지 테스트를 추가했다. 최신 원격 main에 통합해 기존 지우개·디스코드 개선을 보존한다. 실제 제품의 실행 한도는 1이며 병렬 실행은 공개하지 않는다.
+
+후속 병렬 확장에서는 공통 예약 데이터·범위 충돌·스케줄러를 유지하면서 로컬 준비 어댑터의 단일 슬롯 상태와 협업의 단일 활성 job/lease를 작업별 슬롯으로 확장해야 한다. 실제 CLI·서버·게시의 역순 완료와 개별 취소 검증이 필요하다. 이번 테스트의 한도 2 검증은 공통 스케줄링 정책에 대한 검증이다.

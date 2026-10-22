@@ -12,6 +12,7 @@ import { usePersonalValue } from '../kanban/preferences';
 import { GameUiTextField } from './GameUiFields';
 
 type Dock = {
+  embedded?: boolean;
   active: string | null;
   root: HTMLDivElement | null;
   open: (id: string) => void;
@@ -26,8 +27,14 @@ export function GameUiInspectorProvider({
   children,
   onOpen,
   suspended,
+  embedded = false,
+  externalHost,
+  onActiveChange,
 }: {
   scope: string;
+  embedded?: boolean;
+  externalHost?: HTMLDivElement | null;
+  onActiveChange?: (active: boolean) => void;
   children: ReactNode;
   onOpen: () => void;
   suspended: boolean;
@@ -41,6 +48,7 @@ export function GameUiInspectorProvider({
   const opened = useRef(onOpen);
   opened.current = onOpen;
   useEffect(() => {
+    onActiveChange?.(!!active);
     if (active) opened.current();
   }, [active]);
   useEffect(() => {
@@ -49,8 +57,9 @@ export function GameUiInspectorProvider({
   return (
     <Context
       value={{
+        embedded,
         active,
-        root,
+        root: embedded ? (externalHost ?? null) : root,
         open: setActive,
         close: (id) => setActive((v) => (v === id ? null : v)),
         preferences,
@@ -58,12 +67,14 @@ export function GameUiInspectorProvider({
       }}
     >
       {children}
-      <div
-        ref={setRoot}
-        className="game-ui-inspector-host"
-        data-game-ui-dock={active ? 'open' : undefined}
-        data-scope={scope}
-      />
+      {!embedded && (
+        <div
+          ref={setRoot}
+          className="game-ui-inspector-host"
+          data-game-ui-dock={active ? 'open' : undefined}
+          data-scope={scope}
+        />
+      )}
     </Context>
   );
 }
@@ -130,7 +141,7 @@ export function GameUiInspectorPanel({
     y = geometry?.y ?? stored.y;
   const host = dock?.root;
   useEffect(() => {
-    if (!active || !host) return;
+    if (!active || !host || dock?.embedded) return;
     const layout = () => {
       host.style.width = `${w}px`;
       host.dataset.layout = stored.floating ? 'floating' : 'docked';

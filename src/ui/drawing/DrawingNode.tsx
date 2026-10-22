@@ -1,4 +1,13 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { EraserPreviewContext } from './eraserPreview';
 import { useReactFlow, type Node, type NodeProps } from '@xyflow/react';
 import {
   arrowHead,
@@ -32,6 +41,7 @@ export function DrawingGraphic({
   hit?: boolean;
   zoom?: number;
 }) {
+  const clipId = useId().replace(/:/g, '_');
   const path = useMemo(
     () => (object.kind === 'stroke' ? strokePath(object) : shapePath(object)),
     [
@@ -46,8 +56,20 @@ export function DrawingGraphic({
     s = object.style;
   return (
     <g opacity={s.opacity}>
+      {object.kind === 'stroke' && object.geometry.erasures?.length ? (
+        <defs>
+          <clipPath id={clipId}>
+            <path d={path} clipRule="evenodd" />
+          </clipPath>
+        </defs>
+      ) : null}
       <path
         d={path}
+        fillRule={
+          object.kind === 'stroke' && object.geometry.erasures?.length
+            ? 'evenodd'
+            : undefined
+        }
         fill={
           object.kind === 'stroke' ? (s.stroke ?? 'none') : (s.fill ?? 'none')
         }
@@ -81,6 +103,12 @@ export function DrawingGraphic({
           }
           stroke="transparent"
           strokeWidth={Math.max(s.strokeWidth, 10 / zoom)}
+          fillRule="evenodd"
+          clipPath={
+            object.kind === 'stroke' && object.geometry.erasures?.length
+              ? `url(#${clipId})`
+              : undefined
+          }
           style={{
             pointerEvents:
               object.kind === 'stroke' ? 'all' : s.fill ? 'all' : 'stroke',
@@ -128,7 +156,12 @@ export const DrawingNode = memo(function DrawingNode({
       window.removeEventListener('keydown', escape, true);
     };
   }, [data.onGesture]);
-  const object = draft ?? data.object,
+  const erasePreview = useContext(EraserPreviewContext).get(data.object.id);
+  const preview =
+    erasePreview?.generation === data.object.generation
+      ? erasePreview
+      : undefined;
+  const object = draft ?? preview?.object ?? data.object,
     t = object.transform,
     base = drawingBounds(data.object),
     z = data.zoom;
@@ -144,6 +177,8 @@ export const DrawingNode = memo(function DrawingNode({
   return (
     <div
       className="drawing-node"
+      data-erase-pending={preview && !preview.object ? 'true' : undefined}
+      style={preview && !preview.object ? { opacity: 0.3 } : undefined}
       aria-label={drawingName(object)}
       onContextMenu={(e) => {
         e.preventDefault();

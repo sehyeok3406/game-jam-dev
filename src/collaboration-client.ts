@@ -150,7 +150,7 @@ export class CollaborationClient {
     const result = (await this.fetch(
       serverAddress(serverUrl),
       '/projects',
-      { nickname, name, files },
+      { nickname, name, files, drawingEraseVersion: 1 },
       '',
       serverKey,
     )) as CollaborationEnvelope & {
@@ -173,6 +173,7 @@ export class CollaborationClient {
     const result = (await this.fetch(serverAddress(serverUrl), '/join', {
       code,
       nickname,
+      drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string };
     return {
       result,
@@ -200,6 +201,7 @@ export class CollaborationClient {
     const result = (await this.fetch(serverAddress(serverUrl), '/recover', {
       projectId,
       recoveryKey,
+      drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string; recoveryKey: string };
     return {
       result,
@@ -446,9 +448,11 @@ export class CollaborationClient {
         syncClientVersion: 1,
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
+        drawingEraseVersion: 1,
         gameUiVersion: 2,
         documentStatusesVersion: 1,
         filePropertiesVersion: 1,
+        requestDeletionVersion: 1,
         ...(action === 'offline-sync' ? { canvasSheetsVersion: 1 } : {}),
         ...(this.state.deltaSync &&
         action !== 'ai-start' &&
@@ -779,6 +783,12 @@ export class CollaborationClient {
         throw new Error(
           '도형 · 그림 편집을 사용하려면 협업 서버를 업데이트해주세요.',
         );
+      if (
+        channel === 'drawings:apply' &&
+        (input as { action?: string }).action === 'erase' &&
+        this.state.drawingEraseVersion !== 1
+      )
+        throw Error('부분 지우개를 사용하려면 협업 서버를 업데이트해주세요.');
       if (
         channel === 'drawings:apply' &&
         (input as { action?: string }).action === 'move' &&
@@ -1431,10 +1441,27 @@ export class CollaborationClient {
       id,
     })) as import('./gamejam-approval.ts').ApprovalDetail;
   }
+  async readApprovalDocuments(
+    id: string,
+    revision: number,
+    reviewToken: string,
+  ) {
+    if (this.state.requestDocumentVersion !== 1)
+      throw new Error(
+        '디스코드 문서 검토를 사용하려면 협업 서버를 업데이트해주세요.',
+      );
+    return (await this.request('requests-documents', {
+      id,
+      revision,
+      reviewToken,
+    })) as import('./discord-review-documents.ts').ApprovalDocuments;
+  }
   async mutateApproval(
-    action: 'create' | 'update' | 'cancel' | 'feedback',
+    action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: import('./gamejam-approval.ts').ApprovalMutation,
   ) {
+    if (action === 'delete' && this.state.requestDeletionVersion !== 1)
+      throw new Error('요청 삭제를 사용하려면 협업 서버를 업데이트해주세요.');
     if (
       !this.state.connected ||
       this.state.accessDenied ||

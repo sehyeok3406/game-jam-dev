@@ -513,14 +513,14 @@ async function run() {
     );
     assert.equal(
       await js(
-        `(()=>{const p=document.querySelector('.game-ui-inspector').getBoundingClientRect(),v=document.querySelector('.react-flow').getBoundingClientRect(),m=document.querySelector('.canvas-minimap-panel').getBoundingClientRect();return v.right<=p.left&&m.right<=p.left})()`,
+        `(()=>{const p=document.querySelector('.game-ui-inspector').getBoundingClientRect(),v=document.querySelector('.react-flow').getBoundingClientRect(),m=document.querySelector('.canvas-minimap-panel')?.getBoundingClientRect();return v.right<=p.left&&(!m||m.right<=p.left)})()`,
       ),
       true,
     );
     const transformBeforeZoom = await js(
       'document.querySelector(".react-flow__viewport").style.transform',
     );
-    await click('.react-flow__controls-zoomin');
+    await click('[aria-label="확대"]');
     await wait(
       `document.querySelector('.react-flow__viewport').style.transform!==${JSON.stringify(transformBeforeZoom)}`,
     );
@@ -530,37 +530,20 @@ async function run() {
       ),
       widthBeforeZoom,
     );
-    await click('.react-flow__controls-zoomout');
-    await js(
-      `document.querySelector('[aria-label="속성 패널 너비"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))`,
+    await click('[aria-label="축소"]');
+    assert.ok(
+      await js(
+        '!!document.querySelector(".canvas-dock .canvas-game-ui-host .game-ui-inspector")',
+      ),
     );
-    await wait(
-      `document.querySelector('.game-ui-inspector').getBoundingClientRect().width===${widthBeforeZoom + 16}`,
+    await click('[aria-label="AI 작업 패널"]');
+    await wait('!document.querySelector(".game-ui-inspector")');
+    assert.equal(
+      await js('document.querySelectorAll(".canvas-dock").length'),
+      1,
     );
-    await js(
-      `document.querySelector('[aria-label="속성 패널 너비"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`,
-    );
-    await wait(
-      `document.querySelector('.game-ui-inspector').getBoundingClientRect().width===${widthBeforeZoom}`,
-    );
-    await click('[aria-label="속성 패널 배치 전환"]');
-    await wait(
-      'document.querySelector(".game-ui-inspector-host").dataset.layout==="floating"',
-    );
-    const floating = await js(
-      `(()=>{const r=document.querySelector('.game-ui-inspector-header').getBoundingClientRect();return{x:r.x+24,y:r.y+10,left:r.left}})()`,
-    );
-    await mouse('mouseMove', floating.x, floating.y);
-    await mouse('mouseDown', floating.x, floating.y);
-    await mouse('mouseMove', floating.x - 80, floating.y + 20);
-    await mouse('mouseUp', floating.x - 80, floating.y + 20);
-    await wait(
-      `document.querySelector('.game-ui-inspector-header').getBoundingClientRect().left<${floating.left - 40}`,
-    );
-    await click('[aria-label="속성 패널 배치 전환"]');
-    await wait(
-      'document.querySelector(".game-ui-inspector-host").dataset.layout==="docked"',
-    );
+    await js(`document.querySelector('[aria-label="게임 UI 편집"]').click()`);
+    await wait('!!document.querySelector(".canvas-dock .game-ui-inspector")');
     assert.equal(
       await js(
         '(async()=>JSON.stringify(await window.gameCanvas.listGameUi()))()',
@@ -735,7 +718,7 @@ async function run() {
     );
     assert.deepEqual(errors, []);
     console.log(
-      'Game UI Electron: legacy editing, native drag/rotation/Undo, invalid drafts/Escape, atomic ranges, warning/test/export state, zoom-independent dock, native floating drag, multi-selection/Undo, locked text, single active inspector, and themes/small window passed.',
+      'Game UI Electron: legacy editing, native drag/rotation/Undo, invalid drafts/Escape, atomic ranges, warning/test/export state, zoom-independent dock, shared panel switching, multi-selection/Undo, locked text, single active inspector, and themes/small window passed.',
     );
   } catch (e) {
     await fs.mkdir('out/game-ui-ui', { recursive: true });

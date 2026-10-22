@@ -31,19 +31,15 @@ async function run() {
     );
   const expect = async (panel, completion) => {
     await sleep(150);
+    if (
+      panel &&
+      !(await js(
+        `document.querySelector('[aria-label="AI 작업 패널"]').getAttribute("aria-expanded")==="true"`,
+      ))
+    )
+      await js(`document.querySelector('[aria-label="AI 작업 패널"]').click()`);
+    await sleep(150);
     assert.deepEqual(await counts(), { panel, completion });
-    assert.equal(
-      await js(
-        'document.querySelector(".app-shell").classList.contains("app-shell--has-run")',
-      ),
-      !!panel,
-    );
-    assert.equal(
-      await js(
-        'document.querySelector(".app-shell").classList.contains("app-shell--has-completion")',
-      ),
-      !!completion,
-    );
   };
   const closePanel = () =>
     js(

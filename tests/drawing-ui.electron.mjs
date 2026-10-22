@@ -148,6 +148,27 @@ async function run() {
       ).geometry.points.length >= 8,
     );
     await key('e');
+    await mouse('mouseDown', 760, 400);
+    await mouse('mouseMove', 760, 510, ['leftButtonDown']);
+    await wait('!!document.querySelector("[data-erase-pending=true]")');
+    assert.equal(await count(), 2, 'preview does not delete before release');
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector("[data-erase-pending=true]")).opacity',
+      ),
+      '0.3',
+    );
+    await fs.writeFile(
+      'out/drawing-ui/eraser-pending.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await key('Escape');
+    await mouse('mouseUp', 760, 510);
+    assert.equal(await count(), 2);
+    assert.equal(
+      await js('!!document.querySelector("[data-erase-pending=true]")'),
+      false,
+    );
     await drag({ x: 760, y: 400 }, { x: 760, y: 600 });
     await wait(
       '(async()=> (await window.gameCanvas.listDrawings()).length===1)()',
@@ -155,6 +176,59 @@ async function run() {
     await key('z', ['control']);
     await wait(
       '(async()=> (await window.gameCanvas.listDrawings()).length===2)()',
+    );
+    // The grouped eraser menu stays inside the viewport; partial erasure preserves objects.
+    await js(
+      'document.querySelector("[data-ui-id=drawing-eraser] > button").click()',
+    );
+    await wait('!!document.querySelector(".drawing-eraser-menu__popup")');
+    await js('document.querySelector(".canvas-drawing-group").open=true');
+    const popup = await js(
+      '(()=>{const p=document.querySelector(".drawing-eraser-menu__popup").getBoundingClientRect(),b=document.querySelector("[data-ui-id=drawing-eraser] > button").getBoundingClientRect();return {bottom:p.bottom,top:p.top,left:p.left,right:p.right,width:innerWidth,height:innerHeight}})()',
+    );
+    assert.ok(
+      popup.top >= 0 &&
+        popup.bottom <= popup.height &&
+        popup.left >= 0 &&
+        popup.right <= popup.width,
+    );
+    await js('document.querySelector("input[value=partial]").click()');
+    await wait('!!document.querySelector(".drawing-eraser-menu__size input")');
+    await fs.writeFile(
+      'out/drawing-ui/eraser-popup.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await key('Escape');
+    await drag({ x: 760, y: 400 }, { x: 760, y: 600 });
+    await wait(
+      '(async()=> (await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
+    );
+    assert.equal(await count(), 2, 'partial erasure keeps the original object');
+    await fs.writeFile(
+      'out/drawing-ui/eraser-partial.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await key('z', ['control']);
+    await wait(
+      '(async()=> !(await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
+    );
+    // Cancel a partial gesture as well.
+    await mouse('mouseDown', 760, 400);
+    await mouse('mouseMove', 760, 510, ['leftButtonDown']);
+    await wait('!!document.querySelector(".drawing-node clipPath")');
+    assert.equal(
+      await js(
+        '(async()=> (await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
+      ),
+      false,
+    );
+    await key('Escape');
+    await mouse('mouseUp', 760, 510);
+    assert.equal(
+      await js(
+        '(async()=> (await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
+      ),
+      false,
     );
     // Escape aborts a captured gesture and leaves existing objects unchanged.
     await key('p', ['shift']);
@@ -170,6 +244,23 @@ async function run() {
     );
     await wait(
       'document.querySelectorAll(".react-flow__node-document").length===1',
+    );
+    await key('e');
+    await drag({ x: 760, y: 400 }, { x: 760, y: 600 });
+    await wait(
+      '(async()=> (await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
+    );
+    await key('Escape');
+    const selectionTarget = await center('.canvas-drawing-node');
+    await mouse('mouseDown', selectionTarget.x, selectionTarget.y);
+    await mouse('mouseUp', selectionTarget.x, selectionTarget.y);
+    await wait(
+      '(async()=>{if(document.querySelector(".react-flow__node-document.selected"))return true; const n=document.querySelector(".canvas-drawing-node.selected");return n && (await window.gameCanvas.listDrawings()).some(o=>`drawing:${o.id}`===n.dataset.id && o.kind==="shape")})()',
+    );
+    await js('document.activeElement?.blur()');
+    await key('z', ['control']);
+    await wait(
+      '(async()=> !(await window.gameCanvas.listDrawings()).some(o=>o.geometry.erasures?.length))()',
     );
     await key('a', ['control']);
     await key('Delete');
@@ -334,6 +425,11 @@ async function run() {
       'Array.from(document.querySelectorAll(".drawing-overlap-menu button")).find(b=>b.textContent.includes("사각형")).click()',
     );
     await wait('!!document.querySelector(".drawing-handles")');
+    if (
+      !(await js('!!document.querySelector(".canvas-dock .drawing-inspector")'))
+    )
+      await js(`document.querySelector('[aria-label="속성 패널"]').click()`);
+    await wait('!!document.querySelector(".drawing-inspector")');
     // A peer's geometry edit during our resize must survive the transform save.
     const peerObject = await js(
       '(async()=>{const id=document.querySelector(".canvas-drawing-node.selected").dataset.id.slice(8);return (await window.gameCanvas.listDrawings()).find(o=>o.id===id)})()',

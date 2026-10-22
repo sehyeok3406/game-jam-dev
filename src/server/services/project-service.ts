@@ -1,3 +1,4 @@
+import { assertEraseSupport } from './drawing-capabilities.ts';
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { CollaborationEnvelope } from '../../contracts/collaboration.ts';
 import type { Snapshot } from '../../contracts/project.ts';
@@ -61,6 +62,7 @@ export function createProjectService(ports: Ports) {
     if (ports.projects.count() >= ServerLimits.projects)
       throw new ApiError('초기 서버는 프로젝트를 20개까지 지원합니다.', 413);
     checkSnapshot(input.files);
+    assertEraseSupport(input.files, input);
     const code = ports.identity.invite(),
       token = ports.identity.secret(),
       recoveryKey = ports.identity.secret(),
@@ -115,6 +117,7 @@ export function createProjectService(ports: Ports) {
     return ports.queue(found.id, async () => {
       const project = structuredClone(ports.projects.get(found.id)!);
       ports.assertActive(project);
+      assertEraseSupport(project.files, input);
       if (
         project.inviteExpiresAt < ports.identity.now() ||
         !ports.identity.matches(code, project.inviteHash)
@@ -154,6 +157,7 @@ export function createProjectService(ports: Ports) {
         )
       )
         throw new ApiError('복구 정보가 올바르지 않습니다.', 403);
+      assertEraseSupport(source.files, input);
       const project = structuredClone(source),
         owner = project.members.find((member) => member.owner)!;
       const token = ports.identity.secret(),

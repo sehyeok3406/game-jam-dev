@@ -10,7 +10,9 @@ import {
   type RESTPostAPIChannelMessageJSONBody,
 } from 'discord.js';
 
-export type DiscordMessage = RESTPostAPIChannelMessageJSONBody;
+export type DiscordMessage = RESTPostAPIChannelMessageJSONBody & {
+  files?: { name: string; data: Buffer }[];
+};
 export type DiscordAction = {
   id: string;
   customId: string;
@@ -163,15 +165,18 @@ export class DiscordBotTransport implements DiscordTransport {
     void this.client.destroy();
   }
   async send(channelId: string, body: DiscordMessage) {
+    const { files, ...json } = body;
     const result = (await this.client.rest.post(
       Routes.channelMessages(channelId),
-      { body },
+      { body: json, files },
     )) as APIMessage;
     return result.id;
   }
   async update(channelId: string, messageId: string, body: DiscordMessage) {
+    const { files, ...json } = body;
     await this.client.rest.patch(Routes.channelMessage(channelId, messageId), {
-      body,
+      body: json,
+      files,
     });
   }
   async thread(channelId: string, messageId: string, name: string) {

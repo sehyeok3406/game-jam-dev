@@ -86,6 +86,8 @@ import type {
 import type { GameUiCommand, GameUiFrame } from './game-ui-types.ts';
 export type GameCanvasApi = {
   discordApproval?: {
+    openHelp(page: 'portal' | 'permissions' | 'ids'): Promise<void>;
+    sendTest(): Promise<{ message: string }>;
     status(): Promise<DiscordApprovalStatus>;
     configure(input: DiscordApprovalInput): Promise<DiscordApprovalStatus>;
     disconnect(): Promise<DiscordApprovalStatus>;
@@ -315,7 +317,7 @@ export type GameCanvasApi = {
   listApprovals: () => Promise<ApprovalList>;
   readApproval: (id: string) => Promise<ApprovalDetail>;
   mutateApproval: (
-    action: 'create' | 'update' | 'cancel' | 'feedback',
+    action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: ApprovalMutation,
   ) => Promise<GamejamApproval>;
   getFileAuthorship: (relativePath: string) => Promise<FileAuthorship>;

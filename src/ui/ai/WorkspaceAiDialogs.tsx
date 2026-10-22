@@ -1,3 +1,5 @@
+import { DiscordApprovalDialog } from '../DiscordApprovalDialog';
+import { RequestDeletionNotice } from '../RequestDeletionNotice';
 import { ArrowRight, Bot, LoaderCircle, Play, RefreshCw } from 'lucide-react';
 import { isQueuePending, type AiQueueTask } from '../../ai-task-queue.ts';
 import { AI_PROVIDERS } from '../../core/ai/catalog.ts';
@@ -20,6 +22,27 @@ import type { CanvasItem } from '../CanvasOverlays';
 import { GamejamRequestInbox } from '../GamejamRequestInbox';
 import { GamejamValidationSummary } from '../GamejamValidation';
 interface Props {
+  selectMaterials: () => void;
+  materialPicker: string[] | null;
+  materialName: (path: string) => string;
+  documentSetName: (baseDir?: string) => string;
+  discordApprovalOpen: boolean;
+  setDiscordApprovalOpen: (
+    value: import('react').SetStateAction<boolean>,
+  ) => void;
+  approvalInboxFocusId: string | undefined;
+  setApprovalInboxFocusId: (
+    value: import('react').SetStateAction<string | undefined>,
+  ) => void;
+  setCollaborationTab: (
+    value: import('react').SetStateAction<'create' | 'join' | 'recover'>,
+  ) => void;
+  setCollaborationOpen: (
+    value: import('react').SetStateAction<boolean>,
+  ) => void;
+  home: boolean;
+  legacyModal: boolean;
+
   codexStatusOpen: boolean;
   setCodexStatusOpen: (value: import('react').SetStateAction<boolean>) => void;
   selectedAiProvider: AiProviderId;
@@ -142,6 +165,18 @@ interface Props {
   effectiveAiRequest: import('../../gamejam-request').GamejamRequest | null;
 }
 export function WorkspaceAiDialogs({
+  selectMaterials,
+  materialPicker,
+  materialName,
+  documentSetName,
+  discordApprovalOpen,
+  setDiscordApprovalOpen,
+  approvalInboxFocusId,
+  setApprovalInboxFocusId,
+  setCollaborationTab,
+  setCollaborationOpen,
+  home,
+  legacyModal,
   codexStatusOpen,
   setCodexStatusOpen,
   selectedAiProvider,
@@ -310,9 +345,25 @@ export function WorkspaceAiDialogs({
         </div>
       )}
 
+      {discordApprovalOpen &&
+        (!collaboration.active || collaboration.role === 'admin') && (
+          <DiscordApprovalDialog
+            key={`${noticeProject}:${collaboration.memberId}`}
+            collaboration={collaboration}
+            provider={selectedAiProvider}
+            model={selectedAiModel}
+            close={() => setDiscordApprovalOpen(false)}
+            openCollaboration={() => {
+              setDiscordApprovalOpen(false);
+              setCollaborationTab('create');
+              setCollaborationOpen(true);
+            }}
+          />
+        )}
       {approvalInboxOpen && !aiRequest && collaboration.active && (
         <GamejamRequestInbox
-          key={`${noticeProject}:${collaboration.memberId}`}
+          key={`${noticeProject}:${collaboration.memberId}:${approvalInboxFocusId ?? ''}`}
+          initialRequestId={approvalInboxFocusId}
           collaboration={collaboration}
           provider={selectedAiProvider}
           model={selectedAiModel}
@@ -325,13 +376,26 @@ export function WorkspaceAiDialogs({
           setModel={changeAiModel}
           reasoningEffort={selectedAiReasoning}
           setReasoningEffort={setSelectedAiReasoning}
-          close={() => setApprovalInboxOpen(false)}
+          close={() => {
+            setApprovalInboxOpen(false);
+            setApprovalInboxFocusId(undefined);
+          }}
           edit={editApprovalRequest}
           run={startApprovalRequest}
           openResult={focusResultPath}
         />
       )}
-      {aiRequest && (
+      {!home && !legacyModal && (
+        <RequestDeletionNotice
+          collaboration={collaboration}
+          open={(id) => {
+            if (aiRequest) return;
+            setApprovalInboxFocusId(id);
+            setApprovalInboxOpen(true);
+          }}
+        />
+      )}
+      {aiRequest && materialPicker === null && (
         <GamejamRequestFlow
           request={aiRequest}
           busy={creatingTask}
@@ -363,6 +427,9 @@ export function WorkspaceAiDialogs({
         >
           <GamejamRequestFields
             {...{
+              selectMaterials,
+              materialName,
+              documentSetName,
               aiRequestPage,
               aiRequestIssues,
               aiRequest,

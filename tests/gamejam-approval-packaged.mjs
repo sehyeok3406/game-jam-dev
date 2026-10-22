@@ -5,6 +5,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { CollaborationClient } from '../src/collaboration-client.ts';
 
 const packageDir = path.resolve(
   process.env.GAMEJAM_PACKAGE_DIR ?? 'out/Game Jam!-win32-x64',
@@ -214,7 +215,68 @@ const click = async (client, selector, text) => {
 };
 try {
   await startServer();
+  const fixture = await CollaborationClient.create(
+    serverUrl,
+    key,
+    '문서 사본 검사',
+    '패키지 문서 검사',
+    {
+      'ideas/a.md':
+        '---\nid: source\ntitle: 선택 문서\ntype: idea\n---\n패키지 문서 사본 😀\n',
+      'ideas/private.md':
+        '---\nid: private\ntitle: 미선택\ntype: idea\n---\n포함하면 안 되는 본문\n',
+    },
+  );
+  const snapshotClient = new CollaborationClient(fixture.credentials, () => {});
+  snapshotClient.accept(fixture.result);
+  assert.equal(snapshotClient.state.requestDocumentVersion, 1);
+  const snapshotRequest = await snapshotClient.mutateApproval('create', {
+    commandId: randomUUID(),
+    request: {
+      organize: false,
+      implement: true,
+      inputPaths: ['ideas/a.md'],
+      x: 0,
+      y: 0,
+      resultName: '문서 검토',
+      htmlResult: { mode: 'new' },
+      instructions: { organize: '', implement: '게임을 만들어줘' },
+    },
+  });
+  const snapshotDetail = await snapshotClient.readApproval(snapshotRequest.id);
+  const captured = await snapshotClient.readApprovalDocuments(
+    snapshotRequest.id,
+    snapshotRequest.revision,
+    snapshotDetail.reviewToken,
+  );
+  assert.equal(captured.documents.length, 1);
+  assert.match(captured.documents[0].content, /패키지 문서 사본/);
+  assert.ok(!JSON.stringify(captured).includes('포함하면 안 되는'));
+  snapshotClient.stop();
   const admin = await boot('approval-admin');
+  await admin.wait(
+    '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
+  );
+  await click(admin, 'header button', '디스코드 알림');
+  await admin.wait(
+    'document.querySelector(".discord-approval-dialog")?.textContent.includes("함께 작업 연결하기")',
+  );
+  await click(admin, '.discord-guide-entry button', '관리자 설정 도움말');
+  for (let step = 1; step <= 7; step++) {
+    await admin.wait(`!!document.querySelector('[data-guide-step="${step}"]')`);
+    if (step < 7)
+      await click(admin, '.discord-approval-guide footer button', '다음');
+  }
+  await click(admin, '.discord-approval-guide footer button', '연결 설정 열기');
+  await assert.rejects(
+    admin.js(
+      `window.gameCanvas.discordApproval.openHelp('https://untrusted.invalid')`,
+    ),
+    /지원하지 않는/,
+  );
+  await admin.js(
+    `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+  );
   const source = await call(admin, 'createIdea', { x: 100, y: 100 });
   const shared = await call(admin, 'createCollaboration', {
     serverUrl,
@@ -222,12 +284,31 @@ try {
     nickname: '패키지 관리자',
   });
   const team = await boot('approval-team');
+  await admin.wait(
+    '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
+  );
+  await click(admin, 'header button', '디스코드 알림');
+  await admin.wait(
+    '!!document.querySelector(".discord-approval-dialog details[open]")',
+  );
+  assert.equal(
+    await admin.js(
+      `Array.from(document.querySelectorAll('.discord-settings-actions button')).find(e=>e.textContent.includes('테스트 알림')).disabled`,
+    ),
+    true,
+  );
+  await admin.js(
+    `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
+  );
   const joined = await call(team, 'joinCollaboration', {
     serverUrl,
     code: shared.inviteCode,
     nickname: '패키지 팀원',
   });
   assert.equal(joined.role, 'editor');
+  await team.wait(
+    '!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
+  );
   const request = {
     canvasId: 'default',
     organize: false,
@@ -248,6 +329,10 @@ try {
   });
   await admin.wait(
     `window.gameCanvas.listApprovals().then(r=>r.items.some(i=>i.id===${JSON.stringify(item.id)}))`,
+  );
+  await assert.rejects(
+    admin.js('window.gameCanvas.discordApproval.sendTest()'),
+    /먼저.*저장.*연결/,
   );
   await click(admin, 'header button', '요청함');
   await admin.wait('!!document.querySelector(".approval-list > button")');
@@ -332,12 +417,39 @@ try {
     'out/gamejam-approval/packaged-team-completed.png',
     Buffer.from(png.data, 'base64'),
   );
+  await team.js(`document.querySelector('[aria-label="요청함 닫기"]').click()`);
+  await click(admin, 'header button', '요청함');
+  await click(admin, '.approval-list > button', '패키지 요청 수정');
+  await click(admin, '.approval-actions button', '요청 삭제');
+  assert.equal(
+    await admin.js(
+      `Array.from(document.querySelectorAll('.approval-delete-confirm button')).find(e=>e.textContent.includes('이유 남기고')).disabled`,
+    ),
+    true,
+  );
+  await admin.js(
+    `{const e=document.querySelector('[aria-label="삭제 이유"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'완료된 요청을 정리합니다. 결과는 유지합니다.');e.dispatchEvent(new Event('input',{bubbles:true}));}`,
+  );
+  await click(admin, '.approval-delete-confirm button', '이유 남기고 삭제');
+  await admin.wait('!!document.querySelector(".approval-deletion-record")');
+  await team.wait('!!document.querySelector(".request-deletion-notice")');
+  assert.match(
+    (await call(team, 'readPreview', completed.outputs[0])).content,
+    /패키지 승인 검증 완료/,
+  );
   await stopChild(server);
   await startServer();
   assert.equal(
     (await call(admin, 'readApproval', item.id)).item.status,
-    'completed',
+    'deleted',
   );
+  await team.wait('window.gameCanvas.getCollaboration().then(c=>c.connected)');
+  await click(team, '.request-deletion-notice button', '삭제 이유 확인');
+  await team.wait(
+    'document.querySelector(".approval-deletion-record")?.textContent.includes("완료된 요청을 정리")',
+  );
+  await team.js(`document.querySelector('[aria-label="요청함 닫기"]').click()`);
+  await team.wait('!document.querySelector(".request-deletion-notice")');
   console.log(
     'PASS: final Windows package and bundled Node/server verify independent admin/team IPC, request edit/feedback, stale review, approval via real UI, isolated mock CLI, verified HTML publication, role enforcement and restart persistence.',
   );

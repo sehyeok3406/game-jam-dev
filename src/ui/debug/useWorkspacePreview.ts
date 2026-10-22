@@ -36,6 +36,16 @@ import {
 } from '../workspace/workspace-types.ts';
 
 interface Ports {
+  setDockPanel: (
+    value: import('react').SetStateAction<
+      import('../CanvasChrome').CanvasPanelId | null
+    >,
+  ) => void;
+  setMinimapVisible: (value: import('react').SetStateAction<boolean>) => void;
+  setEraserSettings: (value: {
+    mode: import('../../drawing-types').EraserMode;
+    size: number;
+  }) => void;
   setCheckingCodex: React.Dispatch<React.SetStateAction<boolean>>;
   loading: boolean;
   setTool: import('react').Dispatch<import('react').SetStateAction<CanvasTool>>;
@@ -309,6 +319,26 @@ export function useWorkspacePreview(
     if (!preview || loading || previewSeeded.current) return;
     previewSeeded.current = true;
     const { id, state } = preview;
+    if (id === 'ai-run' || id === 'completion') ports().setDockPanel('ai');
+    if (id === 'drawing-inspector') ports().setDockPanel('properties');
+    if (id === 'minimap' || id === 'minimap-settings')
+      ports().setMinimapVisible(true);
+    if (id === 'drawing-eraser') {
+      document.querySelector('.canvas-drawing-group')?.setAttribute('open', '');
+      ports().setEraserSettings({
+        mode: state === 'partial' ? 'partial' : 'stroke',
+        size: 24,
+      });
+      chooseDrawingTool('eraser');
+      if (state !== 'pending')
+        requestAnimationFrame(() =>
+          document
+            .querySelector<HTMLButtonElement>(
+              '[data-ui-id="drawing-eraser"] > button',
+            )
+            ?.click(),
+        );
+    }
     if (id === 'note-drawing') {
       setTool('note');
       setNoteDraft({ start: { x: 440, y: 220 }, end: { x: 800, y: 470 } });

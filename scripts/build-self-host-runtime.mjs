@@ -72,6 +72,10 @@ export async function buildSelfHostRuntime() {
     path.join(root, 'src/features/self-host/bridge.ps1'),
     path.join(directory, 'bridge.ps1'),
   );
+  await copyVerified(
+    path.join(root, 'assets/drawing-third-party-notices.txt'),
+    path.join(directory, 'drawing-third-party-notices.txt'),
+  );
   const versionFile = path.join(directory, 'runtime-version.json');
   const version = JSON.stringify({
     node: process.versions.node,
@@ -82,6 +86,7 @@ export async function buildSelfHostRuntime() {
   const files = {};
   for (const name of [
     'server.mjs',
+    'drawing-third-party-notices.txt',
     'node.exe',
     'NODE-LICENSE.txt',
     'connect.ps1',

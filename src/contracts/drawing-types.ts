@@ -1,3 +1,14 @@
+export type EraserMode = 'stroke' | 'partial';
+export type DrawingPolygon = [number, number][][];
+export type ErasureRegion = { id: string; polygons: DrawingPolygon[] };
+export type DrawingErasure = {
+  id: string;
+  generation: string;
+  expectedTransform: DrawingTransform;
+  expectedGeometry: StrokeObject['geometry'];
+  expectedStrokeWidth: number;
+  region: ErasureRegion;
+};
 export type DrawingItem = DrawingObject & {
   canvasId: string;
 };
@@ -51,6 +62,7 @@ export type StrokeObject = DrawingBase & {
     points: [number, number, number][];
     pressureEnabled: boolean;
     rendererVersion: 1;
+    erasures?: ErasureRegion[];
   };
 };
 export type DrawingChanges = {
@@ -62,8 +74,9 @@ export type DrawingCommand = {
   scope?: string;
   requestId?: string;
   canvasId: string;
-  action: 'create' | 'patch' | 'delete' | 'move';
+  action: 'create' | 'patch' | 'delete' | 'move' | 'erase';
   objects?: DrawingObject[];
+  erasures?: DrawingErasure[];
   patches?: DrawingPatch[];
   targets?: {
     id: string;
@@ -82,6 +95,7 @@ export type DrawingPatch = {
   expectedGeometry?: DrawingObject['geometry'];
 };
 export type DrawingDelta = {
+  version?: 1 | 2;
   canvasId: string;
   upsert: DrawingObject[];
   removed: string[];

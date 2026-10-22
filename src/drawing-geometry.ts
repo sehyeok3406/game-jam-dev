@@ -1,10 +1,13 @@
 import { getStroke } from 'perfect-freehand';
+import polygonClipping from 'polygon-clipping';
 import type {
   DrawingObject,
   DrawingStyle,
   DrawingTransform,
   ShapeKind,
   StrokeObject,
+  DrawingPolygon,
+  ErasureRegion,
 } from './drawing-types.ts';
 export type Point = { x: number; y: number };
 export const DEFAULT_SHAPE_STYLE: DrawingStyle = {
@@ -152,7 +155,7 @@ export function shapePath(o: DrawingObject) {
       : 0;
   return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
 }
-export function strokePath(o: StrokeObject) {
+export function strokeOutline(o: StrokeObject) {
   const g = o.geometry,
     t = o.transform;
   const outline = getStroke(
@@ -170,9 +173,124 @@ export function strokePath(o: StrokeObject) {
       last: true,
     },
   );
-  return outline.length
-    ? `M ${outline.map((p) => p.join(' ')).join(' L ')} Z`
-    : '';
+  return outline as [number, number][];
+}
+const visibleCache = new WeakMap<
+  StrokeObject['geometry'],
+  Map<string, DrawingPolygon[]>
+>();
+export function visibleStroke(o: StrokeObject): DrawingPolygon[] {
+  const key = `${o.transform.width}:${o.transform.height}:${o.style.strokeWidth}`;
+  let cache = visibleCache.get(o.geometry);
+  if (cache?.has(key)) return cache.get(key)!;
+  const outline = strokeOutline(o);
+  let result: DrawingPolygon[] = outline.length >= 3 ? [[outline]] : [];
+  if (result.length && o.geometry.erasures?.length) {
+    const cuts = o.geometry.erasures.map((e) =>
+      e.polygons.map((poly) =>
+        poly.map((ring) =>
+          ring.map(
+            ([x, y]) =>
+              [
+                (x * o.transform.width) / o.geometry.sourceWidth,
+                (y * o.transform.height) / o.geometry.sourceHeight,
+              ] as [number, number],
+          ),
+        ),
+      ),
+    );
+    result = polygonClipping.difference(result, ...cuts);
+  }
+  if (!cache) {
+    cache = new Map();
+    visibleCache.set(o.geometry, cache);
+  }
+  if (cache.size >= 4) cache.clear();
+  cache.set(key, result);
+  return result;
+}
+export function polygonPath(polygons: DrawingPolygon[]) {
+  return polygons
+    .map((poly) =>
+      poly
+        .map((ring) => `M ${ring.map((p) => p.join(' ')).join(' L ')} Z`)
+        .join(' '),
+    )
+    .join(' ');
+}
+export function strokePath(o: StrokeObject) {
+  return polygonPath(visibleStroke(o));
+}
+/** Fixed 32-sided circles have <0.2 CSS px radial error at the largest brush. */
+export function eraserSweep(
+  a: Point,
+  b: Point,
+  radius: number,
+): DrawingPolygon[] {
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const ring: [number, number][] = [];
+  for (const [p, offset] of [
+    [a, Math.PI / 2],
+    [b, -Math.PI / 2],
+  ] as const)
+    for (let i = 0; i <= 16; i++) {
+      const t = angle + offset + (Math.PI * i) / 16;
+      ring.push([p.x + Math.cos(t) * radius, p.y + Math.sin(t) * radius]);
+    }
+  ring.push(ring[0]);
+  return [[ring]];
+}
+function localSweep(
+  o: StrokeObject,
+  a: Point,
+  b: Point,
+  radius: number,
+  source: boolean,
+) {
+  const t = o.transform;
+  return eraserSweep(a, b, radius).map((poly) =>
+    poly.map((ring) =>
+      ring.map(([x, y]) => {
+        const p = rotatePoint({ x, y }, -t.rotation, {
+          x: t.x + t.width / 2,
+          y: t.y + t.height / 2,
+        });
+        return [
+          (p.x - t.x) * (source ? o.geometry.sourceWidth / t.width : 1),
+          (p.y - t.y) * (source ? o.geometry.sourceHeight / t.height : 1),
+        ] as [number, number];
+      }),
+    ),
+  );
+}
+export function eraseRegion(
+  o: StrokeObject,
+  a: Point,
+  b: Point,
+  radius: number,
+  id: string,
+  previous?: ErasureRegion,
+): ErasureRegion {
+  const next = localSweep(o, a, b, radius, true);
+  return {
+    id,
+    polygons: previous ? polygonClipping.union(previous.polygons, next) : next,
+  };
+}
+export function withErasure(
+  o: StrokeObject,
+  region: ErasureRegion,
+): StrokeObject {
+  const old = o.geometry.erasures ?? [];
+  return {
+    ...o,
+    geometry: {
+      ...o.geometry,
+      erasures: [...old.filter((e) => e.id !== region.id), region].sort(
+        (a, b) => a.id.localeCompare(b.id),
+      ),
+    },
+  };
 }
 export function arrowHead(o: DrawingObject) {
   if (o.kind !== 'shape' || o.geometry.shape !== 'arrow') return '';
@@ -191,51 +309,60 @@ export function drawingSvg(o: DrawingObject) {
     s = o.style;
   const path = o.kind === 'stroke' ? strokePath(o) : shapePath(o),
     head = arrowHead(o);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width}" height="${b.height}" viewBox="0 0 ${b.width} ${b.height}"><g transform="translate(${t.x - b.x} ${t.y - b.y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2})" opacity="${s.opacity}"><path d="${path}" fill="${o.kind === 'stroke' ? (s.stroke ?? 'none') : (s.fill ?? 'none')}" stroke="${o.kind === 'stroke' ? 'none' : (s.stroke ?? 'none')}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${s.strokePattern === 'dashed' ? ' stroke-dasharray="6 4"' : ''}/>${head ? `<path d="${head}" fill="none" stroke="${s.stroke ?? 'none'}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>` : ''}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width}" height="${b.height}" viewBox="0 0 ${b.width} ${b.height}"><g transform="translate(${t.x - b.x} ${t.y - b.y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2})" opacity="${s.opacity}"><path d="${path}" fill-rule="${o.kind === 'stroke' && o.geometry.erasures?.length ? 'evenodd' : 'nonzero'}" fill="${o.kind === 'stroke' ? (s.stroke ?? 'none') : (s.fill ?? 'none')}" stroke="${o.kind === 'stroke' ? 'none' : (s.stroke ?? 'none')}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${s.strokePattern === 'dashed' ? ' stroke-dasharray="6 4"' : ''}/>${head ? `<path d="${head}" fill="none" stroke="${s.stroke ?? 'none'}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>` : ''}</g></svg>`;
 }
-const segmentDistance = (p: Point, a: Point, b: Point) => {
+const pointSegmentDistance2 = (p: Point, a: Point, b: Point) => {
   const dx = b.x - a.x,
     dy = b.y - a.y,
-    l = dx * dx + dy * dy,
-    u = l
-      ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l))
-      : 0;
-  return Math.hypot(p.x - a.x - u * dx, p.y - a.y - u * dy);
+    length = dx * dx + dy * dy;
+  const u = length
+    ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length))
+    : 0;
+  return (p.x - a.x - u * dx) ** 2 + (p.y - a.y - u * dy) ** 2;
 };
+const cross = (a: Point, b: Point, c: Point) =>
+  (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 export function strokeHit(o: StrokeObject, a: Point, b: Point, radius: number) {
+  const bounds = drawingBounds(o);
+  if (
+    Math.max(a.x, b.x) + radius < bounds.x ||
+    Math.min(a.x, b.x) - radius > bounds.x + bounds.width ||
+    Math.max(a.y, b.y) + radius < bounds.y ||
+    Math.min(a.y, b.y) - radius > bounds.y + bounds.height
+  )
+    return false;
   const t = o.transform,
-    c = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
-  const pts = o.geometry.points.map((p) =>
-    rotatePoint(
-      {
-        x: t.x + (p[0] * t.width) / o.geometry.sourceWidth,
-        y: t.y + (p[1] * t.height) / o.geometry.sourceHeight,
-      },
-      t.rotation,
-      c,
-    ),
-  );
-  const r = radius + o.style.strokeWidth;
-  if (pts.length === 1) return segmentDistance(pts[0], a, b) <= r;
-  const cross = (p: Point, q: Point, v: Point) =>
-    (q.x - p.x) * (v.y - p.y) - (q.y - p.y) * (v.x - p.x);
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i - 1],
-      q = pts[i];
-    if (
-      Math.min(
-        segmentDistance(p, a, b),
-        segmentDistance(q, a, b),
-        segmentDistance(a, p, q),
-        segmentDistance(b, p, q),
-      ) <= r
-    )
-      return true;
-    if (
-      cross(a, b, p) * cross(a, b, q) < 0 &&
-      cross(p, q, a) * cross(p, q, b) < 0
-    )
-      return true;
+    center = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
+  const local = (p: Point) => {
+    const q = rotatePoint(p, -t.rotation, center);
+    return { x: q.x - t.x, y: q.y - t.y };
+  };
+  a = local(a);
+  b = local(b);
+  // A swept disc intersects visible ink when its center is in the ink, or
+  // it comes within its radius of a visible boundary (including hole edges).
+  for (const polygon of visibleStroke(o)) {
+    let winding = 0;
+    for (const ring of polygon)
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const p = { x: ring[j][0], y: ring[j][1] },
+          q = { x: ring[i][0], y: ring[i][1] };
+        const side = cross(p, q, a);
+        if (p.y <= a.y && q.y > a.y && side > 0) winding++;
+        if (p.y > a.y && q.y <= a.y && side < 0) winding--;
+        if (
+          Math.min(
+            pointSegmentDistance2(p, a, b),
+            pointSegmentDistance2(q, a, b),
+            pointSegmentDistance2(a, p, q),
+            pointSegmentDistance2(b, p, q),
+          ) <=
+            radius * radius ||
+          (cross(a, b, p) * cross(a, b, q) < 0 && side * cross(p, q, b) < 0)
+        )
+          return true;
+      }
+    if (winding !== 0) return true;
   }
   return false;
 }

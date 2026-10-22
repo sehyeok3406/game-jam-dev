@@ -31,6 +31,7 @@ const config: ForgeConfig = {
     extraResource: [
       path.resolve('assets/icon.png'),
       path.resolve('assets/icon.ico'),
+      path.resolve('assets/drawing-third-party-notices.txt'),
       path.resolve('tools/repair-windows-branding.ps1'),
       ...(process.env.GAME_CANVAS_SELF_HOST !== '0' &&
       process.platform === 'win32'

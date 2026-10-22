@@ -118,7 +118,15 @@ async function setup(t) {
   let saved = null,
     online = true,
     starts = 0;
+  const snapshots = new Map();
   const store = {
+    async saveSnapshot(value) {
+      snapshots.set(value.id, structuredClone(value));
+    },
+    async readSnapshot(id) {
+      if (!snapshots.has(id)) throw Error('missing snapshot');
+      return structuredClone(snapshots.get(id));
+    },
     async load() {
       return structuredClone(saved);
     },
@@ -168,6 +176,8 @@ async function setup(t) {
           projectName: '테스트 프로젝트',
           list: () => owner.listApprovals(),
           read: (id) => owner.readApproval(id),
+          documents: (id, revision, token) =>
+            owner.readApprovalDocuments(id, revision, token),
           async start(approval, input, authorized) {
             authorized();
             await owner.beginAi(
@@ -238,6 +248,244 @@ async function setup(t) {
     },
   };
 }
+
+test('Discord deletion replaces approval buttons, records a safe reason and rejects an already-open review', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  const review = await f.review(item);
+  const approve = buttons(review).find((b) =>
+    b.custom_id.startsWith('gj:approve:'),
+  );
+  const reason = '@everyone ' + '삭제 이유 '.repeat(150);
+  await f.owner.mutateApproval('delete', {
+    commandId: randomUUID(),
+    id: item.id,
+    revision: 1,
+    message: reason,
+  });
+  await until(
+    () => f.updated.some((m) => m.body.content.includes('삭제 이유')),
+    f.service,
+  );
+  const update = f.updated.at(-1).body;
+  assert.match(update.content, /삭제됨/);
+  assert.ok(update.content.length <= 2000);
+  assert.deepEqual(update.allowed_mentions, { parse: [] });
+  assert.deepEqual(update.components, []);
+  const stale = action(approve.custom_id);
+  await f.service.handle(stale);
+  assert.equal(f.starts(), 0);
+  assert.match(messageText(stale), /변경/);
+  const late = await f.submit();
+  await f.owner.mutateApproval('delete', {
+    commandId: randomUUID(),
+    id: late.id,
+    revision: 1,
+    message: '첫 알림 전에 삭제',
+  });
+  await until(
+    () => f.sent.some((m) => m.body.content.includes('첫 알림 전에 삭제')),
+    f.service,
+  );
+});
+
+test('selected document snapshots remain readable in a thread after approval, source edits and bot restart', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  const review = await f.review(item);
+  const doc = f.sent.find((m) =>
+    m.body.components?.[0]?.components[0]?.custom_id.startsWith('gj:doc:'),
+  );
+  assert.ok(doc);
+  assert.ok(doc.body.files[0].name.endsWith('.md'));
+  const original = Buffer.from(doc.body.files[0].data).toString('utf8');
+  assert.match(original, /아이디어/);
+  assert.ok(!original.includes('프로젝트'));
+  const approved = action(
+    buttons(review).find((b) => b.custom_id.startsWith('gj:approve:'))
+      .custom_id,
+  );
+  await f.service.handle(approved);
+  assert.equal(f.starts(), 1);
+  await until(
+    () => f.sent.some((m) => m.body.content.includes('승인 기준 문서 사본')),
+    f.service,
+  );
+  await f.owner.finishAi('failed');
+  await f.owner.lock('ideas/a.md');
+  await f.owner.command('documents:save', {
+    relativePath: 'ideas/a.md',
+    title: '아이디어',
+    body: '승인 후 바뀐 원문',
+  });
+  await f.owner.unlock('ideas/a.md');
+  const id = doc.body.components[0].components[0].custom_id;
+  f.service.stop();
+  const restored = new DiscordApprovalService(
+    f.store,
+    f.context,
+    () => f.transport,
+  );
+  t.after(() => restored.stop());
+  await restored.resume();
+  const view = action(id, { channelId: doc.channel, messageId: doc.id });
+  await restored.handle(view);
+  assert.ok(messageText(view).includes('아이디어'));
+  assert.ok(!messageText(view).includes('승인 후 바뀐 원문'));
+  assert.equal(
+    buttons(view).some((b) => b.custom_id.startsWith('gj:approve:')),
+    false,
+  );
+  for (const patch of [
+    { userId: '123456789012345678' },
+    { messageId: 'forged' },
+    { channelId: 'other-thread' },
+  ]) {
+    const denied = action(id, {
+      channelId: doc.channel,
+      messageId: doc.id,
+      ...patch,
+    });
+    await restored.handle(denied);
+    assert.ok(!messageText(denied).includes(original));
+  }
+  assert.equal(f.starts(), 1);
+});
+
+test('thread history catches up every request revision after skipped polls and retries failed document uploads', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  await until(() => !!f.card(item.id), f.service);
+  const send = f.transport.send.bind(f.transport);
+  let fail = true;
+  f.transport.send = async (channel, message) => {
+    if (message.files && fail) {
+      fail = false;
+      throw Error('Missing AttachFiles');
+    }
+    return send(channel, message);
+  };
+  const failed = await f.review(item);
+  assert.match(messageText(failed), /파일 첨부/);
+  assert.equal(buttons(failed).length, 0);
+  assert.equal(f.starts(), 0);
+  await f.review(item);
+  const fileCount = f.sent.filter((m) => m.body.files).length;
+  await f.review(item);
+  assert.equal(f.sent.filter((m) => m.body.files).length, fileCount);
+  const feedback = await f.owner.mutateApproval('feedback', {
+    commandId: randomUUID(),
+    id: item.id,
+    revision: 1,
+    message: '빠진 조작 설명',
+  });
+  await f.editor.mutateApproval('update', {
+    commandId: randomUUID(),
+    id: item.id,
+    revision: feedback.revision,
+    request: request({
+      instructions: { organize: '', implement: '방향키 조작을 추가했습니다' },
+    }),
+  });
+  await until(
+    () =>
+      f.sent.some((m) => m.body.content.includes('방향키 조작을 추가했습니다')),
+    f.service,
+  );
+  assert.ok(
+    f.sent.some((m) => m.body.content.includes('의견·이유: 빠진 조작 설명')),
+  );
+  const count = f.sent.length;
+  await f.service.poll();
+  assert.equal(f.sent.length, count);
+});
+
+test('partial multi-page history retries continue after the last delivered page without duplicating it', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  await until(() => !!f.card(item.id), f.service);
+  await f.owner.mutateApproval('feedback', {
+    commandId: randomUUID(),
+    id: item.id,
+    revision: 1,
+    message: '긴 보완 의견 '.repeat(400),
+  });
+  const send = f.transport.send.bind(f.transport);
+  let historyCalls = 0;
+  f.transport.send = async (channel, message) => {
+    if (
+      message.nonce &&
+      message.content.includes('이력 2') &&
+      ++historyCalls === 2
+    )
+      throw Error('network retry');
+    return send(channel, message);
+  };
+  await f.service.poll();
+  await until(
+    () => f.saved().notifications[item.id].historyCount === 2,
+    f.service,
+  );
+  const pages = f.sent.filter(
+    (m) => m.body.nonce && m.body.content.includes('이력 2'),
+  );
+  assert.ok(pages.length > 1);
+  assert.equal(new Set(pages.map((m) => m.body.nonce)).size, pages.length);
+  assert.ok(
+    pages.every(
+      (m) =>
+        m.body.content.length <= 2000 &&
+        m.body.allowed_mentions.parse.length === 0,
+    ),
+  );
+});
+
+test('changing the designated administrator during upload revokes the old review and preserves new settings', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  await until(() => !!f.card(item.id), f.service);
+  const send = f.transport.send.bind(f.transport);
+  let changed = false;
+  f.transport.send = async (channel, message) => {
+    const result = await send(channel, message);
+    if (message.files && !changed) {
+      changed = true;
+      await f.service.configure({ ...settings, userId: '123456789012345678' });
+    }
+    return result;
+  };
+  const review = await f.review(item);
+  assert.equal(buttons(review).length, 0);
+  assert.equal(f.starts(), 0);
+  assert.equal(f.saved().settings.userId, '123456789012345678');
+  assert.equal(f.sent.filter((m) => m.body.files).length, 1);
+});
+
+test('source changes during document upload cannot expose a usable approval button', async (t) => {
+  const f = await setup(t),
+    item = await f.submit();
+  await until(() => !!f.card(item.id), f.service);
+  const send = f.transport.send.bind(f.transport);
+  let changed = false;
+  f.transport.send = async (channel, message) => {
+    const result = await send(channel, message);
+    if (message.files && !changed) {
+      changed = true;
+      await f.owner.lock('ideas/a.md');
+      await f.owner.command('documents:save', {
+        relativePath: 'ideas/a.md',
+        title: '아이디어',
+        body: '검토 중 바뀜',
+      });
+      await f.owner.unlock('ideas/a.md');
+    }
+    return result;
+  };
+  const review = await f.review(item);
+  assert.match(messageText(review), /변경/);
+  assert.equal(buttons(review).length, 0);
+  assert.equal(f.starts(), 0);
+});
 
 test('Discord review uses real server approval, rejects unauthorized clicks, and starts only once', async (t) => {
   const f = await setup(t),
@@ -463,6 +711,51 @@ test('a token that cannot be persisted never enables remote approvals', async (t
   assert.equal(f.starts(), 0);
 });
 
+test('test notifications and their button verify delivery without creating requests, runs or receipts', async (t) => {
+  const f = await setup(t);
+  const reply = await f.service.sendTest();
+  assert.match(reply.message, /테스트 알림을 보냈/);
+  const message = f.sent.find(
+    (m) => m.channel === channelId && m.body.content.includes('테스트 알림'),
+  );
+  assert.ok(message);
+  assert.equal(message.body.allowed_mentions.parse.length, 0);
+  assert.equal(message.body.components[0].components[0].custom_id, 'gj:test');
+  assert.equal(f.threads.length, 1);
+  const click = action('gj:test', { messageId: message.id });
+  await f.service.handle(click);
+  assert.match(messageText(click), /테스트 버튼을 정상/);
+  assert.equal((await f.owner.listApprovals()).items.length, 0);
+  assert.equal(f.starts(), 0);
+  assert.deepEqual(f.saved().notifications, {});
+  await assert.rejects(f.service.sendTest(), /잠시 후/);
+  const denied = action('gj:test', { userId: '123456789012345678' });
+  await f.service.handle(denied);
+  assert.match(messageText(denied), /관리자만/);
+});
+
+test('test notifications distinguish failed channel delivery, failed threads, and inactive binding', async (t) => {
+  const f = await setup(t);
+  f.transport.failThread = true;
+  const partial = await f.service.sendTest();
+  assert.match(partial.message, /채널에 테스트 알림.*스레드 전송은 실패/);
+  f.offline();
+  await assert.rejects(f.service.sendTest(), /프로젝트|권한/);
+  await f.service.disconnect();
+  await assert.rejects(f.service.sendTest(), /먼저/);
+  assert.equal(f.starts(), 0);
+  const g = await setup(t);
+  g.transport.send = async () => {
+    throw Error(settings.token);
+  };
+  await assert.rejects(
+    g.service.sendTest(),
+    (error) =>
+      /테스트 알림을 보내지 못/.test(error.message) &&
+      !error.message.includes(settings.token),
+  );
+});
+
 test('encrypted Discord store never falls back to plaintext and survives ordered writes', async (t) => {
   const directory = await fs.mkdtemp(
     path.join(os.tmpdir(), 'gamejam-discord-store-'),
@@ -509,8 +802,34 @@ test('encrypted Discord store never falls back to plaintext and survives ordered
   const bytes = await fs.readFile(path.join(directory, 'discord-approval.enc'));
   assert.equal(bytes.includes(Buffer.from('rotated-secret')), false);
   assert.equal((await store.load()).token, 'rotated-secret');
+  const snapshot = {
+    version: 1,
+    id: randomUUID(),
+    requestId: randomUUID(),
+    revision: 1,
+    reviewToken: 'review-hash',
+    documents: [
+      { path: 'ideas/a.md', content: '비공개 문서 본문 😀', sha256: 'hash' },
+    ],
+    unsupported: [],
+  };
+  await store.saveSnapshot(snapshot);
+  const snapshotBytes = await fs.readFile(
+    path.join(directory, 'discord-review-snapshots', `${snapshot.id}.enc`),
+  );
+  assert.equal(snapshotBytes.includes(Buffer.from('비공개 문서 본문')), false);
+  assert.equal(
+    (
+      await new DiscordApprovalStore(directory, encryption).readSnapshot(
+        snapshot.id,
+      )
+    ).documents[0].content,
+    '비공개 문서 본문 😀',
+  );
+  await assert.rejects(store.readSnapshot('../outside'), /ID/);
   encryption.isEncryptionAvailable = () => false;
   await assert.rejects(store.save(data), /암호화/);
+  await assert.rejects(store.saveSnapshot(snapshot), /암호화/);
   await store.clear();
   assert.deepEqual(await fs.readdir(directory), []);
 });

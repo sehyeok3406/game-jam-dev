@@ -1,5 +1,3 @@
-import { requireDesktopApi } from './runtime/desktop-api';
-import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { APP_NAME } from '../app-branding';
 import { version } from '../../package.json';
@@ -26,6 +24,7 @@ import {
   Server,
   ClipboardPaste,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { ProjectEntry, ProjectFolder } from '../shared';
 import { ROLE_NAMES } from './CollaborationPanel';
@@ -51,6 +50,8 @@ import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
 import { MAX_PROJECT_NAME } from '../project-name';
 import { ProjectTrashDialog, ProjectTrashPanel } from './ProjectTrashControls';
 
+import { useRuntime } from './runtime/RuntimeProvider';
+import { requireDesktopApi } from './runtime/desktop-api';
 export function ProjectHome({
   opened,
   join,
@@ -69,7 +70,12 @@ export function ProjectHome({
   theme: 'dark' | 'light';
 }) {
   const { api, preferences, capabilities } = useRuntime();
-
+  const [addProject, setAddProject] = useState(false);
+  const addDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (addProject) addDialog.current?.showModal();
+    else addDialog.current?.close();
+  }, [addProject]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [trash, setTrash] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
@@ -349,9 +355,21 @@ export function ProjectHome({
         </div>
         <div className="home-sidebar-bottom">
           <button onClick={() => setTrash(true)}>
-            <Trash2 size={16} /> 휴지통
+            <Trash2 size={16} /> 휴지통{' '}
             {trashCount > 0 && <span>{trashCount}</span>}
           </button>
+          {SELF_HOST_ENABLED &&
+            capabilities.selfHostManagement &&
+            api.desktop?.selfHost &&
+            openSelfHost && (
+              <button
+                disabled={busy}
+                onClick={openSelfHost}
+                title="이 PC에서 서버 설정 · 실행 · 관리"
+              >
+                <Server size={16} /> 협업 서버 열기
+              </button>
+            )}
           <button onClick={() => setWebViewer(true)}>
             <Globe2 size={16} /> 웹 뷰어
           </button>
@@ -416,58 +434,82 @@ export function ProjectHome({
           <button
             className="button-primary"
             disabled={busy}
-            onClick={() => {
-              setName('');
-              setCreate(true);
-            }}
+            onClick={() => setAddProject(true)}
           >
-            <Plus size={17} /> 새 프로젝트
+            <Plus size={17} /> 프로젝트 추가
           </button>
         </div>
-        <div className="home-entry-actions">
-          {SELF_HOST_ENABLED &&
-            capabilities.selfHostManagement &&
-            api.desktop?.selfHost &&
-            openSelfHost && (
-              <button disabled={busy} onClick={openSelfHost}>
-                <Server size={19} />
-                <span>
-                  <strong>협업 서버 열기</strong>
-                  <small>이 PC에서 서버 설정 · 실행 · 관리</small>
-                </span>
-                <ArrowRight size={16} />
-              </button>
-            )}
-          <button
-            disabled={busy || !capabilities.localFiles}
-            title={
-              !capabilities.localFiles
-                ? '기존 폴더 열기는 PC 앱에서 사용할 수 있습니다.'
-                : undefined
-            }
-            onClick={() =>
-              void action(async () => {
-                const state = await api.projects.selectWorkspace();
-                if (state.root) await opened();
-              })
-            }
-          >
-            <FolderOpen size={19} />
-            <span>
-              <strong>기존 폴더 열기</strong>
-              <small>이 PC의 Markdown 프로젝트</small>
-            </span>
-            <ArrowRight size={16} />
-          </button>
-          <button disabled={busy} onClick={join}>
-            <Users size={19} />
-            <span>
-              <strong>초대 코드로 참여</strong>
-              <small>서버 주소 · 초대 코드 · 닉네임</small>
-            </span>
-            <ArrowRight size={16} />
-          </button>
-        </div>
+        <dialog
+          ref={addDialog}
+          className="home-add-dialog"
+          aria-labelledby="home-add-title"
+          onCancel={() => setAddProject(false)}
+          onClose={() => setAddProject(false)}
+        >
+          <header>
+            <div>
+              <h2 id="home-add-title">프로젝트 추가</h2>
+              <p>시작할 방법을 선택하세요.</p>
+            </div>
+            <button
+              className="icon-button"
+              autoFocus
+              aria-label="프로젝트 추가 닫기"
+              onClick={() => setAddProject(false)}
+            >
+              <X size={18} />
+            </button>
+          </header>
+          <div className="home-entry-actions">
+            <button
+              disabled={busy}
+              onClick={() => {
+                setAddProject(false);
+                setName('');
+                setCreate(true);
+              }}
+            >
+              <Plus size={19} />
+              <span>
+                <strong>새 프로젝트 만들기</strong>
+                <small>새 캔버스에서 아이디어 시작</small>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+
+            <button
+              disabled={busy || !capabilities.localFiles}
+              onClick={() =>
+                void action(async () => {
+                  setAddProject(false);
+                  const state = await api.projects.selectWorkspace();
+                  if (state.root) await opened();
+                })
+              }
+            >
+              <FolderOpen size={19} />
+              <span>
+                <strong>기존 폴더 열기</strong>
+                <small>이 PC의 Markdown 프로젝트</small>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                setAddProject(false);
+                join();
+              }}
+            >
+              <Users size={19} />
+              <span>
+                <strong>초대 코드로 참여</strong>
+                <small>서버 주소 · 초대 코드 · 닉네임</small>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </dialog>
         <button
           className="subtle-button home-connection-import"
           disabled={busy}
@@ -847,7 +889,6 @@ export function ProjectHome({
                   menu.project.kind === 'local'
                     ? {
                         label: '저장 위치 보기',
-                        disabled: !capabilities.localFiles,
                         action: () =>
                           void action(() =>
                             requireDesktopApi(api).revealProject(

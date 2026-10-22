@@ -12,6 +12,7 @@ import {
   ipcMain,
   root,
   events,
+  openedExternalUrls,
 } from './mocks/electron';
 import { discordMock } from './mocks/discord-transport';
 
@@ -37,6 +38,27 @@ const channelId = '1560275803198193725',
   userId = '448449132479381507';
 try {
   await wait(() => createdWindows.length === 1);
+  await call('discord-approval:help', 'portal');
+  assert.equal(
+    openedExternalUrls.at(-1),
+    'https://discord.com/developers/applications',
+  );
+  await assert.rejects(
+    call('discord-approval:help', 'https://untrusted.invalid'),
+    /지원하지 않는/,
+  );
+  await assert.rejects(
+    call('discord-approval:help', '__proto__'),
+    /지원하지 않는/,
+  );
+  await assert.rejects(
+    handlers.get('discord-approval:help')!(
+      { sender: {}, senderFrame: {} },
+      'portal',
+    ),
+    /앱의 설정 도움말/,
+  );
+  assert.equal(openedExternalUrls.length, 1);
   server = await createCollaborationServer({
     dataDirectory: path.join(root, 'server'),
     port: 0,
@@ -109,13 +131,34 @@ try {
     ),
     false,
   );
+  const testResult = await call('discord-approval:test');
+  assert.match(testResult.message, /테스트 알림을 보냈/);
+  const testCard = discordMock.messages.find((m) =>
+    m.body.content?.includes('테스트 알림'),
+  )!;
+  const testReplies = await discordMock.click(
+    'gj:test',
+    userId,
+    channelId,
+    testCard.id,
+  );
+  assert.match(testReplies[0].content!, /테스트 버튼을 정상/);
+  assert.equal((await call('requests:read', item.id)).item.status, 'pending');
   await wait(() =>
     discordMock.messages.some(
-      (m) => m.channelId === channelId && m.body.components?.length,
+      (m) =>
+        m.channelId === channelId &&
+        (m.body.components as any[])?.[0]?.components.some((b: any) =>
+          b.custom_id.includes(item.id),
+        ),
     ),
   );
   const card = discordMock.messages.find(
-    (m) => m.channelId === channelId && m.body.components?.length,
+    (m) =>
+      m.channelId === channelId &&
+      (m.body.components as any[])?.[0]?.components.some((b: any) =>
+        b.custom_id.includes(item.id),
+      ),
   )!;
   const components = card.body.components as any[];
   const denied = await discordMock.click(
@@ -134,6 +177,26 @@ try {
   const approve = (reviewed.at(-1)!.components as any[])[0].components.find(
     (b: any) => b.label.includes('승인'),
   ).custom_id;
+  const document = discordMock.messages.find((m) =>
+    (m.body.components as any[])?.[0]?.components.some((b: any) =>
+      b.custom_id?.startsWith('gj:doc:'),
+    ),
+  )!;
+  assert.ok(
+    document.body.files?.[0].data.toString('utf8').includes('아이디어'),
+  );
+  const opened = await discordMock.click(
+    (document.body.components as any[])[0].components[0].custom_id,
+    userId,
+    document.channelId,
+    document.id,
+  );
+  assert.ok(opened.some((message) => message.content?.includes('아이디어')));
+  assert.ok(
+    !(opened.at(-1)?.components as any[])
+      ?.flatMap((row) => row.components)
+      .some((b: any) => b.custom_id.startsWith('gj:approve:')),
+  );
   let flushes = 0;
   const window = createdWindows[0],
     originalSend = window.webContents.send;
@@ -166,7 +229,9 @@ try {
     discordMock.click(approve, userId, channelId),
   ]);
   assert.equal(flushes, 1);
-  assert.ok(responses.flat().some((r) => r.content?.includes('구현을 시작')));
+  assert.ok(
+    responses.flat().some((r) => r.content?.includes('구현 요청을 접수')),
+  );
   const running = (await call('requests:read', item.id)).item;
   await wait(() =>
     events.some(

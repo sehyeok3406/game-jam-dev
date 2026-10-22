@@ -1,3 +1,4 @@
+import { assertEraseSupport } from './drawing-capabilities.ts';
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import type { Project, Member } from '../project-state.ts';
@@ -50,6 +51,7 @@ export function createOfflineSyncService(ports: Ports) {
     }
     ports.editable(project, member);
     const nextFiles = planOfflineChanges(project.files, input);
+    assertEraseSupport(nextFiles, input);
     ports.assertAiMutation(project, nextFiles);
     ports.assertBases(
       project,

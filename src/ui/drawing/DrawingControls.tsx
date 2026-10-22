@@ -6,6 +6,7 @@ import {
   Copy,
   Trash2,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import {
   drawingName,
   SHAPE_NAMES,
@@ -13,6 +14,7 @@ import {
   type DrawingItem,
   type DrawingStyle,
   type DrawingTool,
+  type EraserMode,
 } from '../../drawing-types';
 import {
   DEFAULT_HIGHLIGHT_STYLE,
@@ -20,16 +22,61 @@ import {
   DEFAULT_SHAPE_STYLE,
 } from '../../drawing-geometry';
 export function DrawingToolButtons({
+  grouped = false,
   active,
   tool,
   onTool,
   disabled,
+  eraserMode = 'stroke',
+  eraserSize = 24,
+  onEraser,
+  partialSupported = true,
 }: {
+  grouped?: boolean;
   active: boolean;
   tool: DrawingTool;
   onTool: (t: DrawingTool) => void;
   disabled: boolean;
+  eraserMode?: EraserMode;
+  eraserSize?: number;
+  onEraser?: (mode: EraserMode, size: number) => void;
+  partialSupported?: boolean;
 }) {
+  const drawingButtons = (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        className={active && tool === 'pen' ? 'active' : ''}
+        aria-pressed={active && tool === 'pen'}
+        onClick={() => onTool('pen')}
+        title="펜 (Shift+P)"
+      >
+        <Pencil size={19} />
+        <span>펜</span>
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        className={active && tool === 'highlighter' ? 'active' : ''}
+        aria-pressed={active && tool === 'highlighter'}
+        onClick={() => onTool('highlighter')}
+        title="형광펜 (B)"
+      >
+        <Highlighter size={19} />
+        <span>형광펜</span>
+      </button>
+      <EraserMenu
+        active={active && tool === 'eraser'}
+        disabled={disabled}
+        mode={eraserMode}
+        size={eraserSize}
+        partialSupported={partialSupported}
+        onActivate={() => onTool('eraser')}
+        onChange={onEraser}
+      />
+    </>
+  );
   return (
     <>
       <details className="drawing-tool-menu" data-ui-id="drawing-tools">
@@ -57,40 +104,159 @@ export function DrawingToolButtons({
           ))}
         </div>
       </details>
+      {grouped ? (
+        <details className="canvas-drawing-group">
+          <summary
+            className={
+              active && ['pen', 'highlighter', 'eraser'].includes(tool)
+                ? 'active'
+                : ''
+            }
+            aria-label="그리기 도구"
+          >
+            <Pencil size={19} />
+            <span>
+              {active && tool === 'highlighter'
+                ? '형광펜'
+                : active && tool === 'eraser'
+                  ? '지우개'
+                  : '그리기'}
+            </span>
+          </summary>
+          <div>{drawingButtons}</div>
+        </details>
+      ) : (
+        drawingButtons
+      )}
+    </>
+  );
+}
+function EraserMenu({
+  active,
+  disabled,
+  mode,
+  size,
+  partialSupported,
+  onActivate,
+  onChange,
+}: {
+  active: boolean;
+  disabled: boolean;
+  mode: EraserMode;
+  size: number;
+  partialSupported: boolean;
+  onActivate: () => void;
+  onChange?: (mode: EraserMode, size: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null),
+    button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!active || disabled) setOpen(false);
+  }, [active, disabled]);
+  useEffect(() => {
+    if (!open) return;
+    root.current?.querySelector<HTMLInputElement>('input:checked')?.focus();
+    const outside = (e: PointerEvent) => {
+      if (root.current?.contains(e.target as Node)) return;
+      setOpen(false);
+      if ((e.target as Element)?.closest?.('.react-flow')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    const blur = () => setOpen(false);
+    window.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', escape, true);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', escape, true);
+      window.removeEventListener('blur', blur);
+    };
+  }, [open]);
+  return (
+    <div ref={root} className="drawing-eraser-menu" data-ui-id="drawing-eraser">
       <button
+        ref={button}
         type="button"
         disabled={disabled}
-        className={active && tool === 'pen' ? 'active' : ''}
-        aria-pressed={active && tool === 'pen'}
-        onClick={() => onTool('pen')}
-        title="펜 (Shift+P)"
-      >
-        <Pencil size={19} />
-        <span>펜</span>
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        className={active && tool === 'highlighter' ? 'active' : ''}
-        aria-pressed={active && tool === 'highlighter'}
-        onClick={() => onTool('highlighter')}
-        title="형광펜 (B)"
-      >
-        <Highlighter size={19} />
-        <span>형광펜</span>
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        className={active && tool === 'eraser' ? 'active' : ''}
-        aria-pressed={active && tool === 'eraser'}
-        onClick={() => onTool('eraser')}
-        title="획 전체 지우개 (E)"
+        className={active ? 'active' : ''}
+        aria-pressed={active}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={`${mode === 'partial' ? '부분' : '획'} 지우개 (E)`}
+        onClick={() => {
+          onActivate();
+          setOpen(!open);
+        }}
       >
         <Eraser size={19} />
         <span>지우개</span>
+        <small aria-hidden="true">▴</small>
       </button>
-    </>
+      {open && (
+        <div
+          className="drawing-eraser-menu__popup"
+          role="dialog"
+          aria-label="지우개 선택"
+        >
+          <strong>지우개</strong>
+          <div role="radiogroup" aria-label="지우개 종류">
+            {(['stroke', 'partial'] as const).map((m) => (
+              <label key={m}>
+                <input
+                  type="radio"
+                  name="drawing-eraser-mode"
+                  value={m}
+                  checked={mode === m}
+                  disabled={m === 'partial' && !partialSupported}
+                  onChange={() => onChange?.(m, size)}
+                />
+                <span>
+                  <b>{m === 'stroke' ? '획 지우개' : '부분 지우개'}</b>
+                  <small>
+                    {m === 'stroke'
+                      ? '닿은 획 전체를 지웁니다'
+                      : '지나간 부분만 지웁니다'}
+                  </small>
+                </span>
+              </label>
+            ))}
+          </div>
+          {!partialSupported && (
+            <small>
+              부분 지우개를 사용하려면 협업 서버를 업데이트해주세요.
+            </small>
+          )}
+          {mode === 'partial' && (
+            <label className="drawing-eraser-menu__size">
+              크기 <output>{size} px</output>
+              <input
+                aria-label="부분 지우개 크기"
+                type="range"
+                min="4"
+                max="80"
+                step="1"
+                value={size}
+                onChange={(e) => onChange?.(mode, Number(e.target.value))}
+              />
+              <span className="drawing-eraser-menu__sample">
+                <i style={{ width: size, height: size }} />
+              </span>
+            </label>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 export function DrawingInspector({
@@ -111,6 +277,7 @@ export function DrawingInspector({
   canvases,
   canvasId,
   allObjects,
+  eraserMode = 'stroke',
 }: {
   objects: DrawingItem[];
   tool: DrawingTool;
@@ -129,6 +296,7 @@ export function DrawingInspector({
   canvases: { id: string; name: string }[];
   canvasId: string;
   allObjects: DrawingItem[];
+  eraserMode?: EraserMode;
 }) {
   const first = objects[0],
     s = first?.style ?? style,
@@ -215,11 +383,17 @@ export function DrawingInspector({
             ? `${objects.length}개 그림 선택`
             : drawingName(first)
           : tool === 'eraser'
-            ? '획 전체 지우개'
+            ? eraserMode === 'partial'
+              ? '부분 지우개'
+              : '획 지우개'
             : '그리기 설정'}
       </h3>
       {tool === 'eraser' && !first ? (
-        <p>드래그해 펜·형광펜 획을 지웁니다. 한 획 전체가 지워집니다.</p>
+        <p>
+          {eraserMode === 'partial'
+            ? '펜·형광펜의 지나간 부분만 지웁니다. 하단 지우개 버튼에서 종류와 크기를 고르세요.'
+            : '닿은 획은 흐려지고 포인터를 놓으면 전체가 지워집니다. Esc로 취소할 수 있습니다.'}
+        </p>
       ) : (
         <>
           {objects.length > 1 && (

@@ -112,7 +112,7 @@ export function useWorkspaceIndex(ports: Ports) {
         (sheet) => sheet.id === canvasId(preview.canvasId),
       )?.name,
       id: previewNodeId(preview.relativePath),
-      title: `HTML ${preview.title ?? previewLabel(preview.relativePath)}`,
+      title: preview.title ?? previewLabel(preview.relativePath),
       kind: 'html',
       path: preview.relativePath,
       description: previewWindows[preview.relativePath]

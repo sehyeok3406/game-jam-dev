@@ -21,6 +21,13 @@ export type GamejamApproval = {
   status: ApprovalStatus;
   request: GamejamRequest;
   feedback?: string;
+  deletion?: {
+    reason: string;
+    actorId: string;
+    actorName: string;
+    at: number;
+    previousStatus: Exclude<ApprovalStatus, 'deleted'>;
+  };
   copiedFrom?: string;
   approvedBy?: string;
   approvedName?: string;
@@ -46,12 +53,14 @@ export type ApprovalStatus =
   | 'completed'
   | 'failed'
   | 'cancelled'
+  | 'deleted'
   | 'stopped';
 export type ApprovalChange = {
   at: number;
   actorId: string;
   actorName: string;
   action: string;
+  status?: ApprovalStatus;
   revision: number;
   request?: GamejamRequest;
   message?: string;

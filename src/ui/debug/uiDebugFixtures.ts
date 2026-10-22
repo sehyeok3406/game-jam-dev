@@ -330,9 +330,14 @@ export function createUiPreviewApi(
   blocked: (method: string) => void,
 ): GameCanvasApi {
   const drawings =
-    ['drawing-inspector', 'drawing-object'].includes(selection.id) &&
-    selection.state !== 'tool'
-      ? [sampleDrawing(selection.state)]
+    ['drawing-inspector', 'drawing-object', 'drawing-eraser'].includes(
+      selection.id,
+    ) && selection.state !== 'tool'
+      ? [
+          sampleDrawing(
+            selection.id === 'drawing-eraser' ? 'pen' : selection.state,
+          ),
+        ]
       : [];
   const drawingPreview = selection.id.startsWith('drawing-');
   const documents = drawingPreview ? [] : sampleDocuments(selection);

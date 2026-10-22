@@ -1,3 +1,4 @@
+import { assertEraseSupport } from './drawing-capabilities.ts';
 import type { Project, Member } from '../project-state.ts';
 import {
   assertLifecycleVersion,
@@ -39,6 +40,7 @@ export function createProjectRequest(ports: Ports) {
       if (action === 'lifecycle' || action.startsWith('trash'))
         return ports.lifecycle(project, member, action, input);
       ports.assertActive(project);
+      assertEraseSupport(project.files, input);
       assertLifecycleVersion(project, action, input);
       project = await ports.expire(project);
       assertProjectCapabilities(project, member, action, input, ports.admin);

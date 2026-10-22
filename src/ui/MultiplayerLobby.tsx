@@ -13,6 +13,7 @@ export function MultiplayerLobby({
   onRepair,
   repairDisabled = false,
   discover = false,
+  discoveryOnly = false,
   project,
 }: {
   path?: string;
@@ -21,6 +22,7 @@ export function MultiplayerLobby({
   onRepair?: () => void;
   repairDisabled?: boolean;
   discover?: boolean;
+  discoveryOnly?: boolean;
   project?: CollaborationState;
 }) {
   const { api: runtimeApi, capabilities } = useRuntime();
@@ -255,17 +257,19 @@ export function MultiplayerLobby({
       className="multiplayer-launcher nodrag nowheel"
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        title="프로젝트 참여자와 함께 플레이"
-      >
-        {discover
-          ? `함께 플레이${rooms.length ? ` · ${rooms.length}개 방` : ''}`
-          : projectOnly
-            ? '플레이 중인 방 보기'
-            : '함께 플레이'}
-      </button>
+      {!discoveryOnly && (
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          title="프로젝트 참여자와 함께 플레이"
+        >
+          {discover
+            ? `함께 플레이${rooms.length ? ` · ${rooms.length}개 방` : ''}`
+            : projectOnly
+              ? '플레이 중인 방 보기'
+              : '함께 플레이'}
+        </button>
+      )}
       {discover && !open && !visibleFailure && availableRoom && (
         <span className="multiplayer-room-notice" role="status">
           {hostName}님이 게임을 열었어요.

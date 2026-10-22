@@ -17,6 +17,10 @@ let discordStatus: import('../src/discord-approval-types').DiscordApprovalStatus
     message: '디스코드가 연결되지 않았습니다.',
   };
 api.discordApproval = {
+  openHelp: async (page) => {
+    qa.helpLink = page;
+  },
+  sendTest: async () => ({ message: '테스트 알림을 보냈습니다.' }),
   status: async () => structuredClone(discordStatus),
   configure: async ({ token, ...settings }) => {
     if (!token) throw Error('토큰을 입력해주세요.');
@@ -51,6 +55,7 @@ let state: CollaborationState = {
   members: [],
   locks: [],
   requestApprovalVersion: 1,
+  requestDeletionVersion: 1,
   requestsVersion: 0,
   revision: 1,
   pendingRequests: 0,
@@ -64,9 +69,25 @@ const publish = () => {
   listeners.forEach((f) => f({ ...state }));
 };
 const qa = {
+  helpLink: '',
   submits: 0,
   creates: 0,
   runs: 0,
+  addPending() {
+    const item = structuredClone(items[0]);
+    item.id = crypto.randomUUID();
+    item.status = 'pending';
+    item.revision = 1;
+    item.request.resultName = '삭제 대상 요청';
+    item.changes = [];
+    items.push(item);
+    state = { ...state, requestsVersion: (state.requestsVersion ?? 0) + 1 };
+    publish();
+  },
+  local(local: boolean) {
+    state = { ...state, active: !local, connected: !local };
+    publish();
+  },
   role(role: 'admin' | 'editor' | 'viewer') {
     state = { ...state, role, memberId: role === 'admin' ? 'admin' : 'team' };
     publish();
@@ -188,6 +209,21 @@ api.mutateApproval = async (action, input) => {
   else {
     item.revision++;
     item.updatedAt = Date.now();
+    if (action === 'delete') {
+      if (state.role !== 'admin' || !input.message?.trim())
+        throw Error('관리자와 삭제 이유가 필요합니다.');
+      item.deletion = {
+        reason: input.message.trim(),
+        actorId: state.memberId!,
+        actorName: '관리자',
+        at: Date.now(),
+        previousStatus: item.status as Exclude<
+          GamejamApproval['status'],
+          'deleted'
+        >,
+      };
+      item.status = 'deleted';
+    }
     if (action === 'update') {
       item.request = structuredClone(input.request!);
       item.status = 'pending';

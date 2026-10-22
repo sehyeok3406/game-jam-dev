@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useState, type SetStateAction } from 'react';
+import { useCanvasPanel } from '../CanvasChrome';
 import { installWorkspaceModalFocus } from './modal-focus';
 
 const initialPanels = {
@@ -22,6 +23,7 @@ type PanelName = keyof typeof initialPanels;
 
 /** Owns panel visibility without owning documents, drafts or project data. */
 export function usePanelState() {
+  const dock = useCanvasPanel();
   const [panels, setPanels] = useState(initialPanels);
   const actions = useMemo(() => {
     const setter = (name: PanelName) => (value: SetStateAction<boolean>) =>
@@ -46,7 +48,19 @@ export function usePanelState() {
       setCodexStatusOpen: setter('codexStatusOpen'),
     };
   }, []);
-  return { ...panels, ...actions };
+  return {
+    ...panels,
+    ...actions,
+    dockPanel: dock.panel,
+    setDockPanel: dock.setPanel,
+    restorePanelScope: dock.restoreScope,
+    historyOpen: dock.panel === 'activity',
+    settingsOpen: dock.panel === 'settings',
+    pluginPanelOpen: dock.panel === 'plugins',
+    setHistoryOpen: dock.setHistoryOpen,
+    setSettingsOpen: dock.setSettingsOpen,
+    setPluginPanelOpen: dock.setPluginPanelOpen,
+  };
 }
 
 export type WorkspacePanelState = ReturnType<typeof usePanelState>;

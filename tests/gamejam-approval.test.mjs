@@ -117,27 +117,191 @@ const start = async (owner, detail, commandId = randomUUID()) => {
   return owner.state.aiRun.taskPath;
 };
 
-test('approval execution records reasoning and rejects a retry that changes it', async (t) => {
-  const { owner, editor } = await setup(t);
-  const pending = await create(editor);
-  await owner.refresh();
-  const detail = await owner.readApproval(pending.id);
-  const approval = {
-    id: pending.id,
-    revision: detail.item.revision,
-    reviewToken: detail.reviewToken,
+test('admin deletion validates reason and role, persists author-visible history and fences stale approvals', async (t) => {
+  const { owner, editor, restart } = await setup(t);
+  const item = await create(editor),
+    review = await owner.readApproval(item.id);
+  const input = {
     commandId: randomUUID(),
+    id: item.id,
+    revision: 1,
+    message: '  범위가 겹치는 요청입니다.  ',
   };
-  await owner.beginAi('', 'claude-opus-5-5', 'claude-cli', approval, 'high');
-  assert.equal(owner.state.aiRun.reasoningEffort, 'high');
-  const recorded = matter(owner.files[owner.state.aiRun.taskPath]).data
-    .gamejam_request;
-  assert.equal(recorded.reasoningEffort, 'high');
+  await assert.rejects(editor.mutateApproval('delete', input), /관리자/);
+  for (const message of ['', '  ', '가'.repeat(1001)])
+    await assert.rejects(
+      owner.mutateApproval('delete', { ...input, message }),
+      /삭제 이유/,
+    );
   await assert.rejects(
-    owner.beginAi('', 'claude-opus-5-5', 'claude-cli', approval, 'low'),
-    /같은 작업 ID/,
+    owner.request('requests-delete', { ...input, requestDeletionVersion: 0 }),
+    /업데이트/,
   );
-  await owner.finishAi('failed');
+  const before = structuredClone(owner.files);
+  const deleted = await owner.mutateApproval('delete', input);
+  assert.equal(deleted.status, 'deleted');
+  assert.equal(deleted.deletion.reason, '범위가 겹치는 요청입니다.');
+  assert.equal(deleted.deletion.actorId, owner.state.memberId);
+  assert.equal(deleted.deletion.previousStatus, 'pending');
+  assert.equal(deleted.changes.at(-1).action, 'requests-delete');
+  assert.deepEqual(owner.files, before);
+  assert.equal(owner.state.pendingRequests, 0);
+  await restart();
+  assert.equal(
+    (await owner.mutateApproval('delete', input)).revision,
+    deleted.revision,
+  );
+  assert.deepEqual(
+    (await editor.readApproval(item.id)).item.deletion,
+    deleted.deletion,
+  );
+  const legacy = await editor.request('requests-read', {
+    id: item.id,
+    requestDeletionVersion: 0,
+  });
+  assert.equal(legacy.item.status, 'cancelled');
+  assert.match(legacy.item.feedback, /범위가 겹치는/);
+  await assert.rejects(
+    owner.mutateApproval('delete', {
+      ...input,
+      commandId: randomUUID(),
+      revision: deleted.revision,
+    }),
+    /삭제/,
+  );
+  await assert.rejects(
+    editor.mutateApproval('update', {
+      ...input,
+      commandId: randomUUID(),
+      revision: deleted.revision,
+      request: request(),
+    }),
+    /종료/,
+  );
+  await assert.rejects(start(owner, review), /변경/);
+  const copy = await editor.mutateApproval('create', {
+    commandId: randomUUID(),
+    request: deleted.request,
+    copiedFrom: deleted.id,
+  });
+  assert.equal(copy.status, 'pending');
+  assert.equal(copy.deletion, undefined);
+});
+
+test('approval versus deletion has one winner and completed deletion retains output files', async (t) => {
+  const { owner, editor, other } = await setup(t);
+  const item = await create(editor),
+    detail = await owner.readApproval(item.id);
+  const result = await Promise.allSettled([
+    start(owner, detail),
+    other.mutateApproval('delete', {
+      commandId: randomUUID(),
+      id: item.id,
+      revision: 1,
+      message: '중복 요청',
+    }),
+  ]);
+  assert.equal(result.filter((r) => r.status === 'fulfilled').length, 1);
+  const current = (await owner.readApproval(item.id)).item;
+  if (current.status === 'running') {
+    await assert.rejects(
+      owner.mutateApproval('delete', {
+        commandId: randomUUID(),
+        id: item.id,
+        revision: current.revision,
+        message: '중단 필요',
+      }),
+      /취소·중지/,
+    );
+    const output = matter(owner.files[current.taskPath]).data
+      .expected_outputs[0];
+    await owner.finishAi('completed', {
+      [output]: '<html><body>보존할 결과</body></html>',
+    });
+    const completed = (await owner.readApproval(item.id)).item;
+    const removed = await owner.mutateApproval('delete', {
+      commandId: randomUUID(),
+      id: item.id,
+      revision: completed.revision,
+      message: '완료 목록 정리',
+    });
+    assert.equal(removed.deletion.previousStatus, 'completed');
+    assert.match(owner.files[output], /보존할 결과/);
+    assert.deepEqual(removed.outputs, completed.outputs);
+  } else assert.equal(current.status, 'deleted');
+});
+
+test('delete rejects stale revisions, viewers and servers without deletion support', async (t) => {
+  const { owner, editor } = await setup(t);
+  const item = await create(editor);
+  await editor.mutateApproval('update', {
+    commandId: randomUUID(),
+    id: item.id,
+    revision: 1,
+    request: request({ resultName: '최신 요청' }),
+  });
+  await assert.rejects(
+    owner.mutateApproval('delete', {
+      commandId: randomUUID(),
+      id: item.id,
+      revision: 1,
+      message: '구버전 확인',
+    }),
+    /변경/,
+  );
+  await owner.setRole(editor.state.memberId, 'viewer');
+  await editor.refresh();
+  await assert.rejects(
+    editor.mutateApproval('delete', {
+      commandId: randomUUID(),
+      id: item.id,
+      revision: 2,
+      message: '권한 없음',
+    }),
+    /뷰어/,
+  );
+  owner.state.requestDeletionVersion = undefined;
+  await assert.rejects(owner.mutateApproval('delete', {}), /서버를 업데이트/);
+});
+
+test('atomic document endpoint requires administrator and matching source/request versions', async (t) => {
+  const { owner, editor } = await setup(t);
+  const item = await create(editor),
+    detail = await owner.readApproval(item.id);
+  const snapshot = await owner.readApprovalDocuments(
+    item.id,
+    item.revision,
+    detail.reviewToken,
+  );
+  assert.deepEqual(
+    snapshot.documents.map((d) => d.path),
+    ['ideas/a.md'],
+  );
+  assert.equal(snapshot.documents[0].content, owner.files['ideas/a.md']);
+  await assert.rejects(
+    editor.readApprovalDocuments(item.id, item.revision, detail.reviewToken),
+    /관리자/,
+  );
+  await assert.rejects(
+    owner.readApprovalDocuments(item.id, 20, detail.reviewToken),
+    /변경/,
+  );
+  await owner.lock('ideas/a.md');
+  await owner.command('documents:save', {
+    relativePath: 'ideas/a.md',
+    title: '아이디어',
+    body: '바뀐 본문',
+  });
+  await owner.unlock('ideas/a.md');
+  await assert.rejects(
+    owner.readApprovalDocuments(item.id, item.revision, detail.reviewToken),
+    /변경/,
+  );
+  owner.state.requestDocumentVersion = undefined;
+  await assert.rejects(
+    owner.readApprovalDocuments(item.id, item.revision, detail.reviewToken),
+    /업데이트/,
+  );
 });
 
 test('request validation needs content and membership but no AI login, free slot, or executor model', () => {
@@ -438,4 +602,27 @@ test('missing or deleted input is reviewable as an error and prevents approval w
   await owner.refresh();
   assert(!Object.keys(owner.files).some((p) => p.startsWith('.ai/tasks/')));
   assert.equal((await owner.readApproval(item.id)).item.status, 'pending');
+});
+
+test('approval execution records reasoning and rejects a retry that changes it', async (t) => {
+  const { owner, editor } = await setup(t);
+  const pending = await create(editor);
+  await owner.refresh();
+  const detail = await owner.readApproval(pending.id);
+  const approval = {
+    id: pending.id,
+    revision: detail.item.revision,
+    reviewToken: detail.reviewToken,
+    commandId: randomUUID(),
+  };
+  await owner.beginAi('', 'claude-opus-5-5', 'claude-cli', approval, 'high');
+  assert.equal(owner.state.aiRun.reasoningEffort, 'high');
+  const recorded = matter(owner.files[owner.state.aiRun.taskPath]).data
+    .gamejam_request;
+  assert.equal(recorded.reasoningEffort, 'high');
+  await assert.rejects(
+    owner.beginAi('', 'claude-opus-5-5', 'claude-cli', approval, 'low'),
+    /같은 작업 ID/,
+  );
+  await owner.finishAi('failed');
 });

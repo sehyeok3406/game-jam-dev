@@ -1,6 +1,7 @@
+import { GamejamMaterialSelection } from '../GamejamMaterialSelection';
+import { EraserPreviewContext } from '../drawing/eraserPreview';
 import {
   Background,
-  Controls,
   ReactFlow,
   type NodeTypes,
   type ReactFlowInstance,
@@ -37,6 +38,43 @@ import {
   type Theme,
 } from '../workspace/workspace-types.ts';
 interface Props {
+  canvasItems: import('../CanvasOverlays').CanvasItem[];
+  compactChrome: boolean;
+  dockPanel: import('../CanvasChrome').CanvasPanelId | null;
+  eraserMode: import('../../drawing-types').EraserMode;
+  eraserPreview: import('../drawing/eraserPreview').EraserPreview;
+  eraserSize: number;
+  finishMaterialSelection: (apply: boolean) => void;
+  gameUiPanelHost: HTMLDivElement | null;
+  materialFocus: string | null;
+  materialMarquee: import('react').RefObject<Set<string> | null>;
+  materialPath: (
+    node: import('../workspace/workspace-types').CanvasNode,
+  ) => string | undefined;
+  materialPicker: string[] | null;
+  minimapVisible: boolean;
+  setDockPanel: import('react').Dispatch<
+    import('react').SetStateAction<
+      import('../CanvasChrome').CanvasPanelId | null
+    >
+  >;
+  setEraserPreview: import('react').Dispatch<
+    import('react').SetStateAction<
+      import('../drawing/eraserPreview').EraserPreview
+    >
+  >;
+  setGameUiPanelActive: import('react').Dispatch<
+    import('react').SetStateAction<boolean>
+  >;
+  setMaterialFocus: import('react').Dispatch<
+    import('react').SetStateAction<string | null>
+  >;
+  setMaterialPicker: import('react').Dispatch<
+    import('react').SetStateAction<string[] | null>
+  >;
+  setNotice: import('react').Dispatch<import('react').SetStateAction<string>>;
+  toggleMaterial: (path: string) => void;
+  uiHidden: boolean;
   acknowledgeNewFile: (id: string) => void;
   tool: CanvasTool;
   flowRef: import('react').RefObject<ReactFlowInstance<CanvasNode> | null>;
@@ -175,6 +213,27 @@ interface Props {
   nodeTypes: NodeTypes;
 }
 export function WorkspaceCanvas({
+  canvasItems,
+  compactChrome,
+  dockPanel,
+  eraserMode,
+  eraserPreview,
+  eraserSize,
+  finishMaterialSelection,
+  gameUiPanelHost,
+  materialFocus,
+  materialMarquee,
+  materialPath,
+  materialPicker,
+  minimapVisible,
+  setDockPanel,
+  setEraserPreview,
+  setGameUiPanelActive,
+  setMaterialFocus,
+  setMaterialPicker,
+  setNotice,
+  toggleMaterial,
+  uiHidden,
   acknowledgeNewFile,
   tool,
   flowRef,
@@ -200,7 +259,6 @@ export function WorkspaceCanvas({
   personalScope,
   activeCanvas,
   inspectorId,
-  pluginPanelOpen,
   setInspectorId,
   setPluginPanelOpen,
   allLinkDocuments,
@@ -243,6 +301,7 @@ export function WorkspaceCanvas({
     <>
       <div
         className="canvas-shell"
+        tabIndex={-1}
         onClickCapture={(event) => {
           const id = (event.target as Element)
             .closest('.react-flow__node')
@@ -330,6 +389,10 @@ export function WorkspaceCanvas({
         }}
         onLostPointerCapture={cancelNoteDrawing}
         onContextMenuCapture={(event) => {
+          if (materialPicker !== null) {
+            event.preventDefault();
+            return;
+          }
           if (!event.altKey || tool !== 'select') return;
           const point = flowRef.current?.screenToFlowPosition({
             x: event.clientX,
@@ -376,8 +439,14 @@ export function WorkspaceCanvas({
         <GameUiInspectorProvider
           key={personalScope + ':' + activeCanvas}
           scope={personalScope}
-          suspended={!!inspectorId || pluginPanelOpen}
+          embedded
+          externalHost={gameUiPanelHost}
+          onActiveChange={setGameUiPanelActive}
+          suspended={
+            !!inspectorId || (dockPanel !== null && dockPanel !== 'properties')
+          }
           onOpen={() => {
+            setDockPanel('properties');
             setInspectorId(null);
             setPluginPanelOpen(false);
           }}
@@ -387,296 +456,404 @@ export function WorkspaceCanvas({
             canvases={canvasSheets.canvases}
             open={dispatchDocumentLink}
           >
-            <ReactFlow<CanvasNode>
-              key={activeCanvas}
-              nodes={nodes}
-              edges={[]}
-              nodeTypes={nodeTypes}
-              onInit={(instance) => {
-                flowRef.current = instance;
-                try {
-                  const saved = JSON.parse(
-                    preferences.getItem(
-                      'game-canvas-sheet-view:' +
-                        workspace.root +
-                        ':' +
-                        activeCanvas,
-                    ) ?? 'null',
-                  );
-                  if (
-                    saved &&
-                    ['x', 'y', 'zoom'].every(
-                      (key) =>
-                        typeof saved[key] === 'number' &&
-                        Number.isFinite(saved[key]),
-                    ) &&
-                    saved.zoom >= 0.1 &&
-                    saved.zoom <= 2
-                  ) {
+            <EraserPreviewContext.Provider
+              value={
+                preview?.id === 'drawing-eraser' && preview.state === 'pending'
+                  ? new Map(
+                      drawing.items.map((o) => [
+                        o.id,
+                        { generation: o.generation },
+                      ]),
+                    )
+                  : eraserPreview
+              }
+            >
+              <ReactFlow<CanvasNode>
+                key={activeCanvas}
+                nodes={
+                  materialPicker === null
+                    ? nodes
+                    : nodes.map((node) => ({
+                        ...node,
+                        selected:
+                          !!materialPath(node) &&
+                          materialPicker.includes(materialPath(node)!),
+                        selectable:
+                          !!materialPath(node) && node.selectable !== false,
+                        draggable: false,
+                        className:
+                          (node.className ?? '') +
+                          (node.id === materialFocus ? ' material-focus' : ''),
+                      }))
+                }
+                edges={[]}
+                nodeTypes={nodeTypes}
+                onInit={(instance) => {
+                  flowRef.current = instance;
+                  try {
+                    const saved = JSON.parse(
+                      preferences.getItem(
+                        'game-canvas-sheet-view:' +
+                          workspace.root +
+                          ':' +
+                          activeCanvas,
+                      ) ?? 'null',
+                    );
+                    if (
+                      saved &&
+                      ['x', 'y', 'zoom'].every(
+                        (key) =>
+                          typeof saved[key] === 'number' &&
+                          Number.isFinite(saved[key]),
+                      ) &&
+                      saved.zoom >= 0.1 &&
+                      saved.zoom <= 2
+                    ) {
+                      firstCanvasView.current = null;
+                      void instance.setViewport(saved);
+                      setViewZoom(saved.zoom);
+                      return;
+                    }
+                  } catch {
+                    /* Invalid preferences use the default viewport. */
+                  }
+                  firstCanvasView.current = activeCanvas;
+                  void instance.setViewport({ x: 0, y: 0, zoom: 1 });
+                  setViewZoom(1);
+                  if (nodes.length) {
                     firstCanvasView.current = null;
-                    void instance.setViewport(saved);
-                    setViewZoom(saved.zoom);
+                    requestAnimationFrame(() => {
+                      void instance.fitView({
+                        padding: 0.16,
+                        maxZoom: 1,
+                        duration: 0,
+                      });
+                    });
+                  }
+                }}
+                onNodesChange={(changes) => {
+                  if (materialPicker === null) {
+                    onNodesChange(changes);
                     return;
                   }
-                } catch {
-                  /* Invalid preferences use the default viewport. */
-                }
-                firstCanvasView.current = activeCanvas;
-                void instance.setViewport({ x: 0, y: 0, zoom: 1 });
-                setViewZoom(1);
-                if (nodes.length) {
-                  firstCanvasView.current = null;
-                  requestAnimationFrame(() => {
-                    void instance.fitView({
-                      padding: 0.16,
-                      maxZoom: 1,
-                      duration: 0,
-                    });
-                  });
-                }
-              }}
-              onNodesChange={onNodesChange}
-              onNodeClick={(event, node) => {
-                acknowledgeNewFile(node.id);
-                if (inspectorId && !event.shiftKey) setInspectorId(node.id);
-                setDocumentContextMenu(null);
-                setSectionContextMenu(null);
-                setPreviewContextMenu(null);
-                if (event.shiftKey || event.ctrlKey || event.metaKey) {
-                  const ids = new Set(selectionBeforeClick.current);
-                  if (ids.has(node.id)) ids.delete(node.id);
-                  else ids.add(node.id);
-                  setNodes((current) =>
-                    current.map((item) => ({
-                      ...item,
-                      selected: ids.has(item.id),
-                    })),
+                  onNodesChange(
+                    changes.filter((change) => change.type === 'dimensions'),
                   );
-                }
-              }}
-              onNodeContextMenu={(event, node) => {
-                event.preventDefault();
-                setContextMenu(null);
-                setPreviewContextMenu(null);
-                if (node.data.kind === 'kanban') {
-                  openKanbanControls();
-                  return;
-                }
-                if (node.data.kind === 'document') {
-                  setSectionContextMenu(null);
-                  setDocumentContextMenu({
-                    screenX: Math.min(event.clientX, window.innerWidth - 282),
-                    screenY: Math.min(event.clientY, window.innerHeight - 190),
-                    document: node.data.document,
+                  if (!materialMarquee.current) return;
+                  const keep = materialMarquee.current;
+                  setMaterialPicker((current) => {
+                    if (current === null) return current;
+                    const next = new Set(current);
+                    for (const change of changes) {
+                      if (change.type !== 'select') continue;
+                      const node = nodes.find((node) => node.id === change.id);
+                      const path = node && materialPath(node);
+                      if (!path) continue;
+                      if (change.selected) next.add(path);
+                      else if (!keep.has(path)) next.delete(path);
+                    }
+                    const result = [...next];
+                    return sameIds(current, result) ? current : result;
                   });
-                } else if (node.data.kind === 'section') {
+                }}
+                onSelectionStart={() => {
+                  if (materialPicker !== null)
+                    materialMarquee.current = new Set(materialPicker);
+                }}
+                onSelectionEnd={() => {
+                  materialMarquee.current = null;
+                }}
+                onNodeClick={(event, node) => {
+                  if (materialPicker !== null) {
+                    const path = materialPath(node);
+                    if (path) {
+                      toggleMaterial(path);
+                      setMaterialFocus(node.id);
+                    }
+                    return;
+                  }
+                  acknowledgeNewFile(node.id);
+                  if (inspectorId && !event.shiftKey) setInspectorId(node.id);
                   setDocumentContextMenu(null);
-                  setSectionContextMenu({
-                    screenX: Math.min(event.clientX, window.innerWidth - 282),
-                    screenY: Math.min(event.clientY, window.innerHeight - 230),
-                    section: node.data.section,
-                  });
-                } else if (node.data.kind === 'preview') {
-                  setDocumentContextMenu(null);
                   setSectionContextMenu(null);
-                  setPreviewContextMenu({
-                    screenX: Math.min(event.clientX, window.innerWidth - 282),
-                    screenY: Math.min(event.clientY, window.innerHeight - 160),
-                    preview: node.data.preview,
-                  });
-                }
-              }}
-              onNodeDragStart={() => {
-                snapLatest.current = null;
-                setGuides({});
-              }}
-              onNodeDrag={(_event, node, dragged) => {
-                if (
-                  !snapEnabled ||
-                  _event.altKey ||
-                  dragged.length > 1 ||
-                  node.data.kind === 'preview' ||
-                  locked
-                ) {
+                  setPreviewContextMenu(null);
+                  if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                    const ids = new Set(selectionBeforeClick.current);
+                    if (ids.has(node.id)) ids.delete(node.id);
+                    else ids.add(node.id);
+                    setNodes((current) =>
+                      current.map((item) => ({
+                        ...item,
+                        selected: ids.has(item.id),
+                      })),
+                    );
+                  }
+                }}
+                onNodeContextMenu={(event, node) => {
+                  event.preventDefault();
+                  if (materialPicker !== null) return;
+                  setContextMenu(null);
+                  setPreviewContextMenu(null);
+                  if (node.data.kind === 'kanban') {
+                    openKanbanControls();
+                    return;
+                  }
+                  if (node.data.kind === 'document') {
+                    setSectionContextMenu(null);
+                    setDocumentContextMenu({
+                      screenX: Math.min(event.clientX, window.innerWidth - 282),
+                      screenY: Math.min(
+                        event.clientY,
+                        window.innerHeight - 190,
+                      ),
+                      document: node.data.document,
+                    });
+                  } else if (node.data.kind === 'section') {
+                    setDocumentContextMenu(null);
+                    setSectionContextMenu({
+                      screenX: Math.min(event.clientX, window.innerWidth - 282),
+                      screenY: Math.min(
+                        event.clientY,
+                        window.innerHeight - 230,
+                      ),
+                      section: node.data.section,
+                    });
+                  } else if (node.data.kind === 'preview') {
+                    setDocumentContextMenu(null);
+                    setSectionContextMenu(null);
+                    setPreviewContextMenu({
+                      screenX: Math.min(event.clientX, window.innerWidth - 282),
+                      screenY: Math.min(
+                        event.clientY,
+                        window.innerHeight - 160,
+                      ),
+                      preview: node.data.preview,
+                    });
+                  }
+                }}
+                onNodeDragStart={() => {
                   snapLatest.current = null;
                   setGuides({});
-                  return;
-                }
-                const parent = sections.find(
-                  (section) => node.parentId === sectionNodeId(section.id),
-                );
-                const x = node.position.x + (parent?.x ?? 0),
-                  y = node.position.y + (parent?.y ?? 0),
-                  width =
-                    node.measured?.width ?? Number(node.style?.width ?? 300),
-                  height =
-                    node.measured?.height ?? Number(node.style?.height ?? 300);
-                const excluded =
-                  node.data.kind === 'section'
-                    ? new Set(
-                        node.data.section.members.map((member) => member.id),
-                      )
-                    : new Set<string>();
-                const others = nodes
-                  .filter(
-                    (other) =>
-                      other.id !== node.id &&
-                      other.id !== node.parentId &&
-                      !other.selected &&
-                      !excluded.has(other.id),
-                  )
-                  .map((other) => {
-                    const p = sections.find(
-                      (section) => other.parentId === sectionNodeId(section.id),
-                    );
-                    return {
-                      x: other.position.x + (p?.x ?? 0),
-                      y: other.position.y + (p?.y ?? 0),
-                      width:
-                        other.measured?.width ??
-                        Number(other.style?.width ?? 300),
-                      height:
-                        other.measured?.height ??
-                        Number(other.style?.height ?? 300),
-                    };
-                  });
-                const snapped = snapPosition(
-                  { x, y, width, height },
-                  others,
-                  6 / (flowRef.current?.getZoom() ?? 1),
-                );
-                const snappedPosition = {
-                  x: snapped.x - (parent?.x ?? 0),
-                  y: snapped.y - (parent?.y ?? 0),
-                };
-                snapLatest.current = { id: node.id, ...snappedPosition };
-                setNodes((current) =>
-                  current.map((item) =>
-                    item.id === node.id
-                      ? {
-                          ...item,
-                          position: snappedPosition,
-                        }
-                      : item,
-                  ),
-                );
-                setGuides({ x: snapped.xGuide, y: snapped.yGuide });
-              }}
-              onNodeDragStop={(_event, node, dragged) => {
-                const snap = snapLatest.current;
-                const target =
-                  snap?.id === node.id
-                    ? { ...node, position: { x: snap.x, y: snap.y } }
-                    : node;
-                const moved = dragged.map((item) =>
-                  item.id === target.id ? target : item,
-                );
-                setGuides({});
-                snapLatest.current = null;
-                void persistDraggedNodes(target, moved).catch(showError);
-              }}
-              onSelectionChange={({ nodes: selected }) => {
-                const nextIds = selected.flatMap((node) =>
-                  node.data.kind === 'document' ? [node.data.document.id] : [],
-                );
-                const nextSectionIds = selected.flatMap((node) =>
-                  node.data.kind === 'section' ? [node.data.section.id] : [],
-                );
-                setSelectedIds((currentIds) =>
-                  sameIds(currentIds, nextIds) ? currentIds : nextIds,
-                );
-                setSelectedSectionIds((currentIds) =>
-                  sameIds(currentIds, nextSectionIds)
-                    ? currentIds
-                    : nextSectionIds,
-                );
-              }}
-              onPaneClick={() => {
-                setContextMenu(null);
-                setDocumentContextMenu(null);
-                setSectionContextMenu(null);
-                setPreviewContextMenu(null);
-              }}
-              onPaneContextMenu={(event) => {
-                event.preventDefault();
-                openCanvasMenu(event.clientX, event.clientY);
-              }}
-              onMoveStart={() => {
-                if (preview) return;
-                setContextMenu(null);
-                setDocumentContextMenu(null);
-                setSectionContextMenu(null);
-                setPreviewContextMenu(null);
-              }}
-              onMove={(_event, viewport) => {
-                if (activeCanvasRef.current === activeCanvas)
-                  setViewZoom(viewport.zoom);
-              }}
-              onMoveEnd={() => {
-                if (activeCanvasRef.current === activeCanvas)
-                  storeViewport(activeCanvas);
-              }}
-              selectionOnDrag={tool === 'select'}
-              panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
-              nodesDraggable={tool === 'select'}
-              elementsSelectable={tool === 'select'}
-              multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
-              fitView={false}
-              zoomOnScroll={!noteDraft && !drawingGesture}
-              zoomOnPinch={!noteDraft && !drawingGesture}
-              zoomOnDoubleClick={
-                tool !== 'note' && tool !== 'drawing' && !drawingGesture
-              }
-              minZoom={0.15}
-              maxZoom={2}
-              elevateNodesOnSelect={false}
-              deleteKeyCode={null}
-            >
-              <Background
-                color={theme === 'dark' ? '#373b44' : '#c9cdd3'}
-                gap={24}
-                size={1}
-              />
-              <Controls position="bottom-left" showInteractive={false} />
-              <CanvasMiniMap
-                theme={theme}
-                preferences={minimapPreferences}
-                change={updateMiniMapPreferences}
-                previewOpen={preview?.id === 'minimap-settings'}
-              />
-              <DrawingInputLayer
-                tool={drawingTool}
-                style={drawingStyle}
-                enabled={
-                  tool === 'drawing' &&
-                  !locked &&
-                  (!collaboration.active || collaboration.drawingsVersion === 1)
-                }
-                scope={workspace.saveScope ?? ''}
-                canvasId={activeCanvas}
-                items={drawing.items}
-                pressure={drawingPressure}
-                touch={drawingTouch}
-                onCreate={(o) => {
-                  if (o.kind === 'shape' && !drawingContinuous)
-                    createdDrawingSelection.current = o.id;
-                  submitDrawing({ action: 'create', objects: [o] });
                 }}
-                onErase={(targets) =>
-                  submitDrawing({ action: 'delete', targets })
-                }
-                onPartial={drawing.partial}
-                onGesture={setDrawingGesture}
-                onFinished={() => {
+                onNodeDrag={(_event, node, dragged) => {
                   if (
-                    drawingTool !== 'pen' &&
-                    drawingTool !== 'highlighter' &&
-                    !drawingContinuous
-                  )
-                    setTool('select');
+                    !snapEnabled ||
+                    _event.altKey ||
+                    dragged.length > 1 ||
+                    node.data.kind === 'preview' ||
+                    locked
+                  ) {
+                    snapLatest.current = null;
+                    setGuides({});
+                    return;
+                  }
+                  const parent = sections.find(
+                    (section) => node.parentId === sectionNodeId(section.id),
+                  );
+                  const x = node.position.x + (parent?.x ?? 0),
+                    y = node.position.y + (parent?.y ?? 0),
+                    width =
+                      node.measured?.width ?? Number(node.style?.width ?? 300),
+                    height =
+                      node.measured?.height ??
+                      Number(node.style?.height ?? 300);
+                  const excluded =
+                    node.data.kind === 'section'
+                      ? new Set(
+                          node.data.section.members.map((member) => member.id),
+                        )
+                      : new Set<string>();
+                  const others = nodes
+                    .filter(
+                      (other) =>
+                        other.id !== node.id &&
+                        other.id !== node.parentId &&
+                        !other.selected &&
+                        !excluded.has(other.id),
+                    )
+                    .map((other) => {
+                      const p = sections.find(
+                        (section) =>
+                          other.parentId === sectionNodeId(section.id),
+                      );
+                      return {
+                        x: other.position.x + (p?.x ?? 0),
+                        y: other.position.y + (p?.y ?? 0),
+                        width:
+                          other.measured?.width ??
+                          Number(other.style?.width ?? 300),
+                        height:
+                          other.measured?.height ??
+                          Number(other.style?.height ?? 300),
+                      };
+                    });
+                  const snapped = snapPosition(
+                    { x, y, width, height },
+                    others,
+                    6 / (flowRef.current?.getZoom() ?? 1),
+                  );
+                  const snappedPosition = {
+                    x: snapped.x - (parent?.x ?? 0),
+                    y: snapped.y - (parent?.y ?? 0),
+                  };
+                  snapLatest.current = { id: node.id, ...snappedPosition };
+                  setNodes((current) =>
+                    current.map((item) =>
+                      item.id === node.id
+                        ? {
+                            ...item,
+                            position: snappedPosition,
+                          }
+                        : item,
+                    ),
+                  );
+                  setGuides({ x: snapped.xGuide, y: snapped.yGuide });
                 }}
-              />
-            </ReactFlow>
+                onNodeDragStop={(_event, node, dragged) => {
+                  const snap = snapLatest.current;
+                  const target =
+                    snap?.id === node.id
+                      ? { ...node, position: { x: snap.x, y: snap.y } }
+                      : node;
+                  const moved = dragged.map((item) =>
+                    item.id === target.id ? target : item,
+                  );
+                  setGuides({});
+                  snapLatest.current = null;
+                  void persistDraggedNodes(target, moved).catch(showError);
+                }}
+                onSelectionChange={({ nodes: selected }) => {
+                  if (materialPicker !== null) return;
+                  const nextIds = selected.flatMap((node) =>
+                    node.data.kind === 'document'
+                      ? [node.data.document.id]
+                      : [],
+                  );
+                  const nextSectionIds = selected.flatMap((node) =>
+                    node.data.kind === 'section' ? [node.data.section.id] : [],
+                  );
+                  setSelectedIds((currentIds) =>
+                    sameIds(currentIds, nextIds) ? currentIds : nextIds,
+                  );
+                  setSelectedSectionIds((currentIds) =>
+                    sameIds(currentIds, nextSectionIds)
+                      ? currentIds
+                      : nextSectionIds,
+                  );
+                }}
+                onPaneClick={() => {
+                  setContextMenu(null);
+                  setDocumentContextMenu(null);
+                  setSectionContextMenu(null);
+                  setPreviewContextMenu(null);
+                }}
+                onPaneContextMenu={(event) => {
+                  event.preventDefault();
+                  if (materialPicker !== null) return;
+                  openCanvasMenu(event.clientX, event.clientY);
+                }}
+                onMoveStart={() => {
+                  if (preview) return;
+                  setContextMenu(null);
+                  setDocumentContextMenu(null);
+                  setSectionContextMenu(null);
+                  setPreviewContextMenu(null);
+                }}
+                onMove={(_event, viewport) => {
+                  if (activeCanvasRef.current === activeCanvas)
+                    setViewZoom(viewport.zoom);
+                }}
+                onMoveEnd={() => {
+                  if (activeCanvasRef.current === activeCanvas)
+                    storeViewport(activeCanvas);
+                }}
+                selectionOnDrag={tool === 'select'}
+                panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
+                nodesDraggable={materialPicker === null && tool === 'select'}
+                elementsSelectable={tool === 'select'}
+                multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
+                disableKeyboardA11y={materialPicker !== null}
+                fitView={false}
+                zoomOnScroll={!noteDraft && !drawingGesture}
+                zoomOnPinch={!noteDraft && !drawingGesture}
+                zoomOnDoubleClick={
+                  tool !== 'note' && tool !== 'drawing' && !drawingGesture
+                }
+                minZoom={0.15}
+                maxZoom={2}
+                elevateNodesOnSelect={false}
+                deleteKeyCode={null}
+              >
+                <Background
+                  color={theme === 'dark' ? '#373b44' : '#c9cdd3'}
+                  gap={24}
+                  size={1}
+                />
+
+                {minimapVisible && !compactChrome && !uiHidden && (
+                  <CanvasMiniMap
+                    theme={theme}
+                    preferences={minimapPreferences}
+                    change={updateMiniMapPreferences}
+                    previewOpen={preview?.id === 'minimap-settings'}
+                  />
+                )}
+                <DrawingInputLayer
+                  eraserMode={eraserMode}
+                  eraserSize={eraserSize}
+                  onErasePreview={setEraserPreview}
+                  onErasePartial={(erasures) =>
+                    submitDrawing({ action: 'erase', erasures })
+                  }
+                  onError={setNotice}
+                  tool={drawingTool}
+                  style={drawingStyle}
+                  enabled={
+                    tool === 'drawing' &&
+                    !locked &&
+                    (!collaboration.active ||
+                      collaboration.drawingsVersion === 1)
+                  }
+                  scope={workspace.saveScope ?? ''}
+                  canvasId={activeCanvas}
+                  items={drawing.items}
+                  pressure={drawingPressure}
+                  touch={drawingTouch}
+                  onCreate={(o) => {
+                    if (o.kind === 'shape' && !drawingContinuous)
+                      createdDrawingSelection.current = o.id;
+                    submitDrawing({ action: 'create', objects: [o] });
+                  }}
+                  onErase={(targets) =>
+                    submitDrawing({ action: 'delete', targets })
+                  }
+                  onPartial={drawing.partial}
+                  onGesture={setDrawingGesture}
+                  onFinished={() => {
+                    if (
+                      drawingTool !== 'pen' &&
+                      drawingTool !== 'highlighter' &&
+                      !drawingContinuous
+                    )
+                      setTool('select');
+                  }}
+                />
+                {materialPicker !== null && (
+                  <GamejamMaterialSelection
+                    items={canvasItems.filter(
+                      (item) =>
+                        item.kind !== 'task' && item.canvasId === activeCanvas,
+                    )}
+                    paths={materialPicker}
+                    focused={materialFocus}
+                    focus={setMaterialFocus}
+                    toggle={toggleMaterial}
+                    finish={() => finishMaterialSelection(true)}
+                    cancel={() => finishMaterialSelection(false)}
+                  />
+                )}
+              </ReactFlow>
+            </EraserPreviewContext.Provider>
           </DocumentLinksProvider>
         </GameUiInspectorProvider>
         {noteDraft && (

@@ -1,3 +1,9 @@
+export type {
+  EraserMode,
+  DrawingPolygon,
+  ErasureRegion,
+  DrawingErasure,
+} from './contracts/drawing-types.ts';
 export type { DrawingItem } from './contracts/drawing-types.ts';
 import type { DrawingObject } from './contracts/drawing-types.ts';
 export type { DrawingObject } from './contracts/drawing-types.ts';
@@ -14,7 +20,7 @@ export type { DrawingPatch } from './contracts/drawing-types.ts';
 export type { DrawingDelta } from './contracts/drawing-types.ts';
 export type DrawingTool = ShapeKind | 'pen' | 'highlighter' | 'eraser';
 export type DrawingFile = {
-  version: 1;
+  version: 1 | 2;
   canvasId: string;
   objects: DrawingObject[];
 };

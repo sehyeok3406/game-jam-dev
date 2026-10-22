@@ -25,6 +25,8 @@ export type WorkspacePanelsProps = {
   collaboration: Content<typeof CollaborationPanel>;
   selfHost?: Content<typeof SelfHostDialog>;
   workspace?: {
+    docked: boolean;
+    uiHidden: boolean;
     restarting: boolean;
     offline: ComponentProps<typeof OfflineStatus>;
     find: Omit<Content<typeof CanvasFind>, 'jump'>;
@@ -92,7 +94,7 @@ export function WorkspacePanels({
         />
       )}
       {shared}
-      {state.navigatorOpen && (
+      {state.navigatorOpen && !workspace.uiHidden && (
         <CanvasNavigator
           {...workspace.navigation}
           close={() => state.setNavigatorOpen(false)}
@@ -112,7 +114,7 @@ export function WorkspacePanels({
       {workspace.compare && (
         <CompareDialog {...workspace.compare} close={workspace.closeCompare} />
       )}
-      {state.pluginPanelOpen && (
+      {state.pluginPanelOpen && !workspace.docked && (
         <PluginControlPanel
           {...workspace.plugins}
           close={() => state.setPluginPanelOpen(false)}
