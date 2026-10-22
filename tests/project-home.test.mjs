@@ -372,7 +372,7 @@ async function temporary(t) {
     await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-home-service-')),
   );
   t.after(async () => {
-    assert.ok(root.startsWith(os.tmpdir() + path.sep));
+    assert.ok(root.startsWith((await fs.realpath(os.tmpdir())) + path.sep));
     await fs.rm(root, { recursive: true, force: true });
   });
   return root;

@@ -348,8 +348,14 @@ try {
       '!document.querySelector(\'[aria-labelledby="locked-dialog-title"]\')',
     );
   }
-  await wait('!!document.querySelector(\'[title="프로젝트 히스토리"]\')');
-  await js('document.querySelector(\'[title="프로젝트 히스토리"]\').click()');
+  await wait('!!document.querySelector(".canvas-main-menu")');
+  await wait(
+    `document.querySelector('[data-id="${historyDoc.id}"]')?.textContent.includes('패키지 기록 검증')`,
+  );
+  await js(`{
+    document.querySelector('.canvas-main-menu > summary').click();
+    [...document.querySelectorAll('.canvas-main-menu button')].find(b=>b.textContent.includes('프로젝트 히스토리')).click();
+  }`);
   await wait('!!document.querySelector(".history-entry")');
   await js(
     'Array.from(document.querySelectorAll(".history-entry button")).find(b=>b.textContent.includes(' +
@@ -379,7 +385,10 @@ try {
     (await call('listHistory')).some((entry) => entry.kind === 'restore'),
   );
   await js('document.querySelector(\'[title="히스토리 닫기"]\').click()');
-  await js('document.querySelector(\'[title="프로젝트 히스토리"]\').click()');
+  await js(`{
+    document.querySelector('.canvas-main-menu > summary').click();
+    [...document.querySelectorAll('.canvas-main-menu button')].find(b=>b.textContent.includes('프로젝트 히스토리')).click();
+  }`);
   await wait(
     '!!document.querySelector(\'.history-entry[data-history-kind="restore"]\')',
   );

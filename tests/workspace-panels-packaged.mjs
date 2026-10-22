@@ -163,6 +163,13 @@ const escape = () => key('Escape', 'Escape', 27);
 const original = await fs.readFile(path.join(game, 'project.md'), 'utf8');
 try {
   await boot();
+  await js(
+    `document.querySelector('.home-heading .button-primary').dataset.qaTrigger='add'`,
+  );
+  await js(
+    `{const add=document.querySelector('.home-heading .button-primary');add.focus();add.click();}`,
+  );
+  await wait('document.querySelector(".home-add-dialog").open');
   await js(`${button('초대 코드로 참여')}.dataset.qaTrigger='join'`);
   await clickText('초대 코드로 참여');
   await wait(
@@ -197,7 +204,7 @@ try {
   );
   await escape();
   await wait('!document.querySelector(".update-dialog")');
-  assert.equal(await js('document.activeElement.dataset.qaTrigger'), 'join');
+  assert.equal(await js('document.activeElement.dataset.qaTrigger'), 'add');
   console.log(
     'PASS: real Windows package management dialogs preserve CSS order, Tab containment, one Escape per dialog and home trigger restoration',
   );
@@ -258,6 +265,10 @@ try {
     await fs.readFile(path.join(game, 'project.md'), 'utf8'),
     original,
   );
+  await js(
+    `{const add=document.querySelector('.home-heading .button-primary');add.focus();add.click();}`,
+  );
+  await wait('document.querySelector(".home-add-dialog").open');
   await clickText('초대 코드로 참여');
   await wait('!!document.querySelector(".collaboration-dialog")');
   await escape();

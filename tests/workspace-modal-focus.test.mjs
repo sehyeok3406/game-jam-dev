@@ -166,6 +166,28 @@ test('native modal dialogs stay above CSS layers and retain native focus/Tab con
   await tick();
   assert.equal(topWorkspaceModal(document).id, 'css');
 });
+
+test('a closed native launcher preserves its opener through a CSS dialog and a lower automatic prompt', async (t) => {
+  const { document, add, tick } = setup(t);
+  const native = document.createElement('dialog');
+  native.open = true;
+  native.innerHTML = '<button>join project</button>';
+  document.body.append(native);
+  native.firstElementChild.focus();
+  await tick();
+  const collaboration = await add('collaboration', 1200);
+  native.open = false;
+  native.hidden = true; // Model the browser's closed-dialog geometry in jsdom.
+  await tick();
+  assert.ok(collaboration.contains(document.activeElement));
+  const update = await add('automatic-update', 80);
+  collaboration.parentElement.remove();
+  await tick();
+  assert.ok(update.contains(document.activeElement));
+  update.parentElement.remove();
+  await tick();
+  assert.equal(document.activeElement.id, 'opener');
+});
 test('disposing a shell removes listeners and observers without closing dialogs or changing data', async (t) => {
   const { document, add, stop, tick } = setup(t);
   const dialog = await add('old');

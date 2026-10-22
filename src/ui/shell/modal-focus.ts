@@ -106,7 +106,11 @@ export function installWorkspaceModalFocus(document: Document) {
       let restore = candidate;
       const visited = new Set<HTMLElement>();
       while (restore) {
-        const owner = restore.closest<HTMLElement>(MODALS);
+        // A closed native dialog no longer matches dialog[open], but its
+        // opener chain still belongs to the dialog that just replaced it.
+        const owner = restore.closest<HTMLElement>(
+          '[aria-modal="true"], dialog',
+        );
         if (!owner || next.includes(owner) || visited.has(owner)) break;
         visited.add(owner);
         restore = openers.get(owner);

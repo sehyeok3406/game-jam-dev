@@ -167,7 +167,7 @@ try {
   await fs.writeFile(path.join(game, 'output', 'index.html'), html);
   await boot();
   await js('document.querySelector(".home-project-open").click()');
-  await wait('!!document.querySelector("[title=\\"프로젝트 히스토리\\"]")');
+  await wait('!!document.querySelector(".canvas-main-menu")');
   const doc = await js(
     '(async()=>{const d=await window.gameCanvas.createIdea({x:80,y:100});return await window.gameCanvas.saveDocument({relativePath:d.relativePath,objectId:d.id,title:"R05 원본",body:"원래 한글 내용",expectedTitle:d.title,expectedBody:d.body,revision:d.revision});})()',
   );
@@ -229,7 +229,10 @@ try {
   console.log(
     'PASS: package canvas move confirmation handles a duplicate click once, preserves file path/content and supports Undo/Redo',
   );
-  await js('document.querySelector("[title=\\"프로젝트 히스토리\\"]").click()');
+  await js(`{
+    document.querySelector('.canvas-main-menu > summary').click();
+    [...document.querySelectorAll('.canvas-main-menu button')].find(b=>b.textContent.includes('프로젝트 히스토리')).click();
+  }`);
   await wait(
     'Array.from(document.querySelectorAll(".history-entry button")).some(b=>b.textContent.includes(' +
       relative +
