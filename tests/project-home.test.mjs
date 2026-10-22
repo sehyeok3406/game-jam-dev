@@ -368,8 +368,8 @@ test('IPC retains all 25 project wires and home-sender guard before parsing conn
 });
 
 async function temporary(t) {
-  const root = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'gamejam-home-service-'),
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-home-service-')),
   );
   t.after(async () => {
     assert.ok(root.startsWith(os.tmpdir() + path.sep));

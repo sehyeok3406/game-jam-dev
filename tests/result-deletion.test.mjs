@@ -32,7 +32,9 @@ const md = (id, extra = {}) =>
   });
 const html = '<!doctype html><html><head></head><body>game</body></html>';
 const fixture = async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'game-jam-delete-'));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'game-jam-delete-')),
+  );
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   return root;
 };

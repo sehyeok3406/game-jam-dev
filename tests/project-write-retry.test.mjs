@@ -6,14 +6,18 @@ import os from 'node:os';
 import { applyChanges } from '../src/project-store.ts';
 const windows = process.platform === 'win32';
 async function fixture(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'project-write-retry-'));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'project-write-retry-')),
+  );
   const absolute = path.join(root, 'project.md');
   await fs.writeFile(absolute, '# original');
   const originalRename = fs.rename;
   t.after(async () => {
     fs.rename = originalRename;
     assert.ok(
-      path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep),
+      path
+        .resolve(root)
+        .startsWith((await fs.realpath(os.tmpdir())) + path.sep),
     );
     await fs.rm(root, { recursive: true, force: true });
   });

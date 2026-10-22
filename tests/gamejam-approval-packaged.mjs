@@ -207,7 +207,22 @@ const call = (client, method, ...args) =>
   client.js(
     `window.gameCanvas[${JSON.stringify(method)}](...${JSON.stringify(args)})`,
   );
+const openCollaboration = async (client) => {
+  await client.wait(`!!document.querySelector('[aria-label="협업 패널"]')`);
+  if (!(await client.js('!!document.querySelector(".canvas-collaboration")')))
+    await client.js(
+      `document.querySelector('[aria-label="협업 패널"]').click()`,
+    );
+  await client.wait('!!document.querySelector(".canvas-collaboration")');
+};
 const click = async (client, selector, text) => {
+  if (
+    selector === 'header button' &&
+    ['디스코드 알림', '요청함', '내 요청'].includes(text)
+  ) {
+    await openCollaboration(client);
+    selector = '.canvas-collaboration button';
+  }
   await client.js(
     `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(e=>e.textContent.includes(${JSON.stringify(text)})).click()`,
   );
@@ -254,6 +269,7 @@ try {
   assert.ok(!JSON.stringify(captured).includes('포함하면 안 되는'));
   snapshotClient.stop();
   const admin = await boot('approval-admin');
+  await openCollaboration(admin);
   await admin.wait(
     '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
   );
@@ -284,6 +300,7 @@ try {
     nickname: '패키지 관리자',
   });
   const team = await boot('approval-team');
+  await openCollaboration(admin);
   await admin.wait(
     '!!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
   );
@@ -306,6 +323,7 @@ try {
     nickname: '패키지 팀원',
   });
   assert.equal(joined.role, 'editor');
+  await openCollaboration(team);
   await team.wait(
     '!document.querySelector(\'[aria-label="디스코드 알림 설정 및 테스트"]\')',
   );

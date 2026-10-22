@@ -212,6 +212,9 @@ const click = async (client, selector, text) => {
 };
 try {
   const admin = await boot('queue-admin');
+  await admin.wait(`!!document.querySelector('[aria-label="AI 작업 패널"]')`);
+  await click(admin, '[aria-label="AI 작업 패널"]', 'AI 작업');
+  await admin.wait('!!document.querySelector(".canvas-dock")');
   const source = await call(admin, 'createIdea', { x: 100, y: 100 });
   let htmlMaterial = null;
   const enqueue = async () => {

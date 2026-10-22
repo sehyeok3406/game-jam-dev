@@ -10,7 +10,9 @@ import { filesystemDocumentRepository } from '../src/adapters/filesystem/documen
 import { markdownCodec } from '../src/adapters/filesystem/markdown-codec.ts';
 import { projectPath } from '../src/project-store.ts';
 async function setup(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-creation-'));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-creation-')),
+  );
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.mkdir(path.join(root, 'docs'));
   await fs.writeFile(

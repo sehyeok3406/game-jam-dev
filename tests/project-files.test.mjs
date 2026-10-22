@@ -269,9 +269,13 @@ const html = '<!doctype html><html><body>preserved HTML</body></html>';
 const from = 'output/inbox/original/v001/index.html';
 const movedPath = 'output/systems/moved/v001/index.html';
 async function nativeFixture(t) {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-mirror-'));
+  const temporary = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-mirror-')),
+  );
   t.after(async () => {
-    assert.ok(temporary.startsWith(os.tmpdir() + path.sep));
+    assert.ok(
+      temporary.startsWith((await fs.realpath(os.tmpdir())) + path.sep),
+    );
     await fs.rm(temporary, { recursive: true, force: true });
   });
   const root = path.join(temporary, 'original'),

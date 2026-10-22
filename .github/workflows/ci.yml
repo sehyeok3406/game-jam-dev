@@ -39,6 +39,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --include=dev
+      - run: node node_modules/electron/install.js
+      - run: npm run collaboration:build
       - run: npm test
       - run: node tests/create-windows-backup-fixture.mjs
       - uses: actions/upload-artifact@v4

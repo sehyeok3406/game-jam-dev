@@ -9,8 +9,8 @@ import { filesystemDocumentRepository } from '../src/adapters/filesystem/documen
 import { markdownCodec } from '../src/adapters/filesystem/markdown-codec.ts';
 import { LocalSectionService } from '../src/application/editing/section-service.ts';
 async function setup(t) {
-  const root = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'gamejam-section-service-'),
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-section-service-')),
   );
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   for (const folder of ['docs', 'sections', 'trash'])
