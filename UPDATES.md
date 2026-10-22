@@ -1,4 +1,26 @@
-# 앱 업데이트 · v0.33.0
+# 앱 업데이트 · v0.34.0
+
+## v0.34.0 리팩토링 통합과 복구 검증
+
+2026-10-22 [v0.34.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.34.0)를 게시했다. [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.34.0/Game.Jam-0.34.0.Setup.exe)을 제공하며 태그는 검증한 제품 소스 `d66604de18f280cab19ff150a760fe7e93ed2db7`을 가리킨다. 기존 리팩토링과 v0.33.0까지의 변경을 main에 통합하고 커밋·푸시했다. 중단된 작업 파일과 이전 빌드 결과는 로컬 out/release-restart-2026-10-22에 보존했다.
+
+저장·편집·AI·협업 서비스와 runtime/contracts를 분리하고 저장 오류 경고의 프로젝트 ID를 익명화했다. 기존 부분 지우기·AI 예약·요청 삭제 이력·디스코드 검토 문서·도구 배치·자료 선택을 유지했다. 프로젝트 추가/참여 대화상자의 포커스 복원과 패널을 닫았을 때 멀티플레이 방 발견 구독을 수정했다. Linux에서 발견한 서버 준비 완료 직후 SIGTERM 처리기 등록 경쟁도 해소했다. [릴리스 노트](RELEASE_NOTES.md), [리팩토링 검증 기록](REFACTORING_PLAN_2026-10-20.md)
+
+로컬 자동 테스트 **943개(실패/skip 0)**, root/contracts/core 타입·린트/형식·Electron/IPC 통합 검사와 실제 Windows 패키지 **25종** 검사를 통과했다. [GitHub CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/39730917943)의 Windows 943개 검사와 Windows 백업 생성, Linux 211개 서버 검사·실제 Windows archive 복원·재시작·휴지통/삭제 기록·AI 예약·동일 commandId 재전송·부하·실제 OS SIGTERM 검사가 모두 통과했다. AI/디스코드 공급자는 격리된 모의 실행, S3는 로컬 TLS protocol fixture를 사용했다.
+
+최종 제품 입력 552개의 지문은 `25ee3e2f6236a1b544b1e7a739aa3fda4a67556288350ab02226f937f2175d8f`이다. 검증한 최종 package에 `make --from-package`를 적용했으며 app.asar SHA-256 `9c8d4714d25ac3dd553d92ecb847c37a3f29049c0c7fe9c8d562c0b1eabe1962`와 내장 서버 런타임 45개 파일의 해시/크기가 nupkg 내부까지 일치했다. 최종 서버 번들 SHA-256은 `9c5573876b8268c8f235ad787db852832cbe34b553d7d48507524dd974642f0c`이다. 변경 없는 앱 본체·실행 파일은 앞서 UI 검사한 파일과 각각 해시가 같아 결과를 재사용했다.
+
+| 공개 파일 | 크기(바이트) | SHA-256 |
+| --- | ---: | --- |
+| Game.Jam-0.34.0.Setup.exe | 194448384 | e9c3485ade7c70d67efe2567a9f81ca8ac394f3d9e389151f533cebf888c5fb3 |
+| game_canvas-0.34.0-full.nupkg | 193545227 | f5152bbfd1ddff1d2e67f95c5a25aad31d8987db2872c09ef7dc771cf78e7665 |
+| RELEASES | 83 | 792b64de2ef8e839b42cc10aae985ee9ef72f10861b39e509fe13b466648f0a4 |
+
+GitHub 업로드 자산의 SHA-256·크기가 로컬 결과물과 일치한다. 인증 없는 공개 다운로드는 세 파일 모두 200이며 공개 RELEASES의 바이트 해시·패키지 이름·SHA-1 `64F11D9ADBF40F6F7874706C9FAAA3F2E89BCD85`·크기 193545227바이트도 일치한다. 이번 직접 업로드/검증 도구의 최초 적용을 확인하기 위해 설치 파일과 nupkg를 한 번씩 전체 스트리밍하여 실제 공개 바이트의 SHA-256·크기까지 대조했다. 향후 같은 경로에서는 기본 해시/접근 검증을 유지하며 전체 다운로드를 매번 반복하지 않는다.
+
+게시 직후 v0.33.0과 v0.34.0의 Windows RELEASES 피드는 모두 200으로 v0.34.0 nupkg의 전체 URL·SHA-1·크기를 반환했다. **배포 파일 게시·검증과 자동 업데이트 피드 반영을 모두 확인했다.** 증거는 로컬 out/release-restart-2026-10-22의 release-artifacts.json, final-validation.json, final-ci-jobs.json, publication-verification.json에 보존했다.
+
+별도 Render 운영 서버 전환·실제 외부 비공개 S3 복구와 R08 캐시 성능 최적화는 후속 작업으로 남긴다. 이번 게시 과정에서 운영 서버·터널·사용자 프로젝트·외부 계정은 변경하지 않았다. 실제 사용 중인 구버전 설치 앱의 다운로드·재시작·설치 완료는 별도 실사용 확인 대상이다.
 
 ## v0.33.0 game jam! 자료 선택 개선
 
@@ -466,8 +488,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.13.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.13.0)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.13.0/Game.Jam-0.13.0.Setup.exe)
+- [v0.34.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.34.0)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.34.0/Game.Jam-0.34.0.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
