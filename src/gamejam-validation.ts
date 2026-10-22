@@ -8,6 +8,7 @@ import type {
 import { resultName } from './result-name.ts';
 import { taskInstructions } from './task-instructions.ts';
 import { documentTemplates } from './document-format.ts';
+import { reasoningError } from './core/ai/catalog.ts';
 
 export type GamejamField =
   | 'steps'
@@ -19,6 +20,7 @@ export type GamejamField =
   | 'document-format'
   | 'connection'
   | 'model'
+  | 'reasoning'
   | 'status';
 export type GamejamIssue = { field: GamejamField; message: string };
 export type GamejamValidationContext = {
@@ -26,9 +28,11 @@ export type GamejamValidationContext = {
   collaboration: CollaborationState;
   provider: AiProviderId;
   model: string;
+  reasoningEffort?: import('./shared').AiReasoningEffort | null;
   connection: CodexConnectionStatus | null;
   checkingConnection: boolean;
   aiBusy: boolean;
+  queueSupported?: boolean;
   locked: boolean;
   updateRestarting: boolean;
   availableInputs?: string[];
@@ -152,9 +156,29 @@ export function gamejamIssues(
     );
   }
   const shared = context.collaboration;
+  const invalidReasoning = reasoningError(
+    context.provider,
+    context.model,
+    context.reasoningEffort,
+  );
+  if (invalidReasoning) add('reasoning', invalidReasoning);
+  if (
+    context.reasoningEffort &&
+    context.connection?.supportsReasoningEffort === false
+  )
+    add('reasoning', '추론 수준을 지정하려면 Claude Code를 업데이트해주세요.');
+  if (
+    context.reasoningEffort &&
+    shared.active &&
+    shared.aiReasoningVersion !== 1
+  )
+    add(
+      'reasoning',
+      '추론 수준을 지정하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+    );
   if (context.updateRestarting)
     add('status', '앱 업데이트를 위한 재시작을 준비하고 있습니다.');
-  if (context.aiBusy)
+  if (context.aiBusy && !context.queueSupported)
     add(
       'status',
       '이 프로젝트에서 AI 작업이 진행 중입니다. 완료하거나 중지한 뒤 실행해주세요.',
@@ -278,6 +302,7 @@ export const gamejamFieldId = (field: GamejamField) =>
     'document-format': 'ai-document-format',
     connection: 'ai-request-connection',
     model: 'ai-model-custom',
+    reasoning: 'ai-reasoning-effort',
     status: 'ai-request-status',
   })[field];
 export const gamejamErrorId = (field: GamejamField) => `ai-validation-${field}`;

@@ -1,19 +1,14 @@
+import type { MoveResultInput } from './contracts/results.ts';
+export type { MoveResultInput } from './contracts/results.ts';
+import type { ResultMove } from './contracts/results.ts';
+export type { ResultMove } from './contracts/results.ts';
 import type { Snapshot } from './project-store.ts';
 import {
   isPreviewPath,
   previewVersion,
   resultLocation,
   structuredPreviewPath,
-  type ResultCategory,
 } from './preview-output.ts';
-
-export type ResultMove = { from: string; to: string };
-export type MoveResultInput = {
-  relativePath: string;
-  category: ResultCategory;
-  feature: string;
-  revision?: number;
-};
 export function moveDestination(files: Snapshot, input: MoveResultInput) {
   if (
     !isPreviewPath(input.relativePath) ||
@@ -25,7 +20,6 @@ export function moveDestination(files: Snapshot, input: MoveResultInput) {
     Math.max(1, previewVersion(input.relativePath));
   return structuredPreviewPath(input.category, input.feature, version);
 }
-
 export function legacyResultMoves(files: Snapshot): ResultMove[] {
   const reserved = new Set(Object.keys(files).map((key) => key.toLowerCase()));
   return Object.keys(files)

@@ -85,6 +85,7 @@ export function registerMultiplayerWindows(options: {
   };
   handle('multiplayer:control', async (event, input: PlayAction) => {
     if (!options.isMainSender(event)) throw new PlayError('GC-MP-026');
+    const auth = credentials();
     jsonPayload(input, 4096);
     if (input.action === 'create') {
       const html = await options.currentHtml(input.path ?? '');
@@ -94,13 +95,21 @@ export function registerMultiplayerWindows(options: {
         sourceHash: createHash('sha256').update(html).digest('hex'),
       };
     }
-    return PlayClient.control(credentials(), {
+    if (options.credentials() !== auth) throw new PlayError('GC-MP-003');
+    const result = await PlayClient.control(auth, {
       ...input,
       requestId: input.requestId ?? randomUUID(),
     });
+    if (options.credentials() !== auth) throw new PlayError('GC-MP-003');
+    return result;
+  });
+  handle('multiplayer:status', async (event) => {
+    if (!options.isMainSender(event)) throw new PlayError('GC-MP-026');
+    return PlayClient.status(credentials());
   });
   async function open(roomId: string) {
     const auth = credentials();
+    await PlayClient.status(auth);
     for (const entry of entries.values())
       if (
         entry.client.room.id === roomId &&
@@ -127,6 +136,7 @@ export function registerMultiplayerWindows(options: {
         room.sourceHash
     )
       throw new PlayError('GC-MP-012');
+    if (options.credentials() !== auth) throw new PlayError('GC-MP-003');
     const window = new BrowserWindow({
       width: 1100,
       height: 800,
@@ -262,10 +272,24 @@ export function registerMultiplayerWindows(options: {
       `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
     );
   }
-  handle('multiplayer:open', (event, roomId: string) => {
+  const opening = new Map<
+    string,
+    { auth: CollaborationCredentials; promise: Promise<void> }
+  >();
+  handle('multiplayer:open', async (event, roomId: string) => {
     if (!options.isMainSender(event) || typeof roomId !== 'string')
       throw new PlayError('GC-MP-026');
-    return open(roomId);
+    const auth = credentials();
+    const key = `${auth.projectId}:${roomId}`;
+    const pending = opening.get(key);
+    if (pending?.auth === auth) return pending.promise;
+    const promise = open(roomId);
+    opening.set(key, { auth, promise });
+    try {
+      return await promise;
+    } finally {
+      if (opening.get(key)?.promise === promise) opening.delete(key);
+    }
   });
   handle('multiplayer:bootstrap', (event) => {
     const entry = entryFor(event);

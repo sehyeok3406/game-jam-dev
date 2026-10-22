@@ -324,15 +324,45 @@ try {
     );
     gamePath = generated.relativePath;
   }
+  await mains[1].js(
+    'window.__playLobbyQa=[];window.__stopPlayLobbyQa=window.gameCanvas.multiplayer.onLobbyChanged(e=>window.__playLobbyQa.push(e))',
+  );
+  const serverStatus = await mains[0].js(
+    'window.gameCanvas.multiplayer.status()',
+  );
+  assert.equal(serverStatus.multiplayerVersion, 1);
+  assert.equal(serverStatus.multiplayerLobbyVersion, 1);
   const result = await mains[0].js(
     `window.gameCanvas.multiplayer.control({action:'create',path:${JSON.stringify(gamePath)}})`,
   );
   assert.ok(result.room?.id);
   const roomId = result.room.id;
-  for (const main of mains)
-    await main.js(
-      `window.gameCanvas.multiplayer.open(${JSON.stringify(roomId)})`,
-    );
+  await until(
+    () => mains[1].js('window.__playLobbyQa.some(e=>e.revision>0)'),
+    'packaged lobby event through production preload',
+  );
+  await until(
+    () =>
+      mains[1].js(
+        '!!document.querySelector(".header-actions .multiplayer-room-notice")',
+      ),
+    'room discovered without opening the lobby',
+  );
+  const noticeImage = await mains[1].send('Page.captureScreenshot', {
+    format: 'png',
+  });
+  await fs.writeFile(
+    path.join(output, 'room-notice.png'),
+    Buffer.from(noticeImage.data, 'base64'),
+  );
+  await mains[1].js(
+    'document.querySelector(".header-actions .multiplayer-room-notice button").click()',
+  );
+  for (const [index, main] of mains.entries())
+    if (index !== 1)
+      await main.js(
+        `window.gameCanvas.multiplayer.open(${JSON.stringify(roomId)})`,
+      );
   const players = [];
   for (const port of ports) {
     const target = await until(
@@ -632,6 +662,8 @@ try {
         productionPreload: true,
         productionMain: true,
         productionPlayer: true,
+        automaticLobbyDiscovery: true,
+        serverCapabilityCheck: true,
         bundledServer: process.argv.includes('--bundled-server'),
         hostLeave: true,
         diagnostics: process.argv.includes('--diagnostics'),

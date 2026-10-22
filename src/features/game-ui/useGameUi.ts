@@ -1,3 +1,4 @@
+import { useRuntime } from '../../ui/runtime/runtime-context.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyGameUi,
@@ -26,6 +27,8 @@ function optimistic(frames: GameUiFrame[], commands: GameUiCommand[]) {
   return snapshotGameUi(files);
 }
 export function useGameUi(scope: string | undefined) {
+  const { api } = useRuntime();
+
   const [confirmed, setConfirmed] = useState<GameUiFrame[]>([]),
     [pending, setPending] = useState<GameUiCommand[]>([]),
     [error, setError] = useState('');
@@ -43,7 +46,7 @@ export function useGameUi(scope: string | undefined) {
     if (!s.scope || (!s.queue.length && !s.persisted)) return;
     const persisted = s.queue.length > 0;
     const seq = ++sequence.current;
-    await window.gameCanvas.setEditorDraft(
+    await api.saves.setEditorDraft(
       `game-ui:${s.scope}`,
       s.queue.length
         ? {
@@ -59,8 +62,8 @@ export function useGameUi(scope: string | undefined) {
   const reload = useCallback(async () => {
     const s = state.current,
       e = s.epoch;
-    if (!s.scope || !window.gameCanvas.listGameUi) return;
-    const frames = await window.gameCanvas.listGameUi();
+    if (!s.scope || !api.editor.listGameUi) return;
+    const frames = await api.editor.listGameUi();
     if (state.current !== s || e !== s.epoch) return;
     s.frames = frames;
     setConfirmed(frames);
@@ -69,7 +72,7 @@ export function useGameUi(scope: string | undefined) {
     const s = state.current;
     while (s.queue.length) {
       await backup();
-      const frames = await window.gameCanvas.applyGameUiCommand(s.queue[0]);
+      const frames = await api.editor.applyGameUiCommand(s.queue[0]);
       if (state.current !== s) return;
       s.epoch++;
       s.frames = frames;
@@ -96,7 +99,7 @@ export function useGameUi(scope: string | undefined) {
     const s = state.current;
     void (async () => {
       await reload();
-      const draft = await window.gameCanvas.getEditorDraft(`game-ui:${scope}`);
+      const draft = await api.saves.getEditorDraft(`game-ui:${scope}`);
       if (state.current !== s) return;
       if (draft) sequence.current = Math.max(sequence.current, draft.sequence);
       if (draft) {
@@ -109,7 +112,7 @@ export function useGameUi(scope: string | undefined) {
         }
       }
     })().catch((e) => state.current === s && setError(String(e)));
-    const stop = window.gameCanvas.onWorkspaceChanged(
+    const stop = api.projects.onWorkspaceChanged(
       () => void reload().catch((e) => setError(String(e))),
     );
     return stop;

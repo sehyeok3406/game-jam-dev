@@ -1,3 +1,5 @@
+import type { KanbanMoveInput } from '../../contracts/kanban.ts';
+export type { KanbanMoveInput } from '../../contracts/kanban.ts';
 import type { Snapshot } from '../../project-store.ts';
 import {
   readStatuses,
@@ -6,10 +8,7 @@ import {
 } from '../../document-statuses.ts';
 import { workflowDocuments } from '../../document-statuses-storage.ts';
 import { applyStatusProperty } from '../../document-workflow.ts';
-import {
-  statusPropertyApplied,
-  type StatusPropertyInput,
-} from '../../file-properties.ts';
+import { statusPropertyApplied } from '../../file-properties.ts';
 import { htmlSourcePath } from '../../html-source.ts';
 import { isPreviewPath } from '../../preview-output.ts';
 import {
@@ -19,12 +18,6 @@ import {
   kanbanOrder,
   type KanbanViewInput,
 } from './view.ts';
-export type KanbanMoveInput = StatusPropertyInput & {
-  statusId: string;
-  beforeId?: string;
-  afterId?: string;
-  expectedView: string | null;
-};
 export function saveKanbanView(
   files: Snapshot,
   input: KanbanViewInput,
@@ -43,6 +36,7 @@ export function saveKanbanView(
 export function moveKanbanCard(
   files: Snapshot,
   input: KanbanMoveInput,
+  now: () => number = Date.now,
 ): Snapshot {
   if ((files[KANBAN_VIEW_PATH] ?? null) !== input.expectedView)
     throw Error('칸반 순서가 변경되었습니다. 다시 시도해주세요.');
@@ -55,7 +49,7 @@ export function moveKanbanCard(
     throw Error('상태 속성이 미적용인 파일은 칸반에서 이동할 수 없습니다.');
   if (input.expectedEnabled !== true || input.enabled === false)
     throw Error('상태 속성 적용을 먼저 확인해주세요.');
-  const next = applyStatusProperty(files, input);
+  const next = applyStatusProperty(files, input, now);
   const statuses = readStatuses(next[DOCUMENT_STATUSES_PATH]);
   const view = readKanbanView(files[KANBAN_VIEW_PATH], statuses);
   const docs = workflowDocuments(next).filter(statusPropertyApplied);

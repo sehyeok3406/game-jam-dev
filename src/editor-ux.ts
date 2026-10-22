@@ -1,7 +1,16 @@
+import type { EditorDraft } from './contracts/editor.ts';
+export type { EditorDraft } from './contracts/editor.ts';
 /** Tools use screen coordinates, independent of the canvas transform. */
 export function editorToolPosition(
-  anchor: { left: number; top: number; bottom: number },
-  viewport: { width: number; height: number },
+  anchor: {
+    left: number;
+    top: number;
+    bottom: number;
+  },
+  viewport: {
+    width: number;
+    height: number;
+  },
   width: number,
   height: number,
 ) {
@@ -47,8 +56,6 @@ export function slashQuery(
     ? text.slice(1)
     : null;
 }
-
-export type EditorDraft = { title: string; body: string };
 /** The storage adapters trim body edges and use a fallback for empty titles. */
 export function editorDraftMatches(left: EditorDraft, right: EditorDraft) {
   return (
@@ -74,8 +81,11 @@ export async function drainEditorDraft(
     await write(current);
   } while (finish);
 }
-
-export type SourceSnapshot = { value: string; start: number; end: number };
+export type SourceSnapshot = {
+  value: string;
+  start: number;
+  end: number;
+};
 /** Controlled textarea edits (including formatting) need their own undo history. */
 export class SourceHistory {
   private past: SourceSnapshot[] = [];

@@ -1,0 +1,97 @@
+.section-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--selection) 50%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--selection) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--selection) 7%, transparent);
+}
+
+.section-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 48px;
+  padding: 0 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--selection) 28%, transparent);
+  color: var(--text);
+  background: color-mix(
+    in srgb,
+    var(--surface-solid) 82%,
+    var(--selection) 18%
+  );
+  cursor: grab;
+}
+
+.section-card__header:active {
+  cursor: grabbing;
+}
+
+.section-card__title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+}
+
+.section-card__title svg {
+  flex: 0 0 auto;
+  color: var(--selection);
+}
+
+.section-card__title strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-card__title span {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  font-size: 8px;
+}
+
+.section-card__file {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+}
+
+.section-card__file code {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-card__file button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.section-card__empty-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--surface-solid) 74%, transparent);
+  font-size: 8px;
+  pointer-events: none;
+}

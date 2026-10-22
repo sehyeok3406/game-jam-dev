@@ -1,20 +1,13 @@
+import type { DocumentResultChoice } from './contracts/document-output.ts';
+export type { DocumentResultChoice } from './contracts/document-output.ts';
 import { CanvasError } from './app-errors.ts';
 import { resultFileStem } from './result-name.ts';
-import {
-  documentTemplates,
-  type DocumentOutputTemplate,
-} from './document-format.ts';
+import { documentTemplates } from './document-format.ts';
 export const DOCUMENT_NAMES = [
   'game-overview.md',
   'core-loop.md',
   'open-questions.md',
 ] as const;
-export type DocumentResultChoice = {
-  mode: 'new' | 'update';
-  baseDir?: string;
-  structure?: 'systems' | 'legacy' | 'custom';
-  documents?: DocumentOutputTemplate[];
-};
 export const documentOutputs = (baseDir = 'docs', resultName?: string) => {
   const stem = resultFileStem(resultName);
   return DOCUMENT_NAMES.map(

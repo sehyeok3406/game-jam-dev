@@ -1,3 +1,4 @@
+import { useRuntime } from '../runtime/runtime-context.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyDrawing,
@@ -36,6 +37,8 @@ const optimistic = (items: DrawingItem[], command: DrawingCommand) => {
   });
 };
 export function useDrawing(scope: string | undefined, canvasId: string) {
+  const { api } = useRuntime();
+
   const signatures = useRef<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState<DrawingItem[]>([]),
     [pending, setPending] = useState<DrawingCommand[]>([]),
@@ -63,7 +66,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
       ],
       sequence = ++s.sequence;
     if (!commands.length && !s.persisted) return;
-    await window.gameCanvas.setEditorDraft(
+    await api.saves.setEditorDraft(
       key(s.scope),
       commands.length
         ? { title: '그림 복구', body: JSON.stringify(commands), sequence }
@@ -76,10 +79,8 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
     const s = state.current,
       epoch = s.epoch,
       root = s.scope;
-    if (!root || !window.gameCanvas.listDrawings) return;
-    const changes = await window.gameCanvas.getDrawingChanges?.(
-      signatures.current,
-    );
+    if (!root || !api.editor.listDrawings) return;
+    const changes = await api.editor.getDrawingChanges?.(signatures.current);
     const objects = changes
       ? (() => {
           const values = new Map(
@@ -90,7 +91,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
           for (const o of changes.changed) values.set(o.id, o);
           return [...values.values()];
         })()
-      : await window.gameCanvas.listDrawings();
+      : await api.editor.listDrawings();
     if (state.current.scope !== root || state.current.epoch !== epoch) return;
     if (changes) signatures.current = changes.signatures;
     s.confirmed = objects;
@@ -116,7 +117,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
     if (!scope) return;
     let active = true;
     void reload().catch((e) => active && setError(String(e)));
-    void window.gameCanvas
+    void api.saves
       .getEditorDraft(key(scope))
       .then((d) => {
         if (!active || !d) return;
@@ -129,7 +130,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
         }
       })
       .catch((e) => active && setError(`그림 초안 읽기 실패: ${String(e)}`));
-    const stop = window.gameCanvas.onWorkspaceChanged(
+    const stop = api.projects.onWorkspaceChanged(
       () => void reload().catch((e) => active && setError(String(e))),
     );
     return () => {
@@ -143,7 +144,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
       const cmd = s.commands[0];
       try {
         await backup();
-        const result = await window.gameCanvas.applyDrawingCommand(cmd);
+        const result = await api.editor.applyDrawingCommand(cmd);
         if (state.current !== s) return;
         s.epoch++;
         const previous = new Map(s.confirmed.map((o) => [o.id, o]));

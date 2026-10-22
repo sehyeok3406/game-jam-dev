@@ -1,3 +1,5 @@
+import type { GamejamSavedRequest } from './contracts/gamejam-history.ts';
+export type { GamejamSavedRequest } from './contracts/gamejam-history.ts';
 import matter from './markdown.ts';
 import { multiplayerSettings } from './multiplayer/contract.ts';
 import { RESULT_CATEGORIES } from './preview-output.ts';
@@ -5,19 +7,15 @@ import {
   DEFAULT_TASK_INSTRUCTIONS,
   defaultTaskInstructions,
 } from './task-instructions.ts';
-import type { GamejamRequest } from './gamejam-request.ts';
-import type { GamejamPage } from './gamejam-wizard.ts';
-import type { AiProviderId, CreateTaskInput, HistoryEntry } from './shared.ts';
 
-export type GamejamSavedRequest = {
-  version: 1;
-  request: GamejamRequest;
-  providerId: AiProviderId;
-  modelId: string;
-  retryOf?: string;
-};
+import type { GamejamPage } from './gamejam-wizard.ts';
+import type { CreateTaskInput, HistoryEntry } from './shared.ts';
+import { isReasoningEffort } from './core/ai/catalog.ts';
 export type GamejamDraft = GamejamSavedRequest & {
-  approval?: { id: string; revision: number };
+  approval?: {
+    id: string;
+    revision: number;
+  };
   copiedFrom?: string;
   updatedAt: number;
   page: GamejamPage;
@@ -28,7 +26,6 @@ const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 const optionalString = (value: unknown) =>
   value === undefined || typeof value === 'string';
-
 /** Drafts may be incomplete, but malformed local/server data must never break the dialog. */
 export function readSavedRequest(
   value: unknown,
@@ -40,6 +37,8 @@ export function readSavedRequest(
       String(value.providerId),
     ) ||
     typeof value.modelId !== 'string' ||
+    (value.reasoningEffort != null &&
+      !isReasoningEffort(value.reasoningEffort)) ||
     !optionalString(value.retryOf)
   )
     return;
@@ -98,7 +97,6 @@ export function readSavedRequest(
     return;
   return structuredClone(value) as GamejamSavedRequest;
 }
-
 export function gamejamSnapshotFromInput(
   input: CreateTaskInput,
 ): GamejamSavedRequest {
@@ -139,7 +137,6 @@ export function gamejamSnapshotFromInput(
     }
   );
 }
-
 /** Older request files still contain enough metadata to rebuild the execution form. */
 export function requestSnapshotFromTask(
   raw: string,
@@ -250,12 +247,12 @@ export function requestSnapshotFromTask(
       request,
       providerId: data.ai_provider ?? 'codex-cli',
       modelId: data.ai_model === 'default' ? '' : (data.ai_model ?? ''),
+      reasoningEffort: data.ai_reasoning_effort ?? undefined,
     });
   } catch {
     return undefined;
   }
 }
-
 export function entryRequest(
   entry: HistoryEntry,
 ): GamejamSavedRequest | undefined {
@@ -266,10 +263,13 @@ export function entryRequest(
     providerId: entry.providerId ?? saved.providerId,
     modelId:
       entry.modelId === undefined ? saved.modelId : (entry.modelId ?? ''),
+    reasoningEffort:
+      entry.reasoningEffort === undefined
+        ? saved.reasoningEffort
+        : entry.reasoningEffort,
     retryOf: entry.id,
   };
 }
-
 const draftKey = (project: string) => `game-canvas-gamejam-draft:${project}`;
 export const gamejamDraftScope = (
   project: string,

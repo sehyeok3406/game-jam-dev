@@ -23,7 +23,7 @@ import { installMultiplayerSdk } from '../src/multiplayer/sdk-runtime.js';
 
 const privateText = 'PRIVATE-GAME-TOKEN-AND-CONTENT';
 test('all multiplayer codes survive common errors and IPC serialization without copying private messages', () => {
-  assert.equal(Object.keys(PLAY_ERRORS).length, 30);
+  assert.equal(Object.keys(PLAY_ERRORS).length, 32);
   for (const code of Object.keys(PLAY_ERRORS)) {
     assert.equal(failureInfo(new PlayError(code)).code, code);
     const failure = playFailure(
@@ -330,9 +330,9 @@ test('connection rejection preserves the server code and repeated failures stop 
   const repeated = [];
   const stalled = new PlayClient(credentials, room, (m) => repeated.push(m));
   clients.push(stalled);
+  stalled.failures = 6;
   wss.once('connection', (ws) =>
     ws.once('message', () => {
-      stalled.failures = 6;
       ws.terminate();
     }),
   );
@@ -347,13 +347,12 @@ test('connection rejection preserves the server code and repeated failures stop 
   );
   clients.push(connectedButSilent);
   connectedButSilent.connect();
-  await until(() => silent.some((m) => m.type === 'connection' && m.connected));
+  await until(() => silent.some((m) => m.stage === 'joining'));
+  assert(!silent.some((m) => m.connected));
   connectedButSilent.checkLiveness(connectedButSilent.openedAt + 9000);
-  await until(() =>
-    silent.some((m) => m.type === 'connection' && !m.connected),
-  );
+  await until(() => silent.some((m) => m.type === 'connection' && m.failure));
   assert.equal(
-    silent.find((m) => m.type === 'connection' && !m.connected).failure.code,
+    silent.find((m) => m.type === 'connection' && m.failure).failure.code,
     'GC-MP-006',
   );
 });

@@ -10,12 +10,15 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom', '@xyflow/react'],
     alias: selfHostEnabled
-      ? {}
-      : {
-          '../features/self-host/SelfHostDialog': path.resolve(
-            'src/features/self-host/disabled-view.tsx',
-          ),
-        },
+      ? []
+      : [
+          {
+            find: /^(?:\.\.\/)+features\/self-host\/SelfHostDialog$/,
+            replacement: path.resolve(
+              'src/features/self-host/disabled-view.tsx',
+            ),
+          },
+        ],
   },
   // Release source snapshots under out/ may contain their own node_modules.
   // Scan only this workspace's entry points to avoid mixing React installations.

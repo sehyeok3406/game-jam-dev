@@ -1,8 +1,10 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useState } from 'react';
 import { readMultiplayerManifest } from '../multiplayer/contract';
 import { usesIndependentConnection } from '../multiplayer/compatibility';
 import type { PlayRoom } from '../multiplayer/types';
 import { playFailure, type PlayFailure } from '../multiplayer/errors';
+import type { CollaborationState } from '../shared';
 
 export function MultiplayerLobby({
   path,
@@ -10,13 +12,19 @@ export function MultiplayerLobby({
   projectOnly = false,
   onRepair,
   repairDisabled = false,
+  discover = false,
+  project,
 }: {
   path?: string;
   html?: string;
   projectOnly?: boolean;
   onRepair?: () => void;
   repairDisabled?: boolean;
+  discover?: boolean;
+  project?: CollaborationState;
 }) {
+  const { api: runtimeApi, capabilities } = useRuntime();
+
   const [open, setOpen] = useState(false);
   const [rooms, setRooms] = useState<PlayRoom[]>([]);
   const [error, setError] = useState('');
@@ -24,22 +32,50 @@ export function MultiplayerLobby({
   const [report, setReport] = useState('');
   const [copied, setCopied] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [serverVersion, setServerVersion] = useState('');
+  const [serverFailure, setServerFailure] = useState<PlayFailure | null>(null);
+  const [checkKey, setCheckKey] = useState(0);
   let supported = false;
   try {
     supported = projectOnly || !!readMultiplayerManifest(html ?? '');
   } catch {
     /* Malformed games have validation diagnostics. */
   }
-  const api = window.gameCanvas.multiplayer;
+  const api = capabilities.multiplayer
+    ? runtimeApi.preview.multiplayer
+    : undefined;
   const independent = !projectOnly && usesIndependentConnection(html ?? '');
   useEffect(() => {
-    if (!open || !api) return;
+    if ((!open && !discover) || !api || !supported || independent) return;
     let active = true;
+    let pending = false;
+    let queued = false;
+    let projectId = project?.projectId;
+    let lastEpoch = '';
+    let lastRevision = -1;
     const refresh = async () => {
+      if (pending) {
+        queued = true;
+        return;
+      }
+      pending = true;
       try {
+        const current = await runtimeApi.collaboration.getCollaboration();
+        if (!active) return;
+        if (projectId && projectId !== current.projectId) return;
+        projectId = current.projectId;
+        if (!current.active || !current.connected || current.accessDenied) {
+          setRooms([]);
+          if (!discover)
+            throw new Error('[GC-MP-003] 먼저 공동 프로젝트에 연결해주세요.');
+          return;
+        }
         const result = await api.control({ action: 'list' });
         if (active) {
           setRooms(result.rooms ?? []);
+          setFailure(null);
+          setError('');
         }
       } catch (e) {
         if (active) {
@@ -47,15 +83,75 @@ export function MultiplayerLobby({
           setFailure(value);
           setError(value.message);
         }
+      } finally {
+        pending = false;
+        if (active && queued) {
+          queued = false;
+          void refresh();
+        }
       }
     };
     void refresh();
+    const unsubscribe = api.onLobbyChanged?.((event) => {
+      if (!projectId || event.projectId !== projectId) return;
+      if (event.serverEpoch === lastEpoch && event.revision <= lastRevision)
+        return;
+      lastEpoch = event.serverEpoch;
+      lastRevision = event.revision;
+      void refresh();
+    });
+    const unsubscribeProject = runtimeApi.collaboration.onCollaborationChanged(
+      (state) => {
+        if (
+          state.projectId !== projectId ||
+          !state.connected ||
+          state.accessDenied
+        ) {
+          setRooms([]);
+          setOpen(false);
+          active = false;
+        }
+      },
+    );
+    // Also resync when a proxy silently blocks events on a capable server.
     const timer = setInterval(() => void refresh(), 5000);
     return () => {
       active = false;
       clearInterval(timer);
+      unsubscribe?.();
+      unsubscribeProject();
     };
-  }, [open, api]);
+  }, [
+    open,
+    api,
+    discover,
+    supported,
+    independent,
+    project?.projectId,
+    project?.connected,
+    project?.multiplayerLobbyVersion,
+    checkKey,
+  ]);
+  useEffect(() => {
+    if (!open || !api?.status || independent) return;
+    let active = true;
+    setChecking(true);
+    setServerFailure(null);
+    void api
+      .status()
+      .then((value) => {
+        if (active) setServerVersion(value.version ?? '');
+      })
+      .catch((error) => {
+        if (active) setServerFailure(playFailure(error, 'GC-MP-007'));
+      })
+      .finally(() => {
+        if (active) setChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, api, independent, checkKey]);
   if (independent)
     return (
       <span
@@ -95,13 +191,27 @@ export function MultiplayerLobby({
         )}
       </span>
     );
-  if (!supported) return null;
+  if (!supported || !capabilities.multiplayer) return null;
+  const visibleFailure = serverFailure ?? failure;
+  const availableRoom = rooms.find(
+    (room) =>
+      room.hostId !== project?.memberId &&
+      ['lobby', 'finished'].includes(room.status) &&
+      room.members.length < room.manifest.maxPlayers,
+  );
+  const hostName =
+    availableRoom?.members.find((member) => member.id === availableRoom.hostId)
+      ?.nickname ?? '팀원';
   const enter = async (roomId?: string) => {
     if (!api) return;
+    setOpen(true);
     setBusy(true);
     setError('');
     setFailure(null);
     try {
+      setChecking(true);
+      await api.status?.();
+      setChecking(false);
       if (!roomId) {
         const result = await api.control({ action: 'create', path });
         roomId = result.room?.id;
@@ -113,6 +223,7 @@ export function MultiplayerLobby({
       setFailure(value);
       setError(value.message);
     } finally {
+      setChecking(false);
       setBusy(false);
     }
   };
@@ -149,8 +260,24 @@ export function MultiplayerLobby({
         onClick={() => setOpen(!open)}
         title="프로젝트 참여자와 함께 플레이"
       >
-        {projectOnly ? '플레이 중인 방 보기' : '함께 플레이'}
+        {discover
+          ? `함께 플레이${rooms.length ? ` · ${rooms.length}개 방` : ''}`
+          : projectOnly
+            ? '플레이 중인 방 보기'
+            : '함께 플레이'}
       </button>
+      {discover && !open && !visibleFailure && availableRoom && (
+        <span className="multiplayer-room-notice" role="status">
+          {hostName}님이 게임을 열었어요.
+          <button
+            type="button"
+            disabled={busy || checking || !project?.connected}
+            onClick={() => void enter(availableRoom.id)}
+          >
+            참가
+          </button>
+        </span>
+      )}
       {open && (
         <section
           className="multiplayer-lobby"
@@ -163,21 +290,32 @@ export function MultiplayerLobby({
             연결하면 방을 만들고 참가할 수 있습니다.
           </p>
           {!api && <p>데스크톱 앱에서 공동 프로젝트에 연결해주세요.</p>}
-          {error && <p role="alert">{error}</p>}
-          {failure && (
+          {checking && <p role="status">서버를 확인하고 있어요.</p>}
+          {serverVersion && <small>서버 버전 {serverVersion}</small>}
+          {(serverFailure?.message || error) && (
+            <p role="alert">{serverFailure?.message || error}</p>
+          )}
+          {visibleFailure && (
             <div className="multiplayer-failure">
-              <p>{failure.hint}</p>
+              <p>{visibleFailure.hint}</p>
+              <button
+                type="button"
+                disabled={checking || busy}
+                onClick={() => setCheckKey((key) => key + 1)}
+              >
+                연결 다시 확인
+              </button>
               <details>
                 <summary>오류 정보</summary>
                 <p>
-                  {failure.code} · 추적 번호 {failure.id}
+                  {visibleFailure.code} · 추적 번호 {visibleFailure.id}
                 </p>
                 <pre>
                   {JSON.stringify(
                     {
-                      phase: failure.phase,
-                      at: failure.at,
-                      details: failure.details,
+                      phase: visibleFailure.phase,
+                      at: visibleFailure.at,
+                      details: visibleFailure.details,
                     },
                     null,
                     2,
@@ -189,7 +327,7 @@ export function MultiplayerLobby({
           {!projectOnly && (
             <button
               type="button"
-              disabled={busy || !api}
+              disabled={busy || checking || !!serverFailure || !api}
               onClick={() => void enter()}
             >
               이 게임으로 방 만들기
@@ -214,7 +352,14 @@ export function MultiplayerLobby({
                 <button
                   type="button"
                   disabled={
-                    busy || !['lobby', 'finished'].includes(room.status)
+                    busy ||
+                    checking ||
+                    !!serverFailure ||
+                    !['lobby', 'finished'].includes(room.status) ||
+                    (room.members.length >= room.manifest.maxPlayers &&
+                      !room.members.some(
+                        (member) => member.id === project?.memberId,
+                      ))
                   }
                   onClick={() => void enter(room.id)}
                 >
@@ -223,6 +368,11 @@ export function MultiplayerLobby({
               </li>
             ))}
           </ul>
+          {!rooms.length && !checking && !error && (
+            <p>
+              아직 열린 방이 없어요. 게임의 함께 플레이에서 방을 만들어주세요.
+            </p>
+          )}
           {api?.diagnostics && (
             <>
               <button type="button" onClick={() => void diagnostics()}>

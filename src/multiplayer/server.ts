@@ -67,6 +67,7 @@ export function attachMultiplayerServer(
   server: Server,
   access: (projectId: string, token: string) => Access,
   diagnostics?: PlayDiagnostics,
+  onLobbyChanged: (projectId: string) => void = () => {},
 ) {
   const epoch = randomUUID();
   const rooms = new Map<string, Room>();
@@ -133,6 +134,7 @@ export function attachMultiplayerServer(
     room.touched = Date.now();
     for (const connection of roomConnections(room))
       send(connection, { type: 'room', room: room.view });
+    onLobbyChanged(room.projectId);
   };
   const end = (
     room: Room,
@@ -306,6 +308,7 @@ export function attachMultiplayerServer(
         begun: new Set(),
       };
       rooms.set(view.id, room);
+      onLobbyChanged(projectId);
       result = { room: structuredClone(view) };
     } else {
       const room = findRoom(projectId, input.roomId);

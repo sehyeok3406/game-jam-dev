@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { DatabaseSync } from 'node:sqlite';
+import { readProjectMembers } from '../../adapters/sqlite/project-repository.ts';
 import { ProjectLibrary } from '../../project-library.ts';
 import { connectionInfo } from '../../connection-info.ts';
 import type { CollaborationCredentials } from '../../collaboration-client.ts';
@@ -59,22 +59,11 @@ export async function readHostedProject(directory: string, projectId: string) {
   if (!/^[a-f0-9-]{36}$/.test(projectId)) throw new Error('Invalid project');
   const database = path.join(directory, 'projects/sync.sqlite');
   if (await fs.stat(database).catch(() => null)) {
-    const db = new DatabaseSync(database, { readOnly: true });
-    try {
-      const row = db
-        .prepare('SELECT value FROM projects WHERE id=?')
-        .get(projectId);
-      if (!row) throw new Error('Unknown project');
-      const stored = JSON.parse(String(row.value));
-      if (stored.lifecycle && stored.lifecycle.status !== 'active')
-        throw Error('Project is in server trash');
-      return stored as {
-        members: { tokenHash: string; removed?: boolean }[];
-      };
-    } finally {
-      db.close();
-    }
+    const project = readProjectMembers(database, projectId);
+    if (!project) throw new Error('Unknown or inactive project');
+    return project;
   }
+
   const folder = path.join(directory, 'projects', projectId);
   const head = JSON.parse(
     await fs.readFile(path.join(folder, 'head.json'), 'utf8'),

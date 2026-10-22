@@ -12,17 +12,37 @@ export function execFile(..._args: unknown[]): never {
 
 let nextPid = 1000;
 const children = new Map<number, ReturnType<typeof spawn>>();
-export const executionStarts: { pid: number; model: string; stage: string }[] =
-  [];
+export const executionStarts: {
+  pid: number;
+  model: string;
+  stage: string;
+  args: string[];
+  effortEnv?: string;
+  geminiThinking?: string;
+}[] = [];
 export const executionSpecs: {
   model: string;
   inputs: string[];
   outputs: string[];
 }[] = [];
+// Explicit barriers make queued/cancel assertions independent of machine speed.
+const executionBarriers = new Map<string, Promise<void>>();
+export function holdMockExecution(model: string) {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  executionBarriers.set(model, pending);
+  return () => {
+    if (executionBarriers.get(model) === pending)
+      executionBarriers.delete(model);
+    release();
+  };
+}
 export function spawn(
   command: string,
   args: string[],
-  options?: { cwd?: string },
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ) {
   const isExecution =
     args[0] === 'exec' || args.includes('--print') || args.includes('--prompt');
@@ -49,6 +69,8 @@ export function spawn(
       pid: child.pid,
       model: args[args.indexOf('--model') + 1],
       stage: options?.cwd ?? args[args.indexOf('--cd') + 1],
+      args: [...args],
+      effortEnv: options?.env?.CLAUDE_CODE_EFFORT_LEVEL,
     });
   setTimeout(
     async () => {
@@ -65,7 +87,7 @@ export function spawn(
         }
         if (args[0] === '--help') {
           child.stdout.write(
-            '--restricted --strict-mcp-config --tools --output-format --approval-mode --extensions --skip-trust --allowed-mcp-server-names\n',
+            '--restricted --strict-mcp-config --tools --effort --output-format --approval-mode --extensions --skip-trust --allowed-mcp-server-names\n',
           );
           child.emit('close', 0);
           return;
@@ -79,6 +101,8 @@ export function spawn(
           child.emit('close', 0);
           return;
         }
+        await executionBarriers.get(args[args.indexOf('--model') + 1]);
+        if (child.killed) return;
         const stage = options?.cwd ?? args[args.indexOf('--cd') + 1];
         if (provider === 'claude-cli') {
           if (
@@ -94,6 +118,10 @@ export function spawn(
               'utf8',
             ),
           );
+          executionStarts.find(
+            (entry) => entry.pid === child.pid,
+          )!.geminiThinking =
+            settings.modelConfigs?.customOverrides?.[0]?.modelConfig?.generateContentConfig?.thinkingConfig?.thinkingLevel;
           if (
             settings.tools.core.includes('run_shell_command') ||
             settings.admin.mcp.enabled
@@ -179,10 +207,12 @@ export function spawn(
           }
           if (
             mode === 'fixture-html-compose' ||
+            mode === 'fixture-queue-html-compose' ||
             mode === 'fixture-gamejam-html-compose'
           ) {
-            if (spec.html_input_sources?.length !== 3)
-              throw new Error('Expected three HTML materials');
+            const expectedCount = mode === 'fixture-queue-html-compose' ? 1 : 3;
+            if (spec.html_input_sources?.length !== expectedCount)
+              throw new Error(`Expected ${expectedCount} HTML materials`);
             for (const source of spec.html_input_sources) {
               await fs.readFile(path.join(stage, source.path));
               for (const file of source.files)

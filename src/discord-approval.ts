@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { isAiProvider, aiProvider } from './ai-providers.ts';
+import {
+  isAiProvider,
+  aiProvider,
+  reasoningError,
+  reasoningLabel,
+} from './core/ai/catalog.ts';
 import {
   APPROVAL_STATUS_NAMES,
   approvalEditable,
@@ -72,7 +77,7 @@ export function discordReviewText(
   return [
     `${saved.binding.projectName} · ${r.resultName || 'Game Jam! 요청'}`,
     `요청자: ${detail.item.authorName} · 수정 버전 ${detail.item.revision}`,
-    `실행: ${aiProvider(saved.settings.providerId).label} · ${saved.settings.modelId || '자동 선택'}`,
+    `실행: ${aiProvider(saved.settings.providerId).label} · ${saved.settings.modelId || '자동 선택'} · ${reasoningLabel(saved.settings.reasoningEffort)}`,
     `작업: ${[r.organize && '문서 정리', r.implement && 'HTML 구현'].filter(Boolean).join(' → ')}`,
     `입력 자료:\n${r.inputPaths.join('\n')}`,
     `문서 출력: ${JSON.stringify(r.documentResult ?? null)}`,
@@ -151,6 +156,7 @@ export class DiscordApprovalService {
       !isAiProvider(input.providerId) ||
       typeof input.threads !== 'boolean' ||
       typeof input.modelId !== 'string' ||
+      reasoningError(input.providerId, input.modelId, input.reasoningEffort) ||
       input.modelId.length > 128 ||
       (input.modelId && !/^[a-zA-Z0-9._:/-]+$/.test(input.modelId))
     )
@@ -168,6 +174,7 @@ export class DiscordApprovalService {
         userId: input.userId,
         providerId: input.providerId,
         modelId: input.modelId,
+        reasoningEffort: input.reasoningEffort,
         threads: input.threads,
       },
       binding: {

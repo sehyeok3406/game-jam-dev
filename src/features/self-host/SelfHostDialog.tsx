@@ -1,3 +1,4 @@
+import { useRuntime } from '../../ui/runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
@@ -30,6 +31,8 @@ export function SelfHostDialog({
   close: () => void;
   share: (id: string) => Promise<void>;
 }) {
+  const { api: runtimeApi } = useRuntime();
+
   const dialog = useRef<HTMLDialogElement>(null);
   const [state, setState] = useState<SelfHostState | null>(null);
   const [working, setWorking] = useState(false);
@@ -42,7 +45,7 @@ export function SelfHostDialog({
   const [confirmation, setConfirmation] = useState<'stop' | 'restart' | null>(
     null,
   );
-  const api = window.gameCanvas.selfHost;
+  const api = runtimeApi.desktop?.selfHost;
   const busy =
     working ||
     (!!state &&
@@ -66,7 +69,7 @@ export function SelfHostDialog({
             setError('서버 상태를 확인하지 못했습니다. 다시 확인해주세요.');
         });
     void refresh();
-    void window.gameCanvas
+    void runtimeApi.projects
       .listProjects()
       .then((projects) => {
         if (!disposed)
@@ -119,7 +122,7 @@ export function SelfHostDialog({
       setState(next);
       setPrompt('');
       if (next.stage === 'problem') setError(next.message);
-      await window.gameCanvas.listProjects();
+      await runtimeApi.projects.listProjects();
     });
   const alive =
     state?.checks?.serverOwnership === 'owned' ||
@@ -214,6 +217,21 @@ export function SelfHostDialog({
               인터넷 연결:{' '}
               {state.checks.publicHealthy ? '응답 정상' : '확인 필요'}
             </li>
+            {state.checks.serverVersion && (
+              <li>실행 중인 서버: {state.checks.serverVersion}</li>
+            )}
+            {state.checks.multiplayerVersion != null && (
+              <li>
+                함께 플레이:{' '}
+                {state.checks.multiplayerVersion === 1
+                  ? '사용 가능'
+                  : '서버 업데이트 필요'}
+                {state.checks.multiplayerVersion === 1 &&
+                state.checks.multiplayerLobbyVersion !== 1
+                  ? ' · 방 자동 알림은 서버 업데이트가 필요해요.'
+                  : ''}
+              </li>
+            )}
           </ul>
         )}
       </section>

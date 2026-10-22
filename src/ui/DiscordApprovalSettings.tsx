@@ -1,5 +1,7 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useState } from 'react';
-import { AI_PROVIDERS } from '../ai-providers';
+import { AI_PROVIDERS, reasoningError } from '../core/ai/catalog.ts';
+import { AiReasoningSelect } from './AiReasoningSelect';
 import type { AiProviderId } from '../shared';
 import type {
   DiscordApprovalSettings as Settings,
@@ -15,7 +17,9 @@ export function DiscordApprovalSettings({
   model: string;
   connected: boolean;
 }) {
-  const api = window.gameCanvas.discordApproval;
+  const { api: runtimeApi } = useRuntime();
+
+  const api = runtimeApi.desktop?.discordApproval;
   const [status, setStatus] = useState<DiscordApprovalStatus | null>(null);
   const [settings, setSettings] = useState<Settings>({
     channelId: '',
@@ -135,6 +139,7 @@ export function DiscordApprovalSettings({
                 ...settings,
                 providerId: e.target.value as AiProviderId,
                 modelId: '',
+                reasoningEffort: null,
               })
             }
           >
@@ -152,11 +157,31 @@ export function DiscordApprovalSettings({
             maxLength={128}
             value={settings.modelId}
             onChange={(e) =>
-              setSettings({ ...settings, modelId: e.target.value })
+              setSettings({
+                ...settings,
+                modelId: e.target.value,
+                reasoningEffort: reasoningError(
+                  settings.providerId,
+                  e.target.value,
+                  settings.reasoningEffort,
+                )
+                  ? null
+                  : settings.reasoningEffort,
+              })
             }
             placeholder="비우면 기본 모델"
           />
         </label>
+        <AiReasoningSelect
+          label="원격 실행 추론 수준"
+          provider={settings.providerId}
+          model={settings.modelId}
+          value={settings.reasoningEffort}
+          onChange={(value) =>
+            setSettings({ ...settings, reasoningEffort: value })
+          }
+          disabled={busy}
+        />
         <label className="discord-threads">
           <input
             type="checkbox"

@@ -1,28 +1,44 @@
+import type { GamejamRequest } from './contracts/gamejam-request.ts';
+export type { GamejamRequest } from './contracts/gamejam-request.ts';
 import { CanvasError } from './app-errors.ts';
 import { taskInstructions } from './task-instructions.ts';
-import type { CreateTaskInput, HtmlResultChoice } from './shared.ts';
-import type { DocumentResultChoice } from './document-output.ts';
+import type { CreateTaskInput } from './shared.ts';
+
 import type { GamejamSavedRequest } from './gamejam-history.ts';
-
-export type GamejamRequest = {
-  multiplayer?: import('./multiplayer/types').MultiplayerSettings | null;
-  canvasId?: string;
-  sourceMode?: 'html' | 'html-compose';
-  organize: boolean;
-  implement: boolean;
-  inputPaths: string[];
-  x: number;
-  y: number;
-  htmlResult?: HtmlResultChoice;
-  documentResult?: DocumentResultChoice;
-  instructions: Record<'organize' | 'implement', string>;
-  resultName: string;
-};
-
+import { resolveMultiplayer } from './multiplayer/resolve.ts';
+export function resolveGamejamRequest(
+  request: GamejamRequest,
+  documents: readonly {
+    relativePath: string;
+    body: string;
+  }[],
+  previews: readonly {
+    relativePath: string;
+    content: string;
+  }[],
+): GamejamRequest {
+  if (!request.implement) return request;
+  const baseline =
+    request.htmlResult?.basePath ??
+    (request.htmlResult?.mode !== 'new' ? 'output/index.html' : undefined);
+  const multiplayer = resolveMultiplayer({
+    explicit: request.multiplayer,
+    instructions: request.instructions.implement,
+    baselineHtml: previews.find((item) => item.relativePath === baseline)
+      ?.content,
+    documents: documents
+      .filter((doc) => request.inputPaths.includes(doc.relativePath))
+      .map((doc) => doc.body),
+  });
+  return multiplayer === undefined ? request : { ...request, multiplayer };
+}
 /** Checkbox changes never replace edited instructions or output choices. */
 export function gamejamTaskInput(
   request: GamejamRequest,
-  settings?: Pick<GamejamSavedRequest, 'providerId' | 'modelId' | 'retryOf'>,
+  settings?: Pick<
+    GamejamSavedRequest,
+    'providerId' | 'modelId' | 'reasoningEffort' | 'retryOf'
+  >,
 ): CreateTaskInput {
   if (!request.organize && !request.implement)
     throw new CanvasError(

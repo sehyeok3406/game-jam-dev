@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { app, BrowserWindow } from 'electron';
+const packageInfo = JSON.parse(await fs.readFile('package.json', 'utf8'));
 app.setPath('userData', path.resolve('out/ui-review/profile'));
 async function run() {
   await app.whenReady();
@@ -53,9 +54,10 @@ async function run() {
     await js('localStorage.clear();sessionStorage.clear()');
     await win.reload();
     await wait('!!document.querySelector(".home-project-open")');
-    assert.match(
-      await js('document.querySelector(".home-sidebar-bottom").textContent'),
-      /v0\.12\./,
+    assert.ok(
+      (
+        await js('document.querySelector(".home-sidebar-bottom").textContent')
+      ).includes(`v${packageInfo.version}`),
     );
     assert(
       !(
@@ -71,7 +73,17 @@ async function run() {
       await js(
         "Array.from(document.querySelectorAll('.bottom-toolbar button span')).map(e=>e.textContent)",
       ),
-      ['선택', '이동', '새 메모', '섹션', '불러오기'],
+      [
+        '플러그인',
+        '펜',
+        '형광펜',
+        '지우개',
+        '선택',
+        '이동',
+        '새 메모',
+        '섹션',
+        '불러오기',
+      ],
     );
     for (const [name, tool] of [
       ['H', 'hand'],
@@ -380,6 +392,9 @@ async function run() {
     assert.equal(clicked.width, 340);
     assert.equal(clicked.height, 300);
     const first = await js('window.gameCanvas.listDocuments().then(d=>d[0])');
+    const defaultMapColor = await js(
+      `getComputedStyle(document.querySelector('[data-node-id="'+${JSON.stringify(first.id)}+'"]')).fill`,
+    );
     await js(
       `window.gameCanvas.setDocumentColor({relativePath:${JSON.stringify(first.relativePath)},color:'pink'})`,
     );
@@ -392,7 +407,21 @@ async function run() {
     const cardColor = await js(
       "getComputedStyle(document.querySelector('.document-card[data-card-color=pink]')).backgroundColor",
     );
-    assert.equal(mapColor, cardColor);
+    assert.notEqual(
+      mapColor,
+      defaultMapColor,
+      'minimap reflects the selected card color',
+    );
+    assert.notEqual(
+      mapColor,
+      cardColor,
+      'minimap retains its existing stronger, independent palette',
+    );
+    assert.equal(
+      cardColor,
+      'rgb(251, 229, 239)',
+      'changing the minimap must preserve the pink document background',
+    );
     assert(
       await js('!!document.querySelector(".canvas-minimap-node--section")'),
     );

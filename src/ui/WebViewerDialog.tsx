@@ -1,3 +1,5 @@
+import { requireDesktopApi } from './runtime/desktop-api';
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { Copy, Globe2, LockKeyhole, X } from 'lucide-react';
 import type { GameCanvasApi, ProjectEntry } from '../shared';
@@ -8,6 +10,8 @@ export function WebViewerDialog({
   projects: ProjectEntry[];
   close: () => void;
 }) {
+  const { api } = useRuntime();
+
   const dialog = useRef<HTMLDialogElement>(null);
   const [settings, setSettings] = useState<Awaited<
     ReturnType<GameCanvasApi['getWebViewer']>
@@ -22,7 +26,11 @@ export function WebViewerDialog({
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
-    void window.gameCanvas
+    if (!api.desktop) {
+      setError('이 실행 환경에서는 PC 게시 연결을 사용할 수 없습니다.');
+      return;
+    }
+    void requireDesktopApi(api)
       .getWebViewer()
       .then((value) => {
         setSettings(value);
@@ -126,13 +134,13 @@ export function WebViewerDialog({
                 setError('');
                 setMessage('');
                 try {
-                  const result = await window.gameCanvas.publishWebViewer({
+                  const result = await requireDesktopApi(api).publishWebViewer({
                     projects: selected,
                     liveLocal,
                   });
                   setMessage(`${result.published}개 프로젝트를 게시했습니다.`);
                   setError(result.errors.join('\n'));
-                  setSettings(await window.gameCanvas.getWebViewer());
+                  setSettings(await requireDesktopApi(api).getWebViewer());
                 } catch (error) {
                   setError(
                     error instanceof Error
@@ -146,7 +154,7 @@ export function WebViewerDialog({
             >
               {busy ? '게시 중…' : '선택한 프로젝트 게시'}
             </button>
-            <button onClick={() => void window.gameCanvas.openWebViewer()}>
+            <button onClick={() => void requireDesktopApi(api).openWebViewer()}>
               웹 뷰어 열기
             </button>
           </div>

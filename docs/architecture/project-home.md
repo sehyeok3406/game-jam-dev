@@ -1,0 +1,14 @@
+# 프로젝트 홈 업무 경계
+
+`ProjectHomeService`가 목록 보강, 로컬/공동 이름 변경, 열기/홈 이동/생성, 홈 폴더 분류, 연결 주소 검사/적용, 휴지통 전후의 대기 순서를 소유한다. `desktop/ipc/projects.ts`는 기존 25개 `projects:*` 채널의 인자를 변환한다. 채널·preload API·반환 형식은 유지하며 기존 main의 mutation 큐·AI 작업 보호·외부 창/프레임 거부를 통과해 등록한다. 연결 정보의 sender 검사도 등록 경계에서 유지한다.
+
+- `HomeProjectRegistry`는 공개 항목만 제공한다. desktop의 `homeProjectRegistry`가 `credentials`와 `localRoot`를 제외한다. 토큰·recovery key·암호화·`projects.enc`/`local-projects.json` 저장은 기존 ProjectLibrary에 남는다. 개인 로컬 목록·편집·폴더 분류에 암호화된 공동 세션이나 서버를 요구하지 않는다.
+- `filesystemHomeProjects`는 로컬 이름/시각·경로 확인·mkdir와 이름 저장을 맡는다. `project.md`의 unknown frontmatter/본문, expectedName, 임시 파일 compare/replace, 기존 before/after 히스토리와 `.canvas/project.json`을 유지한다. 삭제된 project.md는 이름 변경으로 다시 만들지 않는다. 디스크 문서/metadata/registry/history를 하나의 새 원자 트랜잭션으로 바꿨다고 주장하지 않는다.
+- `desktopSharedProjects`는 인증된 CollaborationClient와 캐시를 사용한다. 목록 기본 조회는 서버에 접속하지 않고 기존 offline/outgoing 표시와 역할·시각을 사용한다. 명시적 refresh만 lifecycle과 metadataOnly state를 읽는다. 서버에 접근할 수 없어도 목록·이전 이름·참여 세션은 유지한다. inactive lifecycle은 숨기거나 active로 덮어쓰지 않는다.
+- 공동 이름 변경은 cache queue 완료 후 offline/outgoing을 검사하고, 기존 active client 또는 별도 인증 client를 refresh한 뒤 expectedName과 함께 전송한다. 성공 후에만 registry와 화면을 갱신한다. 큐·권한·프로토콜·서버 데이터 형식은 바꾸지 않는다.
+- 추출 중 내장 서버의 이전 포트가 이름 변경/metadata 조회/다시 열기에 사용될 수 있는 경로를 발견했다. 내장 서버로 표시된 항목만 현재 desktop 서버 주소를 조립해 사용한다. 외부 서버 주소는 저장된 값을 그대로 사용한다. 실제 임시 PC 서버의 기본 transport와 패키지 프로세스 재시작 검사로 확인한다.
+- 휴지통 처리 순서는 viewer 동기화 중단 → 진행 중 게시 완료 → 프로젝트 보존/정지 → 저장 큐 정지 → shared cache 완료 → 기존 ProjectTrash 실행이다. 실패도 finally에서 viewer 동기화를 재시작한다. token/이름/버전 확인, 7일 보관, 암호화, 원래 경로·파일·초안 복구/ack/purge는 기존 ProjectTrash와 서버가 계속 소유한다. 이번 단계에서 운영 데이터 삭제/이전이나 백업 형식을 추가하지 않는다.
+
+서비스의 열기/정지 port는 기존 DesktopProjectSessions·DesktopLifecycle에 연결한다. main에 남은 `suspendProject`는 저장/잠금/워처/세션 수명 adapter 조립이며 collaboration 참여·복구 경로도 공유한다. 공동 프로젝트 생성·참여·복구·PC 서버 시작 IPC, 파일 mirror 조립, 잔여 편집 mutation wrapper는 이번 홈 IPC 추출의 완료 범위에 포함하지 않는다.
+
+검증은 `tests/project-home.test.mjs`(업무 실패·충돌·형식/비밀 값 경계·기본 인증 HTTP)와 `tests/projects-packaged.mjs`(실제 Windows 홈 UI/IPC·임시 프로젝트 휴지통/복원·내장 서버·프로세스 재시작)를 연결한다. 패키지 검사는 UUID 프로필과 임시 프로젝트만 사용하며 연결 정보 적용 후 외부 주소에 접속하지 않는다. 실제 AI 계정이나 운영 서버 검증과 구분한다.

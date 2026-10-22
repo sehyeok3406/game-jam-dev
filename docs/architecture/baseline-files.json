@@ -1,0 +1,281 @@
+{
+  "files": [
+    {
+      "sha256": "F7CD79AB461199A06D71B4F752D500FA44BCC7520AF9DAFEA651E13B0198AD70",
+      "path": "HTML_MULTIPLAYER.md"
+    },
+    {
+      "sha256": "D879EAC3F2632B221412876F1517F5250FE091D80A16A6FFBC5AEB20557D4C65",
+      "path": "MULTIPLAYER_DIAGNOSTICS.md"
+    },
+    {
+      "sha256": "F0D2DB24BA4DADAF4C0D6FB5F88C1713318A8C625B089AD5E0D25CF5A362522C",
+      "path": "package.json"
+    },
+    {
+      "sha256": "6D79FCF72AEBA87ED459401D7E400EE83423D36B635516FA52D957D5CD807865",
+      "path": "src/ai-cli.ts"
+    },
+    {
+      "sha256": "9295D0A6634BD7DEF68453A9992400D64A5D8AE21367280EE7A579200468A17C",
+      "path": "src/ai-file-lock.ts"
+    },
+    {
+      "sha256": "48155FA8A9F9517CB073D7603892F24B1DD2F8F5FD34484A9C227A26206A9E76",
+      "path": "src/ai-providers.ts"
+    },
+    {
+      "sha256": "9D0EF34F05262B17AC3652D860999F9FA86B5269DC933F3D4A56059A0FF7EB82",
+      "path": "src/collaboration-client.ts"
+    },
+    {
+      "sha256": "09BEAC5CABF4030778C3B635E85F6103E72922E738FDF89D21CA30BC90AF4643",
+      "path": "src/collaboration-server.ts"
+    },
+    {
+      "sha256": "114C0457BA8A4AC21E1574AB1A188210B65D46B830968498E35D9AE5463BA950",
+      "path": "src/dev-api.ts"
+    },
+    {
+      "sha256": "6DFAF9231FB3594605AE3FB66CA672B5C06FBA1F4F851038AC9E1ADFD6574610",
+      "path": "src/discord-approval-types.ts"
+    },
+    {
+      "sha256": "CE02449068AFBF0B50348DC39871D818527329725A7DFA7F8022844511CA41B0",
+      "path": "src/discord-approval.ts"
+    },
+    {
+      "sha256": "F33726ECC0EA99FDBA26C2C60F0F245FC41203EA1DB810D9FACEBFE740EF1393",
+      "path": "src/features/self-host/SelfHostDialog.tsx"
+    },
+    {
+      "sha256": "CD05107BD7B48A9582D8CF23AA1C440D845CDE6100A3EE5718D4400298530EE8",
+      "path": "src/features/self-host/types.ts"
+    },
+    {
+      "sha256": "134C1825DC4D6713B999AB0D851865915DCFFF9FE1AEC29FCEDA612C53C17775",
+      "path": "src/gamejam-approval.ts"
+    },
+    {
+      "sha256": "16FDF72B51AC5603BFAB6B18153286CF2F56801E80E588772F9C2E1A5C936156",
+      "path": "src/gamejam-history.ts"
+    },
+    {
+      "sha256": "B5D4E308C072651B7BC7FCEFE66DEA5195E5ED79C898E3F8706BBC4FB9BAF852",
+      "path": "src/gamejam-request.ts"
+    },
+    {
+      "sha256": "C5B9BA3263215AA12F69AE8DED161502DACE0302C74210E39CCC0CA58EE3C862",
+      "path": "src/gamejam-validation.ts"
+    },
+    {
+      "sha256": "1509F16D81A96EB088F18808813BA9F394685544737E7C8E706A6D3C0B396008",
+      "path": "src/index.css"
+    },
+    {
+      "sha256": "771973076C357D724E4472B17657579835576643F59B99ECD99D6D96B87AEAFB",
+      "path": "src/main.ts"
+    },
+    {
+      "sha256": "5F3C9339432E92214A0F4F95592EC12597F6C0C3488837E496B6BCAC599B121D",
+      "path": "src/multiplayer/client.ts"
+    },
+    {
+      "sha256": "6A54D43A1BE73875E3BFF0C63E92736555DEF0E376F404EC5616CE359448E70B",
+      "path": "src/multiplayer/errors.ts"
+    },
+    {
+      "sha256": "8D66FB4ACC7F6E9218808417DFC56B3DCC7FDA5961C7C3E589B71DE4C8CCC89A",
+      "path": "src/multiplayer/player-shell.js"
+    },
+    {
+      "sha256": "C28EE5D7B39FF974ADB5075D7D3CF367147851D6A3D9DA11819359BA6C1165D2",
+      "path": "src/multiplayer/server.ts"
+    },
+    {
+      "sha256": "955E46CA21F963F6E881DEFB6DCE16B61020BB021B489B3BBEE0A3EABFE60870",
+      "path": "src/multiplayer/types.ts"
+    },
+    {
+      "sha256": "179B8098A1CC133E28B0ECEF75FB55FB81C11750129020DDF7417A6FBB2C4902",
+      "path": "src/multiplayer/window-manager.ts"
+    },
+    {
+      "sha256": "F3526216F10C89B424750562FC99D7DF59CE3EDF2370D6C1DC147C61001104E3",
+      "path": "src/preload.ts"
+    },
+    {
+      "sha256": "BD481F1C0C8156BE2669B6E2EEAA37EC9290309B835247E33C6D69A1D8F1E961",
+      "path": "src/shared.ts"
+    },
+    {
+      "sha256": "72F2208B751F1B17A449EC5214F8353292407CF40FEA3620C7C347C98F87AC01",
+      "path": "src/task-plan.ts"
+    },
+    {
+      "sha256": "ED7AEA6C97DC63EE15B2D443C07971E883EF3A3030AD9F0D2192C365C98ED2B0",
+      "path": "src/ui/AiTaskDetails.tsx"
+    },
+    {
+      "sha256": "EE9D04AF635A0757B27E93A8594718B42D3225A5D1E9D63597CE97E1A3CFC277",
+      "path": "src/ui/App.tsx"
+    },
+    {
+      "sha256": "43F5E422BCA177CC361F517AFAFA338ED819AC9A455E371E80CE6F4EB7C6F415",
+      "path": "src/ui/DiscordApprovalSettings.tsx"
+    },
+    {
+      "sha256": "27D1E07CFE88F246E60A54F058D048E516C03D7A940AF4BC2C4FB1DD873472B0",
+      "path": "src/ui/GamejamRequestInbox.tsx"
+    },
+    {
+      "sha256": "52A2B342AE7C4BAE437838F4714EB1DD9F5C59E112451A6F9AA9AA83F2831C22",
+      "path": "src/ui/MultiplayerLobby.tsx"
+    },
+    {
+      "sha256": "272727C1D9F15AB39605BF7F273B5E59D85AE5276CEB31CB73518CEFB8C956A2",
+      "path": "src/ui/ProjectHome.tsx"
+    },
+    {
+      "sha256": "77540C24B92918D0CFA80D146BC34DAAF3FB57B907501E571DF891FE39B6E0D3",
+      "path": "tests/ai-providers.test.mjs"
+    },
+    {
+      "sha256": "2974C9AAEF859F8BC42C8FB50A01C6CFC3F2C8A120E45C663DDC2F2E8B9FD7F8",
+      "path": "tests/gamejam-approval.test.mjs"
+    },
+    {
+      "sha256": "B109FB9AB70A13CDFC6A5F5BCDEBD3475B571B5D7FD9857EA3FFF00B0F4F6CA0",
+      "path": "tests/gamejam-history.electron.mjs"
+    },
+    {
+      "sha256": "FF05E6309F81023CEC5214BD9E2F600EF9670389E82AC00ACE89CAE92B16F6AF",
+      "path": "tests/gamejam-history.fixture.tsx"
+    },
+    {
+      "sha256": "738AAC6526F9E32FAFC1A44C0AEAF72D3A25371FA6D5E99DFD3B3757B0B3C732",
+      "path": "tests/gamejam-history.test.mjs"
+    },
+    {
+      "sha256": "281A222D5C86E7BE0366AD233FD9F080159CC7D301C2F4B0CBA04895628290D8",
+      "path": "tests/gamejam-validation.electron.mjs"
+    },
+    {
+      "sha256": "6FD508AA955CA545BC624F1F35E37C3E2436E6B88E0EF25DE403F187BB981094",
+      "path": "tests/internet-host-diagnostics.ps1"
+    },
+    {
+      "sha256": "AC0B1E71A481F79625E18BD2EDF00004CBBA57B0C875DD59E094CF0D65E67D77",
+      "path": "tests/mocks/process.ts"
+    },
+    {
+      "sha256": "A0D240DDE6C6105A195DCACBE5F2798305B3B109D9B58E733E61B73CD1555491",
+      "path": "tests/multiplayer-diagnostics.test.mjs"
+    },
+    {
+      "sha256": "7DF774C91BB6555FD6ED1FB7ADFF99EB83016C1264BC161BB7D4B72A7AEED67E",
+      "path": "tests/multiplayer-packaged.mjs"
+    },
+    {
+      "sha256": "9314C56AF41FA247F2465B88637884931717CED944AF024796A4615C4BFCC023",
+      "path": "tests/multiplayer.test.mjs"
+    },
+    {
+      "sha256": "EDFDB5BA967000E7E511160BFA04EB41CADAC66DDEEF5304D36F4355D5CF3118",
+      "path": "tools/internet-host/diagnostics.ps1"
+    },
+    {
+      "sha256": "328B47188518B551A6DE2C5E24BCCEB39EF7B40536914CBA7E7783C89568B7A3",
+      "path": "BUSINESS_MODEL_RESEARCH_2026-10-13.md"
+    },
+    {
+      "sha256": "4EBBE009DD8E08AA872190962F65EBF1C79D25B4434CF5CF827142EF5011C727",
+      "path": "ERASER_MODES_IMPLEMENTATION_PLAN.md"
+    },
+    {
+      "sha256": "E75C61DFE33887B7602F570071B5604403C5F9921C1805BF03F2B9FAEBB750B8",
+      "path": "GAMEJAM_PARALLEL_EXECUTION_PLAN.md"
+    },
+    {
+      "sha256": "A7088CB6E805361E1F003EB1B7325338E426960DD967AF1EE188A969E2A0C7C4",
+      "path": "GENEX_COMPETITOR_ANALYSIS_2026-10-13.md"
+    },
+    {
+      "sha256": "39B1F91D7F488C5D5B9A040C4740ECB95807FC1A67C89AEEE600678CAD06E4C4",
+      "path": "MULTIPLAYER_ZERO_CODE_IMPLEMENTATION_2026-10-16.md"
+    },
+    {
+      "sha256": "624763106938A83D21B0A981050A02DDC6AD2A02ACB55B7529280D5B02498B14",
+      "path": "MULTIPLAYER_ZERO_CODE_PLAN_2026-10-16.md"
+    },
+    {
+      "sha256": "7356719391779A92FDE6FDEAD5FE3E8D1A6D69EA30B7C02494FFFB2B807E8781",
+      "path": "REFACTORING_PLAN_2026-10-20.md"
+    },
+    {
+      "sha256": "5690372A318A714271D754F5B9AC8BED50DB4823B4157C55F6D0A565CD0A4B05",
+      "path": "REMOTE_APPROVAL_BOT_RESEARCH_2026-10-15.md"
+    },
+    {
+      "sha256": "9FC37A3E7A01696B5CAE302C2E5AFE2412CEAA7AEE06A898AF398FB11385BD91",
+      "path": "src/ai-queue-store.ts"
+    },
+    {
+      "sha256": "A951A6B45E90C12C963767C605DDA6750112D86F7FDCBD15AA2436A68A29A935",
+      "path": "src/ai-task-queue.ts"
+    },
+    {
+      "sha256": "7BF29C6734EE14FC5FCBE39175EC015E26A063A148CE184D85ADEC3DBA000C05",
+      "path": "src/multiplayer/resolve.ts"
+    },
+    {
+      "sha256": "F73EA80660B9BB4A817F34523A8AF0EF32B29DA2A69548AF4973F0E3E99BD828",
+      "path": "src/project-events.ts"
+    },
+    {
+      "sha256": "222FE4FD77B186CEA80C62D5566BEFB380E4F3FE8C71E8A4048547C32173E348",
+      "path": "src/ui/AiQueuePanel.tsx"
+    },
+    {
+      "sha256": "0CBF9249E0FDBC002B1ACAA3627026D9D124E0F5B25F0685E8AC5E8F424B90BF",
+      "path": "src/ui/AiReasoningSelect.tsx"
+    },
+    {
+      "sha256": "900415DAC60568B7BF8A0D790DFAA6C5BE26F497F3A7B44443BD3A01AC2F8824",
+      "path": "tests/ai-queue-main-runner.ts"
+    },
+    {
+      "sha256": "888585B814BF7C3C0EB649B090C04FD505F8ED768EA29C84AFE6A45EC427E58D",
+      "path": "tests/ai-queue-packaged.mjs"
+    },
+    {
+      "sha256": "07FB6E3E351CB8A6A1F37F066FCD8E65AD52E302C553F1135152B2AF11CA4D1F",
+      "path": "tests/ai-queue.electron.mjs"
+    },
+    {
+      "sha256": "8A83ACAAD3768E56924C7C537F37A72A64831FAF36ABB42AECE0DDD2E8A78B8F",
+      "path": "tests/ai-queue.fixture.html"
+    },
+    {
+      "sha256": "837F33DBC2D77E83C7DB43CC3354DC163C9DC7F7EFFC69D6BC6A93A78F270B66",
+      "path": "tests/ai-queue.fixture.tsx"
+    },
+    {
+      "sha256": "3C49C9F18BE9C5DC0AC0FE484E7CDEEF1D7CB1F97C3750283789A1A7E82F9811",
+      "path": "tests/ai-task-queue.test.mjs"
+    },
+    {
+      "sha256": "EE791F06C5D125F0C69E45FA8C75FD88246CADBE885227A0761489A988DE55A9",
+      "path": "tests/multiplayer-zero-code.test.mjs"
+    },
+    {
+      "sha256": "DC648F9F9285B45AA279C592ECF7B921C8FCF0265EE69C52B271A3A91FA5CEBF",
+      "path": "tests/run-ai-queue-main.mjs"
+    },
+    {
+      "sha256": "869842AC417D03F2A19FE4F4DB41271533987C43BE939789318CA6DBB5FE6A0F",
+      "path": "tests/run-ai-queue-ui.mjs"
+    }
+  ],
+  "head": "81e998b9765df4e591d21155745a677c1ad93db0"
+}

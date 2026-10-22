@@ -42,10 +42,20 @@ function Test-HostAddress([string]$Address, [switch]$Public) {
   return $Address -match '^http://127\.0\.0\.1:([0-9]{1,5})$' -and [int]$Matches[1] -ge 1 -and [int]$Matches[1] -le 65535
 }
 
-function Test-HostHealth([string]$Address) {
+function Test-HostHealth([string]$Address, [ref]$Capabilities = $null) {
   try {
     $response = Invoke-RestMethod -Uri "$Address/health" -TimeoutSec 5 -MaximumRedirection 0 -ErrorAction Stop
-    return $response.name -eq 'Game Canvas Collaboration' -and $response.protocol -eq 1
+    $valid = $response.name -eq 'Game Canvas Collaboration' -and $response.protocol -eq 1
+    if ($valid -and $Capabilities) {
+      $version = ''
+      if ([string]$response.version -match '^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[A-Za-z0-9.-]{1,40})?$') { $version = [string]$response.version }
+      $Capabilities.Value = [pscustomobject]@{
+        serverVersion = $version
+        multiplayerVersion = $(if ($response.multiplayerVersion -eq 1) { 1 } else { 0 })
+        multiplayerLobbyVersion = $(if ($response.multiplayerLobbyVersion -eq 1) { 1 } else { 0 })
+      }
+    }
+    return $valid
   } catch { return $false }
 }
 
@@ -55,6 +65,7 @@ function Get-HostFacts([string]$StateDirectory, [int]$Port, [string]$ServerEntry
     publicUrl = ''; port = $Port; listenerPids = @(); serverPid = $null; tunnelPid = $null
     serverFile = (Test-Path -LiteralPath $ServerEntry -PathType Leaf); nodeReady = $null; nodeVersion = ''
     cloudflaredReady = $null; cloudflaredPath = ''; portChecked = $false
+    serverVersion = ''; multiplayerVersion = $null; multiplayerLobbyVersion = $null
   }
   $runtimePath = Join-Path $StateDirectory 'runtime.json'
   if (Test-Path -LiteralPath $runtimePath) {
@@ -76,7 +87,13 @@ function Get-HostFacts([string]$StateDirectory, [int]$Port, [string]$ServerEntry
     $facts.portChecked = $true
   } catch { }
   if ($facts.runtimeValid) {
-    $facts.localHealthy = Test-HostHealth "http://127.0.0.1:$($facts.port)"
+    $capabilities = $null
+    $facts.localHealthy = Test-HostHealth "http://127.0.0.1:$($facts.port)" ([ref]$capabilities)
+    if ($capabilities) {
+      $facts.serverVersion = $capabilities.serverVersion
+      $facts.multiplayerVersion = $capabilities.multiplayerVersion
+      $facts.multiplayerLobbyVersion = $capabilities.multiplayerLobbyVersion
+    }
     if ($facts.server -eq 'owned' -and $facts.tunnel -eq 'owned' -and $facts.localHealthy -and $facts.publicUrl) {
       $facts.publicHealthy = Test-HostHealth $facts.publicUrl
     }
@@ -135,6 +152,7 @@ function New-HostReport($Facts, [string]$Status, [string]$Code) {
       runtimeValid = $Facts.runtimeValid; serverOwnership = $Facts.server; tunnelOwnership = $Facts.tunnel
       localHealthy = $Facts.localHealthy; publicHealthy = $Facts.publicHealthy; portChecked = $Facts.portChecked
       serverFile = $Facts.serverFile; nodeReady = $Facts.nodeReady; nodeVersion = $Facts.nodeVersion; cloudflaredReady = $Facts.cloudflaredReady
+      serverVersion = $Facts.serverVersion; multiplayerVersion = $Facts.multiplayerVersion; multiplayerLobbyVersion = $Facts.multiplayerLobbyVersion
     }
   }
 }

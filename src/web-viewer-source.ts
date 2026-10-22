@@ -1,4 +1,4 @@
-import { readSyncFiles } from './sync-store.ts';
+import { readPublication } from './adapters/sqlite/project-repository.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { CollaborationClient } from './collaboration-client.ts';
@@ -23,7 +23,7 @@ async function hostedSnapshot(
   try {
     const database = path.join(directory, 'projects', 'sync.sqlite');
     if (await fs.stat(database).catch(() => null)) {
-      const saved = readSyncFiles(database, projectId);
+      const saved = readPublication(database, projectId);
       if (!saved) return null;
       checkSnapshot(saved.files);
       return {

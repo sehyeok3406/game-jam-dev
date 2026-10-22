@@ -1,3 +1,5 @@
+import { RuntimeProvider } from '../src/ui/runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../src/ui/runtime/preview-runtime';
 import { createRoot } from 'react-dom/client';
 import { StrictMode } from 'react';
 import { App } from '../src/ui/App';
@@ -227,6 +229,10 @@ api.startCodexRun = async (input) => {
 window.gameCanvas = api;
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <RuntimeProvider
+      runtime={createPreviewRuntime(window.gameCanvas, localStorage)}
+    >
+      <App />
+    </RuntimeProvider>
   </StrictMode>,
 );

@@ -1,19 +1,19 @@
+export type { ApprovalStart } from './contracts/gamejam-approval.ts';
+export type { ApprovalList } from './contracts/gamejam-approval.ts';
+export type { GamejamApproval } from './contracts/gamejam-approval.ts';
+import type { ApprovalStatus } from './contracts/gamejam-approval.ts';
+export type { ApprovalStatus } from './contracts/gamejam-approval.ts';
+export type { ApprovalChange } from './contracts/gamejam-approval.ts';
+export type { ApprovalDetail } from './contracts/gamejam-approval.ts';
+export type { ApprovalMutation } from './contracts/gamejam-approval.ts';
 import type { GamejamRequest } from './gamejam-request.ts';
-import type { AiProviderId, CollaborationRole } from './shared.ts';
+import type { CollaborationRole } from './shared.ts';
 import { readSavedRequest } from './gamejam-history.ts';
 import { gamejamIssues } from './gamejam-validation.ts';
-
-export type ApprovalStatus =
-  | 'pending'
-  | 'feedback'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'stopped';
 export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
   pending: '요청 대기',
   feedback: '보완 요청',
+  queued: '예약됨',
   running: '구현 중',
   completed: '완료',
   failed: '실패',
@@ -22,66 +22,8 @@ export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
 };
 export const approvalEditable = (status: ApprovalStatus) =>
   status === 'pending' || status === 'feedback';
-export type ApprovalChange = {
-  at: number;
-  actorId: string;
-  actorName: string;
-  action: string;
-  revision: number;
-  request?: GamejamRequest;
-  message?: string;
-};
-export type GamejamApproval = {
-  id: string;
-  projectId: string;
-  authorId: string;
-  authorName: string;
-  createdAt: number;
-  updatedAt: number;
-  revision: number;
-  status: ApprovalStatus;
-  request: GamejamRequest;
-  feedback?: string;
-  copiedFrom?: string;
-  approvedBy?: string;
-  approvedName?: string;
-  approvedAt?: number;
-  approvedRevision?: number;
-  executionRequest?: GamejamRequest;
-  approvalCommandId?: string;
-  runId?: string;
-  taskPath?: string;
-  approvedReviewToken?: string;
-  providerId?: AiProviderId;
-  modelId?: string | null;
-  outputs?: string[];
-  error?: string;
-  changes: ApprovalChange[];
-};
-export type ApprovalDetail = {
-  item: GamejamApproval;
-  reviewToken: string | null;
-  reviewError?: string;
-  outputs: string[];
-};
-export type ApprovalMutation = {
-  commandId: string;
-  id?: string;
-  revision?: number;
-  request?: GamejamRequest;
-  message?: string;
-  copiedFrom?: string;
-};
-export type ApprovalStart = {
-  id: string;
-  revision: number;
-  reviewToken: string;
-  commandId: string;
-};
-export type ApprovalList = { items: GamejamApproval[]; version: number };
 export const canSubmitApproval = (role?: CollaborationRole) =>
   role === 'admin' || role === 'editor';
-
 type OperationStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const operationKey = (scope: string) => `gamejam-approval-operation:${scope}`;
 /** Preserve create identity across an acknowledgement lost before renderer restart. */
@@ -91,7 +33,10 @@ export function approvalOperationId(
   signature: string,
   makeId = () => crypto.randomUUID(),
 ): string {
-  let previous: { signature?: string; id?: string } | null = null;
+  let previous: {
+    signature?: string;
+    id?: string;
+  } | null = null;
   try {
     previous = JSON.parse(storage.getItem(operationKey(scope)) ?? 'null');
   } catch {
@@ -123,7 +68,6 @@ export function clearApprovalOperation(
     /* A later different request gets a different identity. */
   }
 }
-
 /** Shared requests contain no executor credentials or local AI configuration. */
 export function parseApprovalRequest(value: unknown): GamejamRequest {
   const saved = readSavedRequest({
@@ -138,7 +82,7 @@ export function parseApprovalRequest(value: unknown): GamejamRequest {
     !Number.isFinite(saved.request.y) ||
     saved.request.inputPaths.length > 500 ||
     saved.request.inputPaths.some((p) => p.length > 1024) ||
-    JSON.stringify(saved.request).length > 256_000
+    JSON.stringify(saved.request).length > 256000
   )
     throw new Error('요청 내용이 올바르지 않습니다.');
   const issues = gamejamIssues(saved.request, {

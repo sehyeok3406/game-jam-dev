@@ -58,6 +58,7 @@ export function sourceMetadata(
     x?: number;
     y?: number;
   } = {},
+  now: () => number = Date.now,
 ) {
   const id = htmlSourceId(relative);
   return matter.stringify(
@@ -75,7 +76,7 @@ export function sourceMetadata(
       y: options.y ?? 120,
       width: 720,
       height: 520,
-      updated_at: Date.now(),
+      updated_at: now(),
     },
   );
 }

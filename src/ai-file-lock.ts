@@ -14,6 +14,69 @@ export const AI_FILE_LOCK_MESSAGE =
   '현재 AI 작업에 사용 중인 파일은 수정·삭제·이동할 수 없습니다. 관련 없는 문서는 계속 편집할 수 있습니다.';
 const key = (relative: string) => relative.replaceAll('\\', '/').toLowerCase();
 
+export function mergeAiFileLocks(
+  locks: (AiFileLock | null | undefined)[],
+): AiFileLock {
+  return {
+    paths: [...new Set(locks.flatMap((lock) => lock?.paths ?? []))],
+    folders: [...new Set(locks.flatMap((lock) => lock?.folders ?? []))],
+    prefixes: [...new Set(locks.flatMap((lock) => lock?.prefixes ?? []))],
+  };
+}
+
+/** Scope intersection includes empty reserved folders and dynamic output prefixes. */
+export function aiScopesOverlap(a: AiFileLock, b: AiFileLock): boolean {
+  if (
+    a.paths.some((p) => isAiFileLocked(b, p)) ||
+    b.paths.some((p) => isAiFileLocked(a, p))
+  )
+    return true;
+  const ranges = (lock: AiFileLock) => [
+    ...lock.folders.map((p) => `${key(p).replace(/\/$/, '')}/`),
+    ...(lock.prefixes ?? []).map(key),
+  ];
+  return ranges(a).some((x) =>
+    ranges(b).some((y) => x.startsWith(y) || y.startsWith(x)),
+  );
+}
+
+export function taskFileScopes(files: Snapshot, taskPath: string) {
+  const outputs = new Set<string>([taskPath]);
+  const prefixes = new Set<string>();
+  const collect = (raw: string, depth = 0) => {
+    const data = matter(raw).data;
+    for (const p of Array.isArray(data.expected_outputs)
+      ? data.expected_outputs
+      : [])
+      if (typeof p === 'string') outputs.add(p);
+    const bundle = documentBundleContract(raw);
+    if (bundle) prefixes.add(bundle.systemPrefix);
+    if (!depth)
+      for (const stage of data.workflow_steps ?? [])
+        if (typeof stage === 'string') collect(stage, 1);
+  };
+  if (!files[taskPath]) throw new Error('AI 작업 명세를 찾을 수 없습니다.');
+  collect(files[taskPath]);
+  // Expand output companions with the same dependency rules as inputs.
+  const outputTask = '.ai/tasks/__scope__.md';
+  const write = taskFileLock(
+    {
+      ...files,
+      [outputTask]: matter.stringify('', { expected_outputs: [...outputs] }),
+    },
+    outputTask,
+  );
+  write.paths = write.paths.filter((p) => p !== outputTask);
+  write.prefixes = [...prefixes];
+  const protectedScope = taskFileLock(files, taskPath);
+  const read: AiFileLock = {
+    paths: protectedScope.paths.filter((p) => !isAiFileLocked(write, p)),
+    folders: protectedScope.folders.filter((p) => !write.folders.includes(p)),
+    prefixes: (protectedScope.prefixes ?? []).filter((p) => !prefixes.has(p)),
+  };
+  return { read, write, protectedScope };
+}
+
 /** The frozen task contract, including both workflow stages, defines the lease. */
 export function taskFileLock(files: Snapshot, taskPath: string): AiFileLock {
   const paths = new Set<string>([taskPath]);

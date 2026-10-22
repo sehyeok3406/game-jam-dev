@@ -1,25 +1,17 @@
+import type { PropertyVersions } from './contracts/sync-properties.ts';
+export type { PropertyVersions } from './contracts/sync-properties.ts';
+import type { PropertyGroup } from './contracts/sync-properties.ts';
+export type { PropertyGroup } from './contracts/sync-properties.ts';
+import { propertyKeys } from './contracts/sync-properties.ts';
+export { propertyKeys } from './contracts/sync-properties.ts';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { mergeStatuses } from './document-statuses-storage.ts';
 import matter from './markdown.ts';
 import { isDrawingPath, mergeDrawingFile } from './drawing-model.ts';
 import { isGameUiPath, mergeGameUi } from './game-ui-model.ts';
 import type { Snapshot } from './project-store.ts';
-
-export const propertyKeys = {
-  content: ['title'],
-  position: ['x', 'y'],
-  size: ['width', 'height', 'collapsed'],
-  color: ['background_color'],
-  workflow: ['workflow_status_id', 'workflow_order', 'status_property_enabled'],
-} as const;
-export type PropertyGroup = keyof typeof propertyKeys | 'structure';
-export type PropertyVersions = Record<
-  string,
-  Partial<Record<PropertyGroup, number>>
->;
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
-
 export function propertyValues(raw: string) {
   const parsed = matter(raw);
   const structure = { ...parsed.data };

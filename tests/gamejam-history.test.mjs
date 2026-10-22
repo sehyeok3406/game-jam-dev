@@ -52,6 +52,50 @@ const settings = {
   retryOf: 'previous-run',
 };
 const input = () => gamejamTaskInput(structuredClone(request), settings);
+
+test('reasoning is retained in task snapshots, drafts and retries while legacy records keep default behavior', () => {
+  const choice = {
+    providerId: 'codex-cli',
+    modelId: 'gpt-6.1-sol',
+    reasoningEffort: 'max',
+  };
+  const snapshot = gamejamTaskInput(
+    structuredClone(request),
+    choice,
+  ).requestSnapshot;
+  assert.equal(readSavedRequest(snapshot).reasoningEffort, 'max');
+  const storage = memoryStorage();
+  saveGamejamDraft(storage, 'reasoning', {
+    ...snapshot,
+    page: 5,
+    instructionPage: 'implement',
+    updatedAt: 42,
+  });
+  assert.equal(loadGamejamDraft(storage, 'reasoning').reasoningEffort, 'max');
+  const reused = entryRequest({
+    id: 'retry',
+    aiTask: { requestSnapshot: snapshot },
+    reasoningEffort: 'high',
+  });
+  assert.equal(reused.reasoningEffort, 'high');
+  assert.equal(
+    entryRequest({
+      id: 'default-retry',
+      aiTask: { requestSnapshot: snapshot },
+      reasoningEffort: null,
+    }).reasoningEffort,
+    null,
+  );
+  assert.equal(
+    readSavedRequest({ ...snapshot, reasoningEffort: undefined })
+      .reasoningEffort,
+    undefined,
+  );
+  assert.equal(
+    readSavedRequest({ ...snapshot, reasoningEffort: 'unsafe-value' }),
+    undefined,
+  );
+});
 const taskPath = '.ai/tasks/recovery.md';
 const entry = (raw) => ({
   id: historyId(),

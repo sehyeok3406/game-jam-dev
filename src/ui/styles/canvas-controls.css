@@ -1,0 +1,33 @@
+.react-flow__controls {
+  bottom: 17px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.react-flow__controls button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text);
+  fill: currentColor;
+  background: var(--surface-solid);
+}
+
+.react-flow__controls button:hover {
+  background: var(--surface-hover);
+}
+
+.react-flow__minimap {
+  bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+}

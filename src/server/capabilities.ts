@@ -1,0 +1,27 @@
+/** Wire v1 fields shared by health and authenticated state. */
+export function serverCapabilities() {
+  return {
+    taskInstructionsEditable: true,
+    taskResultNaming: true,
+    gamejamWorkflow: true,
+    documentBundles: true,
+    documentOutputFormats: true,
+    drawingsVersion: 1,
+    gameUiVersion: 2,
+    documentStatusesVersion: 1,
+    filePropertiesVersion: 1,
+    htmlImportAnalysis: true,
+    htmlResultFolders: true,
+    structuredResults: true,
+    scopedAiLocks: true,
+    htmlComposition: true,
+    canvasSheets: true,
+    propertySync: true,
+    deltaSync: true,
+    eventStream: true,
+    multiplayerVersion: 1,
+    multiplayerDiagnosticsVersion: 1,
+    multiplayerLobbyVersion: 1,
+    projectTrash: true,
+  } as const;
+}

@@ -1,7 +1,8 @@
+import type { EditorDraft } from './contracts/drafts.ts';
+export type { EditorDraft } from './contracts/drafts.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-export type EditorDraft = { title: string; body: string; sequence: number };
 export class EditorDraftStore {
   private queues = new Map<string, Promise<void>>();
   private directory: string;
@@ -35,7 +36,7 @@ export class EditorDraftStore {
       (draft &&
         (typeof draft.title !== 'string' ||
           typeof draft.body !== 'string' ||
-          draft.body.length > 2_000_000))
+          draft.body.length > 2000000))
     )
       throw new Error('초안 내용이 올바르지 않습니다.');
     const next = (this.queues.get(key) ?? Promise.resolve())

@@ -188,7 +188,7 @@ async function run() {
     );
     assert.equal(
       copied,
-      'WorkspaceCanvas / settingsOpen / default / src/ui/App.tsx',
+      'WorkspaceSettings / default / src/ui/shell/WorkspaceSettings.tsx',
     );
     assert.equal(
       calls.length,

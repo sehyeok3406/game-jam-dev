@@ -1,12 +1,8 @@
+import type { ResultCategory } from './contracts/preview.ts';
+export type { ResultCategory } from './contracts/preview.ts';
+import { RESULT_CATEGORIES } from './contracts/preview.ts';
+export { RESULT_CATEGORIES } from './contracts/preview.ts';
 import { resultFileStem } from './result-name.ts';
-export const RESULT_CATEGORIES = {
-  systems: '시스템',
-  'ui-ux': 'UI·UX',
-  content: '콘텐츠',
-  prototypes: '통합 시제품',
-  inbox: '미분류',
-} as const;
-export type ResultCategory = keyof typeof RESULT_CATEGORIES;
 const STRUCTURED_PATH =
   /^output\/(systems|ui-ux|content|prototypes|inbox)\/([\p{L}\p{M}\p{N}_-]+)\/v(\d{3,})\/index\.html$/u;
 export function resultLocation(relative: string) {
@@ -65,7 +61,6 @@ export function isImportedPreviewPath(relative: string) {
     /^import-[a-f0-9-]{36}$/.test(resultLocation(relative)?.feature ?? '')
   );
 }
-
 /** Dedicated result folders belong to one HTML result; legacy parents are shared. */
 export function previewDeletionTarget(relative: string) {
   assertPreviewPath(relative);
@@ -73,7 +68,6 @@ export function previewDeletionTarget(relative: string) {
     ? relative.slice(0, relative.lastIndexOf('/'))
     : relative;
 }
-
 export function isPreviewPath(relative: string): boolean {
   return (
     relative === DEFAULT_PREVIEW_PATH ||
@@ -83,13 +77,11 @@ export function isPreviewPath(relative: string): boolean {
       Number.isSafeInteger(Number(relative.match(VERSION_PATH)![1])))
   );
 }
-
 export function assertPreviewPath(relative: string) {
   if (typeof relative !== 'string' || !isPreviewPath(relative))
     throw new Error('올바르지 않은 HTML 결과 경로입니다.');
   return relative;
 }
-
 export function previewVersion(relative: string) {
   assertPreviewPath(relative);
   if (isImportedPreviewPath(relative)) return 0;
@@ -99,7 +91,6 @@ export function previewVersion(relative: string) {
     ? 1
     : Number(resultMatch(relative)![1]);
 }
-
 export function previewLabel(relative: string) {
   const location = resultLocation(relative);
   if (location)
@@ -108,7 +99,6 @@ export function previewLabel(relative: string) {
   const name = resultMatch(relative)?.[2];
   return `${name ? `${name} · ` : ''}버전 ${previewVersion(relative)}`;
 }
-
 export function nextPreviewPath(
   reservedPaths: string[],
   name?: string,
@@ -129,7 +119,6 @@ export function nextPreviewPath(
   );
   return structuredPreviewPath(category, feature, highest + 1);
 }
-
 /** Only existing results can be updated; pending tasks reserve new folders. */
 export function resolvePreviewOutput(
   existingPaths: string[],
@@ -164,7 +153,6 @@ export function resolvePreviewOutput(
     },
   };
 }
-
 export function previewWindowPath(relative = DEFAULT_PREVIEW_PATH) {
   assertPreviewPath(relative);
   const location = resultLocation(relative);

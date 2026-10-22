@@ -1,3 +1,4 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { X, RefreshCw, Inbox } from 'lucide-react';
 import {
@@ -8,14 +9,22 @@ import {
   type GamejamApproval,
 } from '../gamejam-approval';
 import type { AiProviderId, CollaborationState } from '../shared';
-import { AI_PROVIDERS, aiProvider as getAiProvider } from '../ai-providers';
+import {
+  AI_PROVIDERS,
+  aiProvider as getAiProvider,
+} from '../core/ai/catalog.ts';
 import { GamejamReview } from './GamejamWizard';
 import { DiscordApprovalSettings } from './DiscordApprovalSettings';
+import { AiReasoningSelect } from './AiReasoningSelect';
 
 type Props = {
   collaboration: CollaborationState;
   provider: AiProviderId;
   model: string;
+  reasoningEffort?: import('../shared').AiReasoningEffort | null;
+  setReasoningEffort: (
+    value: import('../shared').AiReasoningEffort | null,
+  ) => void;
   aiBusy: boolean;
   setProvider: (value: AiProviderId) => void;
   setModel: (value: string) => void;
@@ -29,6 +38,8 @@ export function GamejamRequestInbox({
   collaboration: c,
   provider,
   model,
+  reasoningEffort,
+  setReasoningEffort,
   aiBusy,
   setProvider,
   setModel,
@@ -37,6 +48,8 @@ export function GamejamRequestInbox({
   run,
   openResult,
 }: Props) {
+  const { api } = useRuntime();
+
   const admin = c.role === 'admin';
   const [items, setItems] = useState<GamejamApproval[]>([]);
   const [filter, setFilter] = useState<ApprovalStatus | 'all'>('all');
@@ -62,7 +75,7 @@ export function GamejamRequestInbox({
   useEffect(() => {
     let active = true;
     setLoading(true);
-    void window.gameCanvas
+    void api.ai
       .listApprovals()
       .then((list) => {
         if (active) setItems(list.items);
@@ -81,7 +94,7 @@ export function GamejamRequestInbox({
   useEffect(() => {
     if (!detailId) return;
     let active = true;
-    void window.gameCanvas
+    void api.ai
       .readApproval(detailId)
       .then((fresh) => {
         if (
@@ -105,7 +118,7 @@ export function GamejamRequestInbox({
     setError('');
     setBusy(true);
     try {
-      const value = await window.gameCanvas.readApproval(id);
+      const value = await api.ai.readApproval(id);
       if (!mounted.current || version !== readVersion.current) return;
       setDetail(value);
       setChanged(false);
@@ -129,6 +142,7 @@ export function GamejamRequestInbox({
       detail.reviewToken,
       provider,
       model,
+      reasoningEffort,
     ]);
     if (operation.current?.key !== key)
       operation.current = { key, id: crypto.randomUUID() };
@@ -137,7 +151,7 @@ export function GamejamRequestInbox({
         await run(detail, operation.current.id);
         if (mounted.current) close();
       } else {
-        await window.gameCanvas.mutateApproval(action, {
+        await api.ai.mutateApproval(action, {
           commandId: operation.current.id,
           id: detail.item.id,
           revision: detail.item.revision,
@@ -377,6 +391,7 @@ export function GamejamRequestInbox({
                         onChange={(e) => {
                           setProvider(e.target.value as AiProviderId);
                           setModel('');
+                          setReasoningEffort(null);
                         }}
                       >
                         {AI_PROVIDERS.map((p) => (
@@ -414,13 +429,22 @@ export function GamejamRequestInbox({
                         placeholder="비우면 기본 모델 사용"
                       />
                     </label>
+                    <AiReasoningSelect
+                      provider={provider}
+                      model={model}
+                      value={reasoningEffort}
+                      onChange={setReasoningEffort}
+                      disabled={busy}
+                    />
                     <p>
                       관리자의 AI 연결로 실행합니다. 실행이 시작되면 요청 내용을
                       확정합니다.
                     </p>
                     {aiBusy && (
                       <p role="status">
-                        다른 AI 작업이 끝난 뒤 승인할 수 있습니다.
+                        {c.aiQueueVersion === 1
+                          ? '승인한 작업은 예약 목록에 추가됩니다.'
+                          : '다른 AI 작업이 끝난 뒤 승인할 수 있습니다.'}
                       </p>
                     )}
                     <button
@@ -429,12 +453,16 @@ export function GamejamRequestInbox({
                         !writable ||
                         busy ||
                         changed ||
-                        aiBusy ||
+                        (aiBusy && c.aiQueueVersion !== 1) ||
                         !detail.reviewToken
                       }
                       onClick={() => void perform('start')}
                     >
-                      {busy ? '처리 중…' : '승인하고 구현하기'}
+                      {busy
+                        ? '처리 중…'
+                        : aiBusy && c.aiQueueVersion === 1
+                          ? '승인하고 예약하기'
+                          : '승인하고 구현하기'}
                     </button>
                   </div>
                 )}

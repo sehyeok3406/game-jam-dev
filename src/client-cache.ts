@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import type { CollaborationEnvelope } from './collaboration-server.ts';
+import type { CollaborationEnvelope } from './contracts/collaboration.ts';
 import type { OfflineDraft, OnlineAttempt } from './collaboration-client.ts';
-import type { Snapshot } from './project-store.ts';
+import type { Snapshot } from './contracts/project.ts';
 export type ClientCache = CollaborationEnvelope & {
   offline?: OfflineDraft | null;
   outgoing?: OnlineAttempt | null;

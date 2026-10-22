@@ -148,7 +148,13 @@ try {
       if (await js(expression)) return;
       await sleep(75);
     }
-    throw Error('Timeout: ' + expression);
+    const state = await js(`(async () => JSON.stringify({
+      notice: document.querySelector('.status-toast')?.textContent,
+      focused: document.activeElement?.outerHTML.slice(0, 300),
+      selected: [...document.querySelectorAll('.react-flow__node.selected')].map(node => node.dataset.id),
+      workspace: await window.gameCanvas.getWorkspace()
+    }))()`);
+    throw Error('Timeout: ' + expression + '\nState: ' + state);
   };
   const key = async (name, ctrl = true) => {
     const params = {

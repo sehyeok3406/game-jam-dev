@@ -1,3 +1,4 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { GameCanvasApi } from '../shared';
@@ -9,6 +10,8 @@ export function ConnectionInfoDialog({
   close: () => void;
   changed: () => Promise<void>;
 }) {
+  const { api } = useRuntime();
+
   const dialog = useRef<HTMLDialogElement>(null);
   const [text, setText] = useState('');
   const [preview, setPreview] = useState<Awaited<
@@ -81,7 +84,7 @@ export function ConnectionInfoDialog({
         disabled={busy || !text.trim()}
         onClick={() =>
           void action(async () => {
-            setPreview(await window.gameCanvas.inspectConnectionInfo(text));
+            setPreview(await api.collaboration.inspectConnectionInfo(text));
             setTrusted(false);
           })
         }
@@ -115,7 +118,7 @@ export function ConnectionInfoDialog({
             disabled={busy || !trusted}
             onClick={() =>
               void action(async () => {
-                await window.gameCanvas.applyConnectionInfo(text);
+                await api.collaboration.applyConnectionInfo(text);
                 await changed();
                 close();
               })

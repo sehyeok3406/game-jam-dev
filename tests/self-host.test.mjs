@@ -58,6 +58,7 @@ async function fixture(t) {
     db.prepare('INSERT OR REPLACE INTO projects VALUES (?, ?)').run(
       id,
       JSON.stringify({
+        id,
         members: [
           {
             tokenHash: createHash('sha256').update(token).digest('hex'),

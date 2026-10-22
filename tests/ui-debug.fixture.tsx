@@ -1,3 +1,5 @@
+import { RuntimeProvider } from '../src/ui/runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../src/ui/runtime/preview-runtime';
 import { createRoot } from 'react-dom/client';
 import { App } from '../src/ui/App';
 import { createDevGameCanvasApi } from '../src/dev-api';
@@ -29,4 +31,20 @@ window.addEventListener('message', (event) => {
     qa.events.push(event.data);
 });
 (window as typeof window & { uiDebugQa: typeof qa }).uiDebugQa = qa;
-createRoot(document.getElementById('root')!).render(<App />);
+const runtime = createPreviewRuntime(window.gameCanvas, localStorage);
+if (new URLSearchParams(location.search).has('noDesktop')) {
+  runtime.capabilities = {
+    localFiles: false,
+    localAiExecution: false,
+    selfHostManagement: false,
+    appUpdates: false,
+    nativeClipboard: false,
+    multiplayer: false,
+  };
+  runtime.api.desktop = undefined;
+}
+createRoot(document.getElementById('root')!).render(
+  <RuntimeProvider runtime={runtime}>
+    <App />
+  </RuntimeProvider>,
+);

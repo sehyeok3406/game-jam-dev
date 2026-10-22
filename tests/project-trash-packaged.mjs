@@ -1,3 +1,4 @@
+import packageInfo from '../package.json' with { type: 'json' };
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -130,7 +131,7 @@ try {
   await wait('!!document.querySelector(".home-project-more")');
   assert.equal(
     await js('window.gameCanvas.getUpdateState().then(s=>s.currentVersion)'),
-    '0.15.0',
+    packageInfo.version,
   );
   await js(
     '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.includes("다크 모드"))?.click()',
@@ -160,7 +161,7 @@ try {
   );
   assert.equal(await fs.stat(game).catch(() => null), null);
   await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.startsWith("휴지통")).click()',
+    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
   );
   await wait('!!document.querySelector(".project-trash-list article")');
   await screenshot('trash-retained-dark.png');
@@ -185,7 +186,7 @@ try {
     '!document.querySelector(".project-trash-modal") && !document.querySelector(".home-project-card")',
   );
   await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.startsWith("휴지통")).click()',
+    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
   );
   await wait('!!document.querySelector(".project-trash-list article")');
   await click('지금 영구 삭제…');
@@ -234,7 +235,7 @@ try {
   await click('팀 프로젝트 휴지통으로 이동');
   await wait('!document.querySelector(".project-trash-modal")');
   await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.startsWith("휴지통")).click()',
+    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
   );
   await wait(
     '!![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="팀 프로젝트 복원"&&!b.disabled)',
@@ -266,7 +267,7 @@ try {
   );
   assert.ok(onServer.isDirectory());
   await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.startsWith("휴지통")).click()',
+    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
   );
   await wait(
     '!![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="복원"&&!b.disabled)',
@@ -282,7 +283,7 @@ try {
     '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.includes("라이트 모드"))?.click()',
   );
   await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.startsWith("휴지통")).click()',
+    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
   );
   await wait('!!document.querySelector(".project-trash-modal")');
   await screenshot('trash-light.png');

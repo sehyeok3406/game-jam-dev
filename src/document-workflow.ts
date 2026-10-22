@@ -29,21 +29,27 @@ const write = (
   path: string,
   status: string,
   order?: number,
+  now: () => number = Date.now,
 ) => {
   const parsed = matter(files[path]);
   parsed.data.workflow_status_id = status;
   parsed.data.status_property_enabled = true;
   if (order !== undefined) parsed.data.workflow_order = order;
-  parsed.data.updated_at = Date.now();
+  parsed.data.updated_at = now();
   files[path] = matter.stringify(parsed.content, parsed.data);
 };
-export function applyWorkflow(files: Snapshot, input: WorkflowInput): Snapshot {
+export function applyWorkflow(
+  files: Snapshot,
+  input: WorkflowInput,
+  now: () => number = Date.now,
+): Snapshot {
   const next = { ...files };
   if (isPreviewPath(input.relativePath)) {
     const relative = input.relativePath;
     if (!files[relative]) throw Error('HTML 원본을 찾을 수 없습니다.');
     const path = htmlSourcePath(relative);
-    if (!next[path]) next[path] = sourceMetadata(relative, files[relative]);
+    if (!next[path])
+      next[path] = sourceMetadata(relative, files[relative], {}, now);
     input = { ...input, relativePath: path };
   }
   const docs = workflowDocuments(next),
@@ -76,24 +82,28 @@ export function applyWorkflow(files: Snapshot, input: WorkflowInput): Snapshot {
   if (column.some((d) => d.workflowOrder === undefined))
     column.forEach((d, i) => {
       d.workflowOrder = (i + 1) * 1024;
-      write(next, d.path, input.statusId, d.workflowOrder);
+      write(next, d.path, input.statusId, d.workflowOrder, now);
     });
   let left = index === 0 ? 0 : column[index - 1].workflowOrder!,
     right = column[index]?.workflowOrder ?? left + 2048;
   if (right - left < 0.000001 || !Number.isFinite(right)) {
     column.forEach((d, i) => {
       d.workflowOrder = (i + 1) * 1024;
-      write(next, d.path, input.statusId, d.workflowOrder);
+      write(next, d.path, input.statusId, d.workflowOrder, now);
     });
     left = index === 0 ? 0 : column[index - 1].workflowOrder!;
     right = column[index]?.workflowOrder ?? left + 2048;
   }
   next[DOCUMENT_STATUSES_PATH] ??= JSON.stringify(statuses, null, 2);
-  write(next, doc.path, input.statusId, (left + right) / 2);
+  write(next, doc.path, input.statusId, (left + right) / 2, now);
   assertWorkflowReferences(next, files);
   return next;
 }
-export function saveStatuses(files: Snapshot, input: StatusesInput): Snapshot {
+export function saveStatuses(
+  files: Snapshot,
+  input: StatusesInput,
+  now: () => number = Date.now,
+): Snapshot {
   if ((files[DOCUMENT_STATUSES_PATH] ?? null) !== input.expected)
     throw Error('상태 설정이 변경되었습니다. 최신 설정을 다시 열어주세요.');
   const value = validateStatuses(input.value),
@@ -106,7 +116,7 @@ export function saveStatuses(files: Snapshot, input: StatusesInput): Snapshot {
     const replacement = input.replacements?.[id];
     if (!replacement || !ids.has(replacement))
       throw Error('사용 중인 상태를 삭제하려면 대체 상태를 선택해주세요.');
-    write(next, doc.path, replacement, Date.now());
+    write(next, doc.path, replacement, now(), now);
   }
   next[DOCUMENT_STATUSES_PATH] = JSON.stringify(value, null, 2);
   assertWorkflowReferences(next, files);
@@ -148,13 +158,14 @@ export function initializeWorkflows(
 export function applyStatusProperty(
   files: Snapshot,
   input: StatusPropertyInput,
+  now: () => number = Date.now,
 ): Snapshot {
   const next = { ...files };
   let relative = input.relativePath;
   if (isPreviewPath(relative)) {
     if (!next[relative]) throw Error('HTML 원본을 찾을 수 없습니다.');
     const source = htmlSourcePath(relative);
-    next[source] ??= sourceMetadata(relative, next[relative]);
+    next[source] ??= sourceMetadata(relative, next[relative], {}, now);
     relative = source;
   }
   const doc = workflowDocuments(next).find((d) => d.path === relative);
@@ -193,7 +204,7 @@ export function applyStatusProperty(
     if (statusPropertyApplied(doc))
       parsed.data.workflow_status_id ??= 'not-started';
   }
-  parsed.data.updated_at = Date.now();
+  parsed.data.updated_at = now();
   next[relative] = matter.stringify(parsed.content, parsed.data);
   assertWorkflowReferences(next, files);
   return next;

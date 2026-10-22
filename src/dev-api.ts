@@ -1,3 +1,9 @@
+import { createMemoryPreferences } from './ui/runtime/preferences';
+import { createProjectFixture } from './ui/fixtures/project';
+import {
+  assertDocumentBase,
+  documentEditContent,
+} from './core/editing/document-edit';
 import {
   applyGameUi,
   snapshotGameUi,
@@ -8,8 +14,6 @@ import matter from './game-ui-markdown';
 import { defaultStatuses, validateStatuses } from './document-statuses';
 import { statusPropertyApplied } from './file-properties';
 import { readKanbanView, validateKanbanView } from './features/kanban/view';
-let kanbanViewRaw: string | null = null;
-let statusesRaw: string | null = null;
 import {
   CANVAS_SHEETS_PATH,
   readCanvasSheets,
@@ -24,8 +28,6 @@ import {
   readDrawingFile,
   serializeDrawing,
 } from './drawing-model';
-let drawingFiles: Record<string, string> = {};
-let gameUiFiles: Record<string, string> = {};
 import type {
   CanvasDocument,
   CanvasSection,
@@ -53,7 +55,16 @@ import {
   type GamejamSavedRequest,
 } from './gamejam-history';
 import { cardColor } from './card-colors';
-import { assertAiFilesUnlocked } from './ai-file-lock';
+import { assertAiFilesUnlocked, mergeAiFileLocks } from './ai-file-lock';
+import {
+  createQueuedTask,
+  isQueuePending,
+  nextQueuedTasks,
+  queueFileLock,
+  queueTaskView,
+  validateQueuedInputs,
+  type StoredAiQueueTask,
+} from './ai-task-queue';
 import {
   verticalLayouts,
   NEW_FILE_GAP,
@@ -81,231 +92,200 @@ import {
   previewVersion,
 } from './preview-output';
 
-const now = Date.now();
-const taskInputs = new Map<string, string[]>();
+/** Every sandbox owns its state, listeners, history and queue. */
+export function createDevGameCanvasApi(
+  preferences: import('./ui/runtime/preferences').PreferenceStore = createMemoryPreferences(),
+): GameCanvasApi {
+  let kanbanViewRaw: string | null = null;
+  let statusesRaw: string | null = null;
+  let drawingFiles: Record<string, string> = {};
+  let gameUiFiles: Record<string, string> = {};
+  const now = Date.now();
+  const taskInputs = new Map<string, string[]>();
 
-let documents: CanvasDocument[] = [
-  {
-    id: 'raw-loop-note',
-    title: '밤이 되면 달라지는 농장',
-    type: 'idea',
-    status: 'raw',
-    relativePath: 'ideas/night-farm.md',
-    body: '낮에는 농작물을 키우고, 밤에는 울타리와 자동 장치를 배치한다.\n\n플레이어가 직접 모든 일을 하지 않아도 농장이 움직이면 좋겠다.',
-    x: 80,
-    y: 100,
-    width: 350,
-    height: 360,
-    collapsed: false,
-    sources: [],
-    modifiedAt: now,
-  },
-  {
-    id: 'automation-note',
-    title: '자동화 아이디어',
-    type: 'idea',
-    status: 'raw',
-    relativePath: 'ideas/automation.md',
-    body: '- 작물을 옮기는 컨베이어\n- 조건에 따라 작동하는 장치\n- 멀리서 농장 상태 확인',
-    x: 500,
-    y: 330,
-    width: 330,
-    height: 300,
-    collapsed: false,
-    sources: [],
-    modifiedAt: now,
-  },
-  {
-    id: 'core-loop',
-    title: '핵심 게임 루프',
-    type: 'system',
-    status: 'draft',
-    relativePath: 'docs/core-loop.md',
-    body: '## 플레이 흐름\n\n1. 낮에 씨앗을 선택하고 심는다.\n2. 수확물로 자동화 장치를 해금한다.\n3. 밤에 장치의 효율을 관찰하고 배치를 개선한다.',
-    x: 910,
-    y: 100,
-    width: 390,
-    height: 420,
-    collapsed: false,
-    sources: [
-      {
-        id: 'raw-loop-note',
-        contribution: '낮과 밤의 역할 구분',
-      },
-      {
-        id: 'automation-note',
-        contribution: '자동화 장치와 관찰 요소',
-      },
-    ],
-    modifiedAt: now,
-  },
-];
-
-let sheetsRaw: string | null = null;
-let sections: CanvasSection[] = [
-  {
-    id: 'section-farm-automation',
-    title: '농장 자동화 아이디어',
-    relativePath: 'sections/section-farm-automation.md',
-    x: 40,
-    y: 60,
-    width: 830,
-    height: 630,
-    members: [
-      { id: 'raw-loop-note', path: 'ideas/night-farm.md' },
-      { id: 'automation-note', path: 'ideas/automation.md' },
-    ],
-    modifiedAt: now,
-  },
-];
-
-const initialPreview: PreviewResult = {
-  exists: true,
-  relativePath: 'output/index.html',
-  content: `<!doctype html><html><body style="margin:0;background:#102016;color:#eff7e9;font-family:system-ui;display:grid;place-items:center;min-height:100vh"><main style="text-align:center"><div style="font-size:64px">🌱</div><h1>자동 농장 프로토타입</h1><p>낮 3일차 · 순무 12개 수확</p><button style="padding:12px 20px;border:0;border-radius:999px;background:#d8ff72;font-weight:700">다음 날</button></main><script>let day=3;document.querySelector('button').onclick=()=>{document.querySelector('p').textContent='낮 '+(++day)+'일차 · 순무 12개 수확';};</script></body></html>`,
-};
-let previews: PreviewResult[] = [initialPreview];
-const taskOutputs = new Map<string, { output: string; base?: string }>();
-const taskRequests = new Map<string, GamejamSavedRequest>();
-const taskDocumentOutputs = new Map<
-  string,
-  {
-    outputs: string[];
-    inputs: string[];
-    x: number;
-    y: number;
-    systems?: boolean;
-    bundleId?: string;
-    templates?: DocumentOutputTemplate[];
-  }
->();
-
-const listeners = new Set<() => void>();
-let devBatchActive = false;
-const notify = () => {
-  if (!devBatchActive) listeners.forEach((listener) => listener());
-};
-const runListeners = new Set<(event: CodexRunEvent) => void>();
-let lastDevEvent: CodexRunEvent | null = null;
-const previewWindows = new Map<string, PreviewWindowState>();
-const histories: HistoryEntry[] = [];
-const devAuthorship: Record<string, FileAuthorship> = {};
-type DevState = {
-  gameUiFiles: Record<string, string>;
-  drawingFiles: Record<string, string>;
-  sheetsRaw: string | null;
-  documents: CanvasDocument[];
-  sections: CanvasSection[];
-  previews: PreviewResult[];
-};
-const historyStates = new Map<string, { before: DevState; after: DevState }>();
-const devSnapshot = (): DevState =>
-  structuredClone({
-    documents,
-    sections,
-    previews,
-    sheetsRaw,
-    drawingFiles,
-    gameUiFiles,
-  });
-const devFiles = (state: DevState): Record<string, string> =>
-  Object.fromEntries([
-    ...Object.entries(state.drawingFiles),
-    ...Object.entries(state.gameUiFiles),
-    ...(state.sheetsRaw ? [[CANVAS_SHEETS_PATH, state.sheetsRaw]] : []),
-    ...state.documents.map((item) => [
-      item.relativePath,
-      `${JSON.stringify(item)}\n\n${item.body}`,
-    ]),
-    ...state.sections.map((item) => [
-      item.relativePath,
-      JSON.stringify(item, null, 2),
-    ]),
-    ...state.previews
-      .filter((item) => item.exists)
-      .map((item) => [item.relativePath, item.content]),
-  ]);
-const recordDevHistory = (
-  before: DevState,
-  after: DevState,
-  label: string,
-  kind: HistoryEntry['kind'],
-  status: HistoryEntry['status'] = 'completed',
-  taskPath?: string,
-  modelId?: string | null,
-  providerId?: import('./shared').AiProviderId,
-) => {
-  const left = devFiles(before),
-    right = devFiles(after);
-  const entry: HistoryEntry = {
-    id: `dev-history-${Date.now()}-${histories.length}`,
-    label,
-    kind,
-    status,
-    createdAt: Date.now(),
-    finishedAt: Date.now(),
-    taskPath,
-    modelId,
-    providerId,
-    files: [...new Set([...Object.keys(left), ...Object.keys(right)])]
-      .filter((relative) => left[relative] !== right[relative])
-      .map((relativePath) => ({
-        relativePath,
-        before: left[relativePath] !== undefined,
-        after: right[relativePath] !== undefined,
-      })),
-  };
-  const task =
-    before.documents.find((doc) => doc.relativePath === taskPath) ??
-    after.documents.find((doc) => doc.relativePath === taskPath) ??
-    after.documents.find(
-      (doc) =>
-        entry.files.some((file) => file.relativePath === doc.relativePath) &&
-        doc.type === 'ai-task',
-    );
-  if (task)
-    entry.aiTask = {
-      ...legacyTaskRecord(task),
-      origin: 'snapshot',
-      requestSnapshot: taskRequests.get(task.relativePath),
-    };
-  histories.unshift(entry);
-  if (status === 'completed') {
-    const actor = {
-      name: '로컬 사용자',
-      kind: kind === 'ai' ? ('ai' as const) : ('local' as const),
-    };
-    for (const file of entry.files.filter((file) => file.after)) {
-      const existing = devAuthorship[file.relativePath];
-      const created =
-        !file.before &&
-        kind !== 'restore' &&
-        !/^(실행 취소|다시 실행)/.test(label);
-      devAuthorship[file.relativePath] = {
-        ...existing,
-        createdBy: existing?.createdBy ?? (created ? actor : undefined),
-        createdAt:
-          existing?.createdAt ?? (created ? entry.createdAt : undefined),
-        lastEditedBy: actor,
-        lastEditedAt: entry.createdAt,
-      };
+  const { initialPreview, ...fixture } = createProjectFixture(now);
+  let { documents, sections, previews } = fixture;
+  let sheetsRaw: string | null = null;
+  const taskOutputs = new Map<string, { output: string; base?: string }>();
+  const taskRequests = new Map<string, GamejamSavedRequest>();
+  const taskDocumentOutputs = new Map<
+    string,
+    {
+      outputs: string[];
+      inputs: string[];
+      x: number;
+      y: number;
+      systems?: boolean;
+      bundleId?: string;
+      templates?: DocumentOutputTemplate[];
     }
-  }
-  historyStates.set(entry.id, { before, after });
-};
-let activeDevRun: {
-  fileLock: NonNullable<CodexRunEvent['fileLock']>;
-  runId: string;
-  taskPath: string;
-  modelId?: string | null;
-  providerId: import('./shared').AiProviderId;
-} | null = null;
-const emitRun = (event: CodexRunEvent) => {
-  lastDevEvent = event;
-  runListeners.forEach((listener) => listener(event));
-};
+  >();
 
-export function createDevGameCanvasApi(): GameCanvasApi {
+  const listeners = new Set<() => void>();
+  let devBatchActive = false;
+  const notify = () => {
+    if (!devBatchActive) listeners.forEach((listener) => listener());
+  };
+  const runListeners = new Set<(event: CodexRunEvent) => void>();
+  let lastDevEvent: CodexRunEvent | null = null;
+  const previewWindows = new Map<string, PreviewWindowState>();
+  const histories: HistoryEntry[] = [];
+  const devAuthorship: Record<string, FileAuthorship> = {};
+  type DevState = {
+    gameUiFiles: Record<string, string>;
+    drawingFiles: Record<string, string>;
+    sheetsRaw: string | null;
+    documents: CanvasDocument[];
+    sections: CanvasSection[];
+    previews: PreviewResult[];
+  };
+  const historyStates = new Map<
+    string,
+    { before: DevState; after: DevState }
+  >();
+  const devSnapshot = (): DevState =>
+    structuredClone({
+      documents,
+      sections,
+      previews,
+      sheetsRaw,
+      drawingFiles,
+      gameUiFiles,
+    });
+  const devFiles = (state: DevState): Record<string, string> =>
+    Object.fromEntries([
+      ...Object.entries(state.drawingFiles),
+      ...Object.entries(state.gameUiFiles),
+      ...(state.sheetsRaw ? [[CANVAS_SHEETS_PATH, state.sheetsRaw]] : []),
+      ...state.documents.map((item) => [
+        item.relativePath,
+        `${JSON.stringify(item)}\n\n${item.body}`,
+      ]),
+      ...state.sections.map((item) => [
+        item.relativePath,
+        JSON.stringify(item, null, 2),
+      ]),
+      ...state.previews
+        .filter((item) => item.exists)
+        .map((item) => [item.relativePath, item.content]),
+    ]);
+  const recordDevHistory = (
+    before: DevState,
+    after: DevState,
+    label: string,
+    kind: HistoryEntry['kind'],
+    status: HistoryEntry['status'] = 'completed',
+    taskPath?: string,
+    modelId?: string | null,
+    providerId?: import('./shared').AiProviderId,
+    reasoningEffort?: import('./shared').AiReasoningEffort | null,
+  ) => {
+    const left = devFiles(before),
+      right = devFiles(after);
+    const entry: HistoryEntry = {
+      id: `dev-history-${Date.now()}-${histories.length}`,
+      label,
+      kind,
+      status,
+      createdAt: Date.now(),
+      finishedAt: Date.now(),
+      taskPath,
+      modelId,
+      providerId,
+      reasoningEffort,
+      files: [...new Set([...Object.keys(left), ...Object.keys(right)])]
+        .filter((relative) => left[relative] !== right[relative])
+        .map((relativePath) => ({
+          relativePath,
+          before: left[relativePath] !== undefined,
+          after: right[relativePath] !== undefined,
+        })),
+    };
+    const task =
+      before.documents.find((doc) => doc.relativePath === taskPath) ??
+      after.documents.find((doc) => doc.relativePath === taskPath) ??
+      after.documents.find(
+        (doc) =>
+          entry.files.some((file) => file.relativePath === doc.relativePath) &&
+          doc.type === 'ai-task',
+      );
+    if (task)
+      entry.aiTask = {
+        ...legacyTaskRecord(task),
+        origin: 'snapshot',
+        requestSnapshot: taskRequests.get(task.relativePath),
+      };
+    histories.unshift(entry);
+    if (status === 'completed') {
+      const actor = {
+        name: '로컬 사용자',
+        kind: kind === 'ai' ? ('ai' as const) : ('local' as const),
+      };
+      for (const file of entry.files.filter((file) => file.after)) {
+        const existing = devAuthorship[file.relativePath];
+        const created =
+          !file.before &&
+          kind !== 'restore' &&
+          !/^(실행 취소|다시 실행)/.test(label);
+        devAuthorship[file.relativePath] = {
+          ...existing,
+          createdBy: existing?.createdBy ?? (created ? actor : undefined),
+          createdAt:
+            existing?.createdAt ?? (created ? entry.createdAt : undefined),
+          lastEditedBy: actor,
+          lastEditedAt: entry.createdAt,
+        };
+      }
+    }
+    historyStates.set(entry.id, { before, after });
+  };
+  let activeDevRun: {
+    fileLock: NonNullable<CodexRunEvent['fileLock']>;
+    runId: string;
+    taskPath: string;
+    modelId?: string | null;
+    reasoningEffort?: import('./shared').AiReasoningEffort | null;
+    providerId: import('./shared').AiProviderId;
+  } | null = null;
+  const emitRun = (event: CodexRunEvent) => {
+    const queued = devAiQueue.find((t) => t.runId === event.runId);
+    if (queued) {
+      queued.status = event.status;
+      queued.message = event.message;
+      queued.updatedAt = event.timestamp;
+    }
+    lastDevEvent = event;
+    runListeners.forEach((listener) => listener(event));
+  };
+  const devAiQueue: StoredAiQueueTask[] = [];
+  const devQueueFiles = () => devFiles(devSnapshot());
+  const devQueueScopes = (taskPath: string) => {
+    const target = taskOutputs.get(taskPath);
+    const read = {
+      paths: [
+        ...(taskInputs.get(taskPath) ?? []),
+        ...(target?.base ? [target.base] : []),
+      ],
+      folders: [] as string[],
+    };
+    for (const p of read.paths) {
+      const image = documents.find((d) => d.relativePath === p)?.asset;
+      if (image) read.paths.push(image.path);
+      const section = sections.find((s) => s.relativePath === p);
+      for (const member of section?.members ?? [])
+        if (!read.paths.includes(member.path)) read.paths.push(member.path);
+    }
+    const write = {
+      paths: [
+        taskPath,
+        ...(taskDocumentOutputs.get(taskPath)?.outputs ?? []),
+        ...(target ? [target.output] : []),
+      ],
+      folders: [] as string[],
+    };
+    return { read, write, protectedScope: mergeAiFileLocks([read, write]) };
+  };
+
   const moveDevResults = (moves: ResultMove[]) => {
     for (const { from, to } of moves) {
       if (from === to) continue;
@@ -431,9 +411,9 @@ export function createDevGameCanvasApi(): GameCanvasApi {
   };
   let home: HomeOrganization = { folders: [], projects: [] };
   let demoProjectName =
-    localStorage.getItem('game-canvas-demo-project-name') || '밤의 농장';
+    preferences.getItem('game-canvas-demo-project-name') || '밤의 농장';
   try {
-    const saved = localStorage.getItem('game-canvas-demo-home');
+    const saved = preferences.getItem('game-canvas-demo-home');
     if (saved) home = readHomeOrganization(saved);
   } catch {
     /* Demo storage can be unavailable in private browsing. */
@@ -442,13 +422,43 @@ export function createDevGameCanvasApi(): GameCanvasApi {
     if (edit.type === 'move-project' && edit.id !== 'demo-local')
       throw new Error('프로젝트를 찾을 수 없습니다.');
     const next = editHomeOrganization(home, edit);
-    localStorage.setItem('game-canvas-demo-home', JSON.stringify(next));
+    preferences.setItem('game-canvas-demo-home', JSON.stringify(next));
     home = next;
   };
   const drafts = new Map<string, import('./editor-drafts').EditorDraft>();
   const saveRecords = new Map<string, DocumentSaveRecord>();
   const saveListeners = new Set<(state: DocumentSaveState) => void>();
   let publicApi: GameCanvasApi;
+  const pumpDevQueue = () => {
+    if (activeDevRun) return;
+    const task = nextQueuedTasks(devAiQueue)[0] as
+      | StoredAiQueueTask
+      | undefined;
+    if (!task) return;
+    try {
+      validateQueuedInputs(task, devQueueFiles());
+    } catch (error) {
+      task.status = 'failed';
+      task.message = (error as Error).message;
+      notify();
+      queueMicrotask(pumpDevQueue);
+      return;
+    }
+    task.status = 'starting';
+    void publicApi
+      .startCodexRun({
+        taskPath: task.taskPath,
+        providerId: task.providerId,
+        modelId: task.modelId,
+        reasoningEffort: task.reasoningEffort,
+      })
+      .catch((error) => {
+        task.status = 'failed';
+        task.message = String(error);
+        notify();
+        queueMicrotask(pumpDevQueue);
+      });
+  };
   const saveScope = 'local:dev-workspace';
   let previewClipboardId: string | undefined;
   const saveQueue = new DocumentSaveQueue(
@@ -708,7 +718,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         throw new Error(
           '프로젝트 이름이 바뀌었습니다. 목록을 새로고침해주세요.',
         );
-      localStorage.setItem('game-canvas-demo-project-name', name);
+      preferences.setItem('game-canvas-demo-project-name', name);
       demoProjectName = name;
       notify();
     },
@@ -836,6 +846,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         htmlResultFolders: true,
         editorAi: true,
         multiProviderAi: true,
+        aiReasoningVersion: 1,
         serverUrl,
         projectId: 'demo-project',
         projectName: 'demo-game',
@@ -873,6 +884,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         htmlResultFolders: true,
         editorAi: true,
         multiProviderAi: true,
+        aiReasoningVersion: 1,
         serverUrl,
         projectId: 'demo-project',
         projectName: 'demo-game',
@@ -934,6 +946,17 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       };
     },
     getActiveRun: async () => (activeDevRun ? lastDevEvent : null),
+    listAiQueue: async () => structuredClone(devAiQueue.map(queueTaskView)),
+    cancelQueuedTask: async (taskId) => {
+      const task = devAiQueue.find(
+        (t) => t.taskId === taskId && t.status === 'queued',
+      );
+      if (!task) throw new Error('취소할 예약을 찾을 수 없습니다.');
+      task.status = 'cancelled';
+      task.message = '예약을 취소했습니다.';
+      task.updatedAt = Date.now();
+      notify();
+    },
     getPreviewWindow: async (relative = DEFAULT_PREVIEW_PATH) =>
       structuredClone(previewWindows.get(assertPreviewPath(relative)) ?? null),
     savePreviewWindow: async (state, relative = DEFAULT_PREVIEW_PATH) => {
@@ -1356,10 +1379,17 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       notify();
       return structuredClone(section);
     },
-    saveDocument: async ({ relativePath, title, body }) => {
+    saveDocument: async (input) => {
+      const { relativePath } = input;
+      const current = documents.find(
+        (document) => document.relativePath === relativePath,
+      );
+      if (!current) throw new Error('문서를 찾을 수 없습니다.');
+      assertDocumentBase(current, input);
+      const content = documentEditContent(input);
       documents = documents.map((document) =>
         document.relativePath === relativePath
-          ? { ...document, title, body, modifiedAt: Date.now() }
+          ? { ...document, ...content, modifiedAt: Date.now() }
           : document,
       );
       notify();
@@ -1561,7 +1591,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       thenImplement,
       requestSnapshot,
     }) => {
-      const id = `${thenImplement ? 'gamejam' : kind}-task-${Date.now()}`;
+      const id = `${thenImplement ? 'gamejam' : kind}-task-${crypto.randomUUID()}`;
       const commandText = taskInstructions(kind, instructions);
       const htmlChoice = thenImplement?.htmlResult ?? htmlResult;
       const output =
@@ -1679,13 +1709,51 @@ export function createDevGameCanvasApi(): GameCanvasApi {
       message:
         '개발 화면의 모의 연결입니다. 실제 계정이나 AI를 호출하지 않습니다.',
     }),
-    startCodexRun: async ({ taskPath, providerId, modelId }) => {
+    startCodexRun: async ({
+      taskPath,
+      providerId,
+      modelId,
+      reasoningEffort,
+      queueVersion,
+    }) => {
       if (collab.active && (!collab.connected || collab.role !== 'admin'))
         throw new Error('관리자만 AI를 실행할 수 있습니다.');
+      if (queueVersion === 1) {
+        let task = devAiQueue.find((t) => t.taskPath === taskPath);
+        if (!task) {
+          task = createQueuedTask(
+            devQueueFiles(),
+            {
+              taskPath,
+              providerId,
+              modelId,
+              reasoningEffort,
+              title: documents.find((d) => d.relativePath === taskPath)?.title,
+            },
+            crypto.randomUUID(),
+            devAiQueue,
+            devQueueScopes(taskPath),
+          );
+          devAiQueue.push(task);
+        }
+        notify();
+        setTimeout(pumpDevQueue, 0);
+        return {
+          runId: task.runId,
+          taskPath,
+          status: task.status,
+          providerId,
+          modelId,
+          reasoningEffort,
+        };
+      }
       if (activeDevRun) throw new Error('이미 실행 중인 AI 작업이 있습니다.');
       if (!['codex-cli', 'claude-cli', 'gemini-cli'].includes(providerId))
         throw new Error('지원하지 않는 AI 제공자입니다.');
-      const runId = `dev-run-${Date.now()}`;
+      const runId =
+        devAiQueue.find(
+          (t) => t.taskPath === taskPath && t.status === 'starting',
+        )?.runId ?? `dev-run-${crypto.randomUUID()}`;
       const before = devSnapshot();
       const target = taskOutputs.get(taskPath);
       const docTarget = taskDocumentOutputs.get(taskPath);
@@ -1708,7 +1776,14 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         )?.asset;
         if (image) fileLock.paths.push(image.path);
       }
-      activeDevRun = { runId, taskPath, modelId, providerId, fileLock };
+      activeDevRun = {
+        runId,
+        taskPath,
+        modelId,
+        providerId,
+        reasoningEffort,
+        fileLock,
+      };
       const send = (
         status: CodexRunEvent['status'],
         kind: CodexRunEvent['kind'],
@@ -1723,6 +1798,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           timestamp: Date.now(),
           providerId,
           modelId,
+          reasoningEffort,
           actorId: collab.memberId,
           fileLock,
         });
@@ -1883,16 +1959,25 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           taskPath,
           modelId,
           providerId,
+          reasoningEffort,
         );
         send('completed', 'result', '개발 모드 Codex 작업이 완료되었습니다.');
         activeDevRun = null;
         notify();
+        queueMicrotask(pumpDevQueue);
       }, 2_900);
-      return { runId, taskPath, status: 'starting', providerId, modelId };
+      return {
+        runId,
+        taskPath,
+        status: 'starting',
+        providerId,
+        modelId,
+        reasoningEffort,
+      };
     },
     cancelCodexRun: async (runId) => {
       if (!activeDevRun || activeDevRun.runId !== runId) return;
-      const { taskPath, modelId, providerId } = activeDevRun;
+      const { taskPath, modelId, providerId, reasoningEffort } = activeDevRun;
       activeDevRun = null;
       recordDevHistory(
         devSnapshot(),
@@ -1903,6 +1988,7 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         taskPath,
         modelId,
         providerId,
+        reasoningEffort,
       );
       emitRun({
         runId,
@@ -1912,9 +1998,12 @@ export function createDevGameCanvasApi(): GameCanvasApi {
         message: '모의 AI 작업을 취소했습니다.',
         providerId,
         modelId,
+        reasoningEffort,
         actorId: collab.memberId,
         timestamp: Date.now(),
       });
+      notify();
+      queueMicrotask(pumpDevQueue);
     },
     readPreview: async (relative = DEFAULT_PREVIEW_PATH) =>
       structuredClone(
@@ -1978,19 +2067,31 @@ export function createDevGameCanvasApi(): GameCanvasApi {
           throw new Error('관리자만 사용할 수 있습니다.');
         if (
           activeDevRun &&
-          ['createTask', 'selectWorkspace'].includes(property)
+          (property === 'selectWorkspace' ||
+            (property === 'createTask' &&
+              (args[0] as { queueVersion?: number })?.queueVersion !== 1))
         )
           throw new Error(
             '현재 AI가 문서 정리 또는 HTML 구현을 진행하고 있습니다. 문서 추가·수정·삭제와 배치 변경을 잠시 사용할 수 없습니다.',
           );
         const before = devSnapshot();
         const result = await Reflect.apply(method, target, args);
-        if (activeDevRun) {
+        if (activeDevRun || devAiQueue.some(isQueuePending)) {
           const left = devFiles(before),
             right = devFiles(devSnapshot());
           try {
             assertAiFilesUnlocked(
-              activeDevRun.fileLock,
+              queueFileLock([
+                ...(activeDevRun
+                  ? [
+                      {
+                        ...activeDevRun,
+                        status: 'running' as const,
+                      } as StoredAiQueueTask,
+                    ]
+                  : []),
+                ...devAiQueue,
+              ]),
               Object.keys({ ...left, ...right }).filter(
                 (path) => left[path] !== right[path],
               ),

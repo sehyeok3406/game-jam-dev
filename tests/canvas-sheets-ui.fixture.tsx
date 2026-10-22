@@ -1,3 +1,5 @@
+import { RuntimeProvider } from '../src/ui/runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../src/ui/runtime/preview-runtime';
 import { createRoot } from 'react-dom/client';
 import { App } from '../src/ui/App';
 import { createDevGameCanvasApi } from '../src/dev-api';
@@ -10,4 +12,10 @@ api.createTask = async (input) => {
   return createTask(input);
 };
 window.gameCanvas = api;
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <RuntimeProvider
+    runtime={createPreviewRuntime(window.gameCanvas, localStorage)}
+  >
+    <App />
+  </RuntimeProvider>,
+);

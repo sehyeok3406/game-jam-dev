@@ -1,0 +1,30 @@
+# Preparation only. Creating this Blueprint provisions a paid service + disk.
+services:
+  - type: web
+    name: game-jam-collaboration-beta
+    runtime: node
+    plan: starter
+    numInstances: 1
+    autoDeployTrigger: off
+    buildCommand: npm ci --include=dev && npm run collaboration:build && npm run collaboration:verify
+    startCommand: node out/collaboration-server/server.mjs
+    healthCheckPath: /ready
+    disk:
+      name: game-jam-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: ELECTRON_SKIP_BINARY_DOWNLOAD
+        value: '1'
+      - key: GAME_CANVAS_HOST
+        value: 0.0.0.0
+      - key: GAME_CANVAS_DATA
+        value: /var/data/game-jam
+      - key: GAME_CANVAS_PUBLIC
+        value: '1'
+      - key: GAMEJAM_SERVICE_MODE
+        value: managed-beta
+      - key: GAME_CANVAS_SERVER_KEY
+        sync: false

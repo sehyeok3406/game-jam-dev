@@ -57,6 +57,12 @@ $facts = New-Facts
 $facts | Add-Member -NotePropertyName secret -NotePropertyValue 'NEVER_REPORT_THIS'
 $json = New-HostReport $facts 'failed' 'GC-HOST-006' | ConvertTo-Json -Depth 5
 Assert-Equal $json.Contains('NEVER_REPORT_THIS') $false 'report is allowlisted'
+$capabilities = $null
+function Invoke-RestMethod { return [pscustomobject]@{ name = 'Game Canvas Collaboration'; protocol = 1; version = '0.27.0'; multiplayerVersion = 1; multiplayerLobbyVersion = 1; token = 'NEVER_REPORT_THIS' } }
+Assert-Equal (Test-HostHealth 'http://127.0.0.1:4318' ([ref]$capabilities)) $true 'health capabilities'
+Assert-Equal $capabilities.serverVersion '0.27.0' 'running server version'
+Assert-Equal $capabilities.multiplayerLobbyVersion 1 'room events capability'
+Assert-Equal (($capabilities | ConvertTo-Json).Contains('NEVER_REPORT_THIS')) $false 'health metadata allowlist'
 Assert-Equal (Get-HostHelp 'unexpected secret').code 'GC-HOST-099' 'unknown error sanitized'
 # Mock CIM for PID reuse and inaccessible process fields; never launch/stop anything.
 $script:processFixture = $null

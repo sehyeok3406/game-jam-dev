@@ -1,3 +1,8 @@
+import { ServerLimits } from './contracts/server-limits.ts';
+import { layoutValues } from './core/editing/layout.ts';
+import type { CommandEnvironment } from './core/editing/environment.ts';
+import { COMMAND_LABELS, isCommandName } from './contracts/commands.ts';
+import { documentEditContent } from './core/editing/document-edit.ts';
 import { DOCUMENT_STATUSES_PATH, readStatuses } from './document-statuses.ts';
 import {
   isGameUiPath,
@@ -150,7 +155,7 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
     if (!sheets.canvases.some((c) => c.id === o.canvasId))
       throw new Error('그림의 캔버스를 찾을 수 없습니다.');
   const entries = Object.entries(files);
-  if (entries.length > 500)
+  if (entries.length > ServerLimits.files)
     throw new Error('최대 500개 파일을 공유할 수 있습니다.');
   let bytes = 0;
   const ids = new Set<string>();
@@ -165,10 +170,10 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
       typeof value !== 'string' ||
       Buffer.byteLength(value) >
         (isAssetPath(key)
-          ? 6_666_800
+          ? ServerLimits.assetEncodedBytes
           : isPreviewPath(key)
-            ? 8_000_000
-            : 2_000_000)
+            ? ServerLimits.htmlBytes
+            : ServerLimits.markdownBytes)
     )
       throw new Error(
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
@@ -219,7 +224,7 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
       ids.add(id);
     }
   }
-  if (bytes > 20_000_000)
+  if (bytes > ServerLimits.projectBytes)
     throw new Error('초기 협업 프로젝트는 총 20MB까지 공유할 수 있습니다.');
   const documents = new Map(
     snapshotDocuments(files as Snapshot).map((doc) => [doc.relativePath, doc]),
@@ -349,34 +354,7 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
     });
 }
 
-export const commandLabels: Record<string, string> = {
-  'kanban:move-card': '칸반 카드 이동',
-  'kanban:save-view': '칸반 보기 설정 변경',
-  'files:set-status-property': '파일 상태 속성 변경',
-  'documents:set-workflow': '문서 진행 상태 변경',
-  'document-statuses:save': '문서 상태 설정 변경',
-  'drawings:apply': '도형 · 그림 편집',
-  'game-ui:apply': '게임 UI 편집',
-  'canvas:batch': '선택 항목 함께 편집',
-  'canvases:change': '캔버스 구성 변경',
-  'results:move': 'HTML 결과물 폴더 이동',
-  'results:organize': '기존 HTML 결과물 폴더 정리',
-  'documents:set-color': '카드 배경색 변경',
-  'files:import-batch': '파일 불러오기',
-  'documents:delete-many': '선택 문서 삭제',
-  'documents:create-idea': '메모 추가',
-  'documents:save': '문서 수정',
-  'documents:delete': '문서 삭제',
-  'documents:duplicate': '문서 복사',
-  'sections:create': '섹션 생성',
-  'sections:rename': '섹션 이름 변경',
-  'sections:delete': '섹션 해제·삭제',
-  'sections:move-document': '섹션 소속 변경',
-  'documents:update-layout': '문서 배치 변경',
-  'sections:update-layout': '섹션 배치 변경',
-  'layouts:update': '여러 항목 배치 변경',
-  'tasks:create': 'AI 작업 요청',
-};
+export const commandLabels: Record<string, string> = COMMAND_LABELS;
 
 type Input = Record<string, unknown>;
 function record(value: unknown): Input {
@@ -409,8 +387,9 @@ export function reduceCollaboration(
   files: Snapshot,
   channel: string,
   value: unknown,
+  environment: CommandEnvironment = { now: Date.now, id: randomUUID },
 ): { files: Snapshot; result: unknown } {
-  if (!commandLabels[channel])
+  if (!isCommandName(channel))
     throw new Error('허용되지 않은 공동 작업입니다.');
   let next = { ...files };
   const input = record(value);
@@ -420,6 +399,7 @@ export function reduceCollaboration(
         ? moveKanbanCard(
             files,
             input as unknown as import('./features/kanban/view-storage').KanbanMoveInput,
+            environment.now,
           )
         : saveKanbanView(
             files,
@@ -438,10 +418,19 @@ export function reduceCollaboration(
         ? applyStatusProperty(
             files,
             input as unknown as import('./file-properties').StatusPropertyInput,
+            environment.now,
           )
         : channel === 'documents:set-workflow'
-          ? applyWorkflow(files, input as unknown as WorkflowInput)
-          : saveStatuses(files, input as unknown as StatusesInput);
+          ? applyWorkflow(
+              files,
+              input as unknown as WorkflowInput,
+              environment.now,
+            )
+          : saveStatuses(
+              files,
+              input as unknown as StatusesInput,
+              environment.now,
+            );
     checkSnapshot(changed);
     return { files: changed, result: undefined };
   }
@@ -468,6 +457,7 @@ export function reduceCollaboration(
         changed,
         String(part.channel),
         part.input,
+        environment,
       );
       changed = reduced.files;
       results.push(reduced.result);
@@ -521,7 +511,7 @@ export function reduceCollaboration(
   if (channel === 'files:import-batch') {
     const additions = layoutNewDocuments(
       files,
-      buildFileImports(input as ImportBatchInput),
+      buildFileImports(input as ImportBatchInput, environment),
       {
         x: Number(input.x),
         y: Number(input.y),
@@ -547,6 +537,7 @@ export function reduceCollaboration(
         current,
         'documents:delete',
         document,
+        environment,
       ).files;
     return { files: current, result: undefined };
   }
@@ -559,18 +550,12 @@ export function reduceCollaboration(
   const write = (relative: string, data: Input, content: string) => {
     next[relative] = matter.stringify(content, {
       ...data,
-      updated_at: Date.now(),
+      updated_at: environment.now(),
     });
   };
   const layout = (entry: Input) => {
     const parsed = read(entry.relativePath);
-    const x = number(entry.position === false ? parsed.data.x : entry.x),
-      y = number(entry.position === false ? parsed.data.y : entry.y);
-    const width = number(
-        entry.size === false ? parsed.data.width : entry.width,
-      ),
-      height = number(entry.size === false ? parsed.data.height : entry.height);
-    if (width < 120 || height < 38) throw new Error('창 크기가 너무 작습니다.');
+    const { x, y, width, height } = layoutValues(parsed.data, entry);
     if (entry.kind === 'section' && entry.moveMembers !== false) {
       for (const member of parsed.data.members ?? []) {
         const child = read(member.path);
@@ -612,7 +597,7 @@ export function reduceCollaboration(
   };
   let result: unknown;
   if (channel === 'documents:create-idea') {
-    const id = `idea-${randomUUID().slice(0, 8)}`,
+    const id = `idea-${environment.id().slice(0, 8)}`,
       relative = `ideas/${id}.md`;
     const explicit = input.width !== undefined || input.height !== undefined;
     const bounds = explicit
@@ -656,7 +641,12 @@ export function reduceCollaboration(
         throw new Error('HTML 파일을 찾을 수 없습니다.');
       const source = htmlSourcePath(relative);
       if (!next[source])
-        next[source] = sourceMetadata(relative, next[relative]);
+        next[source] = sourceMetadata(
+          relative,
+          next[relative],
+          {},
+          environment.now,
+        );
       relative = source;
     }
     const parsed = read(relative);
@@ -669,10 +659,14 @@ export function reduceCollaboration(
     );
   } else if (channel === 'documents:save') {
     const parsed = read(input.relativePath);
+    const content = documentEditContent({
+      title: text(input.title, 300),
+      body: text(input.body, 2_000_000),
+    });
     write(
       parsed.relative,
-      { ...parsed.data, title: text(input.title, 300).trim() || '제목 없음' },
-      text(input.body, 2_000_000),
+      { ...parsed.data, title: content.title },
+      content.body,
     );
   } else if (channel === 'documents:delete') {
     const relative = collaborationPath(input.relativePath);
@@ -700,7 +694,7 @@ export function reduceCollaboration(
     for (const item of array(input.documents)) {
       const member = record(item),
         parsed = read(member.path),
-        suffix = randomUUID().slice(0, 8);
+        suffix = environment.id().slice(0, 8);
       const relative =
         parsed.relative === 'project.md'
           ? `docs/project-copy-${suffix}.md`
@@ -769,7 +763,7 @@ export function reduceCollaboration(
     )
       throw new Error('같은 캔버스의 자료로 섹션을 만들어주세요.');
     removeMembers(new Set(members.map((member) => member.path)));
-    const id = `section-${randomUUID().slice(0, 8)}`,
+    const id = `section-${environment.id().slice(0, 8)}`,
       relative = `sections/${id}.md`,
       title = text(input.title, 300).trim() || '새 섹션';
     write(
@@ -844,7 +838,7 @@ export function reduceCollaboration(
     const kind = input.kind;
     if (kind !== 'organize' && kind !== 'implement')
       throw new Error('AI 작업 종류가 올바르지 않습니다.');
-    const id = `${input.thenImplement !== undefined ? 'gamejam' : kind}-${randomUUID()}`,
+    const id = `${input.thenImplement !== undefined ? 'gamejam' : kind}-${environment.id()}`,
       relative = `.ai/tasks/${id}.md`;
     const additions = createTaskFiles(
       {

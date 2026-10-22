@@ -412,6 +412,9 @@ export function createUiPreviewApi(
     // Optional API namespaces must be absent, rather than resolved by the
     // function fallback. The isolated preview never connects a real host.
     selfHost: undefined,
+    discordApproval: undefined,
+    multiplayer: undefined,
+    onUiDebugToggle: undefined,
     getDocumentStatuses: async () => ({ value: defaultStatuses(), raw: null }),
     getKanbanView: async () => ({ value: defaultKanbanView(), raw: null }),
     getWorkspace: async () => ({

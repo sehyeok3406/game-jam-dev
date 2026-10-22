@@ -15,12 +15,13 @@ export default defineConfig({
   },
   resolve: {
     alias: selfHostEnabled
-      ? {}
-      : {
-          './features/self-host/register': path.resolve(
-            'src/features/self-host/disabled.ts',
-          ),
-        },
+      ? []
+      : [
+          {
+            find: /^(?:\.\/|\.\.\/)+features\/self-host\/register$/,
+            replacement: path.resolve('src/features/self-host/disabled.ts'),
+          },
+        ],
   },
   define: {
     __SELF_HOST_ENABLED__: JSON.stringify(selfHostEnabled),

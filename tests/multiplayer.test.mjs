@@ -324,6 +324,28 @@ test('real authenticated rooms start, relay only host state, preserve project re
       ),
     'authenticated input identity',
   );
+  const inputsBeforeReload = host.messages.filter(
+    (m) => m.type === 'input',
+  ).length;
+  guest.client.send({ type: 'loaded' });
+  guest.client.send({ type: 'begun' });
+  guest.client.send({ type: 'input', sequence: 1, input: { y: 1 } });
+  await waitFor(
+    () =>
+      host.messages.filter((m) => m.type === 'input').length ===
+      inputsBeforeReload + 1,
+    'fresh iframe input accepted on the existing socket',
+  );
+  const latestInput = host.messages.filter((m) => m.type === 'input').at(-1);
+  assert.equal(latestInput.sequence, 2);
+  assert.equal(latestInput.input.y, 1);
+  guest.client.send({ type: 'input', sequence: 1, input: { y: -1 } });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(
+    host.messages.filter((m) => m.type === 'input').length,
+    inputsBeforeReload + 1,
+    'Duplicate inputs in one runtime are still ignored',
+  );
   const revision = (
     await CollaborationClient.fetch(
       url,

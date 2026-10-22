@@ -1,41 +1,18 @@
+import type { DocumentSaveRequest } from './contracts/document-save-queue.ts';
+export type { DocumentSaveRequest } from './contracts/document-save-queue.ts';
+import type { DocumentSaveState } from './contracts/document-save-queue.ts';
+export type { DocumentSaveState } from './contracts/document-save-queue.ts';
+import type { DocumentSavePhase } from './contracts/document-save-queue.ts';
+export type { DocumentSavePhase } from './contracts/document-save-queue.ts';
 import { editorDraftMatches, type EditorDraft } from './editor-ux.ts';
 import type { CanvasDocument, SaveDocumentInput } from './shared.ts';
-
-export type DocumentSaveRequest = EditorDraft & {
-  scope: string;
-  key: string;
-  relativePath: string;
-  documentId: string;
-  sequence: number;
-  sessionId?: string;
-  base: EditorDraft;
-};
-export type DocumentSavePhase =
-  | 'queued'
-  | 'saving'
-  | 'saved'
-  | 'offline'
-  | 'conflict'
-  | 'failed'
-  | 'discarded';
-export type DocumentSaveState = {
-  scope: string;
-  key: string;
-  documentId: string;
-  relativePath: string;
-  sequence: number;
-  savedSequence: number;
-  phase: DocumentSavePhase;
-  latest: EditorDraft;
-  saved: EditorDraft;
-  document?: CanvasDocument;
-  error?: string;
-};
 export type DocumentSaveRecord = {
   request: DocumentSaveRequest;
   base: EditorDraft;
   savedSequence: number;
-  attempt?: EditorDraft & { sequence: number };
+  attempt?: EditorDraft & {
+    sequence: number;
+  };
   adoptBase?: EditorDraft;
   phase: DocumentSavePhase;
   error?: string;
@@ -47,13 +24,13 @@ export type DocumentSaveStorage = {
   flush: (scope?: string, key?: string) => Promise<void>;
 };
 export type DocumentSaveAdapter = {
+  session?: import('./contracts/project-session.ts').ProjectSessionRef;
   scope: string;
   isCurrent: () => boolean;
   canSend: () => boolean;
   read: (relativePath: string) => Promise<CanvasDocument | null>;
   write: (input: SaveDocumentInput) => Promise<CanvasDocument>;
 };
-
 export function validateDocumentSave(request: DocumentSaveRequest) {
   if (
     !request ||
@@ -64,7 +41,7 @@ export function validateDocumentSave(request: DocumentSaveRequest) {
     ) ||
     typeof request.title !== 'string' ||
     typeof request.body !== 'string' ||
-    request.body.length > 2_000_000 ||
+    request.body.length > 2000000 ||
     typeof request.base?.title !== 'string' ||
     typeof request.base?.body !== 'string'
   )
@@ -75,7 +52,6 @@ const draft = (value: EditorDraft): EditorDraft => ({
   title: value.title,
   body: value.body,
 });
-
 /** Durable latest-snapshot queue. Only unsent snapshots are compacted; an attempt is immutable. */
 export class DocumentSaveQueue {
   private entries = new Map<string, DocumentSaveRecord>();
@@ -107,6 +83,8 @@ export class DocumentSaveQueue {
   private state(entry: DocumentSaveRecord): DocumentSaveState {
     const r = entry.request;
     return {
+      projectSession:
+        this.adapter?.scope === r.scope ? this.adapter.session : undefined,
       scope: r.scope,
       key: r.key,
       documentId: r.documentId,
@@ -123,8 +101,16 @@ export class DocumentSaveQueue {
       error: entry.error,
     };
   }
-  private emit(entry: DocumentSaveRecord, document?: CanvasDocument) {
-    this.publish({ ...this.state(entry), ...(document ? { document } : {}) });
+  private emit(
+    entry: DocumentSaveRecord,
+    document?: CanvasDocument,
+    session = this.adapter?.session,
+  ) {
+    this.publish({
+      ...this.state(entry),
+      projectSession: session,
+      ...(document ? { document } : {}),
+    });
   }
   async activate(adapter: DocumentSaveAdapter) {
     await this.ready;
@@ -232,7 +218,7 @@ export class DocumentSaveQueue {
           if (!adapter.canSend()) {
             if (entry.phase !== 'offline') {
               entry.phase = 'offline';
-              this.emit(entry);
+              this.emit(entry, undefined, adapter.session);
             }
             this.later();
             return;
@@ -276,7 +262,7 @@ export class DocumentSaveQueue {
               delete entry.error;
               await this.storage.put(structuredClone(entry));
               if (!adapter.isCurrent() || this.adapter !== adapter) return;
-              this.emit(entry);
+              this.emit(entry, undefined, adapter.session);
               const confirmed = await adapter.write({
                 relativePath: current.relativePath,
                 objectId: current.id,
@@ -303,7 +289,7 @@ export class DocumentSaveQueue {
                 : 'queued';
             delete entry.error;
             await this.storage.put(structuredClone(entry));
-            this.emit(entry, this.documents.get(key));
+            this.emit(entry, this.documents.get(key), adapter.session);
           } catch (error) {
             entry.error =
               error instanceof Error ? error.message : String(error);
@@ -320,7 +306,7 @@ export class DocumentSaveQueue {
             await this.storage
               .put(structuredClone(entry))
               .catch(() => undefined);
-            this.emit(entry);
+            this.emit(entry, undefined, adapter.session);
             if (entry.phase === 'offline') this.later();
             return;
           }

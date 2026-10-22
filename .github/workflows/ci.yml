@@ -1,0 +1,72 @@
+name: Verify refactoring
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  types:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run typecheck && npm run typecheck:contracts && npm run typecheck:core
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run lint
+  windows-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm test
+      - run: node tests/create-windows-backup-fixture.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-windows-backup
+          path: out/ci/windows-backup/
+  linux-server:
+    needs: windows-tests
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run test:server
+      - run: npm run collaboration:build
+      - uses: actions/download-artifact@v4
+        with:
+          name: synthetic-windows-backup
+          path: out/ci/windows-backup/
+      - run: npm run collaboration:verify -- --windows-fixture out/ci/windows-backup --load
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-server-verification
+          path: |
+            out/collaboration-server/

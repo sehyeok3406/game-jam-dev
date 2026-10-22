@@ -1,5 +1,5 @@
 import { assertCanvas } from './canvas-sheets.ts';
-import { multiplayerIntent } from './multiplayer/intent.ts';
+import { resolveMultiplayer } from './multiplayer/resolve.ts';
 import {
   multiplayerSettings,
   readMultiplayerManifest,
@@ -59,30 +59,17 @@ export function createTaskPlan(
       ? htmlChoice.multiplayer
       : input.multiplayer;
   const implementing = input.kind === 'implement' || !!input.thenImplement;
-  const instructionIntent =
-    implementing && explicitMultiplayer === undefined
-      ? multiplayerIntent(
+  const resolvedMultiplayer = implementing
+    ? resolveMultiplayer({
+        explicit: explicitMultiplayer,
+        instructions:
           input.thenImplement?.instructions ?? input.instructions ?? '',
-        )
-      : undefined;
-  const requestedMultiplayer =
-    explicitMultiplayer !== undefined ? explicitMultiplayer : instructionIntent;
-  const inheritedMultiplayer =
-    requestedMultiplayer === undefined && baseline && files[baseline]
-      ? readMultiplayerManifest(files[baseline])
-      : undefined;
-  const documentIntent =
-    implementing && requestedMultiplayer === undefined && !inheritedMultiplayer
-      ? input.inputPaths
+        baselineHtml: baseline ? files[baseline] : undefined,
+        documents: input.inputPaths
           .filter((path) => path.endsWith('.md') && files[path])
-          .map((path) => multiplayerIntent(matter(files[path]).content))
-          .find((value) => value !== undefined && value !== null)
-      : undefined;
-  const resolvedMultiplayer = multiplayerSettings(
-    requestedMultiplayer !== undefined
-      ? requestedMultiplayer
-      : (inheritedMultiplayer ?? documentIntent),
-  );
+          .map((path) => matter(files[path]).content),
+      })
+    : multiplayerSettings(explicitMultiplayer);
   input = {
     ...input,
     multiplayer: resolvedMultiplayer,

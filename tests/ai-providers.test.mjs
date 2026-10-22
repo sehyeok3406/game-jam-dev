@@ -7,10 +7,79 @@ import {
   aiArguments,
   providerEvent,
   GEMINI_RUN_SETTINGS,
+  geminiRunSettings,
+  reasoningOptions,
+  reasoningError,
 } from '../src/ai-providers.ts';
 import { otherCliStatus, findOtherCli } from '../src/ai-cli.ts';
 import { embedSelectedAssets } from '../src/ai-asset-links.ts';
 import { encodeAsset } from '../src/file-assets.ts';
+
+test('reasoning is model-specific, omitted for defaults and translated into native CLI controls', () => {
+  assert.ok(reasoningOptions('codex-cli', 'gpt-6.1-sol').includes('ultra'));
+  assert.ok(!reasoningOptions('codex-cli', 'gpt-6-luna').includes('ultra'));
+  assert.deepEqual(reasoningOptions('gemini-cli', 'gemini-3-pro-preview'), [
+    'low',
+    'high',
+  ]);
+  assert.deepEqual(reasoningOptions('claude-cli', 'sonnet'), []);
+  for (const [provider, model] of [
+    ['codex-cli', 'gpt-6.1-sol'],
+    ['claude-cli', 'claude-opus-5-5'],
+    ['gemini-cli', 'gemini-3.8-flash'],
+  ]) {
+    assert.equal(reasoningError(provider, model, 'high'), null);
+    const defaults = aiArguments(provider, model, '/stage');
+    assert.ok(!defaults.includes('--effort'));
+    assert.ok(
+      !defaults.some((value) => value.startsWith('model_reasoning_effort=')),
+    );
+  }
+  const codex = aiArguments('codex-cli', 'gpt-6.1-sol', '/stage', 'max');
+  assert.ok(codex.includes('model_reasoning_effort="max"'));
+  assert.ok(codex.includes('default_permissions=":workspace"'));
+  const claude = aiArguments(
+    'claude-cli',
+    'claude-opus-5-5',
+    '/stage',
+    'xhigh',
+  );
+  assert.equal(claude[claude.indexOf('--effort') + 1], 'xhigh');
+  assert.ok(claude.includes('--restricted'));
+  for (const [provider, model, effort] of [
+    ['codex-cli', 'gpt-6-luna', 'ultra'],
+    ['claude-cli', 'custom-model', 'max'],
+    ['gemini-cli', 'gemini-3.8-flash', 'minimal'],
+    ['gemini-cli', 'gemini-3.8-flash', 'max'],
+    ['codex-cli', null, 'high'],
+    ['codex-cli', 'gpt-6.1-sol', '--unsafe'],
+  ])
+    assert.throws(
+      () => aiArguments(provider, model, '/stage', effort),
+      /추론 수준/,
+    );
+});
+
+test('Gemini thinking is scoped to its model and invocation without changing the file-only base settings', () => {
+  const before = structuredClone(GEMINI_RUN_SETTINGS);
+  const high = geminiRunSettings('gemini-3.8-flash', 'high');
+  assert.deepEqual(high.modelConfigs.customOverrides, [
+    {
+      match: { model: 'gemini-3.8-flash' },
+      modelConfig: {
+        generateContentConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } },
+      },
+    },
+  ]);
+  assert.equal(high.admin.mcp.enabled, false);
+  assert.ok(!high.tools.core.includes('run_shell_command'));
+  assert.equal(geminiRunSettings(null).modelConfigs, undefined);
+  assert.deepEqual(GEMINI_RUN_SETTINGS, before);
+  assert.throws(
+    () => geminiRunSettings('gemini-3-pro-preview', 'medium'),
+    /추론 수준/,
+  );
+});
 
 test('exactly GPT, Claude and Gemini are supported; file-only adapters never enable shell or permission bypass', () => {
   assert.deepEqual(

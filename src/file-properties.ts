@@ -1,4 +1,4 @@
-import type { WorkflowInput } from './document-statuses.ts';
+export type { StatusPropertyInput } from './contracts/file-properties.ts';
 
 export const FILE_PROPERTIES_VERSION = 1;
 export const filePropertyDefinitions = [
@@ -46,14 +46,6 @@ export type FilePropertyDocument = {
 /** Missing flags belong to legacy files: preserve their previous status behavior. */
 export const statusPropertyApplied = (doc: FilePropertyDocument) =>
   doc.statusPropertyEnabled !== false;
-export type StatusPropertyInput = Omit<
-  WorkflowInput,
-  'statusId' | 'beforeId' | 'afterId'
-> & {
-  expectedEnabled: boolean;
-  enabled?: boolean;
-  statusId?: string;
-};
 export type FilePropertyVisibility = Partial<Record<FilePropertyId, boolean>>;
 export type FilePropertyViews = {
   version: 1;

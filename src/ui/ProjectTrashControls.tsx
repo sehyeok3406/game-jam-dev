@@ -1,3 +1,4 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   ProjectEntry,
@@ -87,10 +88,10 @@ export function ProjectTrashDialog({
   close(): void;
   changed(): Promise<void>;
 }) {
+  const { api, preferences } = useRuntime();
+
   const [plan, setPlan] =
-    useState<
-      Awaited<ReturnType<typeof window.gameCanvas.prepareProjectTrash>>
-    >();
+    useState<Awaited<ReturnType<typeof api.projects.prepareProjectTrash>>>();
   const [version, setVersion] = useState<number>();
   const [name, setName] = useState(''),
     [confirm, setConfirm] = useState(false),
@@ -99,7 +100,7 @@ export function ProjectTrashDialog({
   useEffect(() => {
     let alive = true;
     const request = team
-      ? window.gameCanvas.getSharedProjectLifecycle(project.id).then((r) => {
+      ? api.projects.getSharedProjectLifecycle(project.id).then((r) => {
           if (alive) {
             if (r.status !== 'active')
               throw Error(
@@ -108,7 +109,7 @@ export function ProjectTrashDialog({
             setVersion(r.version);
           }
         })
-      : window.gameCanvas.prepareProjectTrash(project.id).then((p) => {
+      : api.projects.prepareProjectTrash(project.id).then((p) => {
           if (alive) setPlan(p);
         });
     void request.catch((e) => {
@@ -124,7 +125,7 @@ export function ProjectTrashDialog({
     setError('');
     try {
       if (team)
-        await window.gameCanvas.trashSharedProject(
+        await api.projects.trashSharedProject(
           project.id,
           name,
           confirm,
@@ -138,13 +139,13 @@ export function ProjectTrashDialog({
           `local:${plan!.entry.root}`,
           `shared:${project.projectId}`,
         ].filter(Boolean);
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)!;
+        for (let i = 0; i < preferences.length; i++) {
+          const key = preferences.key(i)!;
           if (projectStorageKey(key, identities))
-            values[key] = localStorage.getItem(key)!;
+            values[key] = preferences.getItem(key)!;
         }
-        await window.gameCanvas.trashProject(plan!.token, values);
-        for (const key of Object.keys(values)) localStorage.removeItem(key);
+        await api.projects.trashProject(plan!.token, values);
+        for (const key of Object.keys(values)) preferences.removeItem(key);
       }
       await changed();
       close();
@@ -240,6 +241,8 @@ export function ProjectTrashPanel({
   close(): void;
   changed(): Promise<void>;
 }) {
+  const { api, preferences } = useRuntime();
+
   const [items, setItems] = useState<ProjectTrashEntry[]>([]),
     [remote, setRemote] = useState<
       { entry: ProjectEntry; state: SharedProjectLifecycle }[]
@@ -250,13 +253,13 @@ export function ProjectTrashPanel({
   const [name, setName] = useState(''),
     [discard, setDiscard] = useState(false);
   const refresh = async () => {
-    setItems(await window.gameCanvas.listProjectTrash());
+    setItems(await api.projects.listProjectTrash());
     const results = await Promise.allSettled(
       projects
         .filter((p) => p.kind === 'shared' && p.role === 'admin')
         .map(async (entry) => ({
           entry,
-          state: await window.gameCanvas.getSharedProjectLifecycle(entry.id),
+          state: await api.projects.getSharedProjectLifecycle(entry.id),
         })),
     );
     setRemote(
@@ -290,10 +293,10 @@ export function ProjectTrashPanel({
     }
   };
   const restore = async (id: string) => {
-    const values = await window.gameCanvas.restoreProjectTrash(id);
+    const values = await api.projects.restoreProjectTrash(id);
     for (const [key, value] of Object.entries(values))
-      localStorage.setItem(key, value);
-    await window.gameCanvas.acknowledgeProjectRestore(id);
+      preferences.setItem(key, value);
+    await api.projects.acknowledgeProjectRestore(id);
   };
   return (
     <TrashModal title="프로젝트 휴지통" busy={busy} close={close}>
@@ -302,7 +305,7 @@ export function ProjectTrashPanel({
       </p>
       <button
         disabled={busy}
-        onClick={() => void run(() => window.gameCanvas.retryProjectTrash())}
+        onClick={() => void run(() => api.projects.retryProjectTrash())}
       >
         상태 새로고침 · 정리 재시도
       </button>
@@ -364,9 +367,7 @@ export function ProjectTrashPanel({
                   state.expiresAt! <= Date.now()
                 }
                 onClick={() =>
-                  void run(() =>
-                    window.gameCanvas.restoreSharedProject(entry.id),
-                  )
+                  void run(() => api.projects.restoreSharedProject(entry.id))
                 }
               >
                 팀 프로젝트 복원
@@ -421,12 +422,8 @@ export function ProjectTrashPanel({
               onClick={() =>
                 void run(() =>
                   purge.team
-                    ? window.gameCanvas.purgeSharedProject(purge.id, name)
-                    : window.gameCanvas.purgeProjectTrash(
-                        purge.id,
-                        name,
-                        discard,
-                      ),
+                    ? api.projects.purgeSharedProject(purge.id, name)
+                    : api.projects.purgeProjectTrash(purge.id, name, discard),
                 )
               }
             >

@@ -14,6 +14,8 @@
   "scripts": {
     "web-viewer:build": "node scripts/build-web-viewer-worker.mjs",
     "collaboration:build": "node scripts/build-collaboration-server.mjs",
+    "collaboration:verify": "node scripts/verify-collaboration-bundle.mjs",
+    "test:server": "node --test tests/server-*.test.mjs tests/collaboration-backup.test.mjs tests/backup-s3.test.mjs tests/sqlite-project-repository.test.mjs tests/multiplayer.test.mjs",
     "collaboration:server": "node src/collaboration-server-entry.ts",
     "test:integration": "node tests/run-integration.mjs",
     "test:multiplayer": "node tests/run-multiplayer.mjs",
@@ -31,6 +33,8 @@
     "test:ui-review": "node tests/run-ui-review.mjs",
     "test:canvas-selection:ui": "node tests/run-canvas-selection-ui.mjs",
     "test:ai-dismissal": "node tests/run-ai-run-dismissal.mjs",
+    "test:ai-queue": "node tests/run-ai-queue-main.mjs",
+    "test:ai-queue:ui": "node tests/run-ai-queue-ui.mjs",
     "test:gamejam-validation": "node tests/run-gamejam-validation.mjs",
     "test:gamejam-history": "node tests/run-gamejam-history.mjs",
     "test:gamejam-approval": "node tests/run-gamejam-approval.mjs",
@@ -42,6 +46,10 @@
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
     "typecheck": "tsc --noEmit",
+    "typecheck:contracts": "tsc -p tsconfig.contracts.json",
+    "typecheck:core": "tsc -p tsconfig.core.json",
+    "test:runtime-contracts": "node --test tests/runtime-contracts.test.mjs",
+    "test:project-session": "node tests/run-project-session-main.mjs",
     "test:multiplayer-diagnostics": "node tests/run-multiplayer-diagnostics.mjs"
   },
   "devDependencies": {
@@ -68,6 +76,7 @@
     "vite": "^8.3.1"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1155.0",
     "@tiptap/core": "^3.31.4",
     "@tiptap/extension-horizontal-rule": "^3.31.4",
     "@tiptap/extension-image": "^3.31.4",

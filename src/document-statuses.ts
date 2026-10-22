@@ -1,34 +1,10 @@
+import type { DocumentStatuses } from './contracts/document-statuses.ts';
+export type { DocumentStatuses } from './contracts/document-statuses.ts';
+import type { WorkflowStatus } from './contracts/document-statuses.ts';
+export type { WorkflowStatus } from './contracts/document-statuses.ts';
+export type { StatusesInput } from './contracts/document-statuses.ts';
+export type { WorkflowInput } from './contracts/document-statuses.ts';
 export const DOCUMENT_STATUSES_PATH = '.canvas/document-statuses.json';
-export type WorkflowStatus = {
-  id: string;
-  name: string;
-  badgeColor: string;
-  /** Legacy compatibility only. New board appearance is owned by KanbanView. */
-  boardBackground:
-    | { mode: 'status' | 'none' }
-    | { mode: 'custom'; color: string };
-};
-export type DocumentStatuses = {
-  version: 1;
-  defaultStatusId: string;
-  statuses: WorkflowStatus[];
-};
-export type WorkflowInput = {
-  relativePath: string;
-  objectId: string;
-  expectedStatus?: string;
-  expectedOrder?: number;
-  structureRevision?: number;
-  workflowRevision?: number;
-  statusId: string;
-  beforeId?: string;
-  afterId?: string;
-};
-export type StatusesInput = {
-  expected: string | null;
-  value: DocumentStatuses;
-  replacements?: Record<string, string>;
-};
 export const defaultStatuses = (): DocumentStatuses => ({
   version: 1,
   defaultStatusId: 'not-started',
@@ -119,8 +95,14 @@ export function workflowId(document: { workflowStatusId?: string }) {
   return document.workflowStatusId ?? 'not-started';
 }
 export const workflowCompare = (
-  a: { id: string; workflowOrder?: number },
-  b: { id: string; workflowOrder?: number },
+  a: {
+    id: string;
+    workflowOrder?: number;
+  },
+  b: {
+    id: string;
+    workflowOrder?: number;
+  },
 ) =>
   (a.workflowOrder ?? Number.MAX_VALUE) -
     (b.workflowOrder ?? Number.MAX_VALUE) || a.id.localeCompare(b.id);

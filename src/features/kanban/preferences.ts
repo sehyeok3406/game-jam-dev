@@ -1,3 +1,4 @@
+import { useRuntime } from '../../ui/runtime/runtime-context.ts';
 import { useEffect, useState } from 'react';
 import { nearDocumentPosition } from '../../canvas-placement.ts';
 export type KanbanPreferences = {
@@ -10,9 +11,11 @@ export type KanbanPreferences = {
   height: number;
 };
 export function usePersonalValue<T>(key: string, fallback: T) {
+  const { preferences } = useRuntime();
+
   const read = () => {
     try {
-      const parsed = JSON.parse(localStorage.getItem(key) ?? 'null');
+      const parsed = JSON.parse(preferences.getItem(key) ?? 'null');
       return parsed && typeof parsed === 'object'
         ? ({ ...fallback, ...parsed } as T)
         : fallback;
@@ -28,7 +31,7 @@ export function usePersonalValue<T>(key: string, fallback: T) {
   const update = (value: T) => {
     setStored({ key, value });
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      preferences.setItem(key, JSON.stringify(value));
     } catch {
       /* The current view still works when personal storage is full. */
     }

@@ -1,3 +1,5 @@
+import type { Snapshot } from './contracts/project.ts';
+export type { Snapshot } from './contracts/project.ts';
 import { assertWorkflowReferences } from './document-statuses-storage.ts';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
 import { KANBAN_VIEW_PATH } from './features/kanban/view.ts';
@@ -21,9 +23,6 @@ import { isImportedPreviewPath } from './preview-output.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
 import { historyTaskPath } from './ai-task-records.ts';
 import { remapResultChanges, RESULT_CATALOG_PATH } from './result-structure.ts';
-
-export type Snapshot = Record<string, string>;
-
 async function readSnapshotFile(absolute: string, relative: string) {
   return isAssetPath(relative)
     ? encodeAsset(relative, await fs.readFile(absolute))
@@ -32,7 +31,6 @@ async function readSnapshotFile(absolute: string, relative: string) {
 function snapshotBytes(relative: string, content: string) {
   return isAssetPath(relative) ? decodeAsset(relative, content) : content;
 }
-
 export async function projectPath(root: string, relativePath: string) {
   if (
     !relativePath ||
@@ -64,7 +62,6 @@ export async function projectPath(root: string, relativePath: string) {
   }
   return target;
 }
-
 export async function captureProject(root: string): Promise<Snapshot> {
   const snapshot: Snapshot = {};
   const walk = async (relative: string) => {
@@ -113,7 +110,6 @@ export async function captureProject(root: string): Promise<Snapshot> {
     await walk(relative);
   return snapshot;
 }
-
 export async function materialize(root: string, snapshot: Snapshot) {
   for (const [relative, content] of Object.entries(snapshot)) {
     const absolute = await projectPath(root, relative);
@@ -121,12 +117,10 @@ export async function materialize(root: string, snapshot: Snapshot) {
     await fs.writeFile(absolute, snapshotBytes(relative, content), 'utf8');
   }
 }
-
 function validateId(id: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(id))
     throw new Error('올바르지 않은 기록 ID입니다.');
 }
-
 export async function saveHistory(
   root: string,
   before: Snapshot,
@@ -166,7 +160,6 @@ export async function saveHistory(
   }
   return entry;
 }
-
 async function writeLocalAuthorshipMap(
   root: string,
   ledger: FileAuthorshipMap,
@@ -184,7 +177,6 @@ async function writeLocalAuthorshipMap(
     await fs.rm(temporary, { force: true });
   }
 }
-
 async function localAuthorshipMap(root: string): Promise<FileAuthorshipMap> {
   try {
     const stored = JSON.parse(
@@ -236,7 +228,6 @@ async function localAuthorshipMap(root: string): Promise<FileAuthorshipMap> {
   await writeLocalAuthorshipMap(root, ledger);
   return ledger;
 }
-
 export async function localFileAuthorship(root: string, relative: string) {
   const content = await readSnapshotFile(
     await projectPath(root, relative),
@@ -244,7 +235,6 @@ export async function localFileAuthorship(root: string, relative: string) {
   );
   return resolveAuthorship(await localAuthorshipMap(root), relative, content);
 }
-
 async function writeHistoryEntry(root: string, entry: HistoryEntry) {
   validateId(entry.id);
   const absolute = await projectPath(root, `.history/${entry.id}/entry.json`);
@@ -256,7 +246,6 @@ async function writeHistoryEntry(root: string, entry: HistoryEntry) {
     await fs.rm(temporary, { force: true });
   }
 }
-
 export async function recoverInterruptedHistory(root: string) {
   for (const entry of await listHistory(root)) {
     if (!['starting', 'running', 'validating'].includes(entry.status)) continue;
@@ -298,11 +287,9 @@ export async function recoverInterruptedHistory(root: string) {
     });
   }
 }
-
 export function historyId() {
   return `${Date.now()}-${randomUUID()}`;
 }
-
 export async function listHistory(root: string): Promise<HistoryEntry[]> {
   const folder = await projectPath(root, '.history');
   let ids: string[];
@@ -363,7 +350,6 @@ export async function listHistory(root: string): Promise<HistoryEntry[]> {
   }
   return entries.sort((a, b) => b.createdAt - a.createdAt);
 }
-
 export async function readHistoryFile(
   root: string,
   id: string,
@@ -382,7 +368,6 @@ export async function readHistoryFile(
     relative,
   );
 }
-
 export async function applyChanges(
   root: string,
   baseline: Snapshot,
@@ -469,7 +454,6 @@ export async function applyChanges(
     throw error;
   }
 }
-
 export async function restoreHistory(
   root: string,
   id: string,

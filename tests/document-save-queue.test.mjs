@@ -64,6 +64,47 @@ const adapter = (read, write, extra = {}) => ({
   ...extra,
 });
 
+test('a late save completion keeps its starting session identity after the same scope is reopened', async () => {
+  const entered = deferred(),
+    finish = deferred(),
+    states = [];
+  const queue = new DocumentSaveQueue(memory(), (state) => states.push(state));
+  const first = { projectKey: 'opaque', sessionId: 'old', epoch: 1 };
+  const second = { projectKey: 'opaque', sessionId: 'new', epoch: 2 };
+  let current = true;
+  await queue.activate(
+    adapter(
+      async () => doc(),
+      async () => {
+        entered.resolve();
+        await finish.promise;
+        return doc('new text');
+      },
+      { session: first, isCurrent: () => current },
+    ),
+  );
+  await queue.enqueue(request(1, 'new text'));
+  await entered.promise;
+  current = false;
+  await queue.activate(
+    adapter(
+      async () => doc('new text'),
+      async () => {
+        throw Error('must not resubmit a confirmed save');
+      },
+      { session: second },
+    ),
+  );
+  finish.resolve();
+  for (let n = 0; n < 10 && !states.some((s) => s.phase === 'saved'); n++)
+    await tick();
+  const completed = states.find((s) => s.phase === 'saved');
+  assert.deepEqual(completed.projectSession, first);
+  assert.equal(completed.scope, 'one');
+  assert.deepEqual((await queue.list('one'))[0].projectSession, second);
+  queue.dispose();
+});
+
 test('a delayed UI acknowledgement cannot reset the queue baseline to stale text', async () => {
   let server = doc();
   const writes = [];

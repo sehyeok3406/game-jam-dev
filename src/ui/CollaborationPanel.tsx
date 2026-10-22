@@ -1,3 +1,5 @@
+import { requireDesktopApi } from './runtime/desktop-api';
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useState } from 'react';
 import { Copy, LoaderCircle, Users, X } from 'lucide-react';
 import type { CollaborationState, TestUsersState } from '../shared';
@@ -21,6 +23,8 @@ export function CollaborationPanel({
   report: (message: string) => void;
   initialTab?: 'create' | 'join' | 'recover';
 }) {
+  const { api, preferences } = useRuntime();
+
   const [tab, setTab] = useState<'create' | 'join' | 'recover'>(initialTab);
   const [serverUrl, setServerUrl] = useState(
     state.serverUrl ?? 'http://127.0.0.1:4317',
@@ -28,9 +32,9 @@ export function CollaborationPanel({
   const [serverKey, setServerKey] = useState('');
   const [hostServerUrl, setHostServerUrl] = useState('');
   useEffect(() => {
-    if (tab !== 'create' || state.active || !window.gameCanvas.selfHost) return;
+    if (tab !== 'create' || state.active || !api.desktop?.selfHost) return;
     let disposed = false;
-    void window.gameCanvas.selfHost
+    void api.desktop?.selfHost
       .getSelfHost()
       .then((host) => {
         if (disposed || host.stage !== 'ready') return;
@@ -47,7 +51,7 @@ export function CollaborationPanel({
     };
   }, [tab, state.active]);
   const [name, setName] = useState(
-    () => localStorage.getItem('game-canvas-nickname') ?? '',
+    () => preferences.getItem('game-canvas-nickname') ?? '',
   );
   const [code, setCode] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -72,10 +76,11 @@ export function CollaborationPanel({
   const [testPrefix, setTestPrefix] = useState('테스트 사용자');
   const [testRole, setTestRole] = useState<'editor' | 'viewer'>('editor');
   useEffect(() => {
+    if (!api.desktop) return;
     let disposed = false;
     const refresh = async () => {
       try {
-        const next = await window.gameCanvas.getTestUsers();
+        const next = await requireDesktopApi(api).getTestUsers();
         if (!disposed) setTestUsers(next);
       } catch {
         /* Collaboration itself remains usable if the test API is unavailable. */
@@ -114,21 +119,21 @@ export function CollaborationPanel({
       if (tab !== 'recover' && !name.trim())
         throw new Error('닉네임을 입력해주세요.');
       await beforeSwitch();
-      localStorage.setItem('game-canvas-nickname', name.trim());
+      preferences.setItem('game-canvas-nickname', name.trim());
       if (tab === 'create')
-        await window.gameCanvas.createCollaboration({
+        await api.collaboration.createCollaboration({
           serverUrl,
           serverKey,
           nickname: name.trim(),
         });
       else if (tab === 'recover')
-        await window.gameCanvas.recoverCollaboration({
+        await api.collaboration.recoverCollaboration({
           serverUrl,
           projectId,
           recoveryKey,
         });
       else
-        await window.gameCanvas.joinCollaboration({
+        await api.collaboration.joinCollaboration({
           serverUrl,
           code,
           nickname: name.trim(),
@@ -149,6 +154,12 @@ export function CollaborationPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="collaboration-title"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !busy) {
+            event.stopPropagation();
+            close();
+          }
+        }}
       >
         <header>
           <div>
@@ -212,7 +223,7 @@ export function CollaborationPanel({
                       title="초대 정보 복사"
                       onClick={() =>
                         void action(() =>
-                          window.gameCanvas.copyText(
+                          requireDesktopApi(api).copyText(
                             `Game Jam! 초대\n서버: ${state.serverUrl}\n코드: ${state.inviteCode}`,
                           ),
                         )
@@ -231,7 +242,7 @@ export function CollaborationPanel({
                 <button
                   disabled={busy || !state.connected}
                   onClick={() =>
-                    void action(() => window.gameCanvas.rotateInvite())
+                    void action(() => api.collaboration.rotateInvite())
                   }
                 >
                   코드 재발급
@@ -312,12 +323,13 @@ export function CollaborationPanel({
                       }
                       onClick={() =>
                         void action(async () => {
-                          const windows =
-                            await window.gameCanvas.launchTestUsers({
-                              count: testCount,
-                              role: testRole,
-                              nicknamePrefix: testPrefix,
-                            });
+                          const windows = await requireDesktopApi(
+                            api,
+                          ).launchTestUsers({
+                            count: testCount,
+                            role: testRole,
+                            nicknamePrefix: testPrefix,
+                          });
                           setTestUsers((previous) =>
                             previous ? { ...previous, windows } : previous,
                           );
@@ -429,7 +441,7 @@ export function CollaborationPanel({
                     }
                     onChange={(event) =>
                       void action(() =>
-                        window.gameCanvas.setMemberRole(
+                        api.collaboration.setMemberRole(
                           member.id,
                           event.target.value as 'admin' | 'editor' | 'viewer',
                         ),
@@ -466,7 +478,7 @@ export function CollaborationPanel({
                   disabled={busy}
                   onClick={() =>
                     void action(async () => {
-                      await window.gameCanvas.setMemberRole(
+                      await api.collaboration.setMemberRole(
                         removeId,
                         'removed',
                       );
@@ -494,7 +506,7 @@ export function CollaborationPanel({
                     <button
                       onClick={() =>
                         void action(() =>
-                          window.gameCanvas.copyText(
+                          requireDesktopApi(api).copyText(
                             `프로젝트: ${state.projectId}\n복구 키: ${state.recoveryKey}`,
                           ),
                         )
@@ -527,7 +539,7 @@ export function CollaborationPanel({
                   onClick={() =>
                     void action(async () => {
                       await beforeSwitch();
-                      await window.gameCanvas.leaveCollaboration();
+                      await api.collaboration.leaveCollaboration();
                       setLeaveConfirm(false);
                       report('이전 로컬 프로젝트로 돌아왔습니다.');
                     })
@@ -619,7 +631,9 @@ export function CollaborationPanel({
                   onClick={() =>
                     void action(async () => {
                       const result =
-                        await window.gameCanvas.startLocalCollaborationServer();
+                        await requireDesktopApi(
+                          api,
+                        ).startLocalCollaborationServer();
                       setServerUrl(result.serverUrl);
                       setServerKey('');
                       report('이 PC의 로컬 테스트 서버를 시작했습니다.');

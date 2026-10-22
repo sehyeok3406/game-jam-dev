@@ -1,3 +1,4 @@
+import type { CommandEnvironment } from './core/editing/environment.ts';
 import { randomUUID } from 'node:crypto';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
@@ -116,7 +117,10 @@ export function imageAsset(value: unknown): ImageAsset | undefined {
     ? asset
     : undefined;
 }
-export function buildFileImports(input: ImportBatchInput): Snapshot {
+export function buildFileImports(
+  input: ImportBatchInput,
+  environment: CommandEnvironment = { now: Date.now, id: randomUUID },
+): Snapshot {
   if (
     !input ||
     !Array.isArray(input.files) ||
@@ -149,7 +153,7 @@ export function buildFileImports(input: ImportBatchInput): Snapshot {
         '불러올 파일 정보가 올바르지 않습니다.',
       );
     const ext = file.name.split('.').at(-1)!.toLowerCase();
-    const id = `import-${randomUUID()}`;
+    const id = `import-${environment.id()}`;
     const relative = `docs/imported/${id}.md`;
     const title = file.name.replace(/\.[^.]+$/, '');
     const data: Record<string, unknown> = {
@@ -163,7 +167,7 @@ export function buildFileImports(input: ImportBatchInput): Snapshot {
       height: 320,
       sources: [],
       imported_from: file.name,
-      updated_at: Date.now(),
+      updated_at: environment.now(),
     };
     let body: string;
     if (ext === 'html' || ext === 'htm') {
@@ -179,6 +183,7 @@ export function buildFileImports(input: ImportBatchInput): Snapshot {
           x: Number(data.x),
           y: Number(data.y),
         },
+        environment.now,
       );
       total += Buffer.byteLength(file.content);
       return;

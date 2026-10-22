@@ -38,6 +38,31 @@ async function run() {
   const failures = [];
   let exitCode = 0;
   try {
+    const noDesktop = new URL(process.env.QA_URL);
+    noDesktop.searchParams.set('noDesktop', '1');
+    await win.loadURL(noDesktop.href);
+    await wait('!!document.querySelector(".home-project-open")');
+    const disabled = await js(
+      `Object.fromEntries([...document.querySelectorAll('button')].filter(b=>['기존 폴더 열기','앱 업데이트'].some(text=>b.textContent.includes(text))).map(b=>[b.textContent.trim(),b.disabled]))`,
+    );
+    assert.equal(Object.keys(disabled).length, 2);
+    assert.ok(Object.values(disabled).every(Boolean));
+    assert.equal(
+      await js(
+        `uiDebugQa.calls.some(name=>['getTestUsers','getUpdateState','onUpdateChanged','onUpdateRestartRequested','getAiStatus'].includes(name))`,
+      ),
+      false,
+    );
+    await js('document.querySelector(".home-project-open").click()');
+    await wait('!!document.querySelector(".document-card")');
+    assert.equal(
+      await js(`uiDebugQa.calls.includes('getAiStatus')`),
+      false,
+      'unsupported local AI must not inspect or execute a CLI',
+    );
+    console.log(
+      'Runtime without desktop: local file/update actions disabled, editor available, no native or local AI calls.',
+    );
     await win.loadURL(process.env.QA_URL);
     await wait('!!document.querySelector(".home-project-open")');
     await f12();

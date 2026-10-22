@@ -1,3 +1,4 @@
+import { collaborationTransport } from './adapters/http/collaboration-transport.ts';
 import {
   objectId,
   workflowOnlyChange,
@@ -11,7 +12,9 @@ import type {
   HistoryEntry,
   FileAuthorshipMap,
 } from './shared.ts';
-import type { Snapshot } from './project-store.ts';
+import type { Snapshot } from './contracts/project.ts';
+import { ProjectEventDecoder, readPlayLobbyEvent } from './project-events.ts';
+import type { PlayLobbyEvent } from './multiplayer/types.ts';
 import { checkSnapshot, reduceCollaboration } from './collaboration-model.ts';
 import { applyDrawingDelta } from './drawing-model.ts';
 import {
@@ -25,7 +28,7 @@ import { taskDocumentFormat } from './document-format.ts';
 import type {
   CollaborationCommand,
   CollaborationEnvelope,
-} from './collaboration-server.ts';
+} from './contracts/collaboration.ts';
 
 export type CollaborationCredentials = {
   serverUrl: string;
@@ -111,6 +114,7 @@ export class CollaborationClient {
   offline: OfflineDraft | null = null;
   outgoing: OnlineAttempt | null = null;
   private readonly persist: () => Promise<void>;
+  private readonly onPlayLobby: (event: PlayLobbyEvent) => void;
   readonly credentials: CollaborationCredentials;
   private readonly onUpdate: (
     state: CollaborationState,
@@ -120,6 +124,7 @@ export class CollaborationClient {
     credentials: CollaborationCredentials,
     onUpdate: (state: CollaborationState, changed: boolean) => void,
     persist: () => Promise<void> = async () => {},
+    onPlayLobby: (event: PlayLobbyEvent) => void = () => {},
   ) {
     serverAddress(credentials.serverUrl);
     if (!/^[a-f0-9-]{36}$/.test(credentials.projectId))
@@ -127,6 +132,7 @@ export class CollaborationClient {
     this.credentials = credentials;
     this.onUpdate = onUpdate;
     this.persist = persist;
+    this.onPlayLobby = onPlayLobby;
     this.state = {
       ...noCollaboration(),
       active: true,
@@ -212,95 +218,7 @@ export class CollaborationClient {
     token = '',
     key = '',
   ): Promise<unknown> {
-    let response: Response;
-    try {
-      response = await fetch(`${serverUrl}${endpoint}`, {
-        method: 'POST',
-        redirect: 'error',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(key ? { 'X-Server-Key': key } : {}),
-        },
-        body: JSON.stringify(input),
-        signal: AbortSignal.timeout(12_000),
-      });
-    } catch (error) {
-      const timeout = (error as { name?: string })?.name === 'TimeoutError';
-      throw new CanvasError(
-        timeout ? 'GC-NET-001' : 'GC-NET-002',
-        timeout
-          ? '협업 서버 연결 시간이 초과되었습니다.'
-          : '협업 서버에 연결할 수 없습니다.',
-        { endpoint },
-      );
-    }
-    if (response.status === 429)
-      throw new CanvasError(
-        'GC-NET-004',
-        '협업 서버의 요청 제한에 도달했습니다.',
-        {
-          endpoint,
-          status: 429,
-        },
-      );
-    let value: {
-      error?: string;
-      code?: string;
-      failure?: unknown;
-      lifecycle?: import('./shared.ts').SharedProjectLifecycle;
-    };
-    try {
-      value = (await response.json()) as typeof value;
-      if (
-        (!value || typeof value !== 'object') &&
-        !(
-          response.ok &&
-          endpoint.endsWith('/history-read') &&
-          (value === null || typeof value === 'string')
-        )
-      )
-        throw new Error('Invalid response');
-    } catch (error) {
-      if ((error as { name?: string })?.name === 'TimeoutError')
-        throw new CanvasError(
-          'GC-NET-001',
-          '협업 서버 응답 시간이 초과되었습니다.',
-          {
-            endpoint,
-            status: response.status,
-          },
-        );
-      throw new CanvasError(
-        'GC-NET-003',
-        `협업 서버가 올바른 응답을 반환하지 않았습니다. (HTTP ${response.status})`,
-        {
-          endpoint,
-          status: response.status,
-        },
-      );
-    }
-    if (!response.ok)
-      if (response.status >= 500)
-        throw new CanvasError(
-          'GC-NET-003',
-          `협업 서버가 요청을 처리하지 못했습니다. (HTTP ${response.status})`,
-          {
-            endpoint,
-            status: response.status,
-          },
-        );
-      else
-        throw Object.assign(
-          new Error(value.error ?? `협업 서버 오류 (${response.status})`),
-          {
-            status: response.status,
-            code: value.code,
-            failure: value.failure,
-            lifecycle: value.lifecycle,
-          },
-        );
-    return value;
+    return collaborationTransport(serverUrl, endpoint, input, token, key);
   }
   accept(result: CollaborationEnvelope) {
     if (
@@ -551,7 +469,8 @@ export class CollaborationClient {
       try {
         if (this.lease)
           await this.request('ai-heartbeat', { lease: this.lease }).catch(
-            () => {
+            (error) => {
+              if (retryableTransport(error)) throw error;
               this.lease = null;
             },
           );
@@ -732,16 +651,17 @@ export class CollaborationClient {
       this.streamConnected = true;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      const events = new ProjectEventDecoder();
       while (!this.stopped) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let end: number;
-        while ((end = buffer.indexOf('\n\n')) >= 0) {
-          const event = buffer.slice(0, end);
-          buffer = buffer.slice(end + 2);
-          if (event.startsWith('data:') && !this.streamRefreshTimer) {
+        for (const event of events.push(
+          decoder.decode(value, { stream: true }),
+        )) {
+          if (event.type === 'play-lobby') {
+            if (!this.stopped && !this.state.accessDenied)
+              this.onPlayLobby(readPlayLobbyEvent(event.data));
+          } else if (event.type === 'message' && !this.streamRefreshTimer) {
             this.streamRefreshTimer = setTimeout(() => {
               this.streamRefreshTimer = null;
               if (!this.stopped) void this.refresh().catch(() => undefined);
@@ -1366,6 +1286,7 @@ export class CollaborationClient {
     modelId?: string | null,
     providerId: import('./shared').AiProviderId = 'codex-cli',
     approval?: import('./gamejam-approval.ts').ApprovalStart,
+    reasoningEffort?: import('./shared').AiReasoningEffort | null,
   ) {
     return this.serial(async () => {
       if (!this.state.connected || this.offline || this.state.role !== 'admin')
@@ -1395,6 +1316,8 @@ export class CollaborationClient {
           'GC-AI-010',
           'AI 실행에는 협업 서버 v0.8.0 이상이 필요합니다.',
         );
+      if (reasoningEffort && this.state.aiReasoningVersion !== 1)
+        throw new Error('추론 수준을 지정하려면 협업 서버를 업데이트해주세요.');
       const result = (await this.request(
         approval ? 'requests-start' : 'ai-start',
         {
@@ -1404,6 +1327,7 @@ export class CollaborationClient {
           taskPath,
           modelId,
           providerId,
+          reasoningEffort,
           gamejamVersion: 1,
           multiplayerVersion: 1,
           documentBundleVersion: 1,
@@ -1418,6 +1342,82 @@ export class CollaborationClient {
       this.accept(result);
       return { ...result.files };
     });
+  }
+  async enqueueAi(input: import('./shared').StartCodexRunInput) {
+    return this.serial(async () => {
+      if (this.state.aiQueueVersion !== 1)
+        throw new Error('예약 실행을 사용하려면 협업 서버를 업데이트해주세요.');
+      if (input.reasoningEffort && this.state.aiReasoningVersion !== 1)
+        throw new Error('추론 수준을 지정하려면 협업 서버를 업데이트해주세요.');
+      const action = input.approval ? 'requests-start' : 'ai-start';
+      const command = {
+        ...input,
+        ...(input.approval
+          ? { ...input.approval, requestRevision: input.approval.revision }
+          : {}),
+        queueVersion: 1,
+        revision: this.state.revision,
+        gamejamVersion: 1,
+        multiplayerVersion: 1,
+        documentBundleVersion: 1,
+        documentOutputFormatVersion: 1,
+        htmlAnalysisVersion: 1,
+        htmlInputVersion: 1,
+        canvasSheetsVersion: 1,
+      };
+      let response: unknown;
+      try {
+        response = await this.request(action, command);
+      } catch (error) {
+        if (!retryableTransport(error)) throw error;
+        response = await this.request(action, command);
+      }
+      const result = response as CollaborationEnvelope & {
+        queuedTask: import('./ai-task-queue').AiQueueTask;
+      };
+      this.accept(result);
+      return result.queuedTask;
+    });
+  }
+  async claimAi(taskId: string) {
+    return this.serial(async () => {
+      const command = {
+        taskId,
+        claimId: randomUUID(),
+        aiReasoningVersion: 1,
+        gamejamVersion: 1,
+        multiplayerVersion: 1,
+        documentBundleVersion: 1,
+        documentOutputFormatVersion: 1,
+        htmlAnalysisVersion: 1,
+        htmlInputVersion: 1,
+        canvasSheetsVersion: 1,
+      };
+      let response: unknown;
+      try {
+        response = await this.request('ai-claim', command);
+      } catch (error) {
+        if (!retryableTransport(error)) throw error;
+        response = await this.request('ai-claim', command);
+      }
+      const result = response as CollaborationEnvelope & {
+        lease: string | null;
+        runId?: string;
+        taskPath?: string;
+      };
+      if (result.lease) this.lease = result.lease;
+      this.accept(result);
+      return { ...result, files: { ...this.files } };
+    });
+  }
+  async cancelQueuedTask(taskId: string) {
+    await this.serial(async () =>
+      this.accept(
+        (await this.request('ai-queue-cancel', {
+          taskId,
+        })) as CollaborationEnvelope,
+      ),
+    );
   }
   async listApprovals() {
     if (this.state.requestApprovalVersion !== 1)
@@ -1483,8 +1483,10 @@ export class CollaborationClient {
       this.lease = null;
     }
   }
-  async cancelAi() {
-    this.accept((await this.request('ai-cancel')) as CollaborationEnvelope);
+  async cancelAi(runId?: string) {
+    this.accept(
+      (await this.request('ai-cancel', { runId })) as CollaborationEnvelope,
+    );
     this.lease = null;
   }
 }

@@ -1,3 +1,4 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useState } from 'react';
 import { DocumentStatusBadge } from './DocumentStatusBadge';
 import { workflowId, type DocumentStatuses } from '../document-statuses';
@@ -45,6 +46,8 @@ export function FilePropertyBadges({
   manage: () => void;
   details: () => void;
 }) {
+  const { api } = useRuntime();
+
   const [authorship, setAuthorship] = useState<FileAuthorship>();
   const system = filePropertyDefinitions.filter(
     (p) => p.id !== 'status' && propertyVisible(visibility, p.id),
@@ -54,7 +57,7 @@ export function FilePropertyBadges({
     let live = true;
     setAuthorship(undefined);
     if (wantsAuthorship)
-      void window.gameCanvas
+      void api.history
         .getFileAuthorship(relativePath)
         .then((a) => {
           if (live) setAuthorship(a);

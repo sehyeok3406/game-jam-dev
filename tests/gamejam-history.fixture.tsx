@@ -1,3 +1,5 @@
+import { RuntimeProvider } from '../src/ui/runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../src/ui/runtime/preview-runtime';
 import { createRoot } from 'react-dom/client';
 import { App } from '../src/ui/App';
 import { createDevGameCanvasApi } from '../src/dev-api';
@@ -17,7 +19,8 @@ const failure: HistoryEntry = {
   error: '샘플 사용량 한도에 도달했습니다.',
   files: [],
   providerId: 'claude-cli',
-  modelId: 'recovery-model',
+  modelId: 'claude-opus-5-5',
+  reasoningEffort: 'xhigh',
   aiTask: {
     title: '중단된 문서 추출',
     specification: '## 사용자 작업 지시\n\n실패 기록에서 불러온 지시',
@@ -27,7 +30,8 @@ const failure: HistoryEntry = {
     requestSnapshot: {
       version: 1,
       providerId: 'claude-cli',
-      modelId: 'recovery-model',
+      modelId: 'claude-opus-5-5',
+      reasoningEffort: 'xhigh',
       request: {
         canvasId: 'default',
         organize: true,
@@ -57,17 +61,29 @@ api.getTestUsers = async () => ({
   maxWindows: 10,
   windows: [],
 });
-const qa = { creates: 0, runs: 0, requests: [] as CreateTaskInput[] };
+const qa = {
+  creates: 0,
+  runs: 0,
+  requests: [] as CreateTaskInput[],
+  runInputs: [] as unknown[],
+};
 const create = api.createTask;
 api.createTask = async (input) => {
   qa.creates++;
   qa.requests.push(structuredClone(input));
   return create(input);
 };
-api.startCodexRun = async () => {
+api.startCodexRun = async (input) => {
   qa.runs++;
+  qa.runInputs.push(structuredClone(input));
   throw Error('샘플 AI 연결이 끊겼습니다. 실제 AI 호출 없음.');
 };
 (window as unknown as { qaHistory: typeof qa }).qaHistory = qa;
 window.gameCanvas = api;
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <RuntimeProvider
+    runtime={createPreviewRuntime(window.gameCanvas, localStorage)}
+  >
+    <App />
+  </RuntimeProvider>,
+);

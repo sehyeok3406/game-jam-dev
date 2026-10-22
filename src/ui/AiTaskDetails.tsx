@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { aiProvider } from '../ai-providers';
+import { aiProvider, reasoningLabel } from '../core/ai/catalog.ts';
 import type { AiTaskRecord, HistoryEntry } from '../shared';
 
 export function AiTaskDetails({
@@ -50,6 +50,14 @@ export function AiTaskDetails({
           {entry.modelId ||
             record?.requestSnapshot?.modelId ||
             '자동 선택 / 기존 기록에 모델 정보 없음'}
+        </dd>
+        <dt>추론 수준</dt>
+        <dd>
+          {reasoningLabel(
+            entry.reasoningEffort === undefined
+              ? record?.requestSnapshot?.reasoningEffort
+              : entry.reasoningEffort,
+          )}
         </dd>
         <dt>기록 ID</dt>
         <dd>

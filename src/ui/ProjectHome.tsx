@@ -1,3 +1,5 @@
+import { requireDesktopApi } from './runtime/desktop-api';
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { APP_NAME } from '../app-branding';
 import { version } from '../../package.json';
@@ -23,6 +25,7 @@ import {
   Globe2,
   Server,
   ClipboardPaste,
+  Trash2,
 } from 'lucide-react';
 import type { ProjectEntry, ProjectFolder } from '../shared';
 import { ROLE_NAMES } from './CollaborationPanel';
@@ -65,6 +68,8 @@ export function ProjectHome({
   toggleTheme: () => void;
   theme: 'dark' | 'light';
 }) {
+  const { api, preferences, capabilities } = useRuntime();
+
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [trash, setTrash] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
@@ -112,7 +117,7 @@ export function ProjectHome({
   });
   const [viewSettings, setViewSettings] = useState<HomeView>(() => {
     try {
-      return readHomeView(localStorage.getItem(HOME_VIEW_KEY));
+      return readHomeView(preferences.getItem(HOME_VIEW_KEY));
     } catch {
       return { ...DEFAULT_HOME_VIEW };
     }
@@ -147,7 +152,7 @@ export function ProjectHome({
   const dialogRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     try {
-      localStorage.setItem(HOME_VIEW_KEY, JSON.stringify(viewSettings));
+      preferences.setItem(HOME_VIEW_KEY, JSON.stringify(viewSettings));
     } catch {
       setError(
         '보기 설정을 저장하지 못했습니다. 현재 보기는 적용되지만 다음 실행에서 초기화될 수 있습니다.',
@@ -189,16 +194,16 @@ export function ProjectHome({
   const refresh = async (refreshShared = false) => {
     try {
       const [entries, groups, trashEntries] = await Promise.all([
-        window.gameCanvas.listProjects(refreshShared),
-        window.gameCanvas.listProjectFolders(),
-        window.gameCanvas.listProjectTrash(),
+        api.projects.listProjects(refreshShared),
+        api.projects.listProjectFolders(),
+        api.projects.listProjectTrash(),
       ]);
       setProjects(entries);
       setTrashCount(trashEntries.length);
       for (const item of trashEntries)
         if (item.stage === 'retained')
           for (const key of Object.keys(item.storage))
-            localStorage.removeItem(key);
+            preferences.removeItem(key);
       setFolders(groups);
       setSelectedFolder((id) =>
         groups.some((folder) => folder.id === id) ? id : null,
@@ -211,7 +216,7 @@ export function ProjectHome({
   };
   useEffect(() => {
     void refresh();
-    return window.gameCanvas.selfHost?.onSelfHostChanged((state) => {
+    return api.desktop?.selfHost?.onSelfHostChanged((state) => {
       if (state.stage === 'ready' || state.stage === 'off') void refresh();
     });
   }, []);
@@ -344,12 +349,13 @@ export function ProjectHome({
         </div>
         <div className="home-sidebar-bottom">
           <button onClick={() => setTrash(true)}>
-            휴지통 {trashCount > 0 && <span>{trashCount}</span>}
+            <Trash2 size={16} /> 휴지통
+            {trashCount > 0 && <span>{trashCount}</span>}
           </button>
           <button onClick={() => setWebViewer(true)}>
             <Globe2 size={16} /> 웹 뷰어
           </button>
-          <button onClick={updates}>
+          <button onClick={updates} disabled={!capabilities.appUpdates}>
             <RefreshCw size={16} /> 앱 업데이트
           </button>
           <button onClick={toggleTheme}>
@@ -419,21 +425,29 @@ export function ProjectHome({
           </button>
         </div>
         <div className="home-entry-actions">
-          {SELF_HOST_ENABLED && window.gameCanvas.selfHost && openSelfHost && (
-            <button disabled={busy} onClick={openSelfHost}>
-              <Server size={19} />
-              <span>
-                <strong>협업 서버 열기</strong>
-                <small>이 PC에서 서버 설정 · 실행 · 관리</small>
-              </span>
-              <ArrowRight size={16} />
-            </button>
-          )}
+          {SELF_HOST_ENABLED &&
+            capabilities.selfHostManagement &&
+            api.desktop?.selfHost &&
+            openSelfHost && (
+              <button disabled={busy} onClick={openSelfHost}>
+                <Server size={19} />
+                <span>
+                  <strong>협업 서버 열기</strong>
+                  <small>이 PC에서 서버 설정 · 실행 · 관리</small>
+                </span>
+                <ArrowRight size={16} />
+              </button>
+            )}
           <button
-            disabled={busy}
+            disabled={busy || !capabilities.localFiles}
+            title={
+              !capabilities.localFiles
+                ? '기존 폴더 열기는 PC 앱에서 사용할 수 있습니다.'
+                : undefined
+            }
             onClick={() =>
               void action(async () => {
-                const state = await window.gameCanvas.selectWorkspace();
+                const state = await api.projects.selectWorkspace();
                 if (state.root) await opened();
               })
             }
@@ -632,7 +646,7 @@ export function ProjectHome({
                   disabled={busy}
                   onClick={() =>
                     void action(async () => {
-                      await window.gameCanvas.openProject(entry.id);
+                      await api.projects.openProject(entry.id);
                       await opened();
                     })
                   }
@@ -775,7 +789,7 @@ export function ProjectHome({
                     label: '열기',
                     action: () =>
                       void action(async () => {
-                        await window.gameCanvas.openProject(menu.project!.id);
+                        await api.projects.openProject(menu.project!.id);
                         await opened();
                       }),
                   },
@@ -833,9 +847,12 @@ export function ProjectHome({
                   menu.project.kind === 'local'
                     ? {
                         label: '저장 위치 보기',
+                        disabled: !capabilities.localFiles,
                         action: () =>
                           void action(() =>
-                            window.gameCanvas.revealProject(menu.project!.id),
+                            requireDesktopApi(api).revealProject(
+                              menu.project!.id,
+                            ),
                           ),
                       }
                     : {
@@ -893,29 +910,29 @@ export function ProjectHome({
             void action(async () => {
               switch (organizationDialog.type) {
                 case 'rename-project':
-                  await window.gameCanvas.renameProject(
+                  await api.projects.renameProject(
                     organizationDialog.project.id,
                     value,
                     organizationDialog.project.name,
                   );
                   break;
                 case 'move-project':
-                  await window.gameCanvas.moveProject(
+                  await api.projects.moveProject(
                     organizationDialog.project.id,
                     value || null,
                   );
                   break;
                 case 'create-folder':
-                  await window.gameCanvas.createProjectFolder(value);
+                  await api.projects.createProjectFolder(value);
                   break;
                 case 'rename-folder':
-                  await window.gameCanvas.renameProjectFolder(
+                  await api.projects.renameProjectFolder(
                     organizationDialog.folder.id,
                     value,
                   );
                   break;
                 case 'remove-folder':
-                  await window.gameCanvas.removeProjectFolder(
+                  await api.projects.removeProjectFolder(
                     organizationDialog.folder.id,
                   );
                   break;
@@ -938,14 +955,14 @@ export function ProjectHome({
               event.preventDefault();
               void action(async () => {
                 if (server) {
-                  await window.gameCanvas.updateProjectServer(
+                  await api.collaboration.updateProjectServer(
                     server.id,
                     address,
                   );
                   setServer(null);
                   await refresh();
                 } else {
-                  const state = await window.gameCanvas.createProject(name);
+                  const state = await api.projects.createProject(name);
                   if (state.root) {
                     setCreate(false);
                     await opened();

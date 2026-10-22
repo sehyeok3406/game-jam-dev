@@ -2,6 +2,8 @@ import { createRoot } from 'react-dom/client';
 import { App } from '../App';
 import { createUiPreviewApi } from './uiDebugFixtures';
 import { UI_DEBUG_ENTRIES, validUiDebugSelection } from './uiDebugRegistry';
+import { RuntimeProvider } from '../runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../runtime/preview-runtime';
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>();
@@ -30,9 +32,7 @@ export async function bootstrapUiDebugPreview(raw: string) {
   const blocked = (method: string) =>
     send({ type: 'ui-debug:blocked', method });
   Object.defineProperty(window, 'uiDebugPreview', { value: selection });
-  Object.defineProperty(window, 'gameCanvas', {
-    value: createUiPreviewApi(selection, blocked),
-  });
+  const fixture = createUiPreviewApi(selection, blocked);
   Object.defineProperty(window, 'localStorage', { value: memoryStorage() });
   Object.defineProperty(window, 'sessionStorage', { value: memoryStorage() });
   localStorage.setItem('game-canvas-theme', selection.theme);
@@ -102,7 +102,11 @@ export async function bootstrapUiDebugPreview(raw: string) {
   });
   const root = document.getElementById('root');
   if (!root) throw Error('UI 미리보기 영역을 찾을 수 없습니다.');
-  createRoot(root).render(<App preview={selection} />);
+  createRoot(root).render(
+    <RuntimeProvider runtime={createPreviewRuntime(fixture, localStorage)}>
+      <App preview={selection} />
+    </RuntimeProvider>,
+  );
   const selected = UI_DEBUG_ENTRIES.find((entry) => entry.id === selection.id)!;
   const style = document.createElement('style');
   style.textContent =

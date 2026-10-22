@@ -38,6 +38,16 @@ const api: GameCanvasApi = {
     },
   },
   multiplayer: {
+    status: () => playInvoke('multiplayer:status'),
+    onLobbyChanged: (listener) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        value: import('./multiplayer/types').PlayLobbyUpdate,
+      ) => listener(value);
+      ipcRenderer.on('multiplayer:lobby-changed', wrapped);
+      return () =>
+        ipcRenderer.removeListener('multiplayer:lobby-changed', wrapped);
+    },
     control: (input) => playInvoke('multiplayer:control', input),
     open: (roomId) => playInvoke('multiplayer:open', roomId),
     diagnostics: (copy) => playInvoke('multiplayer:diagnostics', copy),
@@ -210,6 +220,8 @@ const api: GameCanvasApi = {
     return () => ipcRenderer.removeListener('collaboration:changed', wrapped);
   },
   getActiveRun: () => ipcRenderer.invoke('codex:active'),
+  listAiQueue: () => ipcRenderer.invoke('ai-queue:list'),
+  cancelQueuedTask: (taskId) => ipcRenderer.invoke('ai-queue:cancel', taskId),
   getPreviewWindow: (relativePath) =>
     ipcRenderer.invoke('preview:window', relativePath),
   savePreviewWindow: (state, relativePath) =>

@@ -1,3 +1,5 @@
+import { requireDesktopApi } from '../runtime/desktop-api';
+import { useRuntime } from '../runtime/RuntimeProvider';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { uiPreview } from './uiDebugPreviewState';
@@ -11,6 +13,8 @@ export function UiDebugConsole({
   scope: UiDebugScope;
   theme: 'dark' | 'light';
 }) {
+  const { api } = useRuntime();
+
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('all');
@@ -47,7 +51,7 @@ export function UiDebugConsole({
   useEffect(() => {
     if (isPreview) return;
     const toggle = () => setOpen((value) => !value);
-    const unsubscribe = window.gameCanvas.onUiDebugToggle?.(toggle);
+    const unsubscribe = api.desktop?.onUiDebugToggle?.(toggle);
     const key = (event: KeyboardEvent) => {
       if (event.key === 'F12' && !unsubscribe) {
         event.preventDefault();
@@ -312,7 +316,7 @@ export function UiDebugConsole({
               </button>
               <button
                 onClick={() => {
-                  void window.gameCanvas
+                  void requireDesktopApi(api)
                     .copyText(
                       `${selected.code} / ${selectedState} / ${selected.source}`,
                     )

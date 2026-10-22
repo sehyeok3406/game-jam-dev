@@ -1,3 +1,6 @@
+import { requireDesktopApi } from './runtime/desktop-api';
+import { useRuntime } from './runtime/RuntimeProvider';
+import { topWorkspaceModal } from './shell/modal-focus';
 import { useEffect, useRef, useState } from 'react';
 import {
   Download,
@@ -17,19 +20,22 @@ export function UpdatePanel({
   close: () => void;
   show: () => void;
 }) {
+  const { api, capabilities } = useRuntime();
+
   const [state, setState] = useState<UpdateState | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [dismissed, setDismissed] = useState('');
   const busyRef = useRef(false);
   useEffect(() => {
+    if (!capabilities.appUpdates || !api.desktop) return;
     let mounted = true,
       eventReceived = false;
-    const unsubscribe = window.gameCanvas.onUpdateChanged((value) => {
+    const unsubscribe = requireDesktopApi(api).onUpdateChanged((value) => {
       eventReceived = true;
       if (mounted) setState(value);
     });
-    void window.gameCanvas
+    void requireDesktopApi(api)
       .getUpdateState()
       .then((value) => {
         if (mounted && !eventReceived) setState(value);
@@ -45,7 +51,10 @@ export function UpdatePanel({
   useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (
+        event.key === 'Escape' &&
+        topWorkspaceModal(document)?.classList.contains('update-dialog')
+      ) {
         event.preventDefault();
         close();
       }
@@ -172,7 +181,9 @@ export function UpdatePanel({
                 disabled={!state || busy || state.status === 'installing'}
                 onChange={(event) =>
                   void run(() =>
-                    window.gameCanvas.setAutomaticUpdates(event.target.checked),
+                    requireDesktopApi(api).setAutomaticUpdates(
+                      event.target.checked,
+                    ),
                   )
                 }
               />
@@ -211,7 +222,7 @@ export function UpdatePanel({
                   state.status === 'ready'
                 }
                 onClick={() =>
-                  void run(() => window.gameCanvas.checkForUpdates())
+                  void run(() => requireDesktopApi(api).checkForUpdates())
                 }
               >
                 <RefreshCw size={16} />
@@ -223,7 +234,7 @@ export function UpdatePanel({
                   className="button-primary"
                   disabled={busy}
                   onClick={() =>
-                    void run(() => window.gameCanvas.installUpdate())
+                    void run(() => requireDesktopApi(api).installUpdate())
                   }
                 >
                   <Download size={16} />

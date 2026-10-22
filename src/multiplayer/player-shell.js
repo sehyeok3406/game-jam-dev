@@ -12,6 +12,7 @@ export async function installPlayerShell() {
     port,
     loaded = false,
     begunMatch;
+  let connectionStage = 'connecting';
   const showFailure = (value) => {
     const raw = value?.failure || value || {};
     const embedded = String(raw.message || '').match(/\[(GC-MP-\d{3})\]/)?.[1];
@@ -97,6 +98,16 @@ export async function installPlayerShell() {
     else if (room.status === 'running')
       document.querySelector('#failure').hidden = true;
     const self = room.members.find((m) => m.id === boot.memberId);
+    if (!room.failure && !['finished', 'closed'].includes(room.status)) {
+      if (connectionStage === 'connecting')
+        status.textContent = '서버에 연결하고 있어요.';
+      if (connectionStage === 'joining')
+        status.textContent = '방에 참가하고 있어요.';
+      if (connectionStage === 'recovering')
+        status.textContent = '다시 연결하고 있어요.';
+      if (self?.connected && !loaded)
+        status.textContent = '게임을 준비하고 있어요.';
+    }
     ready.disabled =
       !loaded ||
       !['lobby', 'finished'].includes(room.status) ||
@@ -114,6 +125,12 @@ export async function installPlayerShell() {
     api.onMessage((message) => {
       if (message.type === 'room') {
         room = message.room;
+        if (
+          room.members.some(
+            (member) => member.id === boot.memberId && member.connected,
+          )
+        )
+          connectionStage = loaded ? 'ready' : 'preparing';
         display();
         if (room.status === 'loading' && begunMatch !== room.matchId && loaded)
           begin();
@@ -122,6 +139,7 @@ export async function installPlayerShell() {
           pause();
       } else if (message.type === 'restore') {
         room = message.room;
+        connectionStage = loaded ? 'ready' : 'preparing';
         display();
         if (message.snapshot) {
           begin(message.snapshot);
@@ -129,9 +147,16 @@ export async function installPlayerShell() {
         }
       } else if (message.type === 'snapshot' || message.type === 'input')
         port?.postMessage(message);
-      else if (message.type === 'connection' && !message.connected) {
-        pause();
-        showFailure(message.failure || { code: 'GC-MP-005' });
+      else if (message.type === 'connection') {
+        connectionStage =
+          message.stage || (message.connected ? 'ready' : 'recovering');
+        if (!message.connected) pause();
+        if (message.failure) showFailure(message.failure);
+        else {
+          if (message.connected)
+            document.querySelector('#failure').hidden = true;
+          display();
+        }
       } else if (message.type === 'error') {
         pause();
         showFailure(message.failure || { code: message.code });
@@ -186,6 +211,6 @@ export async function installPlayerShell() {
     display();
     api.connect();
   } catch (error) {
-    status.textContent = error.message;
+    showFailure(error);
   }
 }

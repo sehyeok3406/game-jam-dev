@@ -9,6 +9,7 @@ import type {
   PlayEnvelope,
   PlayMessage,
   PlayRoom,
+  PlayServerStatus,
 } from './types.ts';
 import {
   PlayError,
@@ -29,12 +30,45 @@ export class PlayClient {
   private openedAt = 0;
   private lastSeen = 0;
   private attached = false;
+  private attachedAt = 0;
+  private recoveryTimer?: ReturnType<typeof setTimeout>;
+  private inputSequence = 0;
+  private runtimeInputSequence = 0;
+  private recoveryExpired() {
+    if (this.stopped) return;
+    this.stopped = true;
+    clearTimeout(this.timer);
+    clearTimeout(this.recoveryTimer);
+    clearInterval(this.watchdog);
+    this.socket?.terminate();
+    const failure = playFailure(new PlayError('GC-MP-024'), 'GC-MP-024', {
+      side: 'client',
+      attempt: this.failures,
+      durationMs: Date.now() - this.disconnectedAt,
+      connectionStage: 'recovering',
+    });
+    this.notify({
+      type: 'error',
+      code: failure.code,
+      message: failure.message,
+      failure,
+    });
+  }
   /** A successful socket upgrade alone does not mean the play service replied. */
   private checkLiveness(now = Date.now()) {
     if (this.socket?.readyState !== WebSocket.OPEN) return;
+    if (this.attached && now - this.attachedAt >= 5000) {
+      this.disconnectedAt = 0;
+      this.failures = 0;
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = undefined;
+    }
     if (
       (!this.attached && now - this.openedAt > 8000) ||
-      now - this.lastSeen > 10000
+      now - this.lastSeen > 10000 ||
+      (this.failures > 0 &&
+        this.disconnectedAt > 0 &&
+        now - this.disconnectedAt >= 20000)
     ) {
       this.transportFailure = playFailure(
         new PlayError('GC-MP-006'),
@@ -78,8 +112,57 @@ export class PlayClient {
       throw new PlayError(failure.code, failure.details, failure);
     }
   }
+  static async status(
+    credentials: CollaborationCredentials,
+  ): Promise<PlayServerStatus> {
+    let raw: Partial<PlayServerStatus>;
+    try {
+      const response = await fetch(new URL('/health', credentials.serverUrl), {
+        signal: AbortSignal.timeout(10000),
+        redirect: 'error',
+      });
+      if (!response.ok)
+        throw new PlayError('GC-MP-007', { httpStatus: response.status });
+      raw = (await response.json()) as Partial<PlayServerStatus>;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+        throw new PlayError('GC-MP-007');
+      jsonPayload(raw, 8192);
+    } catch (error) {
+      const failure = playFailure(
+        error,
+        (error as Error)?.name === 'TimeoutError' ? 'GC-MP-006' : 'GC-MP-007',
+        { connectionStage: 'server' },
+      );
+      throw new PlayError(failure.code, failure.details, failure);
+    }
+    const status = {
+      version: typeof raw.version === 'string' ? raw.version : undefined,
+      multiplayerVersion: Number.isSafeInteger(raw.multiplayerVersion)
+        ? raw.multiplayerVersion!
+        : 0,
+      multiplayerDiagnosticsVersion: Number.isSafeInteger(
+        raw.multiplayerDiagnosticsVersion,
+      )
+        ? raw.multiplayerDiagnosticsVersion!
+        : 0,
+      multiplayerLobbyVersion: Number.isSafeInteger(raw.multiplayerLobbyVersion)
+        ? raw.multiplayerLobbyVersion!
+        : 0,
+    };
+    if (status.multiplayerVersion !== 1)
+      throw new PlayError('GC-MP-032', {
+        serverVersion: status.version,
+        multiplayerVersion: status.multiplayerVersion,
+      });
+    return status;
+  }
   connect() {
     if (this.stopped || this.socket) return;
+    this.notify({
+      type: 'connection',
+      connected: false,
+      stage: this.disconnectedAt ? 'recovering' : 'connecting',
+    });
     const url = new URL(
       `/projects/${this.credentials.projectId}/play-socket`,
       this.credentials.serverUrl,
@@ -118,10 +201,9 @@ export class PlayClient {
     });
     socket.on('open', () => {
       this.transportFailure = undefined;
-      this.disconnectedAt = 0;
-      this.failures = 0;
       this.openedAt = this.lastSeen = Date.now();
       this.attached = false;
+      this.attachedAt = 0;
       this.watchdog = setInterval(() => this.checkLiveness(), 1000);
       this.watchdog.unref();
       socket.send(
@@ -131,7 +213,7 @@ export class PlayClient {
           artifactId: this.room.artifactId,
         }),
       );
-      this.notify({ type: 'connection', connected: true });
+      this.notify({ type: 'connection', connected: false, stage: 'joining' });
       if (this.loaded) this.send({ type: 'loaded' });
     });
     socket.on('ping', () => {
@@ -153,7 +235,15 @@ export class PlayClient {
           )
             throw new PlayError('GC-MP-021');
           this.room = room;
-          this.attached = true;
+          if (!this.attached) {
+            this.attached = true;
+            this.attachedAt = Date.now();
+            this.notify({
+              type: 'connection',
+              connected: true,
+              stage: this.loaded ? 'ready' : 'preparing',
+            });
+          }
         }
         if (
           message.type === 'error' ||
@@ -210,42 +300,53 @@ export class PlayClient {
       );
       this.notify({ type: 'connection', connected: false, failure });
       if (this.failures >= 6 || Date.now() - this.disconnectedAt >= 20000) {
-        this.stopped = true;
-        const timeout = playFailure(new PlayError('GC-MP-024'), 'GC-MP-024', {
-          side: 'client',
-          attempt: this.failures,
-          durationMs: Date.now() - this.disconnectedAt,
-        });
-        this.notify({
-          type: 'error',
-          code: timeout.code,
-          message: timeout.message,
-          failure: timeout,
-        });
+        this.recoveryExpired();
         return;
       }
-      if (![4000, 4001, 4003].includes(code) && failure.retryable)
+      if (![4000, 4001, 4003].includes(code) && failure.retryable) {
+        this.recoveryTimer ??= setTimeout(
+          () => this.recoveryExpired(),
+          Math.max(0, 20000 - (Date.now() - this.disconnectedAt)),
+        );
+        this.recoveryTimer.unref();
         this.timer = setTimeout(
           () => this.connect(),
           Math.min(4000, 500 * 2 ** this.failures++) + Math.random() * 150,
         );
-      else
+      } else {
+        this.stopped = true;
+        clearTimeout(this.recoveryTimer);
         this.notify({
           type: 'error',
           code: failure.code,
           message: failure.message,
           failure,
         });
+      }
     });
   }
   send(message: PlayMessage) {
     if (message.type === 'loaded') this.loaded = true;
+    if (message.type === 'loaded' || message.type === 'begun')
+      this.runtimeInputSequence = 0;
     if (
       !['loaded', 'begun', 'input', 'snapshot', 'finish', 'error'].includes(
         message.type,
       )
     )
       throw new PlayError('GC-MP-020');
+    if (message.type === 'input') {
+      const sequence = message.sequence;
+      if (
+        typeof sequence !== 'number' ||
+        !Number.isSafeInteger(sequence) ||
+        sequence <= this.runtimeInputSequence
+      )
+        return;
+      // A fresh iframe or match restarts the SDK counter; the transport does not.
+      this.runtimeInputSequence = sequence;
+      message = { ...message, sequence: ++this.inputSequence };
+    }
     const encoded = jsonPayload(
       {
         ...message,
@@ -283,6 +384,7 @@ export class PlayClient {
   close() {
     this.stopped = true;
     clearTimeout(this.timer);
+    clearTimeout(this.recoveryTimer);
     clearInterval(this.watchdog);
     this.socket?.terminate();
     this.socket = undefined;

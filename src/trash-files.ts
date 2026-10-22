@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 export const TRASH_RETENTION = 7 * 24 * 60 * 60 * 1000;
-export const canonical = (p: string) => path.resolve(p).toLowerCase();
+export const canonical = (p: string) => {
+  const resolved = path.resolve(p);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
 export const inside = (parent: string, child: string) => {
   const relative = path.relative(canonical(parent), canonical(child));
   return (

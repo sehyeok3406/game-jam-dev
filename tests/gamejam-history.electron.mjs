@@ -143,7 +143,59 @@ async function run() {
     );
     assert.equal(
       await js(`document.querySelector('#ai-model-custom').value`),
-      'recovery-model',
+      'claude-opus-5-5',
+    );
+    assert.equal(
+      await js(`document.querySelector('#ai-reasoning-effort').value`),
+      'xhigh',
+    );
+    await js(`document.querySelector('#ai-request-connection').open=true`);
+    await setValue('[aria-label="AI 제공자"]', 'codex-cli');
+    await setValue('[aria-label="모델 버전"]', 'gpt-6-luna');
+    assert.equal(
+      await js(
+        `!!document.querySelector('#ai-reasoning-effort option[value="ultra"]')`,
+      ),
+      false,
+    );
+    await setValue('#ai-reasoning-effort', 'max');
+    await setValue('[aria-label="AI 제공자"]', 'gemini-cli');
+    assert.equal(
+      await js(`document.querySelector('#ai-reasoning-effort').value`),
+      '',
+    );
+    await setValue('[aria-label="모델 버전"]', 'gemini-3.8-flash');
+    assert.deepEqual(
+      await js(
+        `Array.from(document.querySelector('#ai-reasoning-effort').options).map(e=>e.value)`,
+      ),
+      ['', 'low', 'medium', 'high'],
+    );
+    await setValue('#ai-reasoning-effort', 'high');
+    await setValue('#ai-model-custom', 'custom-gemini');
+    assert.equal(
+      await js(`document.querySelector('#ai-reasoning-effort').value`),
+      '',
+    );
+    assert.equal(
+      await js(`document.querySelector('#ai-reasoning-effort').disabled`),
+      true,
+    );
+    await setValue('[aria-label="AI 제공자"]', 'claude-cli');
+    await setValue('[aria-label="모델 버전"]', 'claude-opus-5-5');
+    await setValue('#ai-reasoning-effort', 'xhigh');
+    assert(
+      await js(
+        `document.querySelector('.ai-request-fields').scrollWidth<=document.querySelector('.ai-request-fields').clientWidth`,
+      ),
+    );
+    await js(
+      `document.querySelector('#ai-reasoning-effort').scrollIntoView({block:'center'})`,
+    );
+    await sleep(80);
+    await fs.writeFile(
+      'out/gamejam-history/ai-reasoning-settings.png',
+      (await win.webContents.capturePage()).toPNG(),
     );
     await wait(
       `document.querySelector('.ai-request-dialog > footer > .button-primary').getAttribute('aria-disabled')==='false'`,
@@ -159,6 +211,11 @@ async function run() {
       '실패 기록에서 불러온 지시',
     );
     assert.equal(await js('qaHistory.runs'), 1);
+    assert.equal(
+      await js('qaHistory.requests[0].requestSnapshot.reasoningEffort'),
+      'xhigh',
+    );
+    assert.equal(await js('qaHistory.runInputs[0].reasoningEffort'), 'xhigh');
     await open();
     await click('.gamejam-request-history button', '최근 작업 불러오기');
     assert.equal(

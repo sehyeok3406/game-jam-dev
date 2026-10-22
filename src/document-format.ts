@@ -1,19 +1,16 @@
+import type { DocumentOutputTemplate } from './contracts/document-output.ts';
+export type { DocumentOutputTemplate } from './contracts/document-output.ts';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { expectedArtifacts } from './ai-artifacts.ts';
 import type { Snapshot } from './project-store.ts';
-
 export const MAX_FORMAT_DOCUMENTS = 21;
-export type DocumentOutputTemplate = {
-  key: string;
-  title: string;
-  type: 'overview' | 'system' | 'question';
-  instructions: string;
-};
 export type DocumentOutputFormat = {
   version: 1;
   id: string;
-  documents: (DocumentOutputTemplate & { path: string })[];
+  documents: (DocumentOutputTemplate & {
+    path: string;
+  })[];
 };
 export function defaultDocumentTemplates(): DocumentOutputTemplate[] {
   return [
@@ -84,7 +81,7 @@ export function documentTemplates(value: unknown): DocumentOutputTemplate[] {
     )
       fail('사용할 수 없는 제어 문자가 있습니다.');
     length += item.title.length + item.instructions.length;
-    if (length > 20_000) fail('전체 출력 구성은 20,000자 이하로 입력해주세요.');
+    if (length > 20000) fail('전체 출력 구성은 20,000자 이하로 입력해주세요.');
     return {
       key: item.key,
       title: item.title.trim(),

@@ -1,3 +1,5 @@
+import type { CanvasViewChanges } from './contracts/canvas-view.ts';
+export type { CanvasViewChanges } from './contracts/canvas-view.ts';
 import { randomUUID } from 'node:crypto';
 import { snapshotDocuments, snapshotSections } from './collaboration-model.ts';
 import { describePreview, htmlSourcePath } from './html-source.ts';
@@ -7,14 +9,6 @@ import { CANVAS_SHEETS_PATH, readCanvasSheets } from './canvas-sheets.ts';
 import type { Snapshot } from './project-store.ts';
 import type { PropertyVersions } from './sync-properties.ts';
 import type { CanvasDocument, CanvasSection, PreviewResult } from './shared.ts';
-export type CanvasViewChanges = {
-  documents: CanvasDocument[];
-  sections: CanvasSection[];
-  previews: PreviewResult[];
-  removed: string[];
-  signatures: Record<string, string>;
-  sheets: ReturnType<typeof readCanvasSheets> & { raw: string | null };
-};
 /** Stable item cache; unchanged HTML content never crosses IPC on a text/layout save. */
 export class CanvasView {
   private items = new Map<

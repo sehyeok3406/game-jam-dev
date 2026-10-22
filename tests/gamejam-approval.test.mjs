@@ -117,6 +117,29 @@ const start = async (owner, detail, commandId = randomUUID()) => {
   return owner.state.aiRun.taskPath;
 };
 
+test('approval execution records reasoning and rejects a retry that changes it', async (t) => {
+  const { owner, editor } = await setup(t);
+  const pending = await create(editor);
+  await owner.refresh();
+  const detail = await owner.readApproval(pending.id);
+  const approval = {
+    id: pending.id,
+    revision: detail.item.revision,
+    reviewToken: detail.reviewToken,
+    commandId: randomUUID(),
+  };
+  await owner.beginAi('', 'claude-opus-5-5', 'claude-cli', approval, 'high');
+  assert.equal(owner.state.aiRun.reasoningEffort, 'high');
+  const recorded = matter(owner.files[owner.state.aiRun.taskPath]).data
+    .gamejam_request;
+  assert.equal(recorded.reasoningEffort, 'high');
+  await assert.rejects(
+    owner.beginAi('', 'claude-opus-5-5', 'claude-cli', approval, 'low'),
+    /같은 작업 ID/,
+  );
+  await owner.finishAi('failed');
+});
+
 test('request validation needs content and membership but no AI login, free slot, or executor model', () => {
   assert.deepEqual(
     gamejamIssues(request(), {

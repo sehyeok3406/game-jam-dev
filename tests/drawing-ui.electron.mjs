@@ -287,29 +287,39 @@ async function run() {
     );
     await wait('!document.querySelector(".drawing-save-alert")');
     // A hollow annotation above a card passes clicks through its empty interior.
-    await js(`(async()=>{const scope=(await window.gameCanvas.getWorkspace()).saveScope;await window.gameCanvas.applyDrawingCommand({scope,canvasId:'drawing-test',action:'create',objects:[{
-      id:crypto.randomUUID(),generation:crypto.randomUUID(),kind:'shape',geometry:{shape:'rectangle'},transform:{x:420,y:420,width:400,height:360,rotation:0},
+    await js(`(async()=>{const scope=(await window.gameCanvas.getWorkspace()).saveScope;const id=crypto.randomUUID();window.qaHollowId=id;await window.gameCanvas.applyDrawingCommand({scope,canvasId:'drawing-test',action:'create',objects:[{
+      id,generation:crypto.randomUUID(),kind:'shape',geometry:{shape:'rectangle'},transform:{x:420,y:420,width:400,height:360,rotation:0},
       style:{fill:null,stroke:'#ff0000',strokeWidth:2,opacity:1,strokePattern:'solid'},layer:'annotation',order:100,createdAt:1,updatedAt:1}]})})()`);
     await wait('document.querySelectorAll(".canvas-drawing-node").length===6');
     await key('Escape');
+    // Resizing the window above changes React Flow's viewport. Use the actual
+    // screen-space overlap, and assert it exists before checking hit testing.
+    const overlap = await js(
+      `(()=>{const card=document.querySelector('.document-card').getBoundingClientRect();const shape=document.querySelector('[data-id="drawing:'+window.qaHollowId+'"]').getBoundingClientRect();const left=Math.max(card.left,shape.left),right=Math.min(card.right,shape.right),top=Math.max(card.top,shape.top),bottom=Math.min(card.bottom,shape.bottom);return {x:Math.round((left+right)/2),y:Math.round((top+bottom)/2),width:right-left,height:bottom-top};})()`,
+    );
+    assert.ok(
+      overlap.width > 40 && overlap.height > 40,
+      'the hollow annotation must overlap the actual document card',
+    );
     assert.ok(
       await js(
-        '!!document.elementFromPoint(500,600)?.closest(".document-card")',
+        `!!document.elementFromPoint(${overlap.x},${overlap.y})?.closest('.document-card')`,
       ),
+      'empty annotation interior must pass the pointer to the underlying card',
     );
     // Alt+right-click finds that hollow shape and the card below it.
     win.webContents.sendInputEvent({
       type: 'mouseDown',
-      x: 500,
-      y: 600,
+      x: overlap.x,
+      y: overlap.y,
       button: 'right',
       clickCount: 1,
       modifiers: ['alt'],
     });
     win.webContents.sendInputEvent({
       type: 'mouseUp',
-      x: 500,
-      y: 600,
+      x: overlap.x,
+      y: overlap.y,
       button: 'right',
       clickCount: 1,
       modifiers: ['alt'],
@@ -361,8 +371,16 @@ async function run() {
     await js(
       `window.gameCanvas.applyDrawingCommand({scope:'local:dev-workspace',canvasId:'drawing-test',action:'patch',patches:[{id:${JSON.stringify(peerObject.id)},generation:${JSON.stringify(peerObject.generation)},geometry:${JSON.stringify(line)},expectedGeometry:{shape:'diamond'}}]})`,
     );
-    await wait('!!document.querySelector("[data-handle=end1]")');
-    const tip = await center('[data-handle=end1]');
+    // The opposite endpoint lies beneath the footer/minimap after the resize.
+    // Exercise a visible handle with real pointer input, retaining the conflict assertion.
+    await wait('!!document.querySelector("[data-handle=end0]")');
+    const tip = await center('[data-handle=end0]');
+    assert.ok(
+      await js(
+        `document.elementFromPoint(${tip.x},${tip.y})?.getAttribute('data-handle')==='end0'`,
+      ),
+      'endpoint drag must reach the actual handle',
+    );
     await mouse('mouseDown', tip.x, tip.y);
     await mouse('mouseMove', tip.x + 10, tip.y + 10, ['leftButtonDown']);
     await js(

@@ -1,14 +1,11 @@
+import type { KanbanView } from '../../contracts/kanban.ts';
+export type { KanbanView } from '../../contracts/kanban.ts';
+export type { KanbanViewInput } from '../../contracts/kanban.ts';
 import type {
   DocumentStatuses,
   WorkflowStatus,
 } from '../../document-statuses.ts';
 export const KANBAN_VIEW_PATH = '.canvas/kanban-view.json';
-export type KanbanView = {
-  version: 1;
-  backgrounds: Record<string, WorkflowStatus['boardBackground']>;
-  orders: Record<string, number>;
-};
-export type KanbanViewInput = { expected: string | null; value: KanbanView };
 export const defaultKanbanView = (): KanbanView => ({
   version: 1,
   backgrounds: {},

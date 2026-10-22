@@ -1,3 +1,4 @@
+import { useRuntime } from './runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CloudOff, GitMerge, X } from 'lucide-react';
 import type { CollaborationState } from '../shared';
@@ -15,6 +16,8 @@ export function OfflineStatus({
   flush: () => Promise<void>;
   changed: () => Promise<void>;
 }) {
+  const { api } = useRuntime();
+
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<'local' | 'server' | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,7 +104,7 @@ export function OfflineStatus({
         {state.awaitingResume && (
           <button
             onClick={() => {
-              void window.gameCanvas
+              void api.projects
                 .resumeRestoredProject()
                 .then(changed)
                 .catch((e) => setError(String(e)));
@@ -206,7 +209,7 @@ export function OfflineStatus({
                   setError('');
                   void (async () => {
                     await flush();
-                    await window.gameCanvas.resolveOfflineConflict(
+                    await api.collaboration.resolveOfflineConflict(
                       conflict.id,
                       choice,
                     );

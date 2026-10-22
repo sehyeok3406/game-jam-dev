@@ -707,6 +707,39 @@ async function run() {
       'out/gamejam-validation/system-documents.png',
       (await win.webContents.capturePage()).toPNG(),
     );
+    // Start a fresh ordinary request: inferred settings must reach the real submit handler.
+    await js('localStorage.clear()');
+    await win.loadURL(process.env.QA_URL);
+    await wait('!!document.querySelector(".document-card")');
+    await js(
+      `{const e=document.querySelector('.react-flow__node-document');e.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));e.dispatchEvent(new MouseEvent('click',{bubbles:true}));}`,
+    );
+    await js(`document.querySelector('[aria-label="gamejam!"]').click()`);
+    await wait('!!document.querySelector(".ai-request-dialog")');
+    await next();
+    await setValue('ai-result-name', '텍스트 멀티 요청');
+    await next();
+    await setValue(
+      'ai-task-instructions-implement',
+      '온라인으로 3명이 함께 플레이하는 탑다운 게임을 만들어줘.',
+    );
+    await next();
+    await next();
+    await goTo(5);
+    await wait(
+      'document.querySelector(".gamejam-review").textContent.includes("최대 3명")',
+    );
+    await clickRun();
+    await wait('qaValidation.requests.length===1');
+    const inferred = await js('qaValidation.requests[0]');
+    assert.equal(inferred.multiplayer.maxPlayers, 3);
+    if (inferred.thenImplement)
+      assert.equal(inferred.thenImplement.multiplayer.maxPlayers, 3);
+    assert.equal(inferred.requestSnapshot.request.multiplayer.maxPlayers, 3);
+    assert.equal(await js('qaValidation.runs'), 0);
+    console.log(
+      'PASS: ordinary text request inference reaches actual submit payload, workflow settings and saved request without library selection.',
+    );
     console.log(
       'PASS: editable three-document defaults, preset switches, add/remove, arbitrary titles/types/Markdown instructions, stage preservation, review, old-server guards and four custom document cards with IDs (mock AI, no paid calls).',
     );
