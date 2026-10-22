@@ -164,12 +164,24 @@ try {
       clickCount: type === 'mouseMoved' ? 0 : 1,
     });
   const click = async (selector) => {
+    if (
+      selector === '[data-plugin-launcher]' &&
+      !(await js('document.querySelector(".canvas-main-menu").open'))
+    ) {
+      await click('.canvas-main-menu > summary');
+    }
     const r = await rect(selector),
       x = r.x + r.width / 2,
       y = r.y + r.height / 2;
     await mouse('mousePressed', x, y, 1);
     await mouse('mouseReleased', x, y);
     await sleep(100);
+  };
+  const openMiniMap = async () => {
+    if (!(await js('!!document.querySelector(".react-flow__minimap")'))) {
+      await click('[aria-label="미니맵 전환"]');
+    }
+    await wait('!!document.querySelector(".react-flow__minimap")');
   };
   const drag = async (selector, dx, dy, corner = false) => {
     const r = await rect(selector),
@@ -221,32 +233,34 @@ try {
   await wait(
     '(async()=> (await window.gameCanvas.listDocuments()).find(d=>d.id==="a").workflowStatusId === "in-progress")()',
   );
+  await click('.canvas-main-menu > summary');
   await click('[data-plugin-launcher]');
   await wait(
     `!!document.querySelector('.plugin-control-panel[aria-label="플러그인 관리"]')`,
   );
-  const dock = await rect('.bottom-toolbar'),
+  const dock = await rect('.canvas-dock'),
+    canvas = await rect('.canvas-shell'),
     firstPanel = await rect('.plugin-control-panel');
   assert.ok(
-    firstPanel.y + firstPanel.height < dock.y,
-    'Panel starts above toolbar',
+    canvas.x + canvas.width <= dock.x + 1,
+    'Plugin controls reserve a side panel without covering the canvas',
   );
-  await drag('.plugin-control-header', -90, -60);
-  await drag('.plugin-panel-resize', 80, 40);
-  const panelBox = await rect('.plugin-control-panel');
-  assert.ok(panelBox.x < firstPanel.x - 60, 'Panel is movable');
-  assert.ok(panelBox.width > firstPanel.width + 40, 'Panel is resizable');
-  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  assert.ok(
+    firstPanel.x >= dock.x &&
+      firstPanel.x + firstPanel.width <= dock.x + dock.width + 1,
+  );
+  const panelBox = dock;
+  await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
   await wait('!!document.querySelector(".kanban-controls")');
   assert.deepEqual(
-    await rect('.plugin-control-panel'),
+    await rect('.canvas-dock'),
     panelBox,
     'Opening controls preserves geometry',
   );
   await click('[aria-label="플러그인 관리로 뒤로가기"]');
   await wait('!!document.querySelector(".builtin-feature-row")');
   assert.deepEqual(
-    await rect('.plugin-control-panel'),
+    await rect('.canvas-dock'),
     panelBox,
     'Back preserves geometry',
   );
@@ -255,7 +269,7 @@ try {
   await wait(
     '[...document.querySelectorAll(".kanban-column")].find(c=>c.querySelector("h3").textContent.includes("진행 중")).textContent.includes("개발 문서 A")',
   );
-  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
   await click('[aria-label="플러그인 패널 닫기"]');
   assert.equal(
     await js('!!document.querySelector(".kanban-canvas-node")'),
@@ -305,7 +319,7 @@ try {
   );
   assert.deepEqual(await rect('.plugin-control-panel'), stablePanel);
   await screenshot('workflow-plugin-management.png');
-  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
   await screenshot('workflow-plugin-kanban-controls.png');
   await js('document.documentElement.dataset.theme="dark"');
   await click('[aria-label="플러그인 패널 닫기"]');
@@ -578,7 +592,7 @@ try {
     'Boards are isolated per canvas',
   );
   await click('[data-plugin-launcher]');
-  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
   assert.equal(
     await js('!!document.querySelector(".kanban-controls select")'),
     false,
@@ -646,6 +660,7 @@ try {
   assert.equal(migrated.placed, true);
   await wait('!!document.querySelector(".kanban-canvas-node--minimized")');
   // Minimap controls are physically operable and persist through reload.
+  await openMiniMap();
   await click('[aria-label="미니맵 설정"]');
   await wait('!!document.querySelector(".minimap-settings")');
   await click('[aria-label="미니맵 투명도"]');
@@ -678,7 +693,7 @@ try {
   await click('[aria-label="미니맵 설정 닫기"]');
   // All canvases includes newly added canvases, with independent board positions.
   await click('[data-plugin-launcher]');
-  await click('.plugin-control-panel [aria-label="칸반 컨트롤 열기"]');
+  await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
   await click('[aria-label="보드를 표시할 캔버스 선택"]');
   await click(
     '.canvas-visibility-menu:popover-open [aria-label="전체 캔버스에 칸반 표시"]',
@@ -718,6 +733,7 @@ try {
   );
   await js('document.querySelector(".home-project-open")?.click()');
   await wait('!!document.querySelector(".react-flow__node-preview")');
+  await openMiniMap();
   assert.equal(
     await js('document.querySelector(".react-flow__minimap").style.opacity'),
     '0.65',
