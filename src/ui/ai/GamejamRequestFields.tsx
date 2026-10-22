@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { AI_PROVIDERS, reasoningLabel } from '../../core/ai/catalog.ts';
 import { AiReasoningSelect } from '../AiReasoningSelect';
-import { isPreviewPath } from '../../preview-output';
+import { isPreviewPath, previewGameLabel } from '../../preview-output';
 import {
   defaultDocumentTemplates,
   MAX_FORMAT_DOCUMENTS,
@@ -781,7 +781,7 @@ export function GamejamRequestFields({
                     value={preview.relativePath}
                     key={preview.relativePath}
                   >
-                    {materialName(preview.relativePath)}
+                    {previewGameLabel(preview)}
                   </option>
                 ))}
               </select>

@@ -54,6 +54,12 @@ async function run() {
       'document.querySelector(".self-host-status").dataset.stage==="ready"',
     );
     await capture('self-host-ready');
+    await js(
+      'document.querySelector(".self-host-auto-start-setting input").click()',
+    );
+    await wait(
+      'document.querySelector(".self-host-auto-start-setting input").checked',
+    );
     await click('연결 정보 복사');
     await wait('selfHostQa.copied.includes("connection")');
     await click('초대 정보 복사');
@@ -107,6 +113,12 @@ async function run() {
     await click('협업 서버 열기');
     await wait('!!document.querySelector(".self-host-dialog[open]")');
     await capture('self-host-light');
+    assert.equal(
+      await js(
+        'document.querySelector(".self-host-auto-start-setting input").checked',
+      ),
+      true,
+    );
     assert.equal(
       await js('document.documentElement.scrollWidth > innerWidth'),
       false,

@@ -28,6 +28,9 @@ test('canvas shortcuts respect text, dialogs and playable iframe focus', () => {
   );
   assert.equal(canvasShortcut({ key: ' ', repeat: true }, {}), null);
   assert.equal(canvasShortcut({ key: 'n', altKey: true }, {}), null);
+  assert.equal(canvasShortcut({ key: 't' }, {}), 'text');
+  assert.equal(canvasShortcut({ key: 'T', shiftKey: true }, {}), 'triangle');
+  assert.equal(canvasShortcut({ key: 't' }, { editable: true }), null);
 });
 
 test('Markdown helpers preserve surrounding text and create GFM table and checkbox syntax', () => {

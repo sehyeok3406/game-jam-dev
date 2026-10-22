@@ -8,6 +8,8 @@ import {
   useState,
 } from 'react';
 import { EraserPreviewContext } from './eraserPreview';
+import { TextDrawingNode } from './TextDrawingNode';
+import { textDocumentHtml } from '../../text-document';
 import { useReactFlow, type Node, type NodeProps } from '@xyflow/react';
 import {
   arrowHead,
@@ -23,6 +25,15 @@ import {
   type DrawingTransform,
 } from '../../drawing-types';
 export type DrawingNodeData = {
+  onCommand: (
+    command: Omit<
+      import('../../drawing-types').DrawingCommand,
+      'canvasId' | 'scope'
+    >,
+  ) => Promise<void>;
+  scope?: string;
+  draftRegistry: import('../editor/draft-flushers').DraftFlusherRegistry;
+  onSave: (patch: DrawingPatch) => Promise<void>;
   kind: 'drawing';
   object: DrawingObject;
   locked: boolean;
@@ -54,6 +65,27 @@ export function DrawingGraphic({
   );
   const head = arrowHead(object),
     s = object.style;
+  if (object.kind === 'text')
+    return (
+      <foreignObject
+        width={object.transform.width}
+        height={object.transform.height}
+      >
+        <div
+          style={{
+            fontSize: object.geometry.fontSize,
+            fontFamily: object.geometry.fontFamily,
+            color: object.geometry.color,
+            textAlign: object.geometry.align,
+            lineHeight: 1.4,
+            overflowWrap: 'anywhere',
+          }}
+          dangerouslySetInnerHTML={{
+            __html: textDocumentHtml(object.geometry.document),
+          }}
+        />
+      </foreignObject>
+    );
   return (
     <g opacity={s.opacity}>
       {object.kind === 'stroke' && object.geometry.erasures?.length ? (
@@ -118,7 +150,16 @@ export function DrawingGraphic({
     </g>
   );
 }
-export const DrawingNode = memo(function DrawingNode({
+export const DrawingNode = memo(function DrawingNode(
+  props: NodeProps<DrawingCanvasNode>,
+) {
+  return props.data.object.kind === 'text' ? (
+    <TextDrawingNode {...props} object={props.data.object} />
+  ) : (
+    <GraphicDrawingNode {...props} />
+  );
+});
+const GraphicDrawingNode = memo(function GraphicDrawingNode({
   data,
   selected,
 }: NodeProps<DrawingCanvasNode>) {

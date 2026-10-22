@@ -11,6 +11,7 @@ import {
   nextPreviewPath,
   isPreviewPath,
   previewLabel,
+  previewGameLabel,
   previewWindowPath,
 } from '../src/preview-output.ts';
 import { expectedArtifacts } from '../src/ai-artifacts.ts';
@@ -20,6 +21,19 @@ import {
   checkSnapshot,
 } from '../src/collaboration-model.ts';
 import { CollaborationClient } from '../src/collaboration-client.ts';
+
+test('game picker names keep titles and versions without the category prefix', () => {
+  const relativePath = 'output/inbox/한밤의-카페/v001/index.html';
+  assert.equal(previewGameLabel({ relativePath }), '한밤의-카페 · 버전 1');
+  assert.equal(
+    previewGameLabel({ relativePath, title: '직접 정한 / 게임 이름' }),
+    '직접 정한 / 게임 이름 · 버전 1',
+  );
+  assert.equal(
+    previewGameLabel({ relativePath: 'output/index.html', title: '구형 게임' }),
+    '구형 게임 · 버전 1',
+  );
+});
 
 test('result names preserve Unicode but reject unsafe filenames and paths', () => {
   assert.equal(resultName(), '');

@@ -1,4 +1,6 @@
 export type SelfHostApi = {
+  startSelfHostOnLaunch: () => Promise<boolean>;
+  setSelfHostAutoStart: (value: boolean) => Promise<SelfHostState>;
   getSelfHost: () => Promise<SelfHostState>;
   runSelfHost: (
     action: 'prepare' | 'start' | 'check' | 'stop' | 'restart',
@@ -16,6 +18,7 @@ export type SelfHostApi = {
   onSelfHostOpen: (listener: () => void) => () => void;
 };
 export type SelfHostState = {
+  autoStart: boolean;
   supported: boolean;
   stage:
     | 'off'

@@ -392,6 +392,25 @@ export function SelfHostDialog({
           )}
         </section>
       )}
+      <label className="self-host-auto-start-setting">
+        <input
+          type="checkbox"
+          checked={state?.autoStart ?? false}
+          disabled={busy || !state?.supported}
+          onChange={(event) => {
+            const value = event.target.checked;
+            void action(async () =>
+              setState(await api!.setSelfHostAutoStart(value)),
+            );
+          }}
+        />
+        프로그램 시작 시 서버 자동 켜기
+        <span>{state?.autoStart ? 'On' : 'Off'}</span>
+      </label>
+      <small>
+        On으로 저장하면 다음 프로그램 시작 시 서버를 켜고 이 관리 화면을 엽니다.
+        Off로 바꿔도 실행 중인 서버는 유지됩니다.
+      </small>
       <label className="self-host-close-setting">
         창을 닫을 때
         <select

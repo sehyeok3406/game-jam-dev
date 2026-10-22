@@ -63,6 +63,10 @@ export async function registerSelfHost(options: {
     });
   };
   handle('self-host:get', () => service.run('check'));
+  handle('self-host:startup', () => service.startOnLaunch());
+  handle('self-host:auto-start', (value) =>
+    service.setAutoStart(value as boolean),
+  );
   handle('self-host:run', (action) =>
     service.run(action as Parameters<typeof service.run>[0]),
   );

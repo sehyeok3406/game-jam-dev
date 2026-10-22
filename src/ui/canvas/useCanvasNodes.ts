@@ -572,6 +572,26 @@ export function useCanvasNodes(
           draggable: !locked,
           data: {
             kind: 'drawing',
+            scope: workspace.saveScope,
+            draftRegistry,
+            onCommand: async (command) => {
+              if (command.action === 'create' && command.objects?.[0])
+                createdDrawingSelection.current = command.objects[0].id;
+              await drawing.submit(command);
+            },
+            onSave: async (patch) => {
+              // Text owns its debounce and durable draft. Finish queued creations first;
+              // do not enqueue a second copy of a failed text save on retry.
+              await drawing.flush();
+              await api.editor.applyDrawingCommand({
+                canvasId: activeCanvas,
+                scope: workspace.saveScope,
+                requestId: crypto.randomUUID(),
+                action: 'patch',
+                patches: [patch],
+              });
+              await drawing.reload();
+            },
             object,
             locked,
             zoom: viewZoom,

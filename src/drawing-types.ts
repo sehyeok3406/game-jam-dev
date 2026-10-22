@@ -8,6 +8,7 @@ export type { DrawingItem } from './contracts/drawing-types.ts';
 import type { DrawingObject } from './contracts/drawing-types.ts';
 export type { DrawingObject } from './contracts/drawing-types.ts';
 export type { ShapeObject } from './contracts/drawing-types.ts';
+export type { TextObject } from './contracts/drawing-types.ts';
 export type { DrawingBase } from './contracts/drawing-types.ts';
 export type { DrawingTransform } from './contracts/drawing-types.ts';
 export type { DrawingStyle } from './contracts/drawing-types.ts';
@@ -20,7 +21,7 @@ export type { DrawingPatch } from './contracts/drawing-types.ts';
 export type { DrawingDelta } from './contracts/drawing-types.ts';
 export type DrawingTool = ShapeKind | 'pen' | 'highlighter' | 'eraser';
 export type DrawingFile = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   canvasId: string;
   objects: DrawingObject[];
 };
@@ -34,8 +35,10 @@ export const SHAPE_NAMES: Record<ShapeKind, string> = {
   arrow: '화살표',
 };
 export const drawingName = (object: DrawingObject) =>
-  object.kind === 'shape'
-    ? SHAPE_NAMES[object.geometry.shape]
-    : object.geometry.brush === 'pen'
-      ? '펜 획'
-      : '형광펜 획';
+  object.kind === 'text'
+    ? '텍스트'
+    : object.kind === 'shape'
+      ? SHAPE_NAMES[object.geometry.shape]
+      : object.geometry.brush === 'pen'
+        ? '펜 획'
+        : '형광펜 획';

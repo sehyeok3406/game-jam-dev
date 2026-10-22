@@ -1,4 +1,6 @@
 import { createRoot } from 'react-dom/client';
+import { RuntimeProvider } from '../src/ui/runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../src/ui/runtime/preview-runtime';
 import { App } from '../src/ui/App';
 import { createDevGameCanvasApi } from '../src/dev-api';
 import '@xyflow/react/dist/style.css';
@@ -37,4 +39,8 @@ api.listPreviews = async () =>
     title: '캔버스 게임 이름',
   }));
 window.gameCanvas = api;
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <RuntimeProvider runtime={createPreviewRuntime(api, localStorage)}>
+    <App />
+  </RuntimeProvider>,
+);

@@ -348,7 +348,7 @@ async function run() {
     await js(
       `window.gameCanvas.applyDrawingCommand=async()=>{throw Error('QA 보류')};void 0`,
     );
-    await key('t');
+    await key('t', ['shift']);
     await drag({ x: 880, y: 240 }, { x: 1010, y: 360 });
     await wait(
       'document.querySelector(".drawing-save-alert")?.textContent.includes("QA 보류")',

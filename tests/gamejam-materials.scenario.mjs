@@ -137,7 +137,7 @@ export async function verifyMaterials({ js, key, mouse, wait, capture }) {
     await js(
       `document.querySelector('#ai-html-result option[value="output/index.html"]').textContent.trim()`,
     ),
-    '캔버스 게임 이름',
+    '캔버스 게임 이름 · 버전 1',
   );
   await click('#ai-request-next');
   await click('#ai-request-next');

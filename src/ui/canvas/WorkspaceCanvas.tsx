@@ -7,6 +7,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import { snapPosition } from '../../canvas-ux.ts';
+import { createTextObject } from '../../text-document';
 import type {
   DrawingCommand,
   DrawingObject,
@@ -741,11 +742,39 @@ export function WorkspaceCanvas({
                       : nextSectionIds,
                   );
                 }}
-                onPaneClick={() => {
+                onPaneClick={(event) => {
                   setContextMenu(null);
                   setDocumentContextMenu(null);
                   setSectionContextMenu(null);
                   setPreviewContextMenu(null);
+                  if (
+                    tool === 'text' &&
+                    workspace.root &&
+                    !locked &&
+                    flowRef.current &&
+                    (!collaboration.active ||
+                      collaboration.drawingTextVersion === 1)
+                  ) {
+                    const position = flowRef.current.screenToFlowPosition({
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                    const object = createTextObject(position.x, position.y);
+                    object.geometry.color =
+                      theme === 'dark' ? '#e2e8f0' : '#1e293b';
+                    object.order = Math.min(
+                      1e9,
+                      Math.max(
+                        0,
+                        ...drawing.items
+                          .filter((o) => o.canvasId === activeCanvas)
+                          .map((o) => o.order),
+                      ) + 1,
+                    );
+                    createdDrawingSelection.current = object.id;
+                    submitDrawing({ action: 'create', objects: [object] });
+                    setTool('select');
+                  }
                 }}
                 onPaneContextMenu={(event) => {
                   event.preventDefault();
@@ -777,7 +806,10 @@ export function WorkspaceCanvas({
                 zoomOnScroll={!noteDraft && !drawingGesture}
                 zoomOnPinch={!noteDraft && !drawingGesture}
                 zoomOnDoubleClick={
-                  tool !== 'note' && tool !== 'drawing' && !drawingGesture
+                  tool !== 'note' &&
+                  tool !== 'drawing' &&
+                  tool !== 'text' &&
+                  !drawingGesture
                 }
                 minZoom={0.15}
                 maxZoom={2}

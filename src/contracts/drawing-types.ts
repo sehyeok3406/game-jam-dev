@@ -12,7 +12,17 @@ export type DrawingErasure = {
 export type DrawingItem = DrawingObject & {
   canvasId: string;
 };
-export type DrawingObject = ShapeObject | StrokeObject;
+export type DrawingObject = ShapeObject | StrokeObject | TextObject;
+export type TextObject = DrawingBase & {
+  kind: 'text';
+  geometry: {
+    document: string;
+    fontSize: number;
+    color: string;
+    fontFamily: 'sans-serif' | 'serif' | 'monospace';
+    align: 'left' | 'center' | 'right';
+  };
+};
 export type ShapeObject = DrawingBase & {
   kind: 'shape';
   geometry: {
@@ -95,7 +105,7 @@ export type DrawingPatch = {
   expectedGeometry?: DrawingObject['geometry'];
 };
 export type DrawingDelta = {
-  version?: 1 | 2;
+  version?: 1 | 2 | 3;
   canvasId: string;
   upsert: DrawingObject[];
   removed: string[];

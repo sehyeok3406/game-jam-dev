@@ -1,4 +1,5 @@
 import { getStroke } from 'perfect-freehand';
+import { textDocumentHtml } from './text-document.ts';
 import polygonClipping from 'polygon-clipping';
 import type {
   DrawingObject,
@@ -41,6 +42,7 @@ export function rotatePoint(p: Point, angle: number, center: Point): Point {
   };
 }
 export function drawingBounds(o: DrawingObject) {
+  if (o.kind === 'text') return { ...o.transform };
   const t = o.transform,
     center = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
   const pts = [
@@ -307,6 +309,10 @@ export function drawingSvg(o: DrawingObject) {
   const b = drawingBounds(o),
     t = o.transform,
     s = o.style;
+  if (o.kind === 'text') {
+    const g = o.geometry;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width}" height="${b.height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="font:${g.fontSize}px ${g.fontFamily};line-height:1.4;color:${g.color};text-align:${g.align};overflow-wrap:anywhere;opacity:${s.opacity};padding:4px">${textDocumentHtml(g.document)}</div></foreignObject></svg>`;
+  }
   const path = o.kind === 'stroke' ? strokePath(o) : shapePath(o),
     head = arrowHead(o);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width}" height="${b.height}" viewBox="0 0 ${b.width} ${b.height}"><g transform="translate(${t.x - b.x} ${t.y - b.y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2})" opacity="${s.opacity}"><path d="${path}" fill-rule="${o.kind === 'stroke' && o.geometry.erasures?.length ? 'evenodd' : 'nonzero'}" fill="${o.kind === 'stroke' ? (s.stroke ?? 'none') : (s.fill ?? 'none')}" stroke="${o.kind === 'stroke' ? 'none' : (s.stroke ?? 'none')}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${s.strokePattern === 'dashed' ? ' stroke-dasharray="6 4"' : ''}/>${head ? `<path d="${head}" fill="none" stroke="${s.stroke ?? 'none'}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>` : ''}</g></svg>`;

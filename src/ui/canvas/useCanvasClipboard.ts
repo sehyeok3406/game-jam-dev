@@ -1,10 +1,6 @@
 import type { ReactFlowInstance } from '@xyflow/react';
 import { useEffect, useRef } from 'react';
-import type {
-  DrawingCommand,
-  DrawingObject,
-  DrawingStyle,
-} from '../../drawing-types.ts';
+import type { DrawingCommand, DrawingObject } from '../../drawing-types.ts';
 import type { CanvasDocument, WorkspaceState } from '../../shared.ts';
 import type { SelectionScope } from './selection-actions.ts';
 import { copiedSelection } from './selection-plan.ts';
@@ -35,58 +31,7 @@ interface Ports {
   cancelNoteDrawing: () => void;
   cancelSelectionDrag: () => void;
   drawingGesture: boolean;
-  drawingCopies: (
-    objects: DrawingObject[],
-    offset?: number,
-  ) => (
-    | {
-        id: string;
-        generation: string;
-        createdAt: number;
-        updatedAt: number;
-        transform: {
-          x: number;
-          y: number;
-          width: number;
-          height: number;
-          rotation: number;
-        };
-        style: DrawingStyle;
-        layer: 'background' | 'annotation';
-        order: number;
-        kind: 'shape';
-        geometry: {
-          shape: import('../../drawing-types').ShapeKind;
-          cornerRadius?: number;
-          endpoints?: [[number, number], [number, number]];
-        };
-      }
-    | {
-        id: string;
-        generation: string;
-        createdAt: number;
-        updatedAt: number;
-        transform: {
-          x: number;
-          y: number;
-          width: number;
-          height: number;
-          rotation: number;
-        };
-        style: DrawingStyle;
-        layer: 'background' | 'annotation';
-        order: number;
-        kind: 'stroke';
-        geometry: {
-          brush: 'pen' | 'highlighter';
-          sourceWidth: number;
-          sourceHeight: number;
-          points: [number, number, number][];
-          pressureEnabled: boolean;
-          rendererVersion: 1;
-        };
-      }
-  )[];
+  drawingCopies: (objects: DrawingObject[], offset?: number) => DrawingObject[];
   drawing: {
     items: import('../../drawing-types').DrawingItem[];
     submit: (

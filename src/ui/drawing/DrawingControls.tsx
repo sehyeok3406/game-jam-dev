@@ -402,126 +402,132 @@ export function DrawingInspector({
               적용합니다.
             </small>
           )}
-          {fillable && (
-            <label>
-              채우기{mixed('fill') ? ' · 혼합' : ''}
-              <input
-                aria-label="채우기 색"
-                type="color"
-                value={s.fill ?? '#dbeafe'}
-                disabled={disabled}
-                onChange={(e) => apply({ fill: e.target.value })}
-              />
-              <input
-                type="checkbox"
-                aria-label="채우기 없음"
-                checked={s.fill === null}
-                ref={(e) => {
-                  if (e) e.indeterminate = mixed('fill');
-                }}
-                disabled={disabled}
-                onChange={(e) =>
-                  apply({ fill: e.target.checked ? null : '#dbeafe' })
-                }
-              />
-              없음
-            </label>
-          )}
-          <label>
-            {stroke ? '펜 색' : '테두리'}
-            {mixed('stroke') ? ' · 혼합' : ''}
-            <input
-              aria-label="선 색"
-              type="color"
-              value={s.stroke ?? '#2563eb'}
-              disabled={disabled}
-              onChange={(e) => apply({ stroke: e.target.value })}
-            />
-            {!stroke && (
-              <>
+          {!objects.some((o) => o.kind === 'text') && (
+            <>
+              {fillable && (
+                <label>
+                  채우기{mixed('fill') ? ' · 혼합' : ''}
+                  <input
+                    aria-label="채우기 색"
+                    type="color"
+                    value={s.fill ?? '#dbeafe'}
+                    disabled={disabled}
+                    onChange={(e) => apply({ fill: e.target.value })}
+                  />
+                  <input
+                    type="checkbox"
+                    aria-label="채우기 없음"
+                    checked={s.fill === null}
+                    ref={(e) => {
+                      if (e) e.indeterminate = mixed('fill');
+                    }}
+                    disabled={disabled}
+                    onChange={(e) =>
+                      apply({ fill: e.target.checked ? null : '#dbeafe' })
+                    }
+                  />
+                  없음
+                </label>
+              )}
+              <label>
+                {stroke ? '펜 색' : '테두리'}
+                {mixed('stroke') ? ' · 혼합' : ''}
                 <input
-                  type="checkbox"
-                  aria-label="테두리 없음"
-                  checked={s.stroke === null}
-                  ref={(e) => {
-                    if (e) e.indeterminate = mixed('stroke');
-                  }}
+                  aria-label="선 색"
+                  type="color"
+                  value={s.stroke ?? '#2563eb'}
                   disabled={disabled}
-                  onChange={(e) =>
-                    apply({ stroke: e.target.checked ? null : '#2563eb' })
-                  }
+                  onChange={(e) => apply({ stroke: e.target.value })}
                 />
-                없음
-              </>
-            )}
-          </label>
-          {numeric(
-            '선 굵기',
-            s.strokeWidth,
-            (v) => apply({ strokeWidth: v }),
-            0.5,
-            128,
-            0.5,
-            mixed('strokeWidth'),
-          )}
-          {numeric(
-            '불투명도 (%)',
-            Math.round(s.opacity * 100),
-            (v) => apply({ opacity: v / 100 }),
-            0,
-            100,
-            1,
-            mixed('opacity'),
-          )}
-          {!stroke && (
-            <label>
-              선 모양
-              <select
-                aria-label="선 모양"
-                disabled={disabled}
-                value={mixed('strokePattern') ? 'mixed' : s.strokePattern}
-                onChange={(e) =>
-                  apply({
-                    strokePattern: e.target
-                      .value as DrawingStyle['strokePattern'],
-                  })
-                }
-              >
-                <option value="mixed" disabled>
-                  혼합
-                </option>
-                <option value="solid">실선</option>
-                <option value="dashed">점선</option>
-              </select>
-            </label>
+                {!stroke && (
+                  <>
+                    <input
+                      type="checkbox"
+                      aria-label="테두리 없음"
+                      checked={s.stroke === null}
+                      ref={(e) => {
+                        if (e) e.indeterminate = mixed('stroke');
+                      }}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        apply({ stroke: e.target.checked ? null : '#2563eb' })
+                      }
+                    />
+                    없음
+                  </>
+                )}
+              </label>
+              {numeric(
+                '선 굵기',
+                s.strokeWidth,
+                (v) => apply({ strokeWidth: v }),
+                0.5,
+                128,
+                0.5,
+                mixed('strokeWidth'),
+              )}
+              {numeric(
+                '불투명도 (%)',
+                Math.round(s.opacity * 100),
+                (v) => apply({ opacity: v / 100 }),
+                0,
+                100,
+                1,
+                mixed('opacity'),
+              )}
+              {!stroke && (
+                <label>
+                  선 모양
+                  <select
+                    aria-label="선 모양"
+                    disabled={disabled}
+                    value={mixed('strokePattern') ? 'mixed' : s.strokePattern}
+                    onChange={(e) =>
+                      apply({
+                        strokePattern: e.target
+                          .value as DrawingStyle['strokePattern'],
+                      })
+                    }
+                  >
+                    <option value="mixed" disabled>
+                      혼합
+                    </option>
+                    <option value="solid">실선</option>
+                    <option value="dashed">점선</option>
+                  </select>
+                </label>
+              )}
+            </>
           )}
           {one && (
             <>
               <hr />
-              {(['x', 'y', 'width', 'height', 'rotation'] as const).map((k) =>
-                numeric(
-                  {
-                    x: 'X 위치',
-                    y: 'Y 위치',
-                    width: '너비',
-                    height: '높이',
-                    rotation: '회전 (°)',
-                  }[k],
-                  Math.round(first.transform[k] * 100) / 100,
-                  (v) => transform({ [k]: v }),
-                  k === 'rotation'
-                    ? 0
-                    : k === 'width' || k === 'height'
-                      ? 1
-                      : -1e6,
-                  k === 'rotation'
-                    ? 359.99
-                    : k === 'width' || k === 'height'
-                      ? 1e5
-                      : 1e6,
-                  0.01,
-                ),
-              )}
+              {(['x', 'y', 'width', 'height', 'rotation'] as const)
+                .filter((k) => first.kind !== 'text' || k !== 'rotation')
+                .map((k) =>
+                  numeric(
+                    {
+                      x: 'X 위치',
+                      y: 'Y 위치',
+                      width: '너비',
+                      height: '높이',
+                      rotation: '회전 (°)',
+                    }[k],
+                    Math.round(first.transform[k] * 100) / 100,
+                    (v) => transform({ [k]: v }),
+                    k === 'rotation'
+                      ? 0
+                      : k === 'width' || k === 'height'
+                        ? 1
+                        : -1e6,
+                    k === 'rotation'
+                      ? 359.99
+                      : k === 'width' || k === 'height'
+                        ? 1e5
+                        : 1e6,
+                    0.01,
+                  ),
+                )}
             </>
           )}
           {one &&

@@ -13,6 +13,7 @@ import {
   strokeHit,
 } from '../src/drawing-geometry.ts';
 import { snapshotDrawings } from '../src/drawing-model.ts';
+import { createTextObject } from '../src/text-document.ts';
 const runtime = path.resolve(
   'out/Game Jam!-win32-x64/resources/self-host-runtime',
 );
@@ -51,6 +52,7 @@ try {
     await new Promise((r) => setTimeout(r, 100));
   }
   assert.equal(health?.drawingEraseVersion, 1);
+  assert.equal(health?.drawingTextVersion, 1);
   const initial = await CollaborationClient.create(
     url,
     '',
@@ -120,6 +122,38 @@ try {
     strokeHit(remaining, { x: 200, y: 100 }, { x: 200, y: 100 }, 1),
     false,
   );
+  const text = createTextObject(300, 200);
+  text.geometry.document = JSON.stringify({
+    type: 'doc',
+    content: [
+      {
+        type: 'orderedList',
+        attrs: { start: 1 },
+        content: [
+          {
+            type: 'listItem',
+            content: [
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', text: '번들 서버 번호 목록' }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  await owner.command('drawings:apply', {
+    canvasId: 'default',
+    action: 'create',
+    objects: [text],
+  });
+  await peer.refresh();
+  assert.equal(
+    snapshotDrawings(peer.files).find((o) => o.kind === 'text').geometry
+      .document,
+    text.geometry.document,
+  );
   assert.match(
     await fs.readFile(
       path.join(runtime, 'drawing-third-party-notices.txt'),
@@ -138,13 +172,14 @@ try {
         capability: true,
         twoClients: true,
         independentUndo: true,
+        textLists: true,
       },
       null,
       2,
     ),
   );
   console.log(
-    'PASS: bundled Node/server support v2 erase, two clients, independent Undo and license notices.',
+    'PASS: bundled Node/server support text lists, v2 erase, two clients, independent Undo and license notices.',
   );
 } finally {
   clients.forEach((c) => c.stop());

@@ -246,3 +246,50 @@ test('checksum failures never install the downloaded executable or expose metada
   await assert.rejects(fs.stat(path.join(directory, 'tools/cloudflared.exe')));
   assert.deepEqual(await fs.readdir(path.join(directory, 'tools')), []);
 });
+
+test('automatic startup defaults off, persists alongside close settings, and starts once after renderer readiness', async (t) => {
+  const { service, directory, ready } = await fixture(t);
+  assert.equal(service.state.autoStart, false);
+  await Promise.all([
+    service.setAutoStart(true),
+    service.setCloseBehavior('background'),
+  ]);
+  assert.deepEqual(
+    JSON.parse(
+      await fs.readFile(path.join(directory, 'app-settings.json'), 'utf8'),
+    ),
+    { autoStart: true, closeBehavior: 'background' },
+  );
+  service.state.autoStart = false;
+  await service.init();
+  assert.equal(service.state.autoStart, true);
+  const actions = [];
+  service.bridge = async (action) => {
+    actions.push(action);
+    return JSON.stringify(ready);
+  };
+  service.state.supported = true;
+  assert.equal(service.startOnLaunch(), true);
+  assert.equal(service.startOnLaunch(), false);
+  await service.run('check');
+  assert.deepEqual(actions, ['Start']);
+  assert.equal(service.state.stage, 'ready');
+  await service.setAutoStart(false);
+  assert.equal(service.state.stage, 'ready');
+  await assert.rejects(service.setAutoStart('yes'), /올바르지/);
+});
+
+test('startup never starts with the option off and failures remain visible in management', async (t) => {
+  const { service } = await fixture(t);
+  assert.equal(service.startOnLaunch(), false);
+  const { service: failing } = await fixture(t);
+  await failing.setAutoStart(true);
+  failing.state.supported = true;
+  failing.bridge = async () => {
+    throw new Error('offline');
+  };
+  assert.equal(failing.startOnLaunch(), true);
+  await failing.run('check');
+  assert.equal(failing.state.stage, 'problem');
+  assert.equal(failing.state.autoStart, true);
+});

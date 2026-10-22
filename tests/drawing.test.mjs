@@ -115,7 +115,7 @@ test('all seven shapes and pressure strokes round-trip; malformed/untrusted geom
   assert.throws(() => readDrawingFile('{', 'default'), /JSON/);
   assert.throws(() =>
     readDrawingFile(
-      JSON.stringify({ version: 3, canvasId: 'default', objects: [] }),
+      JSON.stringify({ version: 4, canvasId: 'default', objects: [] }),
       'default',
     ),
   );

@@ -8,6 +8,9 @@ export function selfHostPreload(): SelfHostApi {
     return () => ipcRenderer.removeListener(channel, wrapped);
   };
   return {
+    startSelfHostOnLaunch: () => ipcRenderer.invoke('self-host:startup'),
+    setSelfHostAutoStart: (value) =>
+      ipcRenderer.invoke('self-host:auto-start', value),
     getSelfHost: () => ipcRenderer.invoke('self-host:get'),
     runSelfHost: (action) => ipcRenderer.invoke('self-host:run', action),
     setSelfHostCloseBehavior: (value) =>

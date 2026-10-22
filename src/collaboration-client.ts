@@ -150,7 +150,7 @@ export class CollaborationClient {
     const result = (await this.fetch(
       serverAddress(serverUrl),
       '/projects',
-      { nickname, name, files, drawingEraseVersion: 1 },
+      { nickname, name, files, drawingTextVersion: 1, drawingEraseVersion: 1 },
       '',
       serverKey,
     )) as CollaborationEnvelope & {
@@ -173,6 +173,7 @@ export class CollaborationClient {
     const result = (await this.fetch(serverAddress(serverUrl), '/join', {
       code,
       nickname,
+      drawingTextVersion: 1,
       drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string };
     return {
@@ -201,6 +202,7 @@ export class CollaborationClient {
     const result = (await this.fetch(serverAddress(serverUrl), '/recover', {
       projectId,
       recoveryKey,
+      drawingTextVersion: 1,
       drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string; recoveryKey: string };
     return {
@@ -448,6 +450,7 @@ export class CollaborationClient {
         syncClientVersion: 1,
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
+        drawingTextVersion: 1,
         drawingEraseVersion: 1,
         gameUiVersion: 2,
         documentStatusesVersion: 1,
@@ -783,6 +786,17 @@ export class CollaborationClient {
         throw new Error(
           '도형 · 그림 편집을 사용하려면 협업 서버를 업데이트해주세요.',
         );
+      if (
+        channel === 'drawings:apply' &&
+        this.state.drawingTextVersion !== 1 &&
+        ((input as { objects?: { kind: string }[] }).objects?.some(
+          (o) => o.kind === 'text',
+        ) ||
+          (
+            input as { patches?: { geometry?: { document?: string } }[] }
+          ).patches?.some((p) => p.geometry?.document !== undefined))
+      )
+        throw Error('텍스트를 사용하려면 협업 서버를 업데이트해주세요.');
       if (
         channel === 'drawings:apply' &&
         (input as { action?: string }).action === 'erase' &&

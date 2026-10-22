@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { RuntimeProvider } from '../src/ui/runtime/RuntimeProvider';
+import { createPreviewRuntime } from '../src/ui/runtime/preview-runtime';
 import { createRoot } from 'react-dom/client';
 import { ProjectHome } from '../src/ui/ProjectHome';
 import { SelfHostDialog } from '../src/features/self-host/SelfHostDialog';
@@ -25,6 +27,7 @@ const projects = [
   },
 ];
 let state: SelfHostState = {
+  autoStart: false,
   supported: true,
   stage: 'off',
   message: 'Cloudflare 연결 도구가 필요합니다. 연결 도구 준비를 눌러주세요.',
@@ -87,6 +90,8 @@ const api = createDevGameCanvasApi();
 api.listProjects = async () => projects;
 api.listProjectFolders = async () => [];
 api.selfHost = {
+  startSelfHostOnLaunch: async () => state.autoStart,
+  setSelfHostAutoStart: async (autoStart) => (state = { ...state, autoStart }),
   getSelfHost: async () => state,
   runSelfHost: async (action) => {
     qa.actions.push(action);
@@ -172,4 +177,8 @@ function Fixture() {
     </>
   );
 }
-createRoot(document.getElementById('root')!).render(<Fixture />);
+createRoot(document.getElementById('root')!).render(
+  <RuntimeProvider runtime={createPreviewRuntime(api)}>
+    <Fixture />
+  </RuntimeProvider>,
+);

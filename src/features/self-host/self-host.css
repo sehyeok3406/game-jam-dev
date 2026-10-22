@@ -114,6 +114,18 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.self-host-dialog .self-host-auto-start-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.self-host-dialog .self-host-auto-start-setting input {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: #2563eb;
+}
 .self-host-checks {
   display: flex;
   list-style: none;

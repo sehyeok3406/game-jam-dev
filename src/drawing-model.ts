@@ -8,6 +8,7 @@ import type {
 import type { DrawingDelta } from './drawing-types.ts';
 import { SHAPE_NAMES } from './drawing-types.ts';
 import { visibleStroke, withErasure } from './drawing-geometry.ts';
+import { validateTextDocument } from './text-document.ts';
 import type { ErasureRegion, StrokeObject } from './drawing-types.ts';
 export const MAX_ERASURE_VERTICES = 2_000;
 export const MAX_CANVAS_ERASURE_VERTICES = 25_000;
@@ -184,6 +185,19 @@ export function validateDrawingObject(o: DrawingObject) {
         fail('획의 지우기 횟수 한도입니다.');
       for (const e of g.erasures) validateErasure(e);
     }
+  } else if (o.kind === 'text') {
+    const g = o.geometry;
+    if (
+      !keys(g, ['document', 'fontSize', 'color', 'fontFamily', 'align']) ||
+      !number(g.fontSize, 8, 144) ||
+      typeof g.color !== 'string' ||
+      !/^#[a-f0-9]{6}$/i.test(g.color) ||
+      !['sans-serif', 'serif', 'monospace'].includes(g.fontFamily) ||
+      !['left', 'center', 'right'].includes(g.align) ||
+      t.rotation !== 0
+    )
+      fail('텍스트 서식을 확인해주세요.');
+    validateTextDocument(g.document);
   } else fail();
 }
 export function readDrawingFile(
@@ -201,7 +215,7 @@ export function readDrawingFile(
   }
   if (
     !keys(f, ['version', 'canvasId', 'objects']) ||
-    ![1, 2].includes(f.version) ||
+    ![1, 2, 3].includes(f.version) ||
     f.canvasId !== canvasId ||
     !Array.isArray(f.objects) ||
     f.objects.length > 1000
@@ -214,9 +228,11 @@ export function readDrawingFile(
     validateDrawingObject(o);
     if (ids.has(o.id)) fail('그림 ID가 중복되었습니다.');
     ids.add(o.id);
+    if (o.kind === 'text' && f.version !== 3)
+      fail('텍스트는 그림 형식 3이 필요합니다.');
     if (o.kind === 'stroke') {
       points += o.geometry.points.length;
-      if (o.geometry.erasures?.length && f.version !== 2)
+      if (o.geometry.erasures?.length && f.version < 2)
         fail('부분 지우기는 그림 형식 2가 필요합니다.');
       for (const e of o.geometry.erasures ?? [])
         erasePoints += validateErasure(e);
@@ -232,12 +248,14 @@ export function serializeDrawing(f: DrawingFile) {
   const raw =
     JSON.stringify({
       version:
-        f.version === 2 ||
-        f.objects.some(
-          (o) => o.kind === 'stroke' && o.geometry.erasures?.length,
-        )
-          ? 2
-          : 1,
+        f.version === 3 || f.objects.some((o) => o.kind === 'text')
+          ? 3
+          : f.version === 2 ||
+              f.objects.some(
+                (o) => o.kind === 'stroke' && o.geometry.erasures?.length,
+              )
+            ? 2
+            : 1,
       canvasId: f.canvasId,
       objects: [...f.objects].sort(
         (a, b) => a.order - b.order || a.id.localeCompare(b.id),
@@ -441,7 +459,7 @@ export function applyDrawingDelta(
   }
   files[path] = serializeDrawing({
     ...f,
-    version: f.version === 2 || delta.version === 2 ? 2 : 1,
+    version: Math.max(f.version, delta.version ?? 1) as DrawingFile['version'],
     objects: [...values.values()],
   });
 }
@@ -570,7 +588,11 @@ export function mergeDrawingFile(
   }
   if (!sm.size && desired === undefined) return undefined;
   return serializeDrawing({
-    version: b.version === 2 || d.version === 2 || s.version === 2 ? 2 : 1,
+    version: Math.max(
+      b.version,
+      d.version,
+      s.version,
+    ) as DrawingFile['version'],
     canvasId: c,
     objects: [...sm.values()],
   });

@@ -88,4 +88,4 @@ export const previewDeletionItem = (preview: PreviewResult): DeletionItem => ({
   revision: preview.revision,
 });
 
-export type CanvasTool = 'select' | 'hand' | 'note' | 'drawing';
+export type CanvasTool = 'select' | 'hand' | 'note' | 'drawing' | 'text';

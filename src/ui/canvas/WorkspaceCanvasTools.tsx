@@ -19,6 +19,7 @@ import {
   Puzzle,
   Redo2,
   StickyNote,
+  Type,
   Trash2,
   Undo2,
   Upload,
@@ -283,7 +284,7 @@ export function WorkspaceCanvasTools({
               : selectedDocuments.length
                 ? `문서 ${selectedDocuments.length}개 선택`
                 : selectedDrawings.length
-                  ? `그림 ${selectedDrawings.length}개 선택`
+                  ? `${selectedDrawings.every((o) => o.kind === 'text') ? '텍스트' : '그림'} ${selectedDrawings.length}개 선택`
                   : nodes.some(
                         (node) => node.selected && node.data.kind === 'kanban',
                       )
@@ -474,6 +475,22 @@ export function WorkspaceCanvasTools({
           <StickyNote size={19} />
           <span>새 메모</span>
           <kbd>N</kbd>
+        </button>
+        <button
+          type="button"
+          className={tool === 'text' ? 'active' : ''}
+          aria-pressed={tool === 'text'}
+          disabled={
+            locked ||
+            !workspace.root ||
+            (collaboration.active && collaboration.drawingTextVersion !== 1)
+          }
+          onClick={() => setTool('text')}
+          title="텍스트 (T) — 빈 곳을 클릭해서 입력"
+        >
+          <Type size={19} />
+          <span>텍스트</span>
+          <kbd>T</kbd>
         </button>
         <span className="toolbar-divider toolbar-divider--vertical" />
         <button

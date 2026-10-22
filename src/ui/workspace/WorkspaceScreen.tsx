@@ -235,6 +235,15 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         : undefined,
     [],
   );
+  useEffect(() => {
+    if (!SELF_HOST_ENABLED || !capabilities.selfHostManagement) return;
+    void api.desktop?.selfHost
+      ?.startSelfHostOnLaunch()
+      .then((open) => {
+        if (open) setSelfHostOpen(true);
+      })
+      .catch(console.error);
+  }, []);
   const [collaborationTab, setCollaborationTab] = useState<
     'create' | 'join' | 'recover'
   >('create');
@@ -2458,6 +2467,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       if (action === 'ui') setUiHidden((value) => !value);
       if (action === 'select') setTool('select');
       if (action === 'hand') setTool('hand');
+      if (action === 'text') {
+        if (locked) onBlocked();
+        else if (collaboration.active && collaboration.drawingTextVersion !== 1)
+          setNotice('텍스트를 사용하려면 협업 서버를 업데이트해주세요.');
+        else setTool('text');
+      }
       if (action === 'note') {
         if (locked) onBlocked();
         else setTool('note');

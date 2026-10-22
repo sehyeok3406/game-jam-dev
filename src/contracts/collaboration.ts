@@ -6,6 +6,7 @@ import type { FileAuthorshipMap } from './documents.ts';
 import type { DrawingDelta } from './drawing-types.ts';
 export type CollaborationRole = 'admin' | 'editor' | 'viewer';
 export type CollaborationState = {
+  drawingTextVersion?: number;
   requestApprovalVersion?: number;
   requestDeletionVersion?: number;
   requestDocumentVersion?: number;
@@ -92,6 +93,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationCommand = {
+  drawingTextVersion?: number;
   drawingEraseVersion?: number;
   propertySyncVersion?: number;
   sessionId?: string;

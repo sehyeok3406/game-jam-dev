@@ -12,6 +12,7 @@ export type Shortcut =
   | 'select'
   | 'hand'
   | 'note'
+  | 'text'
   | 'search'
   | 'navigator'
   | 'help'
@@ -86,6 +87,7 @@ export function canvasShortcut(
   if (key === 's' && event.shiftKey) return 'section';
   if (key === 'l' && event.shiftKey) return 'line';
   if (key === 'p' && event.shiftKey) return 'pen';
+  if (key === 't' && event.shiftKey) return 'triangle';
   return (
     (
       {
@@ -94,7 +96,7 @@ export function canvasShortcut(
         n: 'note',
         r: 'rectangle',
         o: 'ellipse',
-        t: 'triangle',
+        t: 'text',
         a: 'arrow',
         b: 'highlighter',
         e: 'eraser',
@@ -109,7 +111,8 @@ export function canvasShortcut(
 }
 
 export const SHORTCUTS = [
-  ['도형: 사각형 / 타원 / 삼각형 / 화살표', 'R / O / T / A'],
+  ['텍스트', 'T'],
+  ['도형: 사각형 / 타원 / 삼각형 / 화살표', 'R / O / Shift+T / A'],
   ['선 / 펜 / 형광펜 / 획 지우개', 'Shift+L / Shift+P / B / E'],
   ['Markdown · 이미지 불러오기', 'Ctrl + I'],
   ['선택 추가 / 선택 해제', 'Shift 또는 Ctrl + 클릭'],

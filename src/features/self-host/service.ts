@@ -98,6 +98,8 @@ export class SelfHostService {
   private options: HostOptions;
   private running: Promise<SelfHostState> | null = null;
   private currentAction: string | null = null;
+  private startupHandled = false;
+  private settingsQueue: Promise<unknown> = Promise.resolve();
   private runtimeDirectory: string;
   private cloudflaredPath: string;
   state: SelfHostState;
@@ -109,6 +111,7 @@ export class SelfHostService {
       'tools/cloudflared.exe',
     );
     this.state = {
+      autoStart: false,
       supported: process.platform === 'win32',
       stage: 'off',
       code: '',
@@ -134,6 +137,7 @@ export class SelfHostService {
       );
       if (['ask', 'background', 'stop'].includes(saved.closeBehavior))
         this.state.closeBehavior = saved.closeBehavior;
+      this.state.autoStart = saved.autoStart === true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         this.publish({
@@ -146,16 +150,53 @@ export class SelfHostService {
   async setCloseBehavior(closeBehavior: SelfHostState['closeBehavior']) {
     if (!['ask', 'background', 'stop'].includes(closeBehavior))
       throw new Error('종료 설정이 올바르지 않습니다.');
-    await fs.mkdir(this.options.directory, { recursive: true });
-    const file = path.join(this.options.directory, 'app-settings.json');
-    const temp = `${file}.${randomUUID()}.tmp`;
-    try {
-      await fs.writeFile(temp, JSON.stringify({ closeBehavior }));
-      await fs.rename(temp, file);
-    } finally {
-      await fs.rm(temp, { force: true });
-    }
-    return this.publish({ closeBehavior });
+    return this.saveSettings({ closeBehavior });
+  }
+  async setAutoStart(autoStart: boolean) {
+    if (typeof autoStart !== 'boolean')
+      throw new Error('자동 실행 설정이 올바르지 않습니다.');
+    return this.saveSettings({ autoStart });
+  }
+  /** Called after the renderer subscribes, once per app process. Never waits on the network. */
+  startOnLaunch() {
+    if (this.startupHandled) return false;
+    this.startupHandled = true;
+    if (!this.state.supported || !this.state.autoStart) return false;
+    void this.run('start').catch(() => {
+      this.publish({
+        stage: 'problem',
+        code: 'GC-HOST-099',
+        message: messages['GC-HOST-099'],
+      });
+    });
+    return true;
+  }
+  private saveSettings(
+    patch: Partial<Pick<SelfHostState, 'autoStart' | 'closeBehavior'>>,
+  ) {
+    const next = this.settingsQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await fs.mkdir(this.options.directory, { recursive: true });
+        const file = path.join(this.options.directory, 'app-settings.json');
+        const temp = `${file}.${randomUUID()}.tmp`;
+        try {
+          await fs.writeFile(
+            temp,
+            JSON.stringify({
+              autoStart: this.state.autoStart,
+              closeBehavior: this.state.closeBehavior,
+              ...patch,
+            }),
+          );
+          await fs.rename(temp, file);
+        } finally {
+          await fs.rm(temp, { force: true });
+        }
+        return this.publish(patch);
+      });
+    this.settingsQueue = next;
+    return next;
   }
   private async prepareRuntime() {
     // Keep the running server independent of Squirrel's versioned app directory.

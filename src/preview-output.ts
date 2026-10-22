@@ -99,6 +99,21 @@ export function previewLabel(relative: string) {
   const name = resultMatch(relative)?.[2];
   return `${name ? `${name} · ` : ''}버전 ${previewVersion(relative)}`;
 }
+/** Game pickers show the game name and version without its storage category. */
+export function previewGameLabel(preview: {
+  relativePath: string;
+  title?: string;
+}) {
+  const location = resultLocation(preview.relativePath);
+  const name =
+    preview.title?.trim() ||
+    location?.feature ||
+    resultMatch(preview.relativePath)?.[2];
+  if (isImportedPreviewPath(preview.relativePath)) return name || '불러온 HTML';
+  return name
+    ? `${name} · 버전 ${previewVersion(preview.relativePath)}`
+    : previewLabel(preview.relativePath);
+}
 export function nextPreviewPath(
   reservedPaths: string[],
   name?: string,
