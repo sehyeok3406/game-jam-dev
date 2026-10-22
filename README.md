@@ -1,5 +1,7 @@
 # Game Jam! (game-jam-dev)
 
+개발 폴더 용량 관리: [개발 결과물 정리 도구와 보존 기준](DEVELOPMENT_ARTIFACT_CLEANUP.md)
+
 ### v0.26.0 게임 실행 오류 안내·추적
 
 연결뿐 아니라 조작·게임 규칙·화면 표시·결과 처리 문제를 구분하고, 쉬운 해결 안내와 오류 정보 복사를 제공합니다. [사용 안내와 오류 코드](MULTIPLAYER_DIAGNOSTICS.md) · [배포 상태](UPDATES.md)
