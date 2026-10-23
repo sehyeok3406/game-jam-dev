@@ -1,4 +1,5 @@
-import { NodeResizer, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
+import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { cardColor } from '../../card-colors';
 import { FilePropertyBadges } from '../FileProperties';
@@ -51,7 +52,7 @@ export function DocumentCard({
   return (
     <>
       {!document.collapsed && (
-        <NodeResizer
+        <CanvasItemResizer
           color="var(--selection)"
           isVisible={selected && !data.layoutLocked}
           lineClassName="window-resize-edge"

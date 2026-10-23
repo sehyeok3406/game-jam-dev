@@ -31,6 +31,9 @@ interface GeometryPorts {
     relative: string,
     state: PreviewWindowState,
   ) => Promise<void>;
+  updatePreviewWindows: (
+    windows: { relative: string; state: PreviewWindowState }[],
+  ) => Promise<void>;
   locked: boolean;
   sectionCollapsed: (section: CanvasSection) => boolean;
   canvasBatch: (
@@ -88,6 +91,7 @@ function createGeometryActions(
     gameUi,
     blockAiFiles,
     updatePreviewWindow,
+    updatePreviewWindows,
     locked,
     sectionCollapsed,
     canvasBatch,
@@ -97,6 +101,69 @@ function createGeometryActions(
     setMembershipPrompt,
   } = ports;
   const { pendingGeometry, geometrySequence, setGeometryEpoch } = state;
+  const persistResizedNodes = async (nodes: CanvasNode[]) => {
+    if (locked || !isCurrent()) return;
+    if (
+      blockAiFiles(
+        nodes.flatMap((node) =>
+          node.data.kind === 'document'
+            ? [node.data.document.relativePath]
+            : node.data.kind === 'preview'
+              ? [node.data.preview.relativePath]
+              : [],
+        ),
+      )
+    )
+      return;
+    const sequence = ++geometrySequence.current;
+    for (const node of nodes)
+      pendingGeometry.current.set(node.id, {
+        sequence,
+        position: node.position,
+        style: node.style,
+      });
+    setGeometryEpoch((epoch) => epoch + 1);
+    try {
+      const documents = nodes.filter(
+        (node): node is DocumentCanvasNode => node.data.kind === 'document',
+      );
+      if (documents.length)
+        await api.editor.updateLayouts(
+          documents.map((node) => ({
+            ...documentDragLayout(node, sections),
+            size: true,
+          })),
+        );
+      if (!isCurrent()) return;
+      await updatePreviewWindows(
+        nodes.flatMap((node) =>
+          node.data.kind === 'preview'
+            ? [
+                {
+                  relative: node.data.preview.relativePath,
+                  state: {
+                    ...node.data.windowState,
+                    ...node.position,
+                    width: node.measured!.width!,
+                    height: node.measured!.height!,
+                  },
+                },
+              ]
+            : [],
+        ),
+      );
+      if (isCurrent())
+        setNotice(`${nodes.length}개 항목의 크기를 함께 저장했습니다.`);
+    } catch (error) {
+      if (isCurrent()) showError(error);
+    } finally {
+      if (isCurrent()) await loadProject(false).catch(showError);
+      for (const node of nodes)
+        if (pendingGeometry.current.get(node.id)?.sequence === sequence)
+          pendingGeometry.current.delete(node.id);
+      if (isCurrent()) setGeometryEpoch((epoch) => epoch + 1);
+    }
+  };
   const resizeDocument = async (
     document: CanvasDocument,
     x: number,
@@ -374,7 +441,12 @@ function createGeometryActions(
     }
   };
 
-  return { resizeDocument, resizeSection, persistDraggedNodes };
+  return {
+    resizeDocument,
+    resizeSection,
+    persistDraggedNodes,
+    persistResizedNodes,
+  };
 }
 export function useCanvasGeometry(
   scope: SelectionScope,
@@ -419,6 +491,14 @@ export function useCanvasGeometry(
       setGeometryEpoch,
     };
     return {
+      persistResizedNodes: (nodes: CanvasNode[]) => {
+        if (!isCurrent()) return Promise.resolve();
+        return createGeometryActions(
+          current.current(),
+          state,
+          isCurrent,
+        ).persistResizedNodes(nodes);
+      },
       resizeDocument: (
         ...args: Parameters<
           ReturnType<typeof createGeometryActions>['resizeDocument']

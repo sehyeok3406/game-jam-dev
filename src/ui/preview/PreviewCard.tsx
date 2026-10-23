@@ -1,4 +1,5 @@
-import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
+import { type Node, type NodeProps } from '@xyflow/react';
+import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
 import {
   Monitor,
   Shrink,
@@ -86,7 +87,7 @@ export function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
   return (
     <>
       {!preset && !collapsed && !fullscreen && (
-        <NodeResizer
+        <CanvasItemResizer
           color="var(--selection)"
           isVisible={selected && !state.collapsed && !data.locked}
           lineClassName="window-resize-edge"

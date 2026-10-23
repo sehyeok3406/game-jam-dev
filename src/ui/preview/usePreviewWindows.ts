@@ -25,6 +25,34 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
   const isCurrent = useViewLifetime(scope);
   const live = useRef(ports);
   live.current = ports;
+  const updatePreviewWindows = useCallback(
+    async (windows: { relative: string; state: PreviewWindowState }[]) => {
+      if (!windows.length) return;
+      const { api, setPreviewWindows } = live.current();
+      if (!isCurrent()) return;
+      const normalized = windows.map(({ relative, state }) => ({
+        relative,
+        state: normalizePreviewWindow(state),
+      }));
+      const results = await Promise.allSettled(
+        normalized.map(({ relative, state }) =>
+          api.preview.savePreviewWindow(state, relative),
+        ),
+      );
+      if (!isCurrent()) return;
+      setPreviewWindows((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          normalized.flatMap(({ relative, state }, index) =>
+            results[index].status === 'fulfilled' ? [[relative, state]] : [],
+          ),
+        ),
+      }));
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+    },
+    [isCurrent],
+  );
   const updatePreviewWindow = useCallback(
     async (relative: string, state: PreviewWindowState) => {
       const { setPreviewWindows, api, showError } = live.current();
@@ -79,5 +107,5 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
     setNotice('두 결과를 나란히 배치했습니다.');
   };
 
-  return { updatePreviewWindow, compareWindows };
+  return { updatePreviewWindow, updatePreviewWindows, compareWindows };
 }

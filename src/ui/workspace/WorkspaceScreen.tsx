@@ -917,6 +917,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     resizeDocument,
     resizeSection,
     persistDraggedNodes,
+    persistResizedNodes,
     pendingGeometry,
     geometryEpoch,
   } = useCanvasGeometry(selectionScope, () => ({
@@ -927,6 +928,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     gameUi,
     blockAiFiles,
     updatePreviewWindow,
+    updatePreviewWindows,
     locked,
     sectionCollapsed,
     canvasBatch,
@@ -1462,17 +1464,15 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     },
     [],
   );
-  const { updatePreviewWindow, compareWindows } = usePreviewWindows(
-    selectionScope,
-    () => ({
+  const { updatePreviewWindow, updatePreviewWindows, compareWindows } =
+    usePreviewWindows(selectionScope, () => ({
       setPreviewWindows,
       api,
       showError,
       previewWindows,
       flowRef,
       setNotice,
-    }),
-  );
+    }));
   const previewWindowCache = useRef<{
     root: string | null;
     windows: Record<string, PreviewWindowState>;
@@ -3553,6 +3553,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           setGuides,
           snapEnabled,
           persistDraggedNodes,
+          persistResizedNodes,
           showError,
           setSelectedIds,
           setSelectedSectionIds,

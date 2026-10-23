@@ -727,8 +727,15 @@ export function useCanvasNodes(
                   )
                 ? true
                 : (old?.selected ?? false),
-          ...(old?.dragging && !geometryLocked
-            ? { position: old.position, dragging: true }
+          ...((old?.dragging || old?.resizing) && !geometryLocked
+            ? {
+                position: old.position,
+                style: old.style,
+                width: old.width,
+                height: old.height,
+                dragging: old.dragging,
+                resizing: old.resizing,
+              }
             : pending
               ? { position: pending.position, style: pending.style }
               : {}),
