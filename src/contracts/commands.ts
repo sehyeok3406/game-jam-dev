@@ -15,6 +15,10 @@ type Input<M extends keyof EditorApi> = EditorApi[M] extends (
 
 /** Reducer outputs. IPC saveDocument still returns a fresh CanvasDocument. */
 export type CommandMap = {
+  'projects:import-copy': CommandSpec<
+    import('./project-copy.ts').ProjectCopyImport,
+    import('./project-copy.ts').ProjectCopyResult
+  >;
   'kanban:move-card': CommandSpec<Input<'moveKanbanCard'>>;
   'kanban:save-view': CommandSpec<Input<'saveKanbanView'>>;
   'files:set-status-property': CommandSpec<Input<'setFileStatusProperty'>>;
@@ -55,6 +59,7 @@ export type CommandName = keyof CommandMap;
 export type CommandInput<K extends CommandName> = CommandMap[K]['input'];
 export type CommandOutput<K extends CommandName> = CommandMap[K]['output'];
 type BatchName =
+  | 'documents:set-color'
   | 'drawings:apply'
   | 'game-ui:apply'
   | 'layouts:update'
@@ -68,6 +73,7 @@ export type BatchCommand = {
 export type BatchResult = CommandOutput<BatchName>;
 
 export const COMMAND_LABELS = {
+  'projects:import-copy': '다른 프로젝트에서 복사',
   'kanban:move-card': '칸반 카드 이동',
   'kanban:save-view': '칸반 보기 설정 변경',
   'files:set-status-property': '파일 상태 속성 변경',

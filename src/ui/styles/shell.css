@@ -311,6 +311,8 @@
   display: grid;
   width: 268px;
   padding: 7px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   border-radius: 12px;
 }
 

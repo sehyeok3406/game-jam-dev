@@ -746,6 +746,16 @@ export class CollaborationClient {
           '게임 UI 플러그인을 사용하려면 협업 서버를 업데이트해주세요.',
         );
       if (
+        channel === 'projects:import-copy' &&
+        (this.state.projectCopyVersion !== 1 ||
+          !this.state.connected ||
+          this.offline ||
+          this.outgoing)
+      )
+        throw Error(
+          '프로젝트 간 복사에는 최신 협업 서버와 온라인 동기화 완료가 필요합니다.',
+        );
+      if (
         channel === 'tasks:create' &&
         this.state.gamejamTextMaterialsVersion !== 1 &&
         (input as CreateTaskInput).inputPaths?.some((path) =>
@@ -1026,7 +1036,9 @@ export class CollaborationClient {
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {
         id:
-          channel === 'drawings:apply' || channel === 'game-ui:apply'
+          channel === 'drawings:apply' ||
+          channel === 'game-ui:apply' ||
+          channel === 'projects:import-copy'
             ? ((input as { requestId?: string }).requestId ?? randomUUID())
             : randomUUID(),
         ...(this.state.propertySync
@@ -1111,6 +1123,23 @@ export class CollaborationClient {
       if (sourcePath) setIdentity(sourcePath, source);
       if (sourcePath && source.revision !== undefined)
         command.revisions[sourcePath] = source.revision;
+      if (channel === 'canvas:batch') {
+        for (const part of (
+          input as {
+            commands: {
+              channel: string;
+              input: { relativePath?: string; revision?: number };
+            }[];
+          }
+        ).commands) {
+          if (
+            part.channel === 'documents:set-color' &&
+            part.input.relativePath &&
+            part.input.revision !== undefined
+          )
+            command.revisions[part.input.relativePath] = part.input.revision;
+        }
+      }
       for (const item of [
         ...(source.updates ?? []),
         ...(source.documents ?? []),

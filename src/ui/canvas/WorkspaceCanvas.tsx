@@ -132,6 +132,11 @@ interface Props {
     } | null>
   >;
   openCanvasMenu: (clientX: number, clientY: number) => void;
+  openSelectionContextMenu?: (
+    clientX: number,
+    clientY: number,
+    node: CanvasNode,
+  ) => boolean;
   personalScope: string;
   activeCanvas: string;
   inspectorId: string | null;
@@ -261,6 +266,7 @@ export function WorkspaceCanvas({
   setPreviewContextMenu,
   setOverlapMenu,
   openCanvasMenu,
+  openSelectionContextMenu,
   personalScope,
   activeCanvas,
   inspectorId,
@@ -604,8 +610,23 @@ export function WorkspaceCanvas({
                     }
                   }}
                   onNodeContextMenu={(event, node) => {
+                    if (
+                      (event.target as Element).closest(
+                        'input,textarea,[contenteditable="true"],iframe',
+                      )
+                    )
+                      return;
                     event.preventDefault();
                     if (materialPicker !== null) return;
+                    event.stopPropagation();
+                    if (
+                      openSelectionContextMenu?.(
+                        event.clientX,
+                        event.clientY,
+                        node,
+                      )
+                    )
+                      return;
                     setContextMenu(null);
                     setPreviewContextMenu(null);
                     if (node.data.kind === 'kanban') {

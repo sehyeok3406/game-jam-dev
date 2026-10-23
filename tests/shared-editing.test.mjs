@@ -117,7 +117,7 @@ const invoke = async (f, channel, input) => {
 };
 
 test('shared editing matrix covers every public reducer command exactly once', () => {
-  assert.equal(commands.length, 26);
+  assert.equal(commands.length, 27);
   assert.deepEqual(
     commands.map((c) => c.channel).sort(),
     Object.keys(COMMAND_LABELS).sort(),

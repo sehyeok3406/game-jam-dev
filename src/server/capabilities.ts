@@ -1,6 +1,7 @@
 /** Wire v1 fields shared by health and authenticated state. */
 export function serverCapabilities() {
   return {
+    projectCopyVersion: 1,
     taskInstructionsEditable: true,
     taskResultNaming: true,
     gamejamWorkflow: true,

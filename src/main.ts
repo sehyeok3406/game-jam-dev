@@ -27,6 +27,7 @@ import {
   homeProjectRegistry,
 } from './desktop/projects/shared-projects';
 import { registerProjectIpc } from './desktop/ipc/projects';
+import { registerProjectCopyIpc } from './desktop/projects/project-copy';
 import { SharedEditingService } from './application/editing/shared-editing-service';
 import { SharedWorkspaceReader } from './application/editing/shared-workspace-reader';
 import { dispatchSharedEditingIpc } from './desktop/ipc/collaboration';
@@ -644,6 +645,11 @@ const assertEditable = () => {
     );
 };
 const assertMutationAllowed = async (channel: string, args: unknown[]) => {
+  if (
+    channel === 'projects:copy-target' ||
+    channel === 'projects:copy-selection'
+  )
+    return;
   const context = args[0] as
     | { scope?: string; contextId?: string; clipboardContextId?: string }
     | undefined;
@@ -2328,6 +2334,23 @@ const registerIpc = () => {
   registerProjectIpc(handle, homeProjects, (event) => {
     if (!isUpdateSender(event))
       throw new Error('앱의 홈 화면에서 실행해주세요.');
+  });
+  registerProjectCopyIpc(handle, {
+    sessions: projectSessions,
+    library: projectLibrary,
+    userData: app.getPath('userData'),
+    internalServerUrl,
+    journals: editJournals,
+    trashed: (id) => projectTrash.hasProject(id),
+    assertReadable: (paths) => {
+      if (aiIsActive() && !executionFileLock())
+        throw Error('AI 작업 완료 후 자료를 복사해주세요.');
+      assertAiFilesUnlocked(currentAiFileLock(), paths);
+    },
+    assertSender: (event) => {
+      if (!isUpdateSender(event)) throw Error('앱의 캔버스에서 복사해주세요.');
+    },
+    changed: notifyWorkspaceChanged,
   });
   handle('collaboration:test-users', async () => ({
     supported: true,

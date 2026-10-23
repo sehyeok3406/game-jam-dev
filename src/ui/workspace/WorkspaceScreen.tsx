@@ -111,6 +111,17 @@ import {
 } from '../canvas/useSelectionActions';
 import { WorkspaceCanvas } from '../canvas/WorkspaceCanvas';
 import { WorkspaceContextMenus } from '../canvas/WorkspaceContextMenus';
+import { SelectionContextMenu } from '../canvas/SelectionContextMenu';
+import { ProjectCopyDialog } from '../ProjectCopyDialog';
+import {
+  contextSelection,
+  selectionMenuTargets,
+  selectionMenuPaths,
+  projectCopySelection,
+  type SelectionMenuTargets,
+} from '../canvas/selection-menu-plan';
+import { selectionScopeKey } from '../canvas/selection-actions';
+import type { ProjectCopyRequest } from '../../contracts/project-copy';
 import type { CanvasCommand } from '../CanvasOverlays';
 import { CanvasTabs } from '../CanvasTabs';
 import { UiDebugConsole } from '../debug/UiDebugConsole';
@@ -719,6 +730,33 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   }, [activeCanvas, workspace.root]);
   const [uiHidden, setUiHidden] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [selectionContextMenu, setSelectionContextMenu] = useScopedPrompt<{
+    x: number;
+    y: number;
+    targets: SelectionMenuTargets;
+  } | null>(selectionScopeKey(selectionScope), null);
+  const [projectCopyPrompt, setProjectCopyPrompt] = useScopedPrompt<Omit<
+    ProjectCopyRequest,
+    'targetId' | 'canvasId' | 'requestId'
+  > | null>(selectionScopeKey(selectionScope), null);
+  useEffect(() => {
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (
+        event instanceof KeyboardEvent
+          ? event.key === 'Escape'
+          : !(event.target as Element).closest('.canvas-context-menu')
+      )
+        setSelectionContextMenu(null);
+    };
+    if (selectionContextMenu) {
+      window.addEventListener('pointerdown', close);
+      window.addEventListener('keydown', close);
+    }
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', close);
+    };
+  }, [selectionContextMenu, setSelectionContextMenu]);
   const [overlapMenu, setOverlapMenu] = useState<{
     x: number;
     y: number;
@@ -2118,6 +2156,56 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const selectedPreviews = nodes
     .filter((node) => node.selected && node.data.kind === 'preview')
     .map((node) => previewDeletionItem((node.data as PreviewNodeData).preview));
+  const closeContextMenus = () => {
+    setContextMenu(null);
+    setDocumentContextMenu(null);
+    setSectionContextMenu(null);
+    setPreviewContextMenu(null);
+    setSelectionContextMenu(null);
+  };
+  const beginProjectCopy = (targets: SelectionMenuTargets) => {
+    if (!workspace.session || !api.desktop) return;
+    closeContextMenus();
+    setProjectCopyPrompt({
+      session: { ...workspace.session },
+      selection: projectCopySelection(targets, activeCanvas),
+    });
+  };
+  const copyToProject = (paths: string[]) =>
+    beginProjectCopy(
+      selectionMenuTargets(
+        nodes.filter((node) =>
+          node.data.kind === 'document'
+            ? paths.includes(node.data.document.relativePath)
+            : node.data.kind === 'section'
+              ? paths.includes(node.data.section.relativePath)
+              : node.data.kind === 'preview'
+                ? paths.includes(node.data.preview.relativePath)
+                : false,
+        ),
+      ),
+    );
+  const openSelectionContextMenu = (x: number, y: number, hit: CanvasNode) => {
+    const chosen = contextSelection(nodes, hit);
+    const ids = new Set(chosen.map((node) => node.id));
+    setNodes((current) =>
+      current.map((node) => ({ ...node, selected: ids.has(node.id) })),
+    );
+    setSelectedIds(
+      chosen.flatMap((node) =>
+        node.data.kind === 'document' ? [node.data.document.id] : [],
+      ),
+    );
+    setSelectedSectionIds(
+      chosen.flatMap((node) =>
+        node.data.kind === 'section' ? [node.data.section.id] : [],
+      ),
+    );
+    closeContextMenus();
+    if (chosen.length < 2 && hit.data.kind !== 'drawing') return false;
+    setSelectionContextMenu({ x, y, targets: selectionMenuTargets(chosen) });
+    return true;
+  };
   const selectionLocked =
     locked ||
     selectedDocuments.some((doc) => pathLocked(doc.relativePath)) ||
@@ -2569,6 +2657,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   });
 
   const legacyModal = !!(
+    projectCopyPrompt ||
     discordApprovalOpen ||
     approvalInboxOpen ||
     updateOpen ||
@@ -3016,6 +3105,16 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   ]);
 
   const openCanvasMenu = (clientX: number, clientY: number) => {
+    const chosen = contextSelection(nodes);
+    if (chosen.length) {
+      closeContextMenus();
+      setSelectionContextMenu({
+        x: clientX,
+        y: clientY,
+        targets: selectionMenuTargets(chosen),
+      });
+      return;
+    }
     const point = flowRef.current?.screenToFlowPosition({
       x: clientX,
       y: clientY,
@@ -3556,6 +3655,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           setPreviewContextMenu,
           setOverlapMenu,
           openCanvasMenu,
+          openSelectionContextMenu,
           personalScope,
           activeCanvas,
           inspectorId,
@@ -3667,6 +3767,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceContextMenus
         {...{
+          copyToProject,
           previewContextMenu,
           canvasSheets,
           locked,
@@ -3710,6 +3811,89 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           capabilities,
         }}
       />
+
+      {selectionContextMenu && (
+        <SelectionContextMenu
+          x={selectionContextMenu.x}
+          y={selectionContextMenu.y}
+          targets={selectionContextMenu.targets}
+          locked={
+            locked ||
+            editBusy ||
+            selectionContextMenu.targets.documents.some((doc) =>
+              pathLocked(doc.relativePath),
+            ) ||
+            selectionContextMenu.targets.previews.some((preview) =>
+              pathLocked(preview.relativePath),
+            ) ||
+            selectionContextMenu.targets.sections.some(sectionLocked)
+          }
+          canMove={canvasSheets.canvases.length > 1}
+          canCopy={!!api.desktop}
+          onColor={(color) => {
+            const targets = selectionContextMenu.targets;
+            closeContextMenus();
+            if (
+              collaboration.active &&
+              collaboration.projectCopyVersion !== 1
+            ) {
+              showError(
+                Error(
+                  '다중 배경색 변경을 사용하려면 협업 서버를 최신 버전으로 업데이트해주세요.',
+                ),
+              );
+              return;
+            }
+            void selectionActions.setColors(
+              [...targets.documents, ...targets.previews],
+              color,
+            );
+          }}
+          onCopy={() => beginProjectCopy(selectionContextMenu.targets)}
+          onMove={() => {
+            const targets = selectionContextMenu.targets;
+            closeContextMenus();
+            beginCanvasMove(selectionMenuPaths(targets), targets.drawings);
+          }}
+          onCollapse={() => {
+            const targets = selectionContextMenu.targets;
+            closeContextMenus();
+            void collapseActions.selection(targets.collapse);
+          }}
+          onDelete={() => {
+            const targets = selectionContextMenu.targets;
+            closeContextMenus();
+            const members = new Set(
+              targets.sections.flatMap((section) =>
+                section.members.map((member) => member.path),
+              ),
+            );
+            setDeleteDrawingTargets(targets.drawings);
+            setDeleteSectionTargets(targets.sections);
+            setDeleteManyPrompt([
+              ...targets.documents.filter(
+                (doc) => !members.has(doc.relativePath),
+              ),
+              ...targets.previews.map(previewDeletionItem),
+            ]);
+          }}
+        />
+      )}
+      {projectCopyPrompt && (
+        <ProjectCopyDialog
+          key={selectionScopeKey(selectionScope)}
+          api={api}
+          request={projectCopyPrompt}
+          flush={() => flushEditors()}
+          onClose={() => setProjectCopyPrompt(null)}
+          onOpen={async (id) => {
+            await flushEditors();
+            await api.projects.openProject(id);
+            setProjectCopyPrompt(null);
+            await enterProject();
+          }}
+        />
+      )}
 
       {workspace.root && (
         <CanvasTabs

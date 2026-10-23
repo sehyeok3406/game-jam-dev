@@ -351,6 +351,50 @@ export class CanvasSelectionActions {
       ports.notice(`${targets.length}개 항목의 배치를 정리했습니다.`);
     });
   }
+  setColors(items: { id?: string; relativePath: string }[], color: string) {
+    const targets = structuredClone(items);
+    return this.run(
+      targets.map((item) => item.relativePath),
+      async (ports, guard, writable, scope) => {
+        await ports.flush(guard);
+        writable();
+        const [documents, previews] = await Promise.all([
+          ports.editor.listDocuments(),
+          ports.preview.listPreviews(),
+        ]);
+        writable();
+        const commands = targets.map((target) => {
+          const current = [...documents, ...previews].find(
+            (item) => item.relativePath === target.relativePath,
+          );
+          if (
+            !current ||
+            (!isPreviewPath(target.relativePath) &&
+              target.id &&
+              'id' in current &&
+              current.id !== target.id)
+          )
+            throw Error('색상을 변경할 항목이 삭제되었거나 교체되었습니다.');
+          return {
+            channel: 'documents:set-color',
+            input: {
+              relativePath: target.relativePath,
+              ...(!isPreviewPath(target.relativePath)
+                ? { objectId: target.id }
+                : {}),
+              revision: current.revision,
+              color,
+            },
+          };
+        });
+        if (!commands.length) return;
+        await this.batch(ports, scope, commands, guard, writable);
+        await ports.reload();
+        guard();
+        ports.notice(`${targets.length}개 카드의 배경색을 변경했습니다.`);
+      },
+    );
+  }
   dispose() {
     this.disposed = true;
   }

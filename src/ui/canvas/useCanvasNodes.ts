@@ -601,10 +601,12 @@ export function useCanvasNodes(
             onContext: () => {
               setTool('select');
               setNodes((current) =>
-                current.map((n) => ({
-                  ...n,
-                  selected: n.id === `drawing:${o.id}`,
-                })),
+                current.some((n) => n.id === `drawing:${o.id}` && n.selected)
+                  ? current
+                  : current.map((n) => ({
+                      ...n,
+                      selected: n.id === `drawing:${o.id}`,
+                    })),
               );
             },
           },

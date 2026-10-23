@@ -487,6 +487,12 @@ export function createDevGameCanvasApi(
     });
   };
   const api: GameCanvasApi = {
+    getProjectCopyTarget: async () => {
+      throw Error('프로젝트 간 복사는 PC 앱에서 사용할 수 있습니다.');
+    },
+    copySelectionToProject: async () => {
+      throw Error('프로젝트 간 복사는 PC 앱에서 사용할 수 있습니다.');
+    },
     listApprovals: async () => ({ items: [], version: 0 }),
     readApproval: async () => {
       throw new Error(

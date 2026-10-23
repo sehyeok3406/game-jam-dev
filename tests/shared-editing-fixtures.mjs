@@ -2,6 +2,7 @@ import matter from '../src/markdown.ts';
 import { defaultStatuses } from '../src/document-statuses.ts';
 import { defaultKanbanView } from '../src/features/kanban/view.ts';
 import { RESULT_CATALOG_PATH } from '../src/result-structure.ts';
+import { projectCopyBundle } from '../src/project-copy.ts';
 
 export const environment = () => {
   let id = 0;
@@ -101,6 +102,21 @@ const gameUi = {
   frame,
 };
 const cases = [
+  [
+    'projects:import-copy',
+    {
+      requestId: '00000000-0000-4000-8000-000000000099',
+      canvasId: 'default',
+      bundle: projectCopyBundle(initial(), {
+        canvasId: 'default',
+        documents: [{ id: 'a', path: docPath }],
+        sections: [],
+        previews: [],
+        drawings: [],
+      }),
+    },
+    { requestId: 'invalid' },
+  ],
   [
     'kanban:move-card',
     { ...workflow, expectedEnabled: true, expectedView: null },

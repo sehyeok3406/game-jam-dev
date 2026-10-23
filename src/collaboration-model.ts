@@ -1,4 +1,5 @@
 import { ServerLimits } from './contracts/server-limits.ts';
+import { importProjectCopy } from './project-copy.ts';
 import { layoutValues } from './core/editing/layout.ts';
 import type { CommandEnvironment } from './core/editing/environment.ts';
 import { COMMAND_LABELS, isCommandName } from './contracts/commands.ts';
@@ -395,6 +396,15 @@ export function reduceCollaboration(
     throw new Error('허용되지 않은 공동 작업입니다.');
   let next = { ...files };
   const input = record(value);
+  if (channel === 'projects:import-copy') {
+    const copied = importProjectCopy(
+      files,
+      value as import('./contracts/project-copy.ts').ProjectCopyImport,
+      environment,
+    );
+    checkSnapshot(copied.files);
+    return copied;
+  }
   if (channel === 'kanban:move-card' || channel === 'kanban:save-view') {
     const changed =
       channel === 'kanban:move-card'
@@ -438,11 +448,15 @@ export function reduceCollaboration(
   }
   if (channel === 'canvas:batch') {
     const commands = array(input.commands);
-    if (!commands.length || commands.length > 10)
+    const colorsOnly = commands.every(
+      (command) => record(command).channel === 'documents:set-color',
+    );
+    if (!commands.length || commands.length > (colorsOnly ? 500 : 10))
       throw new Error('함께 편집할 항목을 확인해주세요.');
     let changed = files;
     const results: unknown[] = [];
     const allowed = [
+      'documents:set-color',
       'drawings:apply',
       'game-ui:apply',
       'layouts:update',
@@ -652,6 +666,11 @@ export function reduceCollaboration(
       relative = source;
     }
     const parsed = read(relative);
+    if (
+      input.objectId !== undefined &&
+      input.objectId !== (parsed.data.id ?? parsed.relative)
+    )
+      throw Error('색상을 변경할 객체가 교체되었습니다.');
     if (!CARD_COLORS.some((item) => item.id === input.color))
       throw new Error('지원하지 않는 카드 색상입니다.');
     write(

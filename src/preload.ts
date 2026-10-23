@@ -77,6 +77,9 @@ const api: GameCanvasApi = {
   },
   getCanvasChanges: (known) => ipcRenderer.invoke('canvas:changes', known),
   applyCanvasCommands: (input) => ipcRenderer.invoke('canvas:batch', input),
+  getProjectCopyTarget: (id) => ipcRenderer.invoke('projects:copy-target', id),
+  copySelectionToProject: (input) =>
+    ipcRenderer.invoke('projects:copy-selection', input),
   getDocument: (relative) => ipcRenderer.invoke('documents:get', relative),
   getEditorDraft: (key) => ipcRenderer.invoke('drafts:get', key),
   setEditorDraft: (key, draft, sequence) =>

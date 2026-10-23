@@ -177,6 +177,12 @@ export type GameCanvasApi = {
   }>;
   openWebViewer: () => Promise<void>;
   listProjects: (refreshShared?: boolean) => Promise<ProjectEntry[]>;
+  getProjectCopyTarget: (
+    id: string,
+  ) => Promise<import('./project-copy.ts').ProjectCopyTarget>;
+  copySelectionToProject: (
+    input: import('./project-copy.ts').ProjectCopyRequest,
+  ) => Promise<import('./project-copy.ts').ProjectCopyResult>;
   prepareProjectTrash: (id: string) => Promise<{
     token: string;
     entry: {
@@ -416,6 +422,8 @@ export const APP_API_GROUPS = {
   publishWebViewer: 'desktop',
   openWebViewer: 'desktop',
   listProjects: 'projects',
+  getProjectCopyTarget: 'desktop',
+  copySelectionToProject: 'desktop',
   prepareProjectTrash: 'projects',
   trashProject: 'projects',
   listProjectTrash: 'projects',

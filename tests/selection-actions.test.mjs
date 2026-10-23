@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict';
+import {
+  contextSelection,
+  selectionMenuTargets,
+  selectionMenuPaths,
+} from '../src/ui/canvas/selection-menu-plan.ts';
 import { test } from 'node:test';
 import { CanvasSelectionActions } from '../src/ui/canvas/selection-actions.ts';
 import {
@@ -104,6 +109,91 @@ function setup() {
   );
   return { ports, service, events, errors, notices, busy };
 }
+
+test('context selection preserves a selected group, replaces outside targets and snapshots supported kinds', () => {
+  const a = {
+    id: 'a',
+    selected: true,
+    data: { kind: 'document', document: { ...doc, id: 'a' } },
+  };
+  const b = {
+    id: 'b',
+    selected: true,
+    data: {
+      kind: 'document',
+      document: { ...doc, id: 'b', relativePath: 'ideas/b.md' },
+    },
+  };
+  const outside = {
+    id: 'c',
+    selected: false,
+    data: {
+      kind: 'document',
+      document: { ...doc, id: 'c', relativePath: 'ideas/c.md' },
+    },
+  };
+  assert.deepEqual(
+    contextSelection([a, b, outside], a).map((n) => n.id),
+    ['a', 'b'],
+  );
+  assert.deepEqual(
+    contextSelection([a, b, outside], outside).map((n) => n.id),
+    ['c'],
+  );
+  assert.deepEqual(
+    contextSelection([a, b, outside]).map((n) => n.id),
+    ['a', 'b'],
+  );
+  const section = {
+    id: 's',
+    selected: true,
+    data: {
+      kind: 'section',
+      collapsed: false,
+      section: {
+        id: 's',
+        relativePath: 'sections/s.md',
+        members: [{ id: 'a', path: doc.relativePath }],
+      },
+    },
+  };
+  const targets = selectionMenuTargets([a, b, section]);
+  a.data.document.title = 'later';
+  assert.notEqual(targets.documents[0].title, 'later');
+  assert.deepEqual(selectionMenuPaths(targets), [
+    'sections/s.md',
+    'ideas/b.md',
+  ]);
+});
+
+test('bulk colors flush first, keep identities and publish one batch with fresh revisions', async () => {
+  const f = setup();
+  await f.service.setColors(
+    [doc, { relativePath: 'output/index.html' }],
+    'pink',
+  );
+  const batch = f.events.find(
+    (event) => Array.isArray(event) && event[0] === 'batch',
+  )[1];
+  assert.equal(f.events[0], 'flush');
+  assert.equal(batch.commands.length, 2);
+  assert.equal(batch.commands[0].input.objectId, doc.id);
+  assert.deepEqual(
+    batch.commands.map((command) => command.input.revision),
+    [9, 8],
+  );
+  assert.equal(f.errors.length, 0);
+  const stale = setup();
+  stale.ports.editor.listDocuments = async () => [
+    { ...doc, id: 'replacement' },
+  ];
+  await stale.service.setColors([doc], 'pink');
+  assert.equal(
+    stale.events.some((event) => Array.isArray(event) && event[0] === 'batch'),
+    false,
+  );
+  assert.equal(stale.errors.length, 1);
+});
 
 test('arrangement excludes section members by ID/path, uses collapsed displayed height and preserves expanded storage', () => {
   const section = {

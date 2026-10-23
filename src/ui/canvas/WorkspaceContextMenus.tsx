@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Copy,
   FolderOpen,
   Frame,
   History,
@@ -33,6 +34,7 @@ import {
   type SectionContextMenuState,
 } from '../workspace/workspace-types.ts';
 interface Props {
+  copyToProject?: (paths: string[]) => void;
   previewContextMenu: PreviewContextMenuState | null;
   canvasSheets: CanvasSheets;
   locked: boolean;
@@ -120,6 +122,7 @@ interface Props {
   }>;
 }
 export function WorkspaceContextMenus({
+  copyToProject,
   previewContextMenu,
   canvasSheets,
   locked,
@@ -162,6 +165,20 @@ export function WorkspaceContextMenus({
   selectedSections,
   capabilities,
 }: Props) {
+  const copyButton = (path: string) =>
+    capabilities.localFiles && copyToProject ? (
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => copyToProject([path])}
+      >
+        <Copy size={16} />
+        <span>
+          <strong>다른 프로젝트로 복사…</strong>
+          <small>원본 유지 · 관련 파일 포함</small>
+        </span>
+      </button>
+    ) : null;
   return (
     <>
       {previewContextMenu && (
@@ -175,6 +192,7 @@ export function WorkspaceContextMenus({
           role="menu"
           aria-label="HTML 결과 메뉴"
         >
+          {copyButton(previewContextMenu.preview.relativePath)}
           <button
             type="button"
             role="menuitem"
@@ -309,6 +327,7 @@ export function WorkspaceContextMenus({
           }}
           role="menu"
         >
+          {copyButton(documentContextMenu.document.relativePath)}
           <div className="context-menu-title">
             {documentContextMenu.document.title}
           </div>
@@ -430,6 +449,7 @@ export function WorkspaceContextMenus({
           }}
           role="menu"
         >
+          {copyButton(sectionContextMenu.section.relativePath)}
           <div className="context-menu-title">
             {sectionContextMenu.section.title}
           </div>

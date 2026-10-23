@@ -127,9 +127,19 @@ export function describePreview(
           initialWindow: {
             x: Number.isFinite(data.x) ? data.x : 120,
             y: Number.isFinite(data.y) ? data.y : 120,
-            width: 720,
-            height: 520,
-            collapsed: false,
+            width:
+              Number.isFinite(data.width) &&
+              data.width > 0 &&
+              data.width <= 100000
+                ? data.width
+                : 720,
+            height:
+              Number.isFinite(data.height) &&
+              data.height > 0 &&
+              data.height <= 100000
+                ? data.height
+                : 520,
+            collapsed: data.collapsed === true,
           },
           warnings,
         }

@@ -89,7 +89,13 @@ export async function selectionUiScenarios({ js, key, wait, screenshot }) {
   console.log(
     'PASS: actual UI mixed document/drawing duplicate and alignment each record once; undo/redo restore identities, positions and original drawings',
   );
+  await wait(
+    `document.querySelector('.status-toast')?.textContent.includes('내 작업을 다시 실행했습니다.')`,
+  );
   await shortcut('A', ['control']);
+  await wait(
+    `document.querySelectorAll('.react-flow__node-document.selected').length===${count * 2}`,
+  );
   await shortcut('Delete');
   await wait('!!document.querySelector("[data-ui-id=delete-many]")');
   const beforeDelete = (await call('listHistory')).length;
