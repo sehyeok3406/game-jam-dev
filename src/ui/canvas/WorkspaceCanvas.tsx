@@ -77,6 +77,7 @@ interface Props {
   toggleMaterial: (path: string) => void;
   uiHidden: boolean;
   acknowledgeNewFile: (id: string) => void;
+  acknowledgeNewFiles: (ids: readonly string[]) => void;
   tool: CanvasTool;
   flowRef: import('react').RefObject<ReactFlowInstance<CanvasNode> | null>;
   workspace: WorkspaceState;
@@ -236,6 +237,7 @@ export function WorkspaceCanvas({
   toggleMaterial,
   uiHidden,
   acknowledgeNewFile,
+  acknowledgeNewFiles,
   tool,
   flowRef,
   workspace,
@@ -724,6 +726,7 @@ export function WorkspaceCanvas({
                   void persistDraggedNodes(target, moved).catch(showError);
                 }}
                 onSelectionChange={({ nodes: selected }) => {
+                  acknowledgeNewFiles(selected.map((node) => node.id));
                   if (materialPicker !== null) return;
                   const nextIds = selected.flatMap((node) =>
                     node.data.kind === 'document'

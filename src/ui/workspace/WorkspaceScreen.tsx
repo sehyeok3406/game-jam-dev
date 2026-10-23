@@ -469,16 +469,23 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       /* Personal UI state is best effort. */
     }
   };
-  const acknowledgeNewFile = useCallback((id: string) => {
+  const acknowledgeNewFiles = useCallback((ids: readonly string[]) => {
     const current = newFileIndicatorsRef.current;
-    if (!current.root || !current.value?.unread.includes(id)) return;
+    if (!current.root || !current.value?.unread.length || !ids.length) return;
+    const selected = new Set(ids);
+    const unread = current.value.unread.filter((id) => !selected.has(id));
+    if (unread.length === current.value.unread.length) return;
     current.value = {
       ...current.value,
-      unread: current.value.unread.filter((item) => item !== id),
+      unread,
     };
     saveNewFileIndicators(current.root, current.value);
     setNewFileNodes(new Set(current.value.unread));
   }, []);
+  const acknowledgeNewFile = useCallback(
+    (id: string) => acknowledgeNewFiles([id]),
+    [acknowledgeNewFiles],
+  );
   const [taskDocuments, setTaskDocuments] = useState<CanvasDocument[]>([]);
   const [htmlLinkDocuments, setHtmlLinkDocuments] = useState<CanvasDocument[]>(
     [],
@@ -3505,6 +3512,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           toggleMaterial,
           uiHidden,
           acknowledgeNewFile,
+          acknowledgeNewFiles,
           tool,
           flowRef,
           workspace,
