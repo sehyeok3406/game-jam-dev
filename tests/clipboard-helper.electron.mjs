@@ -48,6 +48,22 @@ async function run() {
         server.close(() => app.exit());
         return;
       }
+      if (req.url === '/match-text' && req.method === 'POST') {
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk.toString();
+          if (body.length > 100_000) throw Error('Test input too large');
+        }
+        const { expected } = JSON.parse(body);
+        if (typeof expected !== 'string') throw Error('Expected test text');
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            matches: (await clipboard.readText()) === expected,
+          }),
+        );
+        return;
+      }
       if (req.url === '/image')
         await clipboard.write([
           new ClipboardItem({

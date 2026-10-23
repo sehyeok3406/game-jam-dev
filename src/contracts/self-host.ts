@@ -32,6 +32,7 @@ export type SelfHostState = {
   code: string;
   publicUrl: string;
   checkedAt?: string;
+  diagnosticFailure?: boolean;
   checks?: HostChecks;
   closeBehavior: 'ask' | 'background' | 'stop';
   dataDirectory: string;

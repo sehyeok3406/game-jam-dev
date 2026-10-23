@@ -195,6 +195,40 @@ test('an AI stop refusal prevents restart and keeps the original error visible',
   await service.run('restart');
   assert.deepEqual(actions, ['Stop']);
   assert.equal(service.state.code, 'GC-HOST-AI');
+  assert.equal(service.state.diagnosticFailure, false);
+});
+
+test('diagnostic failure retains the last completed checks without claiming a connection failure', async (t) => {
+  const { service, ready } = await fixture(t);
+  await service.run('check');
+  service.bridge = async () => JSON.stringify({ code: 'GC-HOST-099' });
+  await service.run('check');
+  assert.equal(service.state.diagnosticFailure, true);
+  assert.equal(service.state.checkedAt, ready.checkedAt);
+  assert.deepEqual(service.state.checks, ready.checks);
+  assert.match(service.state.message, /상태를 확인하지 못/);
+  assert.ok(service.prompt().includes(ready.checkedAt));
+  service.bridge = async () => JSON.stringify(ready);
+  await service.run('check');
+  assert.equal(service.state.diagnosticFailure, false);
+  assert.equal(service.state.stage, 'ready');
+});
+
+test('AI assistance reads a snapshot during a pending check without waiting or starting another operation', async (t) => {
+  const { service, ready } = await fixture(t);
+  await service.run('check');
+  let finish;
+  service.bridge = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const checking = service.run('check');
+  while (!finish) await new Promise((resolve) => setImmediate(resolve));
+  const prompt = service.prompt();
+  assert.ok(prompt.includes('단계: checking'));
+  assert.ok(prompt.includes(ready.checkedAt));
+  finish(JSON.stringify(ready));
+  await checking;
 });
 test('simultaneous starts share one operation and a conflicting stop is refused', async (t) => {
   const { service, ready } = await fixture(t);

@@ -42,7 +42,7 @@ function Test-HostAddress([string]$Address, [switch]$Public) {
   return $Address -match '^http://127\.0\.0\.1:([0-9]{1,5})$' -and [int]$Matches[1] -ge 1 -and [int]$Matches[1] -le 65535
 }
 
-function Test-HostHealth([string]$Address, [ref]$Capabilities = $null) {
+function Test-HostHealth([string]$Address, $Capabilities = $null) {
   try {
     $response = Invoke-RestMethod -Uri "$Address/health" -TimeoutSec 5 -MaximumRedirection 0 -ErrorAction Stop
     $valid = $response.name -eq 'Game Canvas Collaboration' -and $response.protocol -eq 1

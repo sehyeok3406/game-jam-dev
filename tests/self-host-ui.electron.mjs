@@ -77,6 +77,81 @@ async function run() {
     );
     await click('AI 요청문 복사');
     await wait('selfHostQa.copied.some(value=>value.includes("QA AI 요청문"))');
+    assert.equal(
+      await js(
+        '[...document.querySelectorAll("button")].filter(b=>b.textContent.includes("AI 요청문 복사")).length',
+      ),
+      1,
+    );
+    await js('selfHostQa.state("checking")');
+    await wait(
+      'document.querySelector(".self-host-status").dataset.stage==="checking"',
+    );
+    assert.equal(
+      await js(
+        '[...document.querySelectorAll("button")].find(b=>b.textContent.includes("AI 요청문 복사")).disabled',
+      ),
+      false,
+    );
+    await click('AI 요청문 복사');
+    await wait(
+      'selfHostQa.copied.some(value=>value.includes("단계: checking"))',
+    );
+    await js('selfHostQa.state("ready"); selfHostQa.copyFailure=true');
+    await click('AI 요청문 복사');
+    await wait(
+      'document.querySelector(".self-host-dialog").textContent.includes("Ctrl+C로 복사해주세요")',
+    );
+    assert.ok(
+      await js('document.querySelector(".self-host-help textarea").readOnly'),
+    );
+    assert.equal(
+      await js(
+        '[...document.querySelectorAll(".self-host-help .self-host-message")].length',
+      ),
+      0,
+    );
+    await js('selfHostQa.copyFailure=false; selfHostQa.copyDelay=300');
+    await click('AI 요청문 복사');
+    assert.equal(
+      await js(
+        '[...document.querySelectorAll("button")].find(b=>b.textContent.includes("AI 요청문 복사")).disabled',
+      ),
+      true,
+    );
+    await wait(
+      '![...document.querySelectorAll("button")].find(b=>b.textContent.includes("AI 요청문 복사")).disabled',
+    );
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".self-host-help > summary > .self-host-disclosure").length',
+      ),
+      2,
+    );
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".self-host-help[open] > summary"),"::after").content',
+      ),
+      '"접기"',
+    );
+    await js(
+      'document.querySelector(".self-host-help:last-of-type").scrollIntoView({block:"end"})',
+    );
+    await capture('self-host-help-fixed');
+    await js('selfHostQa.failDiagnosis()');
+    await wait(
+      'document.querySelector(".self-host-status strong").textContent.includes("상태 확인 실패")',
+    );
+    assert.ok(
+      await js(
+        'document.querySelector(".self-host-status").textContent.includes("마지막으로 완료한 검사 결과")',
+      ),
+    );
+    await click('AI 요청문 복사');
+    await wait(
+      'selfHostQa.copied.some(value=>value.includes("단계: problem"))',
+    );
+    await js('selfHostQa.state("ready")');
     await click('서버 끄기');
     await wait('!!document.querySelector(".self-host-confirm")');
     assert.equal(await js('selfHostQa.actions.includes("stop")'), false);

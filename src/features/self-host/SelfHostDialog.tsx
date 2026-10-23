@@ -2,6 +2,7 @@ import { useRuntime } from '../../ui/runtime/RuntimeProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
+  ChevronRight,
   Circle,
   Copy,
   FolderOpen,
@@ -39,6 +40,10 @@ export function SelfHostDialog({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [copying, setCopying] = useState(false);
+  const copyingRef = useRef(false);
+  const [copyError, setCopyError] = useState('');
+  const [copyMessage, setCopyMessage] = useState('');
   const [localProjects, setLocalProjects] = useState<ProjectEntry[]>([]);
   const [localId, setLocalId] = useState('');
   const [hostedId, setHostedId] = useState('');
@@ -120,7 +125,6 @@ export function SelfHostDialog({
       if (!api) return;
       const next = await api.runSelfHost(operation);
       setState(next);
-      setPrompt('');
       if (next.stage === 'problem') setError(next.message);
       await runtimeApi.projects.listProjects();
     });
@@ -128,6 +132,29 @@ export function SelfHostDialog({
     state?.checks?.serverOwnership === 'owned' ||
     state?.checks?.tunnelOwnership === 'owned';
   const selectedProject = state?.projects.find((item) => item.id === hostedId);
+  const copyPrompt = async () => {
+    const copyText = runtimeApi.desktop?.copyText;
+    if (!api || !copyText || copyingRef.current) return;
+    copyingRef.current = true;
+    setCopying(true);
+    setCopyError('');
+    setCopyMessage('');
+    try {
+      const value = await api.getSelfHostPrompt();
+      setPrompt(value);
+      await copyText(value);
+      setCopyMessage(
+        'AI 요청문을 복사했습니다. PC 작업이 가능한 AI에 붙여넣으세요.',
+      );
+    } catch {
+      setCopyError(
+        '요청문을 자동으로 복사하지 못했습니다. 아래 요청문을 선택해 Ctrl+C로 복사해주세요.',
+      );
+    } finally {
+      copyingRef.current = false;
+      setCopying(false);
+    }
+  };
   return (
     <dialog
       ref={dialog}
@@ -183,7 +210,11 @@ export function SelfHostDialog({
         <div>
           <strong>
             {busy && <LoaderCircle size={17} className="self-host-spinner" />}
-            {state ? labels[state.stage] : '상태 확인 중'}
+            {state?.stage === 'problem' && state.diagnosticFailure
+              ? '상태 확인 실패'
+              : state
+                ? labels[state.stage]
+                : '상태 확인 중'}
           </strong>
           {state?.checkedAt && (
             <small>
@@ -206,33 +237,43 @@ export function SelfHostDialog({
           </label>
         )}
         {state?.checks && (
-          <ul className="self-host-checks">
-            <li>
-              서버 실행 도구: {state.checks.serverFile ? '준비됨' : '확인 필요'}
-            </li>
-            <li>
-              로컬 서버: {state.checks.localHealthy ? '응답 정상' : '응답 없음'}
-            </li>
-            <li>
-              인터넷 연결:{' '}
-              {state.checks.publicHealthy ? '응답 정상' : '확인 필요'}
-            </li>
-            {state.checks.serverVersion && (
-              <li>실행 중인 서버: {state.checks.serverVersion}</li>
+          <>
+            {(busy || state.diagnosticFailure) && (
+              <small>
+                아래 항목은 마지막으로 완료한 검사 결과입니다. 현재 상태는 다시
+                확인이 필요합니다.
+              </small>
             )}
-            {state.checks.multiplayerVersion != null && (
+            <ul className="self-host-checks">
               <li>
-                함께 플레이:{' '}
-                {state.checks.multiplayerVersion === 1
-                  ? '사용 가능'
-                  : '서버 업데이트 필요'}
-                {state.checks.multiplayerVersion === 1 &&
-                state.checks.multiplayerLobbyVersion !== 1
-                  ? ' · 방 자동 알림은 서버 업데이트가 필요해요.'
-                  : ''}
+                서버 실행 도구:{' '}
+                {state.checks.serverFile ? '준비됨' : '확인 필요'}
               </li>
-            )}
-          </ul>
+              <li>
+                로컬 서버:{' '}
+                {state.checks.localHealthy ? '응답 정상' : '응답 없음'}
+              </li>
+              <li>
+                인터넷 연결:{' '}
+                {state.checks.publicHealthy ? '응답 정상' : '확인 필요'}
+              </li>
+              {state.checks.serverVersion && (
+                <li>실행 중인 서버: {state.checks.serverVersion}</li>
+              )}
+              {state.checks.multiplayerVersion != null && (
+                <li>
+                  함께 플레이:{' '}
+                  {state.checks.multiplayerVersion === 1
+                    ? '사용 가능'
+                    : '서버 업데이트 필요'}
+                  {state.checks.multiplayerVersion === 1 &&
+                  state.checks.multiplayerLobbyVersion !== 1
+                    ? ' · 방 자동 알림은 서버 업데이트가 필요해요.'
+                    : ''}
+                </li>
+              )}
+            </ul>
+          </>
         )}
       </section>
       <div className="self-host-actions">
@@ -435,11 +476,23 @@ export function SelfHostDialog({
       </label>
       <details className="self-host-help">
         <summary>
+          <ChevronRight
+            size={16}
+            className="self-host-disclosure"
+            aria-hidden="true"
+          />
           <HelpCircle size={17} /> 연결 후 서버 관리 · 유지 방법
         </summary>
         {HOST_HELP.map(([title, body]) => (
           <details key={title}>
-            <summary>{title}</summary>
+            <summary>
+              <ChevronRight
+                size={15}
+                className="self-host-disclosure"
+                aria-hidden="true"
+              />
+              {title}
+            </summary>
             <p>{body}</p>
           </details>
         ))}
@@ -452,41 +505,48 @@ export function SelfHostDialog({
         <small>{state?.dataDirectory}</small>
       </details>
       <details className="self-host-help">
-        <summary>설정이 막혔나요? AI에게 도움받기</summary>
+        <summary>
+          <ChevronRight
+            size={16}
+            className="self-host-disclosure"
+            aria-hidden="true"
+          />
+          설정이 막혔나요? AI에게 도움받기
+        </summary>
         <p>
           아래 요청문을 Codex 등 PC 작업이 가능한 AI에 붙여넣으세요. 터미널에서
           실행하는 명령어가 아닙니다. 현재 상태와 오류 코드가 포함되며
           키·토큰·문서는 포함하지 않습니다.
         </p>
         <button
-          disabled={busy || !api}
-          onClick={() =>
-            void action(async () => {
-              const value = await api!.getSelfHostPrompt();
-              setPrompt(value);
-              await navigator.clipboard.writeText(value);
-              setMessage(
-                'AI 요청문을 복사했습니다. PC 작업이 가능한 AI에 붙여넣으세요.',
-              );
-            })
-          }
+          disabled={copying || !api || !runtimeApi.desktop?.copyText}
+          onClick={() => void copyPrompt()}
         >
-          <Copy size={15} /> AI 요청문 복사
+          {copying ? (
+            <LoaderCircle size={15} className="self-host-spinner" />
+          ) : (
+            <Copy size={15} />
+          )}{' '}
+          AI 요청문 복사
         </button>
         {prompt && (
           <>
-            <pre>{prompt}</pre>
-            <button
-              onClick={() =>
-                void action(async () => {
-                  await navigator.clipboard.writeText(prompt);
-                  setMessage('AI 요청문을 복사했습니다.');
-                })
-              }
-            >
-              <Copy size={15} /> AI 요청문 복사
-            </button>
+            <label>
+              AI 도움 요청문
+              <textarea readOnly value={prompt} aria-label="AI 도움 요청문" />
+            </label>
+            <small>직접 복사하려면 요청문을 선택한 뒤 Ctrl+C를 누르세요.</small>
           </>
+        )}
+        {copyError && (
+          <p className="home-error" role="alert">
+            {copyError}
+          </p>
+        )}
+        {copyMessage && (
+          <p className="self-host-message" role="status">
+            {copyMessage}
+          </p>
         )}
       </details>
       {error && (

@@ -326,6 +326,7 @@ export class SelfHostService {
       report.checks.serverOwnership === 'owned' &&
       report.checks.tunnelOwnership === 'owned';
     this.publish({
+      diagnosticFailure: false,
       stage: ready
         ? 'ready'
         : code && code !== 'GC-HOST-004'
@@ -414,7 +415,6 @@ export class SelfHostService {
             : action === 'check'
               ? 'checking'
               : 'starting',
-      code: '',
       message:
         action === 'prepare'
           ? '공식 연결 도구를 준비하고 있습니다.'
@@ -450,7 +450,15 @@ export class SelfHostService {
     } catch (error) {
       const rawCode = error instanceof Error ? error.message : '';
       const code = Object.hasOwn(messages, rawCode) ? rawCode : 'GC-HOST-099';
-      return this.publish({ stage: 'problem', code, message: messages[code] });
+      return this.publish({
+        stage: 'problem',
+        diagnosticFailure: code === 'GC-HOST-099',
+        code,
+        message:
+          code === 'GC-HOST-099'
+            ? '서버 상태를 확인하지 못했습니다. 다시 확인하거나 AI 요청문으로 도움을 받으세요.'
+            : messages[code],
+      });
     }
   }
   private async downloadCloudflared() {
@@ -555,6 +563,6 @@ export class SelfHostService {
     return `Game Jam! 초대\n서버: ${this.state.publicUrl}\n코드: ${entry.credentials.inviteCode}`;
   }
   prompt() {
-    return `이 PC의 Game Jam! 인터넷 협업 서버 설정 또는 연결 문제를 해결해줘.\n\n앱 버전: ${this.options.appVersion}\n앱 위치: ${this.options.appPath}\n서버 데이터 위치: ${this.options.directory}\n단계: ${this.state.stage}\n오류 코드: ${this.state.code || '없음'}\n최근 검사: ${this.state.checkedAt || '검사 전'}\n검사 결과: ${JSON.stringify(this.state.checks ?? {})}\n\nCloudflare Quick Tunnel을 사용하며 계정 가입이나 도메인 구매는 필요 없어. 앱의 ‘협업 서버 열기’에서 준비·실행·검사를 우선 진행해줘. 필요한 도구는 공식 배포처에서 준비하고 검증해줘. CLI로 가능한 작업은 직접 처리하고 필요한 경우 사용 가능한 컴퓨터 사용 도구로 화면을 조작해줘. 기존 프로젝트·키·세션과 정상 실행 중인 서버를 보존해줘. 공동 작업에 영향을 주는 종료·재시작이 필요하면 먼저 알려줘. 키·토큰·문서·원본 로그는 답변에 넣지 마. 이 설치판에서 지원하는 명령만 사용하고 개발 저장소 다운로드나 빌드를 요구하지 마. 완료 후 외부 연결과 앱에서 참여·관리하는 방법을 확인해줘. 직접 할 수 없는 단계는 사용자가 할 행동을 하나씩 안내해줘.`;
+    return `이 PC의 Game Jam! 인터넷 협업 서버 설정 또는 연결 문제를 해결해줘.\n\n앱 버전: ${this.options.appVersion}\n앱 위치: ${this.options.appPath}\n서버 데이터 위치: ${this.options.directory}\n단계: ${this.state.stage}\n오류 코드: ${this.state.code || '없음'}\n최근 검사: ${this.state.checkedAt || '검사 전'}\n검사 상태: ${this.state.diagnosticFailure ? '진단 실패 · 현재 서버 상태 미확인' : '최근 완료 검사 결과 참고'}\n최근 완료 검사 결과: ${JSON.stringify(this.state.checks ?? {})}\n\nCloudflare Quick Tunnel을 사용하며 계정 가입이나 도메인 구매는 필요 없어. 앱의 ‘협업 서버 열기’에서 준비·실행·검사를 우선 진행해줘. 필요한 도구는 공식 배포처에서 준비하고 검증해줘. CLI로 가능한 작업은 직접 처리하고 필요한 경우 사용 가능한 컴퓨터 사용 도구로 화면을 조작해줘. 기존 프로젝트·키·세션과 정상 실행 중인 서버를 보존해줘. 공동 작업에 영향을 주는 종료·재시작이 필요하면 먼저 알려줘. 키·토큰·문서·원본 로그는 답변에 넣지 마. 이 설치판에서 지원하는 명령만 사용하고 개발 저장소 다운로드나 빌드를 요구하지 마. 완료 후 외부 연결과 앱에서 참여·관리하는 방법을 확인해줘. 직접 할 수 없는 단계는 사용자가 할 행동을 하나씩 안내해줘.`;
   }
 }

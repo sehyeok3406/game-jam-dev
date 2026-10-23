@@ -52,14 +52,27 @@ let state: SelfHostState = {
 };
 const listeners = new Set<(value: SelfHostState) => void>();
 const qa = {
+  copyFailure: false,
+  copyDelay: 0,
   copied: [] as string[],
   applied: [] as string[],
   actions: [] as string[],
   share: [] as string[],
-  state: (stage: 'off' | 'ready' | 'problem') => {
+  failDiagnosis: () => {
+    state = {
+      ...state,
+      stage: 'problem',
+      code: 'GC-HOST-099',
+      diagnosticFailure: true,
+      message: '서버 상태를 확인하지 못했습니다.',
+    };
+    listeners.forEach((listener) => listener(state));
+  },
+  state: (stage: 'off' | 'ready' | 'problem' | 'checking') => {
     state = {
       ...state,
       stage,
+      diagnosticFailure: false,
       publicUrl: 'https://qa.trycloudflare.com',
       message:
         stage === 'ready'
@@ -87,6 +100,12 @@ const qa = {
   },
 };
 const api = createDevGameCanvasApi();
+api.copyText = async (text) => {
+  if (qa.copyDelay)
+    await new Promise((resolve) => setTimeout(resolve, qa.copyDelay));
+  if (qa.copyFailure) throw new Error('Synthetic native clipboard failure');
+  qa.copied.push(text);
+};
 api.listProjects = async () => projects;
 api.listProjectFolders = async () => [];
 api.selfHost = {
@@ -119,7 +138,7 @@ api.selfHost = {
     return state;
   },
   getSelfHostPrompt: async () =>
-    'QA AI 요청문: 계정 가입 불필요. 단계별 문제 해결을 도와줘.',
+    `QA AI 요청문: 단계: ${state.stage}, 최근 검사: ${state.checkedAt}. 계정 가입 불필요. 단계별 문제 해결을 도와줘.`,
   copySelfHostInfo: async (_id, kind) => {
     qa.copied.push(kind);
   },
@@ -145,8 +164,8 @@ api.applyConnectionInfo = async (text) => {
 window.gameCanvas = api;
 Object.defineProperty(navigator, 'clipboard', {
   value: {
-    writeText: async (text: string) => {
-      qa.copied.push(text);
+    writeText: async () => {
+      throw new Error('Browser clipboard permission denied');
     },
   },
 });

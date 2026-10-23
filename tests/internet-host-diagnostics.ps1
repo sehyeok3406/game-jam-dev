@@ -60,6 +60,7 @@ Assert-Equal $json.Contains('NEVER_REPORT_THIS') $false 'report is allowlisted'
 $capabilities = $null
 function Invoke-RestMethod { return [pscustomobject]@{ name = 'Game Canvas Collaboration'; protocol = 1; version = '0.27.0'; multiplayerVersion = 1; multiplayerLobbyVersion = 1; token = 'NEVER_REPORT_THIS' } }
 Assert-Equal (Test-HostHealth 'http://127.0.0.1:4318' ([ref]$capabilities)) $true 'health capabilities'
+Assert-Equal (Test-HostHealth 'https://fixture.trycloudflare.com') $true 'public health without capability reference'
 Assert-Equal $capabilities.serverVersion '0.27.0' 'running server version'
 Assert-Equal $capabilities.multiplayerLobbyVersion 1 'room events capability'
 Assert-Equal (($capabilities | ConvertTo-Json).Contains('NEVER_REPORT_THIS')) $false 'health metadata allowlist'
@@ -78,4 +79,20 @@ $script:processFixture.CommandLine = $null
 Assert-Equal (Get-HostProcessState $record) 'unverified' 'missing privilege fields'
 $record.pid = 'invalid'
 Assert-Equal (Get-HostProcessState $record) 'unverified' 'invalid PID'
+# Exercise the whole reuse path, including the public call with no ref argument.
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('gamejam-diagnostics-' + [guid]::NewGuid().ToString('N'))
+try {
+  New-Item -ItemType Directory -Path $testRoot | Out-Null
+  $record = @{ pid = 42; createdAt = '2026-10-01T00:00:00.0000000Z'; executable = 'node.exe'; marker = 'server.mjs' }
+  $script:processFixture = [pscustomobject]@{ CreationDate = [DateTime]::Parse('2026-10-01T00:00:00Z').ToUniversalTime(); ExecutablePath = 'node.exe'; CommandLine = 'node.exe server.mjs' }
+  @{ localUrl = 'http://127.0.0.1:4318'; publicUrl = 'https://fixture.trycloudflare.com'; server = $record; tunnel = $record } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $testRoot 'runtime.json') -Encoding UTF8
+  function Get-NetTCPConnection { return [pscustomobject]@{ LocalPort = 4318; OwningProcess = 42 } }
+  $facts = Get-HostFacts $testRoot 4318 $PSCommandPath '' ''
+  Assert-Equal $facts.localHealthy $true 'full check local health'
+  Assert-Equal $facts.publicHealthy $true 'full check public health'
+  Assert-Equal (Get-HostDecision $facts).action 'reuse' 'full check reuses healthy server'
+} finally {
+  if ([IO.Path]::GetDirectoryName($testRoot) -ne [IO.Path]::GetTempPath().TrimEnd('\') -or [IO.Path]::GetFileName($testRoot) -notlike 'gamejam-diagnostics-*') { throw 'Invalid test cleanup path' }
+  Remove-Item -LiteralPath $testRoot -Recurse -Force
+}
 Write-Output "Passed $script:assertions host diagnostic assertions."
