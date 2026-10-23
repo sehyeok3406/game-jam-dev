@@ -4,7 +4,19 @@
 
 새 문서와 HTML의 푸른 강조 효과를 공통 선택 변경 경로에서 해제한다. 드래그 다중 선택, Ctrl+A, 키보드 선택도 확인으로 처리하며, 여러 항목의 확인 상태를 한 번에 저장한다. 선택하지 않은 항목은 강조를 유지하고, 확인한 항목은 선택 해제나 프로젝트 재열기 후에도 다시 강조하지 않는다. 기존 클릭·HTML 포커스 확인 경로를 유지한다.
 
-실제 Electron 입력으로 문서 다중 선택·Ctrl+A, HTML 키보드 선택, 선택 밖 항목의 강조 유지와 확인 상태의 재열기 보존을 검증했다. 배포 버전의 검사·Windows 패키지 검증과 공개 파일 게시 결과는 로컬 `out/release-v0.35.1`에 보존하고 확인 후 기록한다.
+2026-10-23 [v0.35.1 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.1)를 게시했다. 검증한 제품 소스와 태그는 `386a9f59636b2ef4549a19094557b47c0c709bbe`다. 로컬 자동 테스트 969개(실패/skip 0), root/contracts/core 타입·린트/형식 검사와 [Windows·Linux CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/39942034787)를 통과했다. 실제 Windows 패키지에서 문서 다중 선택·Ctrl+A, HTML 키보드 선택, 선택 밖 항목의 강조 유지, 렌더러 재열기와 전체 프로세스 재시작 후 확인 상태 보존을 검증했다. 기존 드래그 선택·Space 이동 전환 회귀 검사도 통과했다.
+
+제품 입력 559개의 지문은 `2e89068caf418e90719153c5de4038ff0d78a5b5a5581ad6723ef235f8a27a27`다. 검증한 패키지에 `make --from-package`를 적용했으며 app.asar SHA-256 `b75d993ccf0dca7e5bb0ff4c8f04902bd5e76d8cc4619be920c982414d49813d`와 내장 서버 런타임 45개 파일의 해시·크기가 nupkg 내부까지 일치한다.
+
+| 공개 파일                     | 크기(바이트) | SHA-256                                                          |
+| ----------------------------- | -----------: | ---------------------------------------------------------------- |
+| Game.Jam-0.35.1.Setup.exe     |    194458112 | 0f82092fa0d5ffb55d42fefb408806658552b0ad9f5ee12e94ae7383cace1268 |
+| game_canvas-0.35.1-full.nupkg |    193555328 | 96420463e5765c55c802394998af1598e11cbed0a0de018999cf137f1f1c121d |
+| RELEASES                      |           83 | 03cee130691d55ec1f87af984a6708e7dde51bdb706797f18b4baa76f554c142 |
+
+GitHub 자산 SHA-256·크기가 로컬과 일치하며 세 파일의 인증 없는 공개 다운로드 접근은 모두 200이다. 공개 RELEASES의 원문·패키지 이름·SHA-1 `3579AD7CC2A0BC46B03012849418A45A071E8408`·크기 193555328바이트를 대조했다. 기존과 같은 업로드·검증 경로를 사용해 대용량 파일을 전체 재다운로드하지 않았다.
+
+게시 직후 v0.35.0과 v0.35.1의 Windows RELEASES 피드가 모두 200으로 새 패키지의 URL·SHA-1·크기를 반환했다. **배포 파일 게시·검증과 자동 업데이트 피드 반영을 모두 확인했다.** [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.1/Game.Jam-0.35.1.Setup.exe). 소스·빌드·검증·공개 파일 증거는 로컬 `out/release-v0.35.1`의 source-snapshot.json, final-validation.json, release-artifacts.json, ci-status.json, publication-verification.json에 보존했다.
 
 ## v0.35.0 자유 텍스트 · 협업 서버 자동 실행
 
@@ -518,8 +530,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.35.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.0)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.0/Game.Jam-0.35.0.Setup.exe)
+- [v0.35.1 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.1)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.1/Game.Jam-0.35.1.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
