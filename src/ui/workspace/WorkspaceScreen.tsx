@@ -57,6 +57,7 @@ import {
 } from '../../file-properties';
 import { gameUiHeight } from '../../game-ui-types';
 import { resolveGamejamRequest } from '../../gamejam-request';
+import { textMaterialItems } from '../../canvas-text-materials';
 import { gamejamIssues } from '../../gamejam-validation';
 import { gamejamFieldPage } from '../../gamejam-wizard';
 import { readMultiplayerManifest } from '../../multiplayer/contract';
@@ -1295,6 +1296,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         return false;
       }
     });
+  const textMaterials = useMemo(
+    () => textMaterialItems(drawing.items),
+    [drawing.items],
+  );
   let effectiveAiRequest = aiRequest;
   let multiplayerIntentError = '';
   if (aiRequest) {
@@ -1303,6 +1308,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         aiRequest,
         documents,
         previews,
+        drawing.items,
       );
     } catch (error) {
       multiplayerIntentError = (error as Error).message;
@@ -1326,6 +1332,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           ...documents.map((doc) => doc.relativePath),
           ...sections.map((section) => section.relativePath),
           ...previews.map((preview) => preview.relativePath),
+          ...textMaterials.map((item) => item.path),
         ],
       })
     : [];
@@ -2004,6 +2011,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     setNotice,
     collaboration,
     creatingTaskRef,
+    flushMaterialDrafts: () => draftRegistry.flush(),
     locked,
     onBlocked,
     documents,
@@ -2229,7 +2237,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       documents.find((item) => item.id === id)?.canvasId ??
       sections.find((item) => sectionNodeId(item.id) === id)?.canvasId ??
       previews.find((item) => previewNodeId(item.relativePath) === id)
-        ?.canvasId;
+        ?.canvasId ??
+      drawing.items.find((item) => `drawing:${item.id}` === id)?.canvasId;
     if (canvasId(itemCanvas) !== activeCanvasRef.current) {
       pendingCanvasJump.current = id;
       void switchCanvasTo(canvasId(itemCanvas)).catch((error) => {
@@ -2674,7 +2683,9 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       codexRun,
     });
   const selectMaterials = () => {
-    void flushEditors()
+    void draftRegistry
+      .flush()
+      .then(() => flushEditors())
       .then(() => {
         if (!aiRequest) return;
         setTool('select');
@@ -2683,8 +2694,17 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       })
       .catch(showError);
   };
+  const materialItems = [
+    ...canvasItems,
+    ...textMaterials.map((item) => ({
+      ...item,
+      canvasName: canvasSheets.canvases.find(
+        (sheet) => sheet.id === item.canvasId,
+      )?.name,
+    })),
+  ];
   const materialName = (path: string) =>
-    canvasItems.find((item) => item.path === path)?.title ??
+    materialItems.find((item) => item.path === path)?.title ??
     path
       .split('/')
       .at(-1)
@@ -2701,7 +2721,9 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         ? node.data.preview.relativePath
         : node.data.kind === 'section'
           ? node.data.section.relativePath
-          : undefined;
+          : node.data.kind === 'drawing' && node.data.object.kind === 'text'
+            ? textMaterials.find((item) => item.id === node.id)?.path
+            : undefined;
   const toggleMaterial = (path: string) =>
     setMaterialPicker((current) =>
       current === null
@@ -3490,8 +3512,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceCanvas
         {...{
-          canvasItems,
           compactChrome,
+          materialItems,
           dockPanel,
           eraserMode,
           eraserPreview,
@@ -3822,7 +3844,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           previews,
           setAiRequest,
           canvasSheets,
-          canvasItems,
+          canvasItems: materialItems,
           jumpTo,
           organizedSets,
           documentChoiceForUpdate,

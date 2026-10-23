@@ -1,5 +1,6 @@
 import { NEW_FILE_GAP } from '../../canvas-placement.ts';
 import { canvasId } from '../../canvas-sheets.ts';
+import { textMaterialPath } from '../../canvas-text-materials.ts';
 import { defaultDocumentTemplates } from '../../document-format.ts';
 import {
   approvalOperationId,
@@ -40,6 +41,7 @@ interface Ports {
   setNotice: import('react').Dispatch<import('react').SetStateAction<string>>;
   collaboration: CollaborationState;
   creatingTaskRef: import('react').RefObject<boolean>;
+  flushMaterialDrafts: () => Promise<void>;
   locked: boolean;
   onBlocked: () => void;
   documents: CanvasDocument[];
@@ -188,6 +190,13 @@ export function useAiRequestCommands(
       ]),
     );
     const selected = [...selectedMap.values()];
+    const textInputs = nodes.flatMap((node) =>
+      node.selected &&
+      node.data.kind === 'drawing' &&
+      node.data.object.kind === 'text'
+        ? [{ ...node.data.object, canvasId: activeCanvas }]
+        : [],
+    );
     const htmlInputs = nodes.filter(
       (node) => node.selected && node.data.kind === 'preview',
     );
@@ -207,6 +216,7 @@ export function useAiRequestCommands(
           ? ('html' as const)
           : undefined;
     const maxX = Math.max(
+      ...textInputs.map((item) => item.transform.x + item.transform.width),
       ...(selected.length || selectedSections.length || htmlLayouts.length
         ? []
         : [20]),
@@ -215,6 +225,7 @@ export function useAiRequestCommands(
       ...htmlLayouts.map((layout) => layout.x + layout.width),
     );
     const minY = Math.min(
+      ...textInputs.map((item) => item.transform.y),
       ...(selected.length || selectedSections.length || htmlLayouts.length
         ? []
         : [120]),
@@ -226,6 +237,7 @@ export function useAiRequestCommands(
       ...selectedSections.map((section) => section.relativePath),
       ...selected.map((document) => document.relativePath),
       ...htmlPreviews.map((preview) => preview.relativePath),
+      ...textInputs.map(textMaterialPath),
     ];
     const resultX = maxX + 100;
     const resultY = Math.max(
@@ -370,6 +382,7 @@ export function useAiRequestCommands(
       setCreatingTask,
       runScopeRef,
       editorsRef,
+      flushMaterialDrafts,
       api,
       effectiveAiRequest,
       loadProject,
@@ -398,16 +411,22 @@ export function useAiRequestCommands(
     setCreatingTask(true);
     const scope = runScopeRef.current;
     try {
+      await flushMaterialDrafts();
       await Promise.all(
         [...editorsRef.current.values()].map((flush) => flush()),
       );
       if (!isCurrent()) return;
-      const [latestDocuments, latestPreviews, latestCollaboration] =
-        await Promise.all([
-          api.editor.listDocuments(),
-          api.preview.listPreviews(),
-          api.collaboration.getCollaboration(),
-        ]);
+      const [
+        latestDocuments,
+        latestPreviews,
+        latestCollaboration,
+        latestDrawings,
+      ] = await Promise.all([
+        api.editor.listDocuments(),
+        api.preview.listPreviews(),
+        api.collaboration.getCollaboration(),
+        api.editor.listDrawings(),
+      ]);
       if (
         runScopeRef.current.project !== scope.project ||
         runScopeRef.current.home !== scope.home ||
@@ -430,6 +449,7 @@ export function useAiRequestCommands(
         aiRequest,
         latestDocuments,
         latestPreviews,
+        latestDrawings,
       );
       if (
         JSON.stringify(request.multiplayer) !==

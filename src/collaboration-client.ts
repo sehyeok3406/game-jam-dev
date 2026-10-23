@@ -746,6 +746,16 @@ export class CollaborationClient {
           '게임 UI 플러그인을 사용하려면 협업 서버를 업데이트해주세요.',
         );
       if (
+        channel === 'tasks:create' &&
+        this.state.gamejamTextMaterialsVersion !== 1 &&
+        (input as CreateTaskInput).inputPaths?.some((path) =>
+          path.startsWith('canvas-text:'),
+        )
+      )
+        throw Error(
+          '텍스트 재료를 사용하려면 협업 서버를 v0.35.4 이상으로 업데이트하고 다시 시작해주세요.',
+        );
+      if (
         channel === 'game-ui:apply' &&
         ['move', 'delete', 'describe'].includes(
           (input as { action: string }).action,

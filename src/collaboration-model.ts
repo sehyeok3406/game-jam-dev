@@ -49,6 +49,7 @@ import { randomUUID } from 'node:crypto';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { createTaskFiles } from './task-plan.ts';
+import { isTextMaterial } from './canvas-text-materials.ts';
 import { documentBounds, layoutNewDocuments } from './new-document-layout.ts';
 import { verticalLayouts } from './canvas-placement.ts';
 import {
@@ -253,6 +254,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
     .filter(
       ([key]) =>
         key.endsWith('.md') &&
+        !key.startsWith('docs/text-sources/') &&
         !key.startsWith('sections/') &&
         !key.startsWith('output/'),
     )
@@ -829,6 +831,7 @@ export function reduceCollaboration(
     layout({ ...input, kind: 'document', relativePath: doc.relative });
   } else if (channel === 'tasks:create') {
     const paths = array(input.inputPaths).map((value) => {
+      if (typeof value === 'string' && isTextMaterial(value)) return value;
       const relative = collaborationPath(value);
       if (isPreviewPath(relative) && next[relative] !== undefined)
         return relative;

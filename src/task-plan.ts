@@ -12,6 +12,8 @@ import { createTaskSpecification } from './task-specification.ts';
 import { expectedArtifacts } from './ai-artifacts.ts';
 import { taskInstructions } from './task-instructions.ts';
 import { gamejamSnapshotFromInput } from './gamejam-history.ts';
+import { prepareTextSources } from './gamejam-text-sources.ts';
+import { isTextMaterial } from './canvas-text-materials.ts';
 import type { CreateTaskInput } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
 import { prepareHtmlSource, htmlSourcePath } from './html-source.ts';
@@ -34,8 +36,15 @@ export function createTaskFiles(
   files: Snapshot,
 ): Snapshot {
   assertCanvas(files, input.canvasId);
+  const requestSnapshot = input.inputPaths.some(isTextMaterial)
+    ? gamejamSnapshotFromInput(input)
+    : input.requestSnapshot;
+  const text = prepareTextSources(files, input.inputPaths);
+  input = { ...input, inputPaths: text.paths, requestSnapshot };
+  files = { ...files, ...text.additions };
   const source = prepareHtmlSource(files, input.inputPaths, input.sourceMode);
   return {
+    ...text.additions,
     ...source?.additions,
     [`.ai/tasks/${id}.md`]: createTaskPlan(input, id, {
       ...files,

@@ -1672,6 +1672,12 @@
 .app-shell--material-picker .react-flow__node {
   cursor: pointer;
 }
+.app-shell--material-picker .canvas-text-toolbar {
+  display: none;
+}
+.app-shell--material-picker .react-flow__node.canvas-drawing-node.selectable {
+  pointer-events: all !important;
+}
 .app-shell--material-picker .react-flow__node.material-focus {
   outline: 3px dashed var(--accent, #7c6cf2);
   outline-offset: 6px;

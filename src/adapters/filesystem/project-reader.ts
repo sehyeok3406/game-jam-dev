@@ -83,7 +83,9 @@ export function filesystemProjectReader(
       }),
     );
     return documents.filter(
-      (document): document is CanvasDocument => document !== null,
+      (document): document is CanvasDocument =>
+        document !== null &&
+        !document.relativePath.startsWith('docs/text-sources/'),
     );
   };
 

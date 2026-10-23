@@ -1,5 +1,6 @@
 import type { GamejamRequest } from './gamejam-request';
 import { multiplayerSettings } from './multiplayer/contract.ts';
+import { isTextMaterial } from './canvas-text-materials.ts';
 import type {
   AiProviderId,
   CollaborationState,
@@ -75,6 +76,15 @@ export function gamejamIssues(
     );
   if (!request.inputPaths.length)
     add('steps', '입력 자료를 하나 이상 선택해주세요.');
+  if (
+    context.collaboration.active &&
+    request.inputPaths.some(isTextMaterial) &&
+    context.collaboration.gamejamTextMaterialsVersion !== 1
+  )
+    add(
+      'connection',
+      '텍스트 재료를 사용하려면 협업 서버를 v0.35.4 이상으로 업데이트하고 다시 시작해주세요.',
+    );
   if (context.availableInputs) {
     const missing = request.inputPaths.filter(
       (path) => !context.availableInputs!.includes(path),

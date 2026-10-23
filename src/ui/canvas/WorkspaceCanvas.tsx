@@ -40,7 +40,7 @@ import {
   type Theme,
 } from '../workspace/workspace-types.ts';
 interface Props {
-  canvasItems: import('../CanvasOverlays').CanvasItem[];
+  materialItems: import('../CanvasOverlays').CanvasItem[];
   compactChrome: boolean;
   dockPanel: import('../CanvasChrome').CanvasPanelId | null;
   eraserMode: import('../../drawing-types').EraserMode;
@@ -217,7 +217,7 @@ interface Props {
   nodeTypes: NodeTypes;
 }
 export function WorkspaceCanvas({
-  canvasItems,
+  materialItems,
   compactChrome,
   dockPanel,
   eraserMode,
@@ -900,7 +900,7 @@ export function WorkspaceCanvas({
                   />
                   {materialPicker !== null && (
                     <GamejamMaterialSelection
-                      items={canvasItems.filter(
+                      items={materialItems.filter(
                         (item) =>
                           item.kind !== 'task' &&
                           item.canvasId === activeCanvas,

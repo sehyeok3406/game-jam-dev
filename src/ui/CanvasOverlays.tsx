@@ -26,7 +26,8 @@ export type CanvasItem = {
     | 'html'
     | 'task'
     | 'image'
-    | 'reference';
+    | 'reference'
+    | 'text';
   path: string;
   description: string;
   parent?: string;
@@ -60,6 +61,7 @@ export const ITEM_LABELS = {
   section: '섹션',
   html: 'HTML 결과',
   task: 'AI 작업',
+  text: '텍스트',
 };
 const match = (item: CanvasItem, query: string) =>
   `${item.title} ${item.path} ${item.description}`

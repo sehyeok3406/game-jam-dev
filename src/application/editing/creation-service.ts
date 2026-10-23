@@ -92,7 +92,11 @@ export class LocalCreationService {
   async createTask(input: CreateTaskInput) {
     if (!input.inputPaths.length) throw Error('문서를 하나 이상 선택해주세요.');
     const { project, documents, environment, validatePath } = this.ports;
-    await Promise.all(input.inputPaths.map(validatePath));
+    await Promise.all(
+      input.inputPaths
+        .filter((path) => !path.startsWith('canvas-text:'))
+        .map(validatePath),
+    );
     const before = await project.capture();
     const stamp = new Date(environment.now())
       .toISOString()

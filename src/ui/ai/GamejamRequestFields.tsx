@@ -1,4 +1,5 @@
 import { gamejamErrorId } from '../../gamejam-validation';
+import { isTextMaterial } from '../../canvas-text-materials';
 import type { Dispatch, SetStateAction } from 'react';
 import type * as C from '../../shared';
 import type * as V from '../../gamejam-validation';
@@ -312,11 +313,14 @@ export function GamejamRequestFields({
             선택한 자료 · 문서{' '}
             {
               aiRequest.inputPaths.filter(
-                (path) => !path.startsWith('sections/') && !isPreviewPath(path),
+                (path) =>
+                  !path.startsWith('sections/') &&
+                  !isPreviewPath(path) &&
+                  !isTextMaterial(path),
               ).length
             }
-            개 · HTML {aiRequest.inputPaths.filter(isPreviewPath).length}개 ·
-            섹션{' '}
+            개 · 텍스트 {aiRequest.inputPaths.filter(isTextMaterial).length}개 ·
+            HTML {aiRequest.inputPaths.filter(isPreviewPath).length}개 · 섹션{' '}
             {
               aiRequest.inputPaths.filter((path) =>
                 path.startsWith('sections/'),

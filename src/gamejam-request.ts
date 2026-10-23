@@ -6,6 +6,8 @@ import type { CreateTaskInput } from './shared.ts';
 
 import type { GamejamSavedRequest } from './gamejam-history.ts';
 import { resolveMultiplayer } from './multiplayer/resolve.ts';
+import { textMaterialItems } from './canvas-text-materials.ts';
+import type { DrawingItem } from './contracts/drawing-types.ts';
 export function resolveGamejamRequest(
   request: GamejamRequest,
   documents: readonly {
@@ -16,6 +18,7 @@ export function resolveGamejamRequest(
     relativePath: string;
     content: string;
   }[],
+  drawings: DrawingItem[] = [],
 ): GamejamRequest {
   if (!request.implement) return request;
   const baseline =
@@ -26,9 +29,14 @@ export function resolveGamejamRequest(
     instructions: request.instructions.implement,
     baselineHtml: previews.find((item) => item.relativePath === baseline)
       ?.content,
-    documents: documents
-      .filter((doc) => request.inputPaths.includes(doc.relativePath))
-      .map((doc) => doc.body),
+    documents: [
+      ...documents
+        .filter((doc) => request.inputPaths.includes(doc.relativePath))
+        .map((doc) => doc.body),
+      ...textMaterialItems(drawings)
+        .filter((item) => request.inputPaths.includes(item.path))
+        .map((item) => item.description),
+    ],
   });
   return multiplayer === undefined ? request : { ...request, multiplayer };
 }
