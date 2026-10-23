@@ -9,7 +9,6 @@ import { spawn } from 'node:child_process';
 import electron from 'electron';
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-host-packaged-'));
-const profileId = randomUUID();
 const token = randomUUID();
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
 async function port() {
@@ -33,7 +32,7 @@ const helper = spawn(electron, ['tests/clipboard-helper.electron.mjs'], {
 const child = spawn(
   path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
   [
-    `--game-canvas-test-profile=${profileId}`,
+    `--user-data-dir=${path.join(root, 'profile')}`,
     `--remote-debugging-port=${debugPort}`,
     '--remote-debugging-address=127.0.0.1',
   ],
@@ -112,11 +111,23 @@ try {
     });
     if (result.exceptionDetails)
       throw Error(
-        'Packaged evaluation failed: ' + result.exceptionDetails.text,
+        'Packaged evaluation failed: ' +
+          (result.exceptionDetails.exception?.description ??
+            result.exceptionDetails.text),
       );
     return result.result.value;
   };
   await wait('!!window.gameCanvas?.selfHost');
+  for (let i = 0; ; i++) {
+    try {
+      await clipboardRequest('ready');
+      break;
+    } catch (error) {
+      if (i >= 50) throw error;
+      await pause();
+    }
+  }
+  await js('window.gameCanvas.copyText("Synthetic clipboard API check")');
   await wait(
     '[...document.querySelectorAll("button")].some(b=>b.textContent.includes("협업 서버 열기"))',
   );
@@ -124,6 +135,12 @@ try {
     '[...document.querySelectorAll("button")].find(b=>b.textContent.includes("협업 서버 열기")).click()',
   );
   await wait('!!document.querySelector(".self-host-dialog[open]")');
+  assert.equal(
+    await js(
+      'window.gameCanvas.selfHost.getSelfHost().then(s=>s.dataDirectory)',
+    ),
+    path.join(root, 'local', 'GameCanvas-InternetHost'),
+  );
   await wait(
     'document.querySelector(".self-host-status").getAttribute("aria-busy")==="false"',
   );
@@ -162,6 +179,9 @@ try {
     2,
   );
   await fs.mkdir('out/qa', { recursive: true });
+  await js(
+    'document.querySelector(".self-host-help:last-of-type").scrollIntoView({block:"end"})',
+  );
   // Capture only this isolated, synthetic profile.
   const image = await new Promise((resolve, reject) => {
     const next = ++id;
