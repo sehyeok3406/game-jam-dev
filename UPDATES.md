@@ -8,6 +8,16 @@
 
 자동 테스트 975개(실패/skip 0), root/contracts/core 타입 검사와 린트·서식 검사를 통과했다. 실제 Windows 패키지에서 드래그·Shift 선택, 문서·HTML 혼합과 HTML끼리의 동일 변화량, 축소 확대율의 가로 테두리, 반대편 고정, 최소 크기 제한, 선택 밖 항목 유지, 접힌 문서·고정 해상도 HTML 제외, 기존 그룹 이동, 문서 묶음 실행 취소/다시 실행, 단일 조절과 전체 프로세스 재시작 후 복원을 확인했다. 기존 선택·Space 이동·자동 패닝 취소 검사도 통과했다.
 
+2026-10-23 [v0.35.3 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.3)를 게시했다. 제품 소스와 태그는 `7d19a774b7d31f49fe9b2fd03781ba590f26240b`이며 [Windows·Linux CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/39948353957)의 전체 검사를 통과했다. 제품 입력 561개의 지문은 `64b744b970a55058bae68addfa5afc581d4c46d950182829bc1ea8c6513518ec`다. 검증한 패키지에 `make --from-package`를 적용했고 app.asar SHA-256 `fc864c1c2728a8e2f90cf17e1dfa96415b541c90a765daf4a2b786bccd2196c9`와 내장 서버 런타임 45개 파일의 해시·크기가 nupkg 내부까지 일치한다.
+
+| 공개 파일                     | 크기(바이트) | SHA-256                                                          |
+| ----------------------------- | -----------: | ---------------------------------------------------------------- |
+| Game.Jam-0.35.3.Setup.exe     |    194459648 | 20ad1964c0e71cfd48fe332450850455f81da565c17cd20bb8fce7c45792a1eb |
+| game_canvas-0.35.3-full.nupkg |    193557329 | 3a045ead39f6c3f66f4084791bf9d6df6cab1d8235cacda4121a2b94632562a3 |
+| RELEASES                      |           83 | bf06d631cd39a8073aa4f1143f52c5f6f2117deacadf570a06b5fee91a96301e |
+
+GitHub 자산 SHA-256·크기가 로컬과 일치하며 세 파일의 인증 없는 공개 다운로드는 모두 200이다. 공개 RELEASES의 원문·패키지 이름·SHA-1 `9CCCA36605F60610A92544072AEBEA6A4974F066`·크기 193557329바이트를 확인했다. 대용량 파일 전체 재다운로드 없이 기존 검증 경로를 사용했다. 게시 직후 v0.35.2·v0.35.3 Windows RELEASES 피드가 모두 새 패키지 URL·SHA-1·크기를 반환해 **배포 파일 게시·검증과 자동 업데이트 피드 반영을 모두 확인했다.** [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.3/Game.Jam-0.35.3.Setup.exe). 근거는 로컬 `out/release-v0.35.3`에 보존했다.
+
 ## v0.35.2 협업 서버 검사 · AI 도움말 복사 수정
 
 Windows PowerShell에서 외부 서버 상태를 검사할 때 선택 참조 매개변수의 기본값 변환에 실패하던 오류를 수정했다. 실행 중인 서버·터널을 재시작하지 않고 기존 연결을 검사한다. 검사 도중 예외가 발생하면 실제 연결 장애와 구분해 **상태 확인 실패**로 표시하고, 마지막으로 완료한 검사 결과임을 안내한다.
