@@ -1,4 +1,10 @@
-# 앱 업데이트 · v0.35.4
+# 앱 업데이트 · v0.35.5
+
+## v0.35.5 메모·Markdown 제목 영역 구분
+
+문서 제목을 28px 굵은 글씨로 키우고 제목 영역 전체에 배경을 적용했다. 라이트 모드는 `#F4F6F8` 배경과 `#20242B` 글자, 다크 모드는 `#252B34` 배경과 `#F1F3F5` 글자를 사용한다. 제목 아래 구분선을 추가하지 않고 상단 조작 바의 기존 선을 유지한다.
+
+일반 편집 입력과 집중 편집 제목에도 같은 스타일을 적용했다. 읽기 화면의 긴 제목은 좁은 카드에서 줄바꿈한다.
 
 ## v0.35.4 캔버스 텍스트를 Game Jam! 재료로 사용
 
@@ -588,8 +594,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.35.2 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.2)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.2/Game.Jam-0.35.2.Setup.exe)
+- [v0.35.5 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.5)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.5/Game.Jam-0.35.5.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 

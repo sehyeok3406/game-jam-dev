@@ -33,6 +33,8 @@
   --card-text: #f0f1f3;
   --card-muted: #b5bac3;
   --card-line: rgba(255, 255, 255, 0.1);
+  --document-title-background: #252b34;
+  --document-title-text: #f1f3f5;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.34);
   --shadow-card: 0 12px 30px rgba(0, 0, 0, 0.28);
 }
@@ -62,6 +64,8 @@
   --card-text: #24262b;
   --card-muted: #626873;
   --card-line: rgba(26, 29, 35, 0.1);
+  --document-title-background: #f4f6f8;
+  --document-title-text: #20242b;
   --shadow: 0 8px 24px rgba(21, 25, 33, 0.13);
   --shadow-card: 0 10px 28px rgba(21, 25, 33, 0.13);
 }

@@ -100,10 +100,16 @@
   background: color-mix(in srgb, var(--card) 95%, var(--selection) 5%);
 }
 
-.document-card__content > h2 {
-  margin: 0 0 11px;
-  font-size: 18px;
+.document-card__title {
+  margin: -14px -15px 18px;
+  padding: 18px 16px;
+  color: var(--document-title-text);
+  background: var(--document-title-background);
+  font-size: 28px;
+  font-weight: 750;
+  line-height: 1.35;
   letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
 }
 
 .edit-hint {
