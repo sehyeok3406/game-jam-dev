@@ -22,7 +22,14 @@ export function registerProjectIpc(
   handle('projects:folder-remove', (_event, id) => service.removeFolder(id));
   handle('projects:reveal', (_event, id) => service.reveal(id));
   handle('projects:open', (_event, id) => service.open(id));
-  handle('projects:create', (_event, name) => service.create(name));
+  handle('projects:choose-parent', (event) => {
+    assertHome(event);
+    return service.chooseParent();
+  });
+  handle('projects:create', (event, input) => {
+    if (typeof input !== 'string') assertHome(event);
+    return service.create(input);
+  });
   handle('projects:server', (_event, id, url) => service.server(id, url));
   handle('projects:connection-inspect', (event, text) => {
     assertHome(event);

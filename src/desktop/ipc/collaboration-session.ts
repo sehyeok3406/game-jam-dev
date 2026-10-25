@@ -6,6 +6,9 @@ export function registerCollaborationSessionIpc(
   handle: IpcRegistrar,
   service: CollaborationService,
   serial: <T>(operation: () => Promise<T>) => Promise<T>,
+  assertSender: (
+    event: Parameters<Parameters<IpcRegistrar>[1]>[0],
+  ) => void = () => {},
 ) {
   handle('collaboration:get', () => service.get());
   handle('collaboration:create', (_event, input) =>
@@ -17,6 +20,14 @@ export function registerCollaborationSessionIpc(
   handle('collaboration:recover', (_event, input) =>
     serial(() => service.recover(input)),
   );
+  handle('collaboration:to-local', (event, input) => {
+    assertSender(event);
+    return serial(() => service.toLocal(input));
+  });
+  handle('collaboration:handover', (event, action, id) => {
+    assertSender(event);
+    return serial(() => service.handover(action, id));
+  });
   handle('collaboration:leave', () => serial(() => service.leave()));
   handle('collaboration:resolve-offline', (_event, id, choice) =>
     serial(() => service.resolve(id, choice)),

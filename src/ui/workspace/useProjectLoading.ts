@@ -1,3 +1,4 @@
+import { readProjectPreference } from './project-preferences.ts';
 import type { ReactFlowInstance } from '@xyflow/react';
 import { useCallback, useRef } from 'react';
 import { isAiTaskPath, isCanvasDocument } from '../../ai-task-records.ts';
@@ -222,8 +223,11 @@ export function useProjectLoading(ports: () => Ports) {
       if (projectChanged) {
         try {
           selectedCanvas =
-            preferences.getItem('game-canvas-active-sheet:' + state.root) ??
-            'default';
+            readProjectPreference(
+              preferences,
+              'game-canvas-active-sheet:',
+              state,
+            ) ?? 'default';
         } catch {
           /* Personal preferences are optional. */
         }
@@ -452,8 +456,11 @@ export function useProjectLoading(ports: () => Ports) {
       setLoading(false);
       let hasSavedViewport = false;
       try {
-        hasSavedViewport = !!preferences.getItem(
-          'game-canvas-sheet-view:' + state.root + ':' + selectedCanvas,
+        hasSavedViewport = !!readProjectPreference(
+          preferences,
+          'game-canvas-sheet-view:',
+          state,
+          ':' + selectedCanvas,
         );
       } catch {
         /* Optional preference. */

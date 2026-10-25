@@ -648,7 +648,7 @@ test('invites identify anonymous members, rotate independently of membership and
     editor.command('documents:create-idea', { x: 0, y: 0 }),
     /뷰어/,
   );
-  await assert.rejects(owner.setRole(owner.state.memberId, 'viewer'), /생성자/);
+  await assert.rejects(owner.setRole(owner.state.memberId, 'viewer'), /소유자/);
   await owner.setRole(editor.state.memberId, 'removed');
   await assert.rejects(editor.refresh(), /회수/);
   assert.equal(editor.state.connected, false);

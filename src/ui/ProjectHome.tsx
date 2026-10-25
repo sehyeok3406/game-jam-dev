@@ -47,7 +47,7 @@ import { previewState } from './debug/uiDebugPreviewState';
 import { SAMPLE_PROJECTS } from './debug/uiDebugFixtures';
 import { ConnectionInfoDialog } from './ConnectionInfoDialog';
 import { SELF_HOST_ENABLED } from '../features/self-host/enabled';
-import { MAX_PROJECT_NAME } from '../project-name';
+import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { ProjectTrashDialog, ProjectTrashPanel } from './ProjectTrashControls';
 
 import { useRuntime } from './runtime/RuntimeProvider';
@@ -166,7 +166,7 @@ export function ProjectHome({
     }
   }, [viewSettings]);
   useEffect(() => {
-    if (!create && !server) return;
+    if (!server) return;
     const previous = document.activeElement as HTMLElement | null;
     const handler = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busy) {
@@ -984,7 +984,17 @@ export function ProjectHome({
           }
         />
       )}
-      {(create || server) && (
+      {create && (
+        <ProjectCreateDialog
+          initialName={name}
+          close={() => {
+            setCreate(false);
+            setError('');
+          }}
+          opened={opened}
+        />
+      )}
+      {server && (
         <div className="modal-backdrop">
           <form
             ref={dialogRef}
@@ -995,58 +1005,27 @@ export function ProjectHome({
             onSubmit={(event) => {
               event.preventDefault();
               void action(async () => {
-                if (server) {
-                  await api.collaboration.updateProjectServer(
-                    server.id,
-                    address,
-                  );
-                  setServer(null);
-                  await refresh();
-                } else {
-                  const state = await api.projects.createProject(name);
-                  if (state.root) {
-                    setCreate(false);
-                    await opened();
-                  }
-                }
+                await api.collaboration.updateProjectServer(server.id, address);
+                setServer(null);
+                await refresh();
               });
             }}
           >
-            <h2 id="home-dialog-title">
-              {server ? '공동 프로젝트 서버 주소' : '새 로컬 프로젝트'}
-            </h2>
+            <h2 id="home-dialog-title">공동 프로젝트 서버 주소</h2>
             <p>
-              {server
-                ? '터널 주소가 바뀌었다면 새 주소를 입력하세요. 내 역할과 작업 사본은 유지됩니다.'
-                : '이름을 입력하고 저장할 상위 폴더를 선택하세요. 나중에 이 프로젝트를 공유할 수 있습니다.'}
+              터널 주소가 바뀌었다면 새 주소를 입력하세요. 내 역할과 작업 사본은
+              유지됩니다.
             </p>
             <label>
-              {server ? '서버 주소' : '프로젝트 이름'}
+              서버 주소
               <input
                 autoFocus
                 required
-                maxLength={server ? 500 : MAX_PROJECT_NAME}
-                aria-describedby={server ? undefined : 'home-project-name-help'}
-                value={server ? address : name}
-                onChange={(event) =>
-                  server
-                    ? setAddress(event.target.value)
-                    : setName(event.target.value)
-                }
+                maxLength={500}
+                value={address}
+                onChange={(event) => setAddress(event.target.value)}
               />
             </label>
-            {!server && (
-              <p id="home-project-name-help">
-                한글·영문·숫자·공백을 사용할 수 있습니다(최대 {MAX_PROJECT_NAME}
-                자). 이름 앞뒤의 공백은 자동으로 제거됩니다.
-                <br />
-                사용할 수 없는 문자: {'< > : " / \\ | ? *'} 및 줄바꿈·탭.
-                <br />
-                점(.)으로 끝나는 이름과 Windows 예약 이름(CON, PRN, AUX, NUL,
-                COM1~9, LPT1~9)은 사용할 수 없습니다. 예약 이름에 확장자를 붙인
-                형태도 사용할 수 없습니다.
-              </p>
-            )}
             {error && (
               <p className="home-error" role="alert">
                 {error}
@@ -1057,7 +1036,6 @@ export function ProjectHome({
                 type="button"
                 disabled={busy}
                 onClick={() => {
-                  setCreate(false);
                   setServer(null);
                   setError('');
                 }}
@@ -1065,7 +1043,7 @@ export function ProjectHome({
                 취소
               </button>
               <button className="button-primary" disabled={busy}>
-                {busy ? '처리 중…' : server ? '주소 저장' : '저장 위치 선택'}
+                {busy ? '처리 중…' : '주소 저장'}
               </button>
             </div>
           </form>

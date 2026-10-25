@@ -2,6 +2,7 @@
 export function serverCapabilities() {
   return {
     projectCopyVersion: 1,
+    projectModeVersion: 1,
     taskInstructionsEditable: true,
     taskResultNaming: true,
     gamejamWorkflow: true,

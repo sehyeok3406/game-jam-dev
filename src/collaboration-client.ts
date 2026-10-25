@@ -37,6 +37,9 @@ export type CollaborationCredentials = {
   inviteCode?: string;
   recoveryKey?: string;
   internalServer?: boolean;
+  libraryId?: string;
+  localFingerprint?: string;
+  pendingHandoverId?: string;
 };
 export type OfflineDraft = {
   base: Snapshot;
@@ -722,6 +725,25 @@ export class CollaborationClient {
       message: '서버 재연결 중입니다. 저장된 사본을 표시합니다.',
     };
     this.publishOffline();
+  }
+  async modeSnapshot(): Promise<
+    import('./contracts/project-mode.ts').ModeSnapshot
+  > {
+    if (this.state.projectModeVersion !== 1)
+      throw Error('프로젝트 전환을 지원하는 서버로 업데이트해주세요.');
+    return (await this.request('mode-snapshot', {
+      deltaVersion: 0,
+    })) as import('./contracts/project-mode.ts').ModeSnapshot;
+  }
+  async handover(action: 'prepare' | 'accept' | 'cancel', input: object) {
+    if (this.state.projectModeVersion !== 1)
+      throw Error('프로젝트 전환을 지원하는 서버로 업데이트해주세요.');
+    this.accept(
+      (await this.request(
+        'handover-' + action,
+        input,
+      )) as CollaborationEnvelope,
+    );
   }
   async leave() {
     this.stop();

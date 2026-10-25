@@ -19,6 +19,10 @@ export function homeProjectRegistry(
   return {
     list: () => library.list(),
     hasSharedSession: (id) => !!library.get(id).credentials,
+    findShared: (projectId, serverUrl) => {
+      const entry = library.findShared(projectId, serverUrl);
+      return library.list().find((item) => item.id === entry.id)!;
+    },
     get: (id) => {
       const {
         credentials: _credentials,

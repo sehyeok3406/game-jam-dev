@@ -1,3 +1,4 @@
+import { readProjectPreference } from '../workspace/project-preferences.ts';
 import { GamejamMaterialSelection } from '../GamejamMaterialSelection';
 import { EraserPreviewContext } from '../drawing/eraserPreview';
 import { CanvasResizeProvider } from './CanvasItemResizer';
@@ -510,11 +511,11 @@ export function WorkspaceCanvas({
                     flowRef.current = instance;
                     try {
                       const saved = JSON.parse(
-                        preferences.getItem(
-                          'game-canvas-sheet-view:' +
-                            workspace.root +
-                            ':' +
-                            activeCanvas,
+                        readProjectPreference(
+                          preferences,
+                          'game-canvas-sheet-view:',
+                          workspace,
+                          ':' + activeCanvas,
                         ) ?? 'null',
                       );
                       if (

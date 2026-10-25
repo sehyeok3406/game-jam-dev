@@ -1774,8 +1774,19 @@ try {
   console.log(
     'PASS: shared gamejam keeps one administrator lease across both stages and publishes all four outputs to other participants',
   );
-  const rememberedId = `shared:${shared.projectId}`;
+  const rememberedId = (await call('projects:list')).find(
+    (entry: any) => entry.projectId === shared.projectId,
+  ).id;
   const rememberedMember = shared.memberId;
+  await call('projects:home');
+  await call('workspace:select');
+  assert.equal((await call('collaboration:get')).projectId, shared.projectId);
+  assert.equal(
+    (await call('projects:list')).filter(
+      (entry: any) => entry.id === rememberedId,
+    ).length,
+    1,
+  );
   const rememberedCache = path.join(
     (await call('workspace:get')).root,
     'server-cache.json',
@@ -1829,9 +1840,10 @@ try {
     '이름 변경된 공동 게임',
   );
   assert.equal(
-    (await call('projects:list')).find((entry: any) => entry.root === root)
-      .name,
-    path.basename(root),
+    (await call('projects:list')).some(
+      (entry: any) => entry.kind === 'local' && entry.root === root,
+    ),
+    false,
   );
   await call('projects:open', rememberedId);
   assert.equal((await call('collaboration:get')).memberId, rememberedMember);

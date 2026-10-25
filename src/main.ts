@@ -20,6 +20,8 @@ import {
   sessionProjectFileEffects,
   startSessionProjectWatcher,
 } from './desktop/project-file-effects';
+import { DesktopProjectModes } from './desktop/projects/project-modes';
+import { ProjectModeFiles } from './adapters/filesystem/project-mode-files';
 import { ProjectHomeService } from './application/projects/home-service';
 import { filesystemHomeProjects } from './adapters/filesystem/home-projects';
 import {
@@ -541,45 +543,89 @@ const sessionStore = () =>
     app.getPath('userData'),
     safeStorage,
   ));
-const collaborationSessions = new DesktopCollaborationSessions({
+const collaborationSessions: DesktopCollaborationSessions =
+  new DesktopCollaborationSessions({
+    safeCreate: (input, source, root) =>
+      projectModes.createSource(input, source, root),
+    toLocal: (input) => projectModes.toLocal(input),
+    handover: (action, id) => projectModes.handover(action, id),
+    sessions: projectSessions,
+    library: () => projectLibrary,
+    hasTrash: (id) => projectTrash?.hasProject(id) ?? false,
+    hasSharedTrash: (id) => projectTrash?.hasSharedProject(id) ?? false,
+    userData: () => app.getPath('userData'),
+    store: sessionStore,
+    cache: collaborationCache,
+    lifecycle,
+    busy: () => !!currentCodexRun() || runPreparing,
+    resetClipboard: resetClipboardContext,
+    clearState: () => {
+      lastSharedState = '';
+    },
+    changed: collaborationChanged,
+    notify: () => notifyWorkspaceChanged(),
+    lobby: (event, projectId) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('multiplayer:lobby-changed', {
+          ...event,
+          projectId,
+        });
+    },
+    startWatcher: () => startWatcher(),
+    creation: async (input) => {
+      const internal =
+        !!localCollaborationServer &&
+        input.serverUrl === `http://127.0.0.1:${localCollaborationServer.port}`;
+      const key = internal
+        ? localCollaborationKey
+        : selfHost && selfHost.state.publicUrl === input.serverUrl
+          ? ((await selfHost.creationKey(input.serverUrl)) ?? input.serverKey)
+          : input.serverKey;
+      return { key, internal };
+    },
+    prepareLock: async (relative) => {
+      if (!projectSessions.client && projectSessions.root)
+        await localQueue(projectSessions.root);
+      assertAiFilesUnlocked(currentAiFileLock(), [relative]);
+    },
+  });
+const internalServerUrl = async () => {
+  if (!localCollaborationServer)
+    localCollaborationServer = await createCollaborationServer({
+      dataDirectory: path.join(app.getPath('userData'), 'collaboration-server'),
+      creationKey: localCollaborationKey,
+    });
+  return `http://127.0.0.1:${localCollaborationServer.port}`;
+};
+let modeFiles: ProjectModeFiles | undefined;
+const chooseProjectParent = async () => {
+  const selected = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    title: '프로젝트를 저장할 상위 폴더 선택',
+  });
+  return selected.canceled ? null : (selected.filePaths[0] ?? null);
+};
+const projectModes: DesktopProjectModes = new DesktopProjectModes({
   sessions: projectSessions,
   library: () => projectLibrary,
-  hasTrash: (id) => projectTrash?.hasProject(id) ?? false,
-  userData: () => app.getPath('userData'),
+  files: () =>
+    (modeFiles ??= new ProjectModeFiles(app.getPath('userData'), safeStorage)),
   store: sessionStore,
-  cache: collaborationCache,
-  lifecycle,
+  prepare: async () => {
+    await lifecycle.preserve('switch-project');
+    await collaborationCache.drain();
+  },
   busy: () => !!currentCodexRun() || runPreparing,
-  resetClipboard: resetClipboardContext,
-  clearState: () => {
-    lastSharedState = '';
+  creation: (input) => collaborationSessions.resolveCreation(input),
+  chooseParent: chooseProjectParent,
+  internalServerUrl,
+  attach: (credentials, root) =>
+    collaborationSessions.attach(credentials, root),
+  openLocal: (root) => {
+    editJournals.delete(root);
+    return setWorkspace(root);
   },
-  changed: collaborationChanged,
-  notify: () => notifyWorkspaceChanged(),
-  lobby: (event, projectId) => {
-    if (mainWindow && !mainWindow.isDestroyed())
-      mainWindow.webContents.send('multiplayer:lobby-changed', {
-        ...event,
-        projectId,
-      });
-  },
-  startWatcher: () => startWatcher(),
-  creation: async (input) => {
-    const internal =
-      !!localCollaborationServer &&
-      input.serverUrl === `http://127.0.0.1:${localCollaborationServer.port}`;
-    const key = internal
-      ? localCollaborationKey
-      : selfHost && selfHost.state.publicUrl === input.serverUrl
-        ? ((await selfHost.creationKey(input.serverUrl)) ?? input.serverKey)
-        : input.serverKey;
-    return { key, internal };
-  },
-  prepareLock: async (relative) => {
-    if (!projectSessions.client && projectSessions.root)
-      await localQueue(projectSessions.root);
-    assertAiFilesUnlocked(currentAiFileLock(), [relative]);
-  },
+  changed: () => notifyWorkspaceChanged(),
 });
 const attachCollaboration = (credentials: CollaborationCredentials) =>
   collaborationSessions.attach(credentials);
@@ -765,6 +811,11 @@ const getAiStatus = async (providerId: import('./shared').AiProviderId) => {
 };
 
 const workspaceState = async (): Promise<WorkspaceState> => ({
+  libraryId:
+    projectSessions.client?.credentials.libraryId ??
+    (projectSessions.root
+      ? projectLibrary.findRoot(projectSessions.root)?.id
+      : undefined),
   session: projectSessions.ref ?? undefined,
   root: projectSessions.root,
   clipboardContextId,
@@ -907,6 +958,19 @@ const sharedProjectMirror = (
 };
 
 const setWorkspace = async (root: string) => {
+  const canonicalRoot = await fs.realpath(root);
+  const registered = projectLibrary.findRoot(canonicalRoot);
+  if (registered?.transitionPending) await projectModes.recover(registered.id);
+  const shared = projectLibrary.findRoot(canonicalRoot);
+  if (shared?.kind === 'shared' && shared.credentials) {
+    if (shared.credentials.internalServer)
+      shared.credentials.serverUrl = await internalServerUrl();
+    await collaborationSessions.attach(
+      shared.credentials,
+      shared.localRoot ?? null,
+    );
+    return workspaceState();
+  }
   if (projectTrash?.hasRoot(root)) throw Error('휴지통에서 먼저 복원해주세요.');
   resetClipboardContext();
   await lifecycle.preserve('switch-project');
@@ -2220,6 +2284,10 @@ const registerIpc = () => {
       const ref = projectSessions.ref;
       return propertyQueue.flush().then(() => enqueueMutation(operation, ref));
     },
+    (event) => {
+      if (!isUpdateSender(event))
+        throw Error('앱의 프로젝트 화면에서 실행해주세요.');
+    },
   );
   handle('web-viewer:get', () => desktopBootstrap.webViewer().status());
   handle('web-viewer:open', async () => {
@@ -2252,18 +2320,9 @@ const registerIpc = () => {
       return service.publish(true);
     },
   );
-  const internalServerUrl = async () => {
-    if (!localCollaborationServer)
-      localCollaborationServer = await createCollaborationServer({
-        dataDirectory: path.join(
-          app.getPath('userData'),
-          'collaboration-server',
-        ),
-        creationKey: localCollaborationKey,
-      });
-    return `http://127.0.0.1:${localCollaborationServer.port}`;
-  };
   const homeProjects = new ProjectHomeService({
+    createShared: (input) => projectModes.createDirect(input),
+    beforeOpen: (id) => projectModes.recover(id),
     registry: homeProjectRegistry(projectLibrary),
     local: filesystemHomeProjects,
     shared: desktopSharedProjects({
@@ -2312,13 +2371,7 @@ const registerIpc = () => {
     },
     parseConnection: parseConnectionInfo,
     serverAddress,
-    chooseParent: async () => {
-      const selected = await dialog.showOpenDialog({
-        properties: ['openDirectory', 'createDirectory'],
-        title: '새 프로젝트를 저장할 상위 폴더 선택',
-      });
-      return selected.canceled ? null : (selected.filePaths[0] ?? null);
-    },
+    chooseParent: chooseProjectParent,
     reveal: (root) => shell.showItemInFolder(root),
     changed: notifyWorkspaceChanged,
     stopViewer: () => desktopBootstrap.stopViewerSync(),
@@ -2692,6 +2745,14 @@ app.whenReady().then(async () => {
   await registerUpdates();
   projectLibrary = new ProjectLibrary(app.getPath('userData'), safeStorage);
   await projectLibrary.load();
+  try {
+    await projectModes.recover();
+  } catch (error) {
+    console.error(
+      '프로젝트 전환 복구 보류',
+      error instanceof Error ? error.message : '복구 실패',
+    );
+  }
   if (
     SELF_HOST_ENABLED &&
     !testProfile &&
@@ -2739,7 +2800,9 @@ app.whenReady().then(async () => {
                 'shared-workspaces',
                 entry.projectId!,
               );
-        const identities = [root, entry.projectId ?? ''].filter(Boolean);
+        const identities = [entry.id, root, entry.projectId ?? ''].filter(
+          Boolean,
+        );
         const known = [...keys, ...queue.map((r) => r.request.key)];
         if (entry.kind === 'local') {
           const snapshot = await captureProject(root).catch(
@@ -2869,7 +2932,7 @@ app.whenReady().then(async () => {
         localRoot: string | null;
       };
       if (saved.credentials) {
-        if (projectTrash.hasProject(`shared:${saved.credentials.projectId}`))
+        if (projectTrash.hasSharedProject(saved.credentials.projectId))
           saved.credentials = null;
       }
       if (saved.credentials) {

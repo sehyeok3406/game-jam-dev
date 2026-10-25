@@ -1,5 +1,9 @@
 # 프로젝트 홈 업무 경계
 
+## v0.37.0 생성·모드 전환 변경
+
+현재 생성 방식 선택과 실제 참여 종료/소유권 인계는 [프로젝트 모드 전환](project-mode-transitions.md)을 따른다. 아래 기존 생성·leave 동작 설명은 레거시 API 경로의 계약이며 새 사용자 전환 흐름과 구분한다. 새 폼은 경로 선택과 생성을 분리하고, 신규 전환은 목록 ID·분류를 유지한다. 전환 API는 기존 property/mutation 큐와 세션 검사를 사용한다.
+
 `ProjectHomeService`가 목록 보강, 로컬/공동 이름 변경, 열기/홈 이동/생성, 홈 폴더 분류, 연결 주소 검사/적용, 휴지통 전후의 대기 순서를 소유한다. `desktop/ipc/projects.ts`는 기존 25개 `projects:*` 채널의 인자를 변환한다. 채널·preload API·반환 형식은 유지하며 기존 main의 mutation 큐·AI 작업 보호·외부 창/프레임 거부를 통과해 등록한다. 연결 정보의 sender 검사도 등록 경계에서 유지한다.
 
 - `HomeProjectRegistry`는 공개 항목만 제공한다. desktop의 `homeProjectRegistry`가 `credentials`와 `localRoot`를 제외한다. 토큰·recovery key·암호화·`projects.enc`/`local-projects.json` 저장은 기존 ProjectLibrary에 남는다. 개인 로컬 목록·편집·폴더 분류에 암호화된 공동 세션이나 서버를 요구하지 않는다.

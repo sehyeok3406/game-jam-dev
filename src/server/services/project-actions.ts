@@ -10,6 +10,7 @@ type Execute = {
   ) => unknown;
 };
 type Ports = {
+  modes?: Execute;
   stateService: Execute;
   approvals: Execute;
   history: Execute;
@@ -58,6 +59,12 @@ export function createProjectActions(ports: Ports) {
   ) => {
     if (['state', 'lock', 'unlock'].includes(action))
       return ports.stateService.execute(project, member, action, input);
+    if (
+      action === 'mode-snapshot' ||
+      action === 'detach' ||
+      action.startsWith('handover-')
+    )
+      return ports.modes?.execute(project, member, action, input);
     if (action === 'leave') return ports.members.leave(project, member);
     if (action.startsWith('requests-') && action !== 'requests-start')
       return ports.approvals.execute(project, member, action, input);

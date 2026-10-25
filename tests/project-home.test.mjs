@@ -327,7 +327,7 @@ for (const failure of [
     assert.ok(!f.calls.some(([n]) => n === 'trash'));
   });
 }
-test('IPC retains all 25 project wires and home-sender guard before parsing connection data', async () => {
+test('IPC retains all 26 project wires and home-sender guard before parsing connection data', async () => {
   const f = fixture(),
     handlers = new Map();
   registerProjectIpc(
@@ -341,7 +341,7 @@ test('IPC retains all 25 project wires and home-sender guard before parsing conn
       if (event !== 'trusted') throw Error('sender');
     },
   );
-  assert.equal(handlers.size, 25);
+  assert.equal(handlers.size, 26);
   assert.throws(
     () => handlers.get('projects:connection-inspect')('untrusted', 'invalid'),
     /sender/,

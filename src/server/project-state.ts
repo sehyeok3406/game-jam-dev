@@ -41,6 +41,11 @@ export type Job = {
   event: CodexRunEvent;
 };
 export type Project = {
+  creation?: { id: string; tokenHash: string; fingerprint: string };
+  handover?: import('../contracts/project-mode.ts').ProjectHandover & {
+    recoveryHash?: string;
+  };
+  detachReceipts?: Record<string, { proofHash: string; memberId: string }>;
   aiQueue?: import('../ai-task-queue.ts').StoredAiQueueTask[];
   approvals?: Record<string, GamejamApproval>;
   requestsVersion?: number;

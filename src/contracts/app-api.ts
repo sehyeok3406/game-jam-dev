@@ -231,7 +231,17 @@ export type GameCanvasApi = {
   removeProjectFolder: (id: string) => Promise<void>;
   revealProject: (id: string) => Promise<void>;
   openProject: (id: string) => Promise<WorkspaceState>;
-  createProject: (name: string) => Promise<WorkspaceState>;
+  chooseProjectParent: () => Promise<string | null>;
+  createProject: (
+    input: string | import('./project-mode.ts').CreateProjectInput,
+  ) => Promise<WorkspaceState>;
+  convertProjectToLocal: (
+    input: import('./project-mode.ts').LocalConversionInput,
+  ) => Promise<void>;
+  projectHandover: (
+    action: 'prepare' | 'accept' | 'cancel',
+    successorId?: string,
+  ) => Promise<void>;
   goHome: () => Promise<void>;
   updateProjectServer: (id: string, serverUrl: string) => Promise<void>;
   resolveOfflineConflict: (
@@ -444,7 +454,10 @@ export const APP_API_GROUPS = {
   removeProjectFolder: 'projects',
   revealProject: 'desktop',
   openProject: 'projects',
+  chooseProjectParent: 'projects',
   createProject: 'projects',
+  convertProjectToLocal: 'collaboration',
+  projectHandover: 'collaboration',
   goHome: 'projects',
   updateProjectServer: 'collaboration',
   resolveOfflineConflict: 'collaboration',

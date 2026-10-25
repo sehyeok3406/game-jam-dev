@@ -134,6 +134,7 @@ export function ProjectTrashDialog({
       else {
         const values: Record<string, string> = {};
         const identities = [
+          project.id,
           plan!.entry.root,
           project.projectId ?? '',
           `local:${plan!.entry.root}`,

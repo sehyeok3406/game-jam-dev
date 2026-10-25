@@ -1,7 +1,7 @@
 {
   "name": "game-canvas",
   "productName": "Game Jam!",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "private": true,
   "description": "A local-first Markdown canvas for turning game ideas into HTML prototypes.",
   "keywords": [],
@@ -15,7 +15,7 @@
     "web-viewer:build": "node scripts/build-web-viewer-worker.mjs",
     "collaboration:build": "node scripts/build-collaboration-server.mjs",
     "collaboration:verify": "node scripts/verify-collaboration-bundle.mjs",
-    "test:server": "node --test tests/server-*.test.mjs tests/collaboration-backup.test.mjs tests/backup-s3.test.mjs tests/sqlite-project-repository.test.mjs tests/multiplayer.test.mjs",
+    "test:server": "node --test tests/server-*.test.mjs tests/collaboration-backup.test.mjs tests/backup-s3.test.mjs tests/sqlite-project-repository.test.mjs tests/multiplayer.test.mjs tests/project-modes.test.mjs",
     "collaboration:server": "node src/collaboration-server-entry.ts",
     "test:integration": "node tests/run-integration.mjs",
     "test:multiplayer": "node tests/run-multiplayer.mjs",

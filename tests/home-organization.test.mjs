@@ -73,7 +73,10 @@ test('local/shared registry name refresh preserves independent IDs, folder group
   assert.ok(fresh.list().every((entry) => entry.folderId === folder.id));
   assert.equal(fresh.get(sharedId).name, '팀 작업');
   assert.equal(fresh.get(sharedId).role, 'viewer');
-  assert.deepEqual(fresh.get(sharedId).credentials, credentials);
+  assert.deepEqual(fresh.get(sharedId).credentials, {
+    ...credentials,
+    libraryId: sharedId,
+  });
   assert.ok(!JSON.stringify(fresh.list()).includes('private-token-fixture'));
 });
 

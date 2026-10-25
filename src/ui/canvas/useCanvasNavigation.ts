@@ -1,3 +1,4 @@
+import { projectPreferenceRoot } from '../workspace/project-preferences.ts';
 import type { ReactFlowInstance } from '@xyflow/react';
 import type { DrawingObject } from '../../drawing-types.ts';
 import type {
@@ -73,7 +74,7 @@ export function useCanvasNavigation(scope: SelectionScope, ports: () => Ports) {
     if (!workspace.root || !flowRef.current) return;
     try {
       preferences.setItem(
-        'game-canvas-sheet-view:' + workspace.root + ':' + id,
+        'game-canvas-sheet-view:' + projectPreferenceRoot(workspace) + ':' + id,
         JSON.stringify(flowRef.current.getViewport()),
       );
     } catch {
@@ -130,7 +131,10 @@ export function useCanvasNavigation(scope: SelectionScope, ports: () => Ports) {
       setInspectorId(null);
       setGuides({});
       try {
-        preferences.setItem('game-canvas-active-sheet:' + workspace.root, id);
+        preferences.setItem(
+          'game-canvas-active-sheet:' + projectPreferenceRoot(workspace),
+          id,
+        );
       } catch {
         /* Optional preference. */
       }

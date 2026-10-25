@@ -144,6 +144,7 @@ test('automatic address updates verify committed membership, preserving credenti
   const updated = library.get(`shared:${owned.projectId}`);
   assert.deepEqual(updated.credentials, {
     ...owned,
+    libraryId: updated.id,
     serverUrl: 'https://new-host.trycloudflare.com',
   });
   assert.equal(updated.localRoot, '/local-original');

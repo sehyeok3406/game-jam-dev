@@ -18,6 +18,8 @@ export const filesystemHomeProjects: HomeLocalProjects = {
     return real;
   },
   async create(parent, name) {
+    if (typeof parent !== 'string' || !path.isAbsolute(parent))
+      throw Error('저장할 상위 폴더의 절대 경로를 선택해주세요.');
     const target = path.join(await fs.realpath(parent), name);
     try {
       await fs.mkdir(target);

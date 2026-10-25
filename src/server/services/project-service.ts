@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { projectDirectoryName } from '../../core/projects/project-name.ts';
 import { assertEraseSupport } from './drawing-capabilities.ts';
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { CollaborationEnvelope } from '../../contracts/collaboration.ts';
@@ -58,15 +60,54 @@ const nickname = (value: unknown) => {
 };
 /** Public creation/join/recovery own their existing queue boundaries; rename is already queued. */
 export function createProjectService(ports: Ports) {
-  async function create(input: Input) {
+  async function createOnce(input: Input) {
+    const identity = input.creation as
+      | import('../../contracts/project-mode.ts').CreationIdentity
+      | undefined;
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify([input.name, input.nickname, input.files]))
+      .digest('hex');
+    if (identity) {
+      if (
+        input.projectModeVersion !== 1 ||
+        !/^[a-f0-9-]{36}$/.test(identity.id) ||
+        ![identity.token, identity.recoveryKey].every(
+          (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v),
+        ) ||
+        typeof identity.inviteCode !== 'string' ||
+        !/^[a-f0-9]{20}$/.test(identity.inviteCode)
+      )
+        throw new ApiError('프로젝트 생성 인증 정보가 올바르지 않습니다.', 400);
+      const prior = Array.from(ports.projects.all()).find(
+        (p) => p.creation?.id === identity.id,
+      );
+      if (prior) {
+        if (
+          !ports.identity.matches(identity.token, prior.creation!.tokenHash) ||
+          fingerprint !== prior.creation!.fingerprint
+        )
+          throw new ApiError('같은 생성 작업의 정보가 바뀌었습니다.', 409);
+        ports.assertActive(prior);
+        const actor = ports.authenticate(prior, identity.token);
+        return {
+          ...ports.envelope(prior, actor),
+          token: identity.token,
+          code: identity.inviteCode.toUpperCase(),
+          recoveryKey: identity.recoveryKey,
+        };
+      }
+    }
     if (ports.projects.count() >= ServerLimits.projects)
       throw new ApiError('초기 서버는 프로젝트를 20개까지 지원합니다.', 413);
     checkSnapshot(input.files);
     assertEraseSupport(input.files, input);
-    const code = ports.identity.invite(),
-      token = ports.identity.secret(),
-      recoveryKey = ports.identity.secret(),
-      name = nickname(input.name);
+    const code = identity?.inviteCode.toUpperCase() ?? ports.identity.invite(),
+      token = identity?.token ?? ports.identity.secret(),
+      recoveryKey = identity?.recoveryKey ?? ports.identity.secret(),
+      name =
+        input.projectModeVersion === 1
+          ? projectDirectoryName(input.name)
+          : nickname(input.name);
     const member: Member = {
       id: ports.identity.id(),
       nickname: nickname(input.nickname),
@@ -76,6 +117,15 @@ export function createProjectService(ports: Ports) {
     };
     const project: Project = {
       id: ports.identity.id(),
+      ...(identity
+        ? {
+            creation: {
+              id: identity.id,
+              tokenHash: ports.identity.digest(identity.token),
+              fingerprint,
+            },
+          }
+        : {}),
       name,
       createdAt: ports.identity.now(),
       modifiedAt: ports.identity.now(),
@@ -166,6 +216,7 @@ export function createProjectService(ports: Ports) {
       owner.removed = false;
       owner.role = 'admin';
       project.recoveryHash = ports.identity.digest(recoveryKey);
+      delete project.handover;
       await ports.persist(project);
       if (project.lifecycle && project.lifecycle.status !== 'active')
         return {
@@ -214,5 +265,7 @@ export function createProjectService(ports: Ports) {
     await ports.persist(next);
     return ports.envelope(next, member);
   }
+  const create = (input: Input) =>
+    ports.queue('project-creation', () => createOnce(input));
   return { create, join, recover, rename };
 }

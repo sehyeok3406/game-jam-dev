@@ -49,5 +49,12 @@ export interface CollaborationSessionPort {
   ): Promise<ConnectionOffer>;
   suspend(): Promise<void>;
   leave(): Promise<void>;
+  toLocal?(
+    input: import('../../contracts/project-mode.ts').LocalConversionInput,
+  ): Promise<void>;
+  handover?(
+    action: 'prepare' | 'accept' | 'cancel',
+    successorId?: string,
+  ): Promise<void>;
   prepareLock(path: string): Promise<void>;
 }

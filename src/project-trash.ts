@@ -123,10 +123,19 @@ export class ProjectTrash {
   hasProject(id: string) {
     return Array.from(this.records.values()).some((r) => r.projectId === id);
   }
+  hasSharedProject(projectId: string) {
+    return Array.from(this.records.values()).some(
+      (r) => r.saved.kind === 'shared' && r.saved.projectId === projectId,
+    );
+  }
   hasRoot(root: string) {
     return Array.from(this.records.values()).some(
       (r) =>
-        canonical(r.originalPath) === canonical(root) || inside(r.path, root),
+        canonical(r.originalPath) === canonical(root) ||
+        inside(r.path, root) ||
+        (!!r.saved.credentials?.localFingerprint &&
+          !!r.saved.localRoot &&
+          canonical(r.saved.localRoot) === canonical(root)),
     );
   }
   async prepare(id: string) {
@@ -206,6 +215,7 @@ export class ProjectTrash {
     )
       throw Error('프로젝트가 변경되었습니다. 다시 확인해주세요.');
     const identities = [
+      plan.entry.id,
       plan.root,
       plan.entry.projectId ?? '',
       `local:${plan.root}`,

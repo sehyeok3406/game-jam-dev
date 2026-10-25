@@ -11,6 +11,7 @@ export interface HomeProjectRegistry {
   list(): ProjectEntry[];
   get(id: string): ProjectEntry;
   hasSharedSession(id: string): boolean;
+  findShared?(projectId: string, serverUrl?: string): ProjectEntry;
   listFolders(): ProjectFolder[];
   renameProject(
     id: string,

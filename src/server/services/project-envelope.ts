@@ -18,6 +18,14 @@ export const projectEnvelope = (
   authorship: project.authorship,
   state: {
     active: true,
+    handover: project.handover
+      ? {
+          id: project.handover.id,
+          from: project.handover.from,
+          to: project.handover.to,
+          accepted: project.handover.accepted,
+        }
+      : undefined,
     ...serverCapabilities(),
     connected: true,
 

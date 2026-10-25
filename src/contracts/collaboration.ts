@@ -6,6 +6,8 @@ import type { FileAuthorshipMap } from './documents.ts';
 import type { DrawingDelta } from './drawing-types.ts';
 export type CollaborationRole = 'admin' | 'editor' | 'viewer';
 export type CollaborationState = {
+  projectModeVersion?: number;
+  handover?: import('./project-mode.ts').ProjectHandover;
   projectCopyVersion?: number;
   gamejamTextMaterialsVersion?: number;
   drawingTextVersion?: number;
