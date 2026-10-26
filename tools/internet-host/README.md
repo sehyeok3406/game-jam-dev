@@ -17,3 +17,7 @@
 ./Copy-Admin-Recovery-Key.cmd -Copy All -NoPrompt
 ./Copy-Admin-Recovery-Key.cmd -CheckOnly -NoPrompt
 ```
+
+## 종료 전 작업 검사
+
+Stop·RestartServer와 앱의 서버 종료·재시작은 동일한 읽기 전용 작업 검사를 사용한다. `projects/sync.sqlite`가 있으면 SQLite/WAL을 기준으로 검사하며 이전 JSON 폴더는 읽지 않는다. 이전 저장 형식에서는 `.project-trash`·`.project-lifecycle` 관리 폴더를 제외한다. 실행 lease 또는 queued/starting/running/validating 대기열이 있으면 GC-HOST-AI로 중단한다. 저장소 손상·미지원 스키마·검사 도구 오류는 GC-HOST-016으로 중단하고 실행 중인 프로세스를 유지한다. 검사 도구는 프로젝트 원문과 예외를 출력하지 않는다.

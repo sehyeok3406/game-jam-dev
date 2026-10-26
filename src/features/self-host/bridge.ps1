@@ -37,24 +37,22 @@ try {
   if ($Action -eq 'Stop') {
     $facts = Get-HostFacts $StateDirectory $Port $entry $CloudflaredPath $node
     if (-not $facts.runtimeValid -or $facts.server -eq 'unverified' -or $facts.tunnel -eq 'unverified') { throw 'Ownership cannot be verified' }
-    # Read durable server state before stopping: never interrupt an active AI lease.
-    $projects = Join-Path $StateDirectory 'projects'
-    if (Test-Path -LiteralPath $projects) {
-      foreach ($folder in Get-ChildItem -LiteralPath $projects -Directory) {
-        if ($folder.Name -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid project directory' }
-        $runtimeState = Join-Path $folder.FullName 'runtime.json'
-        if (Test-Path -LiteralPath $runtimeState) {
-          $state = Get-Content -LiteralPath $runtimeState -Raw -Encoding UTF8 | ConvertFrom-Json
-        } else {
-          $head = Get-Content -LiteralPath (Join-Path $folder.FullName 'head.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-          if ($head.checkpoint -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid checkpoint' }
-          $state = Get-Content -LiteralPath (Join-Path $folder.FullName "checkpoints/$($head.checkpoint)/state.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $failureFile = Join-Path $StateDirectory ("stop-" + [guid]::NewGuid().ToString('N') + ".json")
+    try {
+      $null = & "$PSHOME/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $RuntimeDirectory 'host.ps1') -Action Stop -StateDirectory $StateDirectory -NodePath $node -ServerEntry $entry -FailureReport $failureFile 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        if (Test-Path -LiteralPath $failureFile) {
+          $failure = Get-Content -LiteralPath $failureFile -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ($failure.code -in @('GC-HOST-AI', 'GC-HOST-016')) {
+            Write-BridgeReport (@{ code = $failure.code } | ConvertTo-Json -Compress)
+            exit 1
+          }
         }
-        if ($state.job) { Write-BridgeReport '{"code":"GC-HOST-AI"}'; exit 1 }
+        throw 'Stop failed'
       }
+    } finally {
+      if (Test-Path -LiteralPath $failureFile) { Remove-Item -LiteralPath $failureFile -Force }
     }
-    $null = & "$PSHOME/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RuntimeDirectory 'host.ps1') -Action Stop -StateDirectory $StateDirectory -NodePath $node -ServerEntry $entry 2>&1
-    if ($LASTEXITCODE -ne 0) { throw 'Stop failed' }
     $facts = Get-HostFacts $StateDirectory $Port $entry $CloudflaredPath $node
     if ($facts.server -ne 'absent' -or $facts.tunnel -ne 'absent') { throw 'Stop incomplete' }
     Write-BridgeReport (New-HostReport $facts 'stopped' '' | ConvertTo-Json -Depth 5 -Compress)

@@ -35,6 +35,7 @@ async function fixture(t) {
     'connect.ps1',
     'diagnostics.ps1',
     'host.ps1',
+    'inspect-ai-state.cjs',
     'runtime-version.json',
     'node.exe',
     'NODE-LICENSE.txt',
