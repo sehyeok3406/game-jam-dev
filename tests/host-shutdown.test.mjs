@@ -10,7 +10,10 @@ import { promisify } from 'node:util';
 import { inspectAiState } from '../tools/internet-host/inspect-ai-state.cjs';
 const run = promisify(execFile);
 async function fixture(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-stop-'));
+  // Match the launcher's .NET normalization of Windows short temporary paths.
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-stop-')),
+  );
   const projects = path.join(root, 'host/projects');
   await fs.mkdir(projects, { recursive: true });
   for (const name of ['.project-trash', '.project-lifecycle']) {
@@ -23,7 +26,7 @@ async function fixture(t) {
   let db;
   t.after(async () => {
     db?.close();
-    assert.equal(path.dirname(root), os.tmpdir());
+    assert.equal(path.dirname(root), await fs.realpath(os.tmpdir()));
     await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });
   });
   return {
