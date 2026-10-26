@@ -240,12 +240,19 @@ export function ProjectCreateDialog({
               서버 생성 키
               <input
                 type="password"
+                aria-describedby="project-server-key-help"
                 disabled={busy}
                 value={serverKey}
                 onChange={(event) => setServerKey(event.target.value)}
-                placeholder="내장·이 PC의 인터넷 서버는 비워두세요"
+                placeholder="서버 운영자에게 받은 생성 키 입력"
               />
             </label>
+            <p id="project-server-key-help">
+              한 사람이 서버를 운영하고, 다른 사람들이 그 서버에 각자의 공동
+              프로젝트를 만들 때 사용하는 키입니다. 서버 운영자에게 받아
+              입력하세요. 이 PC에서 운영하는 서버나 내장 테스트 서버를
+              사용한다면 비워두세요. 앱이 자동으로 처리합니다.
+            </p>
             {api.desktop && (
               <button
                 type="button"
