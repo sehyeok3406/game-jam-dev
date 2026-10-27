@@ -95,6 +95,7 @@ export class DesktopProjectModes {
         name: attempt.name,
         files: attempt.files,
         drawingTextVersion: 1,
+        drawingTextAlignmentVersion: 1,
         drawingEraseVersion: 1,
       },
       '',

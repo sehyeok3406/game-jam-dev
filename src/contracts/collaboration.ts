@@ -11,6 +11,7 @@ export type CollaborationState = {
   projectCopyVersion?: number;
   gamejamTextMaterialsVersion?: number;
   drawingTextVersion?: number;
+  drawingTextAlignmentVersion?: number;
   requestApprovalVersion?: number;
   requestDeletionVersion?: number;
   requestDocumentVersion?: number;
@@ -98,6 +99,7 @@ export type CollaborationMember = {
 };
 export type CollaborationCommand = {
   drawingTextVersion?: number;
+  drawingTextAlignmentVersion?: number;
   drawingEraseVersion?: number;
   propertySyncVersion?: number;
   sessionId?: string;

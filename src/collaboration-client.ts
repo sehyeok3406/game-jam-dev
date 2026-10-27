@@ -17,6 +17,7 @@ import { ProjectEventDecoder, readPlayLobbyEvent } from './project-events.ts';
 import type { PlayLobbyEvent } from './multiplayer/types.ts';
 import { checkSnapshot, reduceCollaboration } from './collaboration-model.ts';
 import { applyDrawingDelta } from './drawing-model.ts';
+import { textDocumentHasAlignment } from './text-document.ts';
 import {
   changedPaths,
   planOfflineMerge,
@@ -153,7 +154,14 @@ export class CollaborationClient {
     const result = (await this.fetch(
       serverAddress(serverUrl),
       '/projects',
-      { nickname, name, files, drawingTextVersion: 1, drawingEraseVersion: 1 },
+      {
+        nickname,
+        name,
+        files,
+        drawingTextVersion: 1,
+        drawingTextAlignmentVersion: 1,
+        drawingEraseVersion: 1,
+      },
       '',
       serverKey,
     )) as CollaborationEnvelope & {
@@ -177,6 +185,7 @@ export class CollaborationClient {
       code,
       nickname,
       drawingTextVersion: 1,
+      drawingTextAlignmentVersion: 1,
       drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string };
     return {
@@ -206,6 +215,7 @@ export class CollaborationClient {
       projectId,
       recoveryKey,
       drawingTextVersion: 1,
+      drawingTextAlignmentVersion: 1,
       drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string; recoveryKey: string };
     return {
@@ -454,6 +464,7 @@ export class CollaborationClient {
         lifecycleVersion: this.state.lifecycleVersion ?? 0,
         drawingsVersion: 1,
         drawingTextVersion: 1,
+        drawingTextAlignmentVersion: 1,
         drawingEraseVersion: 1,
         gameUiVersion: 2,
         documentStatusesVersion: 1,
@@ -839,6 +850,25 @@ export class CollaborationClient {
           ).patches?.some((p) => p.geometry?.document !== undefined))
       )
         throw Error('텍스트를 사용하려면 협업 서버를 업데이트해주세요.');
+      if (
+        channel === 'drawings:apply' &&
+        this.state.drawingTextAlignmentVersion !== 1
+      ) {
+        const drawing = input as {
+          objects?: { geometry?: { document?: string } }[];
+          patches?: { geometry?: { document?: string } }[];
+        };
+        if (
+          [...(drawing.objects ?? []), ...(drawing.patches ?? [])].some(
+            (o) =>
+              o.geometry?.document !== undefined &&
+              textDocumentHasAlignment(o.geometry.document),
+          )
+        )
+          throw Error(
+            '줄별 텍스트 정렬을 사용하려면 협업 서버를 업데이트해주세요.',
+          );
+      }
       if (
         channel === 'drawings:apply' &&
         (input as { action?: string }).action === 'erase' &&

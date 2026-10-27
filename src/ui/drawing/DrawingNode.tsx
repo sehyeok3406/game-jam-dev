@@ -37,6 +37,7 @@ export type DrawingNodeData = {
   kind: 'drawing';
   object: DrawingObject;
   locked: boolean;
+  textAlignmentSupported?: boolean;
   zoom: number;
   onGesture: (active: boolean) => void;
   onPatch: (patch: DrawingPatch) => void;
@@ -81,7 +82,10 @@ export function DrawingGraphic({
             overflowWrap: 'anywhere',
           }}
           dangerouslySetInnerHTML={{
-            __html: textDocumentHtml(object.geometry.document),
+            __html: textDocumentHtml(
+              object.geometry.document,
+              object.geometry.align,
+            ),
           }}
         />
       </foreignObject>

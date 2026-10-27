@@ -17,6 +17,8 @@ import { CollaborationSessionStore } from '../src/desktop/collaboration/session-
 import { captureProject, materialize } from '../src/project-store.ts';
 import { initialProjectSnapshot } from '../src/core/projects/initial-project.ts';
 import { ProjectHomeService } from '../src/application/projects/home-service.ts';
+import { createTextObject } from '../src/text-document.ts';
+import { applyDrawing, snapshotDrawings } from '../src/drawing-model.ts';
 
 const secret = () => randomBytes(32).toString('hex');
 const encryption = {
@@ -184,6 +186,33 @@ test('folder selection has no creation side effect; explicit completion uses sel
     service.create({ mode: 'local', name: 'game' }),
     /저장 위치/,
   );
+});
+
+test('sharing a local project preserves paragraph alignment for both real clients', async (t) => {
+  const f = await fixture(t);
+  const text = createTextObject(100, 100);
+  text.geometry.document = JSON.stringify({
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        attrs: { textAlign: 'center' },
+        content: [{ type: 'text', text: '가운데 정렬' }],
+      },
+    ],
+  });
+  await materialize(
+    f.local,
+    applyDrawing(f.original, {
+      canvasId: 'default',
+      action: 'create',
+      objects: [text],
+    }),
+  );
+  const owner = await f.share(),
+    peer = await f.join(owner);
+  assert.deepEqual(snapshotDrawings(owner.files)[0].geometry, text.geometry);
+  assert.deepEqual(snapshotDrawings(peer.files)[0].geometry, text.geometry);
 });
 
 test('local sharing keeps one stable card and classification; reopening the old root resolves to the shared card', async (t) => {
