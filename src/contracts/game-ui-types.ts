@@ -9,6 +9,7 @@ export type GameUiFrame = {
   width: number;
   viewportWidth: number;
   viewportHeight: number;
+  backgroundColor?: string;
   items: GameUiItem[];
   descriptionPath: string | null;
 };
@@ -142,7 +143,13 @@ export type GameUiCommand = {
   changes?: Partial<
     Pick<
       GameUiFrame,
-      'title' | 'x' | 'y' | 'width' | 'viewportWidth' | 'viewportHeight'
+      | 'title'
+      | 'x'
+      | 'y'
+      | 'width'
+      | 'viewportWidth'
+      | 'viewportHeight'
+      | 'backgroundColor'
     >
   >;
   expected?: GameUiCommand['changes'];

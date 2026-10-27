@@ -30,6 +30,7 @@ import {
 } from '../../game-ui-details';
 import {
   GameUiNumberField as NumberField,
+  GameUiColorField,
   GameUiTextField,
 } from './GameUiFields';
 import { GameUiLibrary } from './GameUiLibrary';
@@ -578,13 +579,17 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
         <div className="nodrag nowheel">
           <button
             type="button"
-            onClick={() =>
-              setInspector(
-                !inspector || !!(dock && dock.active !== inspectorOwner),
-              )
-            }
+            onClick={() => {
+              const open =
+                !inspector || !!(dock && dock.active !== inspectorOwner);
+              if (open)
+                setInspectorPage(f.items.length ? 'properties' : 'library');
+              setInspector(open);
+            }}
             aria-label="게임 UI 편집"
-            aria-expanded={inspector}
+            aria-expanded={
+              inspector && (!dock || dock.active === inspectorOwner)
+            }
           >
             UI 편집
           </button>
@@ -713,7 +718,7 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
         <rect
           width="100%"
           height="100%"
-          fill="#fff"
+          fill={f.backgroundColor ?? '#ffffff'}
           onPointerDown={() => setIds([])}
         />
         {f.items.map((original) => {
@@ -838,21 +843,28 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
       </svg>
       {inspector && (
         <GameUiInspectorPanel
+          pageKey={inspectorPage}
           owner={inspectorOwner}
           scope={data.scope}
           title={
-            one?.name ??
-            (chosen.length > 1 ? chosen.length + '개 UI 선택' : f.title)
+            inspectorPage !== 'properties'
+              ? f.title
+              : (one?.name ??
+                (chosen.length > 1 ? chosen.length + '개 UI 선택' : f.title))
           }
           subtitle={
-            one
-              ? f.title + ' / ' + GAME_UI_KINDS[one.kind][0]
-              : '게임 화면 · ' +
-                viewportRatio(f.viewportWidth, f.viewportHeight)
+            inspectorPage === 'library'
+              ? 'UI 라이브러리'
+              : inspectorPage === 'screen'
+                ? '화면 설정'
+                : one
+                  ? f.title + ' / ' + GAME_UI_KINDS[one.kind][0]
+                  : '게임 화면 · ' +
+                    viewportRatio(f.viewportWidth, f.viewportHeight)
           }
           locked={data.locked || !!one?.locked}
           rename={
-            one
+            one && inspectorPage === 'properties'
               ? (name) => {
                   if (f.items.some((i) => i.id !== one.id && i.name === name))
                     throw new Error(
@@ -872,11 +884,8 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                 type="button"
                 aria-label="UI 추가 열기"
                 aria-expanded={inspectorPage === 'library'}
-                onClick={() =>
-                  setInspectorPage(
-                    inspectorPage === 'library' ? 'properties' : 'library',
-                  )
-                }
+                aria-pressed={inspectorPage === 'library'}
+                onClick={() => setInspectorPage('library')}
               >
                 + UI 추가
               </button>
@@ -890,19 +899,16 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
               <button
                 type="button"
                 aria-pressed={inspectorPage === 'screen'}
-                onClick={() =>
-                  setInspectorPage(
-                    inspectorPage === 'screen' ? 'properties' : 'screen',
-                  )
-                }
+                onClick={() => setInspectorPage('screen')}
               >
                 화면 설정
               </button>
             </>
           }
           layers={
+            inspectorPage === 'properties' &&
             f.items.length > 0 && (
-              <details open className="game-ui-layers">
+              <details className="game-ui-layers">
                 <summary>레이어 · {f.items.length}개</summary>
                 <div className="game-ui-layer-list">
                   {f.items.map((i) => (
@@ -1014,6 +1020,12 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                   required
                   maxLength={100}
                 />
+                <GameUiColorField
+                  key={f.id}
+                  label="게임 화면 배경색"
+                  value={f.backgroundColor ?? '#ffffff'}
+                  apply={(backgroundColor) => changeFrame({ backgroundColor })}
+                />
                 <label>
                   화면 비율
                   <select
@@ -1086,7 +1098,7 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                 게임 화면 삭제
               </button>
             </fieldset>
-          ) : (
+          ) : inspectorPage === 'properties' ? (
             <>
               <fieldset
                 disabled={data.locked}
@@ -1453,34 +1465,38 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
                 </p>
               )}
             </>
-          )}
-          <details className="game-ui-export-options">
-            <summary>PNG 출력 기준</summary>
-            <label>
-              출력 상태
-              <select
-                aria-label="PNG 출력 상태"
-                value={exportPreview ? 'preview' : 'saved'}
-                onChange={(e) => setExportPreview(e.target.value === 'preview')}
+          ) : null}
+          {inspectorPage === 'screen' && (
+            <details className="game-ui-export-options">
+              <summary>PNG 출력 기준</summary>
+              <label>
+                출력 상태
+                <select
+                  aria-label="PNG 출력 상태"
+                  value={exportPreview ? 'preview' : 'saved'}
+                  onChange={(e) =>
+                    setExportPreview(e.target.value === 'preview')
+                  }
+                >
+                  <option value="saved">저장된 값</option>
+                  <option value="preview">테스트 화면</option>
+                </select>
+              </label>
+              <p>
+                {exportPreview
+                  ? '화면 전체의 임시 테스트 값·상태를 포함합니다.'
+                  : '임시 테스트를 제외하고 저장된 UI를 출력합니다.'}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  run(exportImage().catch((e) => setError(String(e))))
+                }
               >
-                <option value="saved">저장된 값</option>
-                <option value="preview">테스트 화면</option>
-              </select>
-            </label>
-            <p>
-              {exportPreview
-                ? '화면 전체의 임시 테스트 값·상태를 포함합니다.'
-                : '임시 테스트를 제외하고 저장된 UI를 출력합니다.'}
-            </p>
-            <button
-              type="button"
-              onClick={() =>
-                run(exportImage().catch((e) => setError(String(e))))
-              }
-            >
-              PNG 내보내기
-            </button>
-          </details>
+                PNG 내보내기
+              </button>
+            </details>
+          )}
         </GameUiInspectorPanel>
       )}
       {error && !inspector && (

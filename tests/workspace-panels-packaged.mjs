@@ -240,9 +240,7 @@ try {
         'document.querySelector(".plugin-control-panel").contains(document.activeElement)',
       ),
     );
-    await js(
-      `document.querySelector('[aria-label="플러그인 패널 닫기"]').click()`,
-    );
+    await js(`document.querySelector('[aria-label="작업 패널 닫기"]').click()`);
     await js(
       `document.querySelector('[title="프로젝트 홈으로 돌아가기"]').click()`,
     );

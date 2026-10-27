@@ -270,7 +270,7 @@ try {
     '[...document.querySelectorAll(".kanban-column")].find(c=>c.querySelector("h3").textContent.includes("진행 중")).textContent.includes("개발 문서 A")',
   );
   await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
-  await click('[aria-label="플러그인 패널 닫기"]');
+  await click('[aria-label="작업 패널 닫기"]');
   assert.equal(
     await js('!!document.querySelector(".kanban-canvas-node")'),
     true,
@@ -322,7 +322,7 @@ try {
   await click('.plugin-control-panel [aria-label="칸반 보드 열기"]');
   await screenshot('workflow-plugin-kanban-controls.png');
   await js('document.documentElement.dataset.theme="dark"');
-  await click('[aria-label="플러그인 패널 닫기"]');
+  await click('[aria-label="작업 패널 닫기"]');
   await mouse('mousePressed', 16, 250, 1);
   await mouse('mouseReleased', 16, 250);
   await wait('!document.querySelector(".react-flow__node-kanban.selected")');
@@ -454,7 +454,7 @@ try {
     minimized,
     'Reactivation restores canvas geometry and minimized state',
   );
-  await click('[aria-label="플러그인 패널 닫기"]');
+  await click('[aria-label="작업 패널 닫기"]');
   const beforeSection = await js(
     'window.gameCanvas.listSections().then(s=>s[0])',
   );
@@ -531,7 +531,7 @@ try {
     stablePanel,
     'Reload restores plugin panel geometry',
   );
-  await click('[aria-label="플러그인 패널 닫기"]');
+  await click('[aria-label="작업 패널 닫기"]');
   await wait(
     'document.querySelectorAll(".section-member-hidden").length === 2',
   );
@@ -622,7 +622,7 @@ try {
     firstSaved,
     'Changing another canvas does not alter first board',
   );
-  await click('[aria-label="플러그인 패널 닫기"]');
+  await click('[aria-label="작업 패널 닫기"]');
   // Load a legacy HTML without a management record; status selection must create/update its anchor.
   await fs.mkdir(path.join(game, 'output'), { recursive: true });
   await fs.writeFile(
@@ -700,7 +700,7 @@ try {
   );
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape' });
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape' });
-  await click('[aria-label="플러그인 패널 닫기"]');
+  await click('[aria-label="작업 패널 닫기"]');
   await js(
     '(async()=>{const s=await window.gameCanvas.getCanvasSheets();await window.gameCanvas.changeCanvasSheets({action:"add",id:"future",name:"새 캔버스",expected:s.raw??null});})()',
   );

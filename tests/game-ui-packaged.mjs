@@ -148,6 +148,15 @@ try {
   await boot();
   await js('document.querySelector("[data-plugin-launcher]").click()');
   await wait('!!document.querySelector(".builtin-feature-open")');
+  assert.equal(
+    await js(`!!document.querySelector('[aria-label="플러그인 패널 닫기"]')`),
+    false,
+  );
+  assert.ok(
+    await js(
+      `Array.from(document.querySelectorAll('.builtin-feature-open strong')).every(e=>e.getBoundingClientRect().height<45)`,
+    ),
+  );
   await js(
     `Array.from(document.querySelectorAll('.builtin-feature-open')).find(e=>e.textContent.includes('게임 UI')).click()`,
   );
@@ -223,6 +232,22 @@ try {
   );
   await js(`document.querySelector('[aria-label="게임 UI 편집"]').click()`);
   await wait('!!document.querySelector(".game-ui-inspector")');
+  const closedChevron = await js(
+    'getComputedStyle(document.querySelector(".game-ui-layers > summary"),"::before").transform',
+  );
+  assert.equal(
+    await js(
+      'getComputedStyle(document.querySelector(".game-ui-layers > summary"),"::before").content',
+    ),
+    '""',
+  );
+  await js('document.querySelector(".game-ui-layers summary").click()');
+  assert.notEqual(
+    await js(
+      'getComputedStyle(document.querySelector(".game-ui-layers > summary"),"::before").transform',
+    ),
+    closedChevron,
+  );
   await js('document.querySelector(".game-ui-layer-list button").click()');
   await wait(`!!document.querySelector('[aria-label="최소 값"]')`);
   assert.equal(
@@ -313,7 +338,84 @@ try {
     changes: { x: 300, y: 400 },
     expected: { x: frame.x, y: frame.y },
   });
+  // Edit through the actual inspector, then verify disk state and full restart below.
+  const fill = (label, value) =>
+    js(
+      `(()=>{const e=document.querySelector('[aria-label="${label}"]');e.closest('details')?.setAttribute('open','');e.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(String(value))});e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new FocusEvent('focusout',{bubbles:true}));})()`,
+    );
+  await js(`document.querySelector('[aria-label="UI 추가 열기"]').click()`);
+  await wait('!!document.querySelector("[data-game-ui-kind=text]")');
+  assert.equal(
+    await js('!!document.querySelector(".game-ui-detail-editor")'),
+    false,
+  );
+  assert.equal(
+    await js('document.querySelectorAll(".game-ui-library-category").length'),
+    3,
+  );
+  await js(
+    `(()=>{const e=document.querySelector('[aria-label="UI 요소 검색"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'정보');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+  );
+  await wait('document.querySelectorAll("[data-game-ui-kind]").length===1');
+  await js('document.querySelector("[data-game-ui-kind=text]").click()');
+  await wait('window.gameCanvas.listGameUi().then(f=>f[0].items.length===2)');
+  assert.equal(await js('!!document.querySelector(".game-ui-library")'), false);
+  assert.equal(
+    await js('document.querySelector(".game-ui-layers").open'),
+    false,
+  );
+  assert.equal(
+    await js(
+      `!!document.querySelector('[aria-label="UI 속성 닫기"], [aria-label="속성 패널 배치 전환"]')`,
+    ),
+    false,
+  );
+  await fill('UI 이름', '대화 내용');
+  await wait(
+    'window.gameCanvas.listGameUi().then(f=>f[0].items[1].name==="대화 내용")',
+  );
+  await fill('배경색', '#fce7f3');
+  await wait(
+    'window.gameCanvas.listGameUi().then(f=>f[0].items[1].backgroundOpacity===1)',
+  );
+  await js(`document.querySelector('[aria-label="테두리 표시"]').click()`);
+  await wait(
+    'window.gameCanvas.listGameUi().then(f=>f[0].items[1].borderWidth===2)',
+  );
+  for (const [label, value, key] of [
+    ['테두리 색', '#be185d', 'borderColor'],
+    ['테두리 두께', 6, 'borderWidth'],
+    ['모서리 R값', 14, 'cornerRadius'],
+  ]) {
+    await fill(label, value);
+    await wait(
+      `window.gameCanvas.listGameUi().then(f=>f[0].items[1][${JSON.stringify(key)}]===${JSON.stringify(value)})`,
+    );
+  }
+  await js(
+    `Array.from(document.querySelectorAll('.game-ui-inspector-toolbar button')).find(e=>e.textContent==='화면 설정').click()`,
+  );
+  await wait(`!!document.querySelector('[aria-label="게임 화면 배경색"]')`);
+  await fill('게임 화면 배경색', '#34495e');
+  await wait(
+    'window.gameCanvas.listGameUi().then(f=>f[0].backgroundColor==="#34495e")',
+  );
+  assert.equal(
+    await js(
+      'document.querySelector(".game-ui-stage > rect").getAttribute("fill")',
+    ),
+    '#34495e',
+  );
   const expected = await js('window.gameCanvas.listGameUi().then(f=>f[0])');
+  await js(`document.querySelector('[aria-label="작업 패널 닫기"]').click()`);
+  await wait('!document.querySelector(".canvas-dock")');
+  await js(`document.querySelector('[aria-label="게임 UI 편집"]').click()`);
+  await wait('!!document.querySelector(".game-ui-layers")');
+  assert.equal(
+    await js('document.querySelectorAll(".game-ui-inspector").length'),
+    1,
+  );
+  await js(`document.querySelector('[aria-label="캔버스 전체 맞춤"]').click()`);
   await fs.mkdir('out/game-ui-packaged', { recursive: true });
   const screenshot = await send('Page.captureScreenshot');
   await fs.writeFile(

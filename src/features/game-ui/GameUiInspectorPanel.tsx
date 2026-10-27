@@ -95,6 +95,7 @@ export function GameUiInspectorPanel({
   rename,
   locked,
   layers,
+  pageKey,
 }: {
   owner: string;
   scope: string;
@@ -107,6 +108,7 @@ export function GameUiInspectorPanel({
   rename?: (value: string) => void | Promise<unknown>;
   locked?: boolean;
   layers?: ReactNode;
+  pageKey?: string;
 }) {
   const { dock } = useGameUiInspector(owner);
   const [fallback, saveFallback] = usePersonalValue(
@@ -172,63 +174,66 @@ export function GameUiInspectorPanel({
       onWheel={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <div
-        className="game-ui-panel-resize"
-        role="separator"
-        aria-label="속성 패널 너비"
-        aria-orientation="vertical"
-        aria-valuenow={width}
-        aria-valuemin={320}
-        aria-valuemax={480}
-        aria-valuetext={`${width}px`}
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      {!dock?.embedded && (
+        <div
+          className="game-ui-panel-resize"
+          role="separator"
+          aria-label="속성 패널 너비"
+          aria-orientation="vertical"
+          aria-valuenow={width}
+          aria-valuemin={320}
+          aria-valuemax={480}
+          aria-valuetext={`${width}px`}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              e.preventDefault();
+              save({
+                ...stored,
+                width: Math.min(
+                  480,
+                  Math.max(320, width + (e.key === 'ArrowLeft' ? 16 : -16)),
+                ),
+              });
+            }
+          }}
+          onPointerDown={(e) => {
             e.preventDefault();
-            save({
-              ...stored,
-              width: Math.min(
-                480,
-                Math.max(320, width + (e.key === 'ArrowLeft' ? 16 : -16)),
-              ),
-            });
-          }
-        }}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          gesture.current = {
-            mode: 'resize',
-            x: e.clientX,
-            y: e.clientY,
-            width,
-            left: x,
-            top: y,
-          };
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-          const g = gesture.current;
-          if (g?.mode === 'resize')
-            setGeometry({
-              width: Math.min(480, Math.max(320, g.width + g.x - e.clientX)),
-              x: g.left,
-              y: g.top,
-            });
-        }}
-        onPointerUp={() => {
-          if (geometry) save({ ...stored, ...geometry });
-          gesture.current = null;
-          setGeometry(null);
-        }}
-        onPointerCancel={() => {
-          gesture.current = null;
-          setGeometry(null);
-        }}
-      />
+            gesture.current = {
+              mode: 'resize',
+              x: e.clientX,
+              y: e.clientY,
+              width,
+              left: x,
+              top: y,
+            };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            const g = gesture.current;
+            if (g?.mode === 'resize')
+              setGeometry({
+                width: Math.min(480, Math.max(320, g.width + g.x - e.clientX)),
+                x: g.left,
+                y: g.top,
+              });
+          }}
+          onPointerUp={() => {
+            if (geometry) save({ ...stored, ...geometry });
+            gesture.current = null;
+            setGeometry(null);
+          }}
+          onPointerCancel={() => {
+            gesture.current = null;
+            setGeometry(null);
+          }}
+        />
+      )}
       <header
         className="game-ui-inspector-header"
         onPointerDown={(e) => {
           if (
+            dock?.embedded ||
             !stored.floating ||
             e.button !== 0 ||
             (e.target as Element).closest('button, input, select')
@@ -289,29 +294,35 @@ export function GameUiInspectorPanel({
             <strong>{title}</strong>
           )}
         </div>
-        <button
-          type="button"
-          title={
-            stored.floating ? '화면 우측에 고정' : '이동 가능한 패널로 전환'
-          }
-          aria-label="속성 패널 배치 전환"
-          aria-pressed={stored.floating}
-          onClick={() => save({ ...stored, floating: !stored.floating })}
-        >
-          {stored.floating ? (
-            <PanelRightOpen size={16} />
-          ) : (
-            <PanelRightClose size={16} />
-          )}
-        </button>
-        <button type="button" onClick={close} aria-label="UI 속성 닫기">
-          <X size={16} />
-        </button>
+        {!dock?.embedded && (
+          <button
+            type="button"
+            title={
+              stored.floating ? '화면 우측에 고정' : '이동 가능한 패널로 전환'
+            }
+            aria-label="속성 패널 배치 전환"
+            aria-pressed={stored.floating}
+            onClick={() => save({ ...stored, floating: !stored.floating })}
+          >
+            {stored.floating ? (
+              <PanelRightOpen size={16} />
+            ) : (
+              <PanelRightClose size={16} />
+            )}
+          </button>
+        )}
+        {!dock?.embedded && (
+          <button type="button" onClick={close} aria-label="UI 속성 닫기">
+            <X size={16} />
+          </button>
+        )}
       </header>
       {toolbar && <div className="game-ui-inspector-toolbar">{toolbar}</div>}
-      {layers && <div className="game-ui-inspector-layers">{layers}</div>}
-      {status}
-      <div className="game-ui-inspector-scroll">{children}</div>
+      <div key={pageKey} className="game-ui-inspector-scroll">
+        {layers && <div className="game-ui-inspector-layers">{layers}</div>}
+        {status}
+        {children}
+      </div>
     </aside>
   );
   return host ? createPortal(content, host) : content;

@@ -43,6 +43,10 @@ async function run() {
   const click = (selector) =>
     js(`document.querySelector(${JSON.stringify(selector)}).click()`);
   const select = async (label, value) => {
+    if (label === 'PNG 출력 상태')
+      await js(
+        `Array.from(document.querySelectorAll('.game-ui-inspector-toolbar button')).find(e=>e.textContent==='화면 설정').click()`,
+      );
     if (label === 'UI 추가' || label === 'HUD 조합') {
       if (!(await js('!!document.querySelector(".game-ui-inspector")')))
         await click('[aria-label="게임 UI 편집"]');
@@ -88,6 +92,23 @@ async function run() {
     );
     await click('[data-plugin-launcher]');
     await wait('!!document.querySelector(".builtin-feature-row")');
+    win.setSize(980, 640);
+    await pause();
+    assert.equal(
+      await js(`!!document.querySelector('[aria-label="플러그인 패널 닫기"]')`),
+      false,
+    );
+    assert.ok(
+      await js(
+        `Array.from(document.querySelectorAll('.builtin-feature-row')).every(e=>{const r=e.getBoundingClientRect(),b=e.querySelector('strong').getBoundingClientRect(),s=e.querySelector('[role=switch]').getBoundingClientRect();return b.width>110&&b.height<45&&r.right<=innerWidth&&s.right<=r.right})`,
+      ),
+    );
+    await fs.mkdir('out/game-ui-ui', { recursive: true });
+    await fs.writeFile(
+      'out/game-ui-ui/plugins-small.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    win.setSize(1600, 1100);
     await js(
       `Array.from(document.querySelectorAll('.builtin-feature-open')).find(e=>e.textContent.includes('게임 UI')).click()`,
     );
@@ -114,11 +135,57 @@ async function run() {
     );
     await click('[aria-label="게임 UI 편집"]');
     await wait('!!document.querySelector(".game-ui-inspector")');
+    assert.equal(
+      await js(
+        `!!document.querySelector('[aria-label="속성 패널 배치 전환"], [aria-label="UI 속성 닫기"]')`,
+      ),
+      false,
+    );
+    assert.equal(
+      await js(
+        '!!document.querySelector(".game-ui-detail-editor, .game-ui-selection-actions")',
+      ),
+      false,
+    );
+    assert.equal(
+      await js('document.querySelectorAll(".game-ui-library-category").length'),
+      3,
+    );
+    await js(
+      `(()=>{const e=document.querySelector('[aria-label="UI 요소 검색"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'체력');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await wait('document.querySelectorAll("[data-game-ui-kind]").length===1');
+    assert.equal(
+      await js(
+        'document.querySelector("[data-game-ui-kind]").dataset.gameUiKind',
+      ),
+      'health',
+    );
+    await js(
+      `(()=>{const e=document.querySelector('[aria-label="UI 요소 검색"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'zzzz');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await wait('document.querySelectorAll("[data-game-ui-kind]").length===0');
+    await js(
+      `(()=>{const e=document.querySelector('[aria-label="UI 요소 검색"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await wait('document.querySelectorAll("[data-game-ui-kind]").length===10');
+    await fs.writeFile(
+      'out/game-ui-ui/library.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
     await select('UI 추가', 'health');
     await wait(
       '(async()=> (await window.gameCanvas.listGameUi())[0].items.length===1)()',
     );
     await select('UI 외형', 'ring');
+    assert.equal(
+      await js('!!document.querySelector(".game-ui-library")'),
+      false,
+    );
+    assert.equal(
+      await js('document.querySelector(".game-ui-layers").open'),
+      false,
+    );
     await wait(
       '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].shape==="ring")()',
     );
@@ -255,7 +322,10 @@ async function run() {
       '(async()=> (await window.gameCanvas.listDocuments()).some(d=>d.relativePath.startsWith("docs/ui/")))()',
     );
     await js(
-      `(async()=>{const d=(await window.gameCanvas.listDocuments()).find(d=>d.relativePath.startsWith('docs/ui/'));await window.gameCanvas.saveDocument({relativePath:d.relativePath,title:d.title,body:d.body.replace('현재 체력과 최대 체력을 표시합니다.','한글로 직접 편집한 기능 설명')})})()`,
+      `(async()=>{const d=(await window.gameCanvas.listDocuments()).find(d=>d.relativePath.startsWith('docs/ui/'));await window.gameCanvas.saveDocument({relativePath:d.relativePath,title:d.title,body:d.body.replace('현재 체력과 최대 체력을 표시합니다.','한글로 직접 편집한 기능 설명<br>둘째 줄')})})()`,
+    );
+    await wait(
+      `Array.from(document.querySelectorAll('.document-card td')).some(e=>e.textContent.includes('한글로 직접 편집한 기능 설명')&&e.querySelector('br')&&!e.textContent.includes('<br>'))`,
     );
     if (!(await js('!!document.querySelector(".game-ui-inspector")')))
       await click('[aria-label="게임 UI 편집"]');
@@ -501,6 +571,9 @@ async function run() {
     await select('PNG 출력 상태', 'saved');
     await click('.game-ui-test-banner button');
     await wait('!document.querySelector(".game-ui-test-banner")');
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-inspector-toolbar button')).find(e=>e.textContent==='속성').click()`,
+    );
     assert.equal(
       await js(
         '(async()=>JSON.stringify(await window.gameCanvas.listGameUi()))()',
@@ -586,17 +659,104 @@ async function run() {
       '(async()=> (await window.gameCanvas.listGameUi())[0].items.length===4)()',
     );
     await wait('!!document.querySelector(\'[aria-label="UI 문구"]\')');
+    assert.ok(
+      await js(
+        'document.querySelector(\'[aria-label="UI 이름"]\').labels[0].getBoundingClientRect().height > 10',
+      ),
+    );
+    await fill('UI 이름', '대화 내용');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[3].name==="대화 내용")()',
+    );
+    await js('window.gameCanvas.undo()');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[3].name==="텍스트")()',
+    );
+    const textStyle = async (label, value, field) => {
+      await fill(label, value);
+      await wait(
+        `(async()=> (await window.gameCanvas.listGameUi())[0].items[3][${JSON.stringify(field)}]===${JSON.stringify(value)})()`,
+      );
+    };
+    await textStyle('배경색', '#fce7f3', 'backgroundColor');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[3].backgroundOpacity===1)()',
+    );
+    await click('[aria-label="테두리 표시"]');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[3].borderWidth===2)()',
+    );
+    await textStyle('테두리 색', '#be185d', 'borderColor');
+    await textStyle('테두리 두께', 6, 'borderWidth');
+    await textStyle('모서리 R값', 14, 'cornerRadius');
+    // Locate by kind from saved data, rather than relying on SVG selection handles.
+    const textId = await js(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].items[3].id)()',
+    );
+    const body = `[data-game-ui-item="${textId}"] [data-ui-part="body"]`;
     assert.equal(
-      await js('!!document.querySelector(\'[aria-label="배경색"]\')'),
-      false,
+      await js(`document.querySelector('${body} > path').getAttribute('fill')`),
+      '#fce7f3',
     );
     assert.equal(
-      await js('!!document.querySelector(\'[aria-label="테두리 색"]\')'),
-      false,
+      await js(
+        `document.querySelector('${body} > path[stroke]').getAttribute('stroke')`,
+      ),
+      '#be185d',
+    );
+    assert.match(
+      await js(`document.querySelector('${body} > path').getAttribute('d')`),
+      /^M15 1/,
+    );
+    await click('[aria-label="테두리 표시"]');
+    await wait(
+      `document.querySelector('${body} > path[stroke]').getAttribute('stroke-opacity')==='0'`,
+    );
+    await click('[aria-label="테두리 표시"]');
+    await wait(
+      `document.querySelector('${body} > path[stroke]').getAttribute('stroke-opacity')==='1'`,
+    );
+    await fs.writeFile(
+      'out/game-ui-ui/text-appearance.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-inspector-toolbar button')).find(e=>e.textContent==='화면 설정').click()`,
+    );
+    await wait('!!document.querySelector(\'[aria-label="게임 화면 배경색"]\')');
+    await fill('게임 화면 배경색', '#34495e');
+    await wait(
+      '(async()=> (await window.gameCanvas.listGameUi())[0].backgroundColor==="#34495e")()',
     );
     assert.equal(
-      await js('!!document.querySelector(\'[aria-label="모서리 R값"]\')'),
-      false,
+      await js(
+        'document.querySelector(".game-ui-stage > rect").getAttribute("fill")',
+      ),
+      '#34495e',
+    );
+    await js('window.gameCanvas.undo()');
+    await wait(
+      'document.querySelector(".game-ui-stage > rect").getAttribute("fill")==="#ffffff"',
+    );
+    await js('window.gameCanvas.redo()');
+    await wait(
+      'document.querySelector(".game-ui-stage > rect").getAttribute("fill")==="#34495e"',
+    );
+    await js(
+      `window.qaGameUiPng=null;Array.from(document.querySelectorAll('.game-ui-drag-handle button')).find(e=>e.textContent==='PNG').click()`,
+    );
+    await wait('!!window.qaGameUiPng');
+    const backgroundPixel = nativeImage
+      .createFromDataURL(await js('window.qaGameUiPng.data'))
+      .toBitmap()
+      .subarray(0, 4);
+    assert.deepEqual([...backgroundPixel], [94, 73, 52, 255]);
+    await fs.writeFile(
+      'out/game-ui-ui/screen-background.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.game-ui-inspector-toolbar button')).find(e=>e.textContent==='속성').click()`,
     );
     await js(
       `Array.from(document.querySelectorAll('.game-ui-selection-actions button')).find(e=>e.textContent==='잠금 전환').click()`,
@@ -650,8 +810,8 @@ async function run() {
       await js('document.querySelectorAll(".game-ui-inspector").length'),
       1,
     );
-    await click('[aria-label="UI 속성 닫기"]');
-    await wait('!document.querySelector(".game-ui-inspector")');
+    await click('[aria-label="작업 패널 닫기"]');
+    await wait('!document.querySelector(".canvas-dock")');
     assert.equal(
       await js(
         '!!document.querySelector(".game-ui-inspector-host[data-game-ui-dock=open]")',

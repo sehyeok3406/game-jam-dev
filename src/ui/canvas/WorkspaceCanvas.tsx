@@ -455,9 +455,7 @@ export function WorkspaceCanvas({
           embedded
           externalHost={gameUiPanelHost}
           onActiveChange={setGameUiPanelActive}
-          suspended={
-            !!inspectorId || (dockPanel !== null && dockPanel !== 'properties')
-          }
+          suspended={!!inspectorId || dockPanel !== 'properties'}
           onOpen={() => {
             setDockPanel('properties');
             setInspectorId(null);

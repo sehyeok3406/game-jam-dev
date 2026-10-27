@@ -57,6 +57,9 @@ export function readGameUi(raw: string, path?: string): GameUiFrame {
     !Number.isInteger(f.viewportWidth) ||
     !Number.isInteger(f.viewportHeight) ||
     f.viewportWidth * f.viewportHeight > 16_777_216 ||
+    (f.backgroundColor !== undefined &&
+      (typeof f.backgroundColor !== 'string' ||
+        !/^#[a-f\d]{6}$/i.test(f.backgroundColor))) ||
     !Array.isArray(f.items) ||
     f.items.length > 500 ||
     !(
@@ -362,6 +365,7 @@ export function applyGameUi(files: Files, c: GameUiCommand): Files {
       'width',
       'viewportWidth',
       'viewportHeight',
+      'backgroundColor',
     ];
     if (!c.changes || Object.keys(c.changes).some((k) => !allowed.includes(k)))
       fail();

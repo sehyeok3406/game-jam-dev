@@ -426,21 +426,36 @@
   margin: 12px 0;
 }
 .builtin-feature-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 23px minmax(0, 1fr) 34px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-subtle);
 }
 .builtin-feature-open {
-  flex: 1;
+  display: block;
+  min-width: 0;
   text-align: left;
   border: 0;
   background: transparent;
   color: inherit;
   padding: 0;
+}
+.builtin-feature-row + .builtin-feature-row {
+  margin-top: 8px;
+}
+.builtin-feature-open strong {
+  white-space: normal;
+  word-break: keep-all;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.builtin-feature-open span {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .builtin-feature-open strong,
 .builtin-feature-open span {
