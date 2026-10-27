@@ -10,6 +10,18 @@
 
 공동 편집의 게임 화면 배경색 변경에는 이 속성을 허용하는 최신 협업 서버가 필요하다. 앱 게시와 운영 서버·터널 재시작은 별개다.
 
+2026-10-27 [v0.38.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.38.0)를 게시했다. 제품 소스와 태그는 `599598aea235a4c0cd287e98f8edd0f722231f76`이며 [Windows·Linux CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/40509736782)를 모두 통과했다. 자동 테스트 1,015개(실패·skip 0), root/contracts/core 타입 검사, 린트·전체 서식 검사를 통과했다. 게임 UI 편집·PNG·최소 창·테마·접기 표시·그림 편집과 최종 패키지의 실제 저장·재시작 복원을 확인했다. 별도 공통 패널 UI 검사의 홈 모달 포커스 복귀 실패는 변경 전에도 재현되며 통과 항목에서 제외했다. 아키텍처 검사에서는 최신 원격에서 이미 해소된 home-service 예외 한 건을 검증 기준에서 줄였고 새 예외를 추가하지 않았다.
+
+공유 의존성 캐시의 외부 경로가 기록된 초기 서버 번들은 제외하고, 검증 가능한 내부 캐시로 다시 패키징한 최종 결과물을 게시했다. 제품 입력 581개와 패키지 리소스 17개의 크기·해시가 최종 검증부터 `make --from-package` 전후·nupkg 내부까지 일치한다. app.asar SHA-256은 `ad61cb77e58ee29aadbc132f01f455bf921cd2d85b87c4844394984468511be2`이며 내장 서버 번들의 무결성·실행 경계 검사도 통과했다.
+
+| 공개 파일                     | 크기(바이트) | SHA-256                                                          |
+| ----------------------------- | -----------: | ---------------------------------------------------------------- |
+| Game.Jam-0.38.0.Setup.exe     |    194397184 | 68a1a12490641aea25239a98f7659da5b603bfd4f3977d44a85d6b5dc44751de |
+| game_canvas-0.38.0-full.nupkg |    193488311 | bb8e13871b7b1f1d2009a16216d34d04112e58d78f0150be9e55ad8bcb96de17 |
+| RELEASES                      |           83 | 52f67ff723af670f69111e3add0e168fa037fc1823247116bb39f23446a26fd1 |
+
+GitHub 자산 SHA-256·크기가 로컬과 일치하고 세 파일의 인증 없는 다운로드 접근(206)을 확인했다. 공개 RELEASES 원문과 패키지 이름·SHA-1 `9C57CB1810A7081538844A7EF5CE0F17BD342CD6`·크기도 일치한다. 게시 직후 v0.37.2 업데이트 JSON과 RELEASES 피드가 v0.38.0을 안내하고 현재 버전은 204를 반환했다. **배포 파일 게시·검증과 자동 업데이트 피드 반영을 모두 확인했다.** [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.38.0/Game.Jam-0.38.0.Setup.exe). 실제 사용 중인 설치 앱의 다운로드·재시작 완료는 별도 확인 대상이며 운영 서버·터널은 재시작하지 않았다.
+
 ## v0.37.2 협업 서버 종료 실패 수정
 
 서버 종료 전 검사에서 `.project-trash`·`.project-lifecycle` 관리 폴더를 프로젝트로 잘못 읽어 GC-HOST-099가 발생하던 문제를 수정했다. SQLite가 있으면 최신 WAL을 포함한 현재 작업 기록을 읽기 전용으로 확인하고, 이전 형식은 알려진 관리 폴더를 제외한 실제 프로젝트만 검사한다. 진행 중인 AI 실행·대기열이 있으면 종료를 차단하고, 작업 상태를 읽을 수 없으면 GC-HOST-016을 표시하며 서버를 유지한다. 앱의 서버 끄기·재시작과 CLI Stop·RestartServer가 같은 검사를 사용한다.
@@ -686,8 +698,8 @@ Windows x64 설치 파일 `Game.Jam-0.10.4.Setup.exe`, 자동 업데이트 패�
 
 ## 팀원에게 전달할 주소
 
-- [v0.35.5 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.35.5)
-- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.35.5/Game.Jam-0.35.5.Setup.exe)
+- [v0.38.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.38.0)
+- [Windows x64 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.38.0/Game.Jam-0.38.0.Setup.exe)
 
 새 팀원은 설치 파일만 내려받아 실행하면 됩니다. `RELEASES`와 `.nupkg`는 앱이 사용하는 자동 업데이트 파일이므로 팀원이 따로 실행할 필요는 없습니다. 릴리스 페이지에 ZIP 소스 다운로드가 자동 표시되지만 일반 사용자는 소스 대신 설치 파일을 받습니다. Windows 코드 서명은 아직 적용하지 않았습니다.
 
