@@ -13,6 +13,7 @@ const server = await createServer({
       name: 'temporary-drag-investigation',
       enforce: 'pre',
       transform(source, id) {
+        source = source.replaceAll('\r\n', '\n');
         if (
           id.endsWith('/src/ui/documents/DocumentCard.tsx') &&
           process.env.DRAG_BASELINE === '1'

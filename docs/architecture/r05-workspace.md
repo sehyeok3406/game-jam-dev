@@ -47,3 +47,13 @@ DocumentSaveQueue가 원본 저장 상태를 계속 소유한다. 새 전역 sav
 `tests/workspace-commands.test.mjs`의 15개 회귀는 좌표/높이/revision·최소 섹션·혼합 이동 계획, StrictMode에서 생성 선택/왕복 만료, 조회 역순, 복원 중 세션 변경/이중 클릭, 가져오기 후 프로젝트 전환, 캔버스 전환 중 늦은 조회, 동시 드래그 pending, refresh 후 소속 확인, callback identity/최신 port, AI 준비 중 세션 변경·준비 busy 격리·프로젝트 수명과 캔버스 전환을 검사한다.
 
 실제 UI·integration·Windows package 결과와 남은 외부 환경 검증은 `REFACTORING_PLAN_2026-10-20.md` 27절을 참조한다. 기록은 `out/r05-final-*.log`, `out/r05-final-suites.json`, `out/refactoring-package-*-r05-final-2026-10-21.json`에 둔다. 모든 프로젝트·프로필은 임시/격리 자료이며 AI 실행 연동은 mock CLI다.
+
+## 다중 이동 렌더 경계 (2026-10-29)
+
+React Flow 노드 진입점은 geometry를 받고, 문서·섹션·HTML·게임 UI·칸반의 내부 내용은 data/selected만 받는 memo 컴포넌트로 렌더한다. 그림/텍스트도 같은 좁은 입력을 내부에 전달한다. 위치만 바뀔 때 본문을 다시 파싱하지 않으며 state/context와 내용·선택·권한 변경은 계속 반영한다. CanvasResizeProvider는 save/scope가 같으면 Context 값을 재사용한다.
+
+useCanvasSelection의 selectionContent는 선택 ID/data가 같은 동안 identity를 유지하는 파생 UI 값이다. geometry와 저장 원본을 복제하지 않는다. WorkspaceScreen의 선택 그림/미리보기 모델은 이 값을 사용한다. 빈 스냅 가이드의 반복 갱신은 생략한다.
+
+드롭 저장은 기존 geometry hook과 배치 명령을 유지한다. HTML 창은 기존 updatePreviewWindows로 모아 갱신하고 성공한 대상만 화면에 반영한다. 이전 배치의 늦은 완료는 창별 sequence로 걸러 최신 위치를 보존한다. 문서/그림과 개인 HTML 창 설정이 하나의 원자적 저장이나 Undo가 되는 것은 아니다. 이동 중 저장·5초 checkpoint는 없다.
+
+검증은 workspace-commands의 preview 배치/부분 실패/역순 완료 회귀, drag-performance UI와 패키지의 실제 포인터 이동·배치 저장·Undo/Redo·재시작 보존으로 연결한다.

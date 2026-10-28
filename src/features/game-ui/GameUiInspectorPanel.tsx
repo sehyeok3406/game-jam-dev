@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -54,18 +55,20 @@ export function GameUiInspectorProvider({
   useEffect(() => {
     if (suspended) setActive(null);
   }, [suspended]);
+  const value = useMemo<Dock>(
+    () => ({
+      embedded,
+      active,
+      root: embedded ? (externalHost ?? null) : root,
+      open: setActive,
+      close: (id) => setActive((v) => (v === id ? null : v)),
+      preferences,
+      savePreferences,
+    }),
+    [embedded, active, externalHost, root, preferences, savePreferences],
+  );
   return (
-    <Context
-      value={{
-        embedded,
-        active,
-        root: embedded ? (externalHost ?? null) : root,
-        open: setActive,
-        close: (id) => setActive((v) => (v === id ? null : v)),
-        preferences,
-        savePreferences,
-      }}
-    >
+    <Context value={value}>
       {children}
       {!embedded && (
         <div

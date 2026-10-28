@@ -131,7 +131,7 @@ import { DocumentCard } from '../documents/DocumentCard';
 import { pendingDocument } from '../documents/presentation';
 import { useFileWorkflow } from '../documents/useFileWorkflow';
 import '../drawing/drawing.css';
-import { DrawingNode, type DrawingCanvasNode } from '../drawing/DrawingNode';
+import { DrawingNode } from '../drawing/DrawingNode';
 import { useDrawing } from '../drawing/useDrawing';
 import { DraftFlusherRegistry } from '../editor/draft-flushers';
 import { useWorkspaceHistory } from '../history/useWorkspaceHistory';
@@ -140,7 +140,7 @@ import {
   defaultMiniMapPreferences,
   readMiniMapPreferences,
 } from '../minimap-preferences';
-import { PreviewCard, type PreviewNodeData } from '../preview/PreviewCard';
+import { PreviewCard } from '../preview/PreviewCard';
 import { usePreviewWindows } from '../preview/usePreviewWindows';
 import { ProjectHome } from '../ProjectHome';
 import { requireDesktopApi } from '../runtime/desktop-api';

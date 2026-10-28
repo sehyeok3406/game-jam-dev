@@ -21,3 +21,5 @@
 | 호환 데이터·프로토콜                        | 협업/캐시/속성/오프라인 기본 테스트 및 `runtime-contracts.test.mjs`                                                                              | protocol v1, 기존 캐시·DB 형태·기존 저장 키               |
 
 R03의 늦은 완료/같은 경로 재개는 `test:project-session`, R06의 실행·반영 실패/예약/승인/수명 경계는 `ai-executor`, `ai-run-service`, `ai-queue-service`, `approval-service`, `desktop-bootstrap`, `ai-run-coordinator` 단위 검사와 production mock IPC 검사로 연결했다. R04의 26개 명령 대응 검토와 R08~R10의 스키마·백업·Linux 번들 검사는 후속이다. 기존 테스트로 아직 구현하지 않은 경계의 완료를 주장하지 않는다.
+
+다중 이동: `node tests/run-drag-performance-ui.mjs`는 20/100/300개 실제 포인터 이동의 본문 렌더·이동 중 무저장·드롭 배치를 확인한다. `node tests/drag-performance-packaged.mjs`는 최종 패키지의 파일 좌표·본문/metadata·Undo/Redo·재시작을 확인한다. `workspace-commands.test.mjs`는 HTML 배치의 부분 실패와 오래된 응답을 검사한다.

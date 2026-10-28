@@ -1,5 +1,5 @@
 import { useRuntime } from '../../ui/runtime/runtime-context.ts';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { nearDocumentPosition } from '../../canvas-placement.ts';
 export type KanbanPreferences = {
   enabled: boolean;
@@ -28,14 +28,17 @@ export function usePersonalValue<T>(key: string, fallback: T) {
   useEffect(() => {
     setStored({ key, value: read() });
   }, [key]);
-  const update = (value: T) => {
-    setStored({ key, value });
-    try {
-      preferences.setItem(key, JSON.stringify(value));
-    } catch {
-      /* The current view still works when personal storage is full. */
-    }
-  };
+  const update = useCallback(
+    (value: T) => {
+      setStored({ key, value });
+      try {
+        preferences.setItem(key, JSON.stringify(value));
+      } catch {
+        /* The current view still works when personal storage is full. */
+      }
+    },
+    [key, preferences],
+  );
   return [state, update] as const;
 }
 export const defaultKanban: KanbanPreferences = {

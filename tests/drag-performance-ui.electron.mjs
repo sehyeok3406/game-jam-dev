@@ -108,6 +108,11 @@ async function run() {
           assert.ok(Math.abs(moved[i].x - beforePositions[i].x - dx) < 0.01);
           assert.ok(Math.abs(moved[i].y - beforePositions[i].y - dy) < 0.01);
         }
+        if (process.env.DRAG_BASELINE === '1')
+          assert.ok(
+            during.counts.markdown > 0,
+            'baseline instrumentation must observe Markdown renders',
+          );
         if (process.env.DRAG_BASELINE !== '1')
           assert.equal(
             during.counts.markdown,
