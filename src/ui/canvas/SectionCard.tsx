@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 import { Frame, Folder, Maximize2, Minimize2 } from 'lucide-react';
 import type { CanvasSection } from '../../contracts/canvas';
@@ -21,7 +22,10 @@ type SectionNodeData = {
 
 export type SectionCanvasNode = Node<SectionNodeData, 'section'>;
 
-export function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
+const SectionCardContent = memo(function SectionCardContent({
+  data,
+  selected,
+}: Pick<NodeProps<SectionCanvasNode>, 'data' | 'selected'>) {
   const { section } = data;
   const { capabilities } = useRuntime();
   return (
@@ -81,4 +85,9 @@ export function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
       </div>
     </section>
   );
+});
+
+// Position and dragging belong to React Flow; content receives only its own inputs.
+export function SectionCard({ data, selected }: NodeProps<SectionCanvasNode>) {
+  return <SectionCardContent data={data} selected={selected} />;
 }

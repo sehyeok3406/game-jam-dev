@@ -402,6 +402,7 @@ test('canvas switch checks its visit again after fetching sheets', async (t) => 
 function geometryPorts(overrides = {}) {
   return {
     sections: [],
+    updatePreviewWindows: async () => {},
     api: { editor: { updateDocumentLayout: async () => {} } },
     loadProject: async () => {},
     showError: (error) => {
@@ -673,4 +674,102 @@ test('AI project lifetime keeps a captured canvas destination across tab changes
   await view.render(scope);
   assert.equal(original(), false);
   assert.equal(view.value.current(), true);
+});
+
+test('mixed drag batches preview updates once and reports failures without losing document saves', async (t) => {
+  const batches = [],
+    layouts = [],
+    errors = [];
+  const ports = geometryPorts({
+    updatePreviewWindows: async (items) => {
+      batches.push(items);
+      throw Error('preview failed');
+    },
+    api: { editor: { updateLayouts: async (items) => layouts.push(items) } },
+    setNotice: () => {},
+    showError: (error) => errors.push(error.message),
+  });
+  const view = await mount(t, (input) => useCanvasGeometry(input, () => ports));
+  const preview = (id, collapsed) => ({
+    id,
+    position: { x: 30, y: 40 },
+    measured: { width: 500, height: 50 },
+    data: {
+      kind: 'preview',
+      preview: { relativePath: 'output/' + id + '.html' },
+      windowState: { x: 1, y: 2, width: 400, height: 300, collapsed },
+    },
+  });
+  await act(async () =>
+    view.value.persistDraggedNodes(node(), [
+      node(),
+      preview('a', true),
+      preview('b', false),
+    ]),
+  );
+  assert.equal(batches.length, 1);
+  assert.deepEqual(
+    batches[0].map((i) => [i.relative, i.state.x, i.state.height]),
+    [
+      ['output/a.html', 30, 300],
+      ['output/b.html', 30, 50],
+    ],
+  );
+  assert.equal(layouts.length, 1);
+  assert.equal(layouts[0].length, 1);
+  assert.deepEqual(errors, ['preview failed']);
+});
+
+test('preview batch completion cannot overwrite newer positions and acknowledges only successful windows', async (t) => {
+  const slow = deferred(),
+    errors = [];
+  let windows = {},
+    commits = 0,
+    first = true;
+  const ports = {
+    api: {
+      preview: {
+        savePreviewWindow: async (_state, path) => {
+          if (path === 'a' && first) {
+            first = false;
+            await slow.promise;
+          }
+          if (path === 'bad') throw Error('disk failure');
+        },
+      },
+    },
+    setPreviewWindows: (update) => {
+      windows = update(windows);
+      commits++;
+    },
+    showError: (error) => errors.push(error),
+  };
+  const view = await mount(t, (input) => usePreviewWindows(input, () => ports));
+  const state = (x) => ({ x, y: 10, width: 600, height: 400 });
+  let old;
+  await act(async () => {
+    old = view.value.updatePreviewWindows([
+      { relative: 'a', state: state(10) },
+    ]);
+  });
+  await act(async () => view.value.updatePreviewWindow('a', state(50)));
+  await act(async () => {
+    slow.resolve();
+    await old;
+  });
+  assert.equal(windows.a.x, 50);
+  const before = commits;
+  await act(async () => {
+    await assert.rejects(
+      view.value.updatePreviewWindows([
+        { relative: 'ok', state: state(20) },
+        { relative: 'bad', state: state(30) },
+      ]),
+      /disk failure/,
+    );
+  });
+  assert.equal(commits, before + 1);
+  assert.equal(windows.ok.x, 20);
+  assert.equal(windows.bad, undefined);
+  assert.deepEqual(errors, []);
 });

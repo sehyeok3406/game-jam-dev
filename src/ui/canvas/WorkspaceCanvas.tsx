@@ -676,7 +676,11 @@ export function WorkspaceCanvas({
                   }}
                   onNodeDragStart={() => {
                     snapLatest.current = null;
-                    setGuides({});
+                    setGuides((current) =>
+                      current.x === undefined && current.y === undefined
+                        ? current
+                        : {},
+                    );
                   }}
                   onNodeDrag={(_event, node, dragged) => {
                     if (
@@ -687,7 +691,11 @@ export function WorkspaceCanvas({
                       locked
                     ) {
                       snapLatest.current = null;
-                      setGuides({});
+                      setGuides((current) =>
+                        current.x === undefined && current.y === undefined
+                          ? current
+                          : {},
+                      );
                       return;
                     }
                     const parent = sections.find(
@@ -753,7 +761,12 @@ export function WorkspaceCanvas({
                           : item,
                       ),
                     );
-                    setGuides({ x: snapped.xGuide, y: snapped.yGuide });
+                    setGuides((current) =>
+                      current.x === snapped.xGuide &&
+                      current.y === snapped.yGuide
+                        ? current
+                        : { x: snapped.xGuide, y: snapped.yGuide },
+                    );
                   }}
                   onNodeDragStop={(_event, node, dragged) => {
                     const snap = snapLatest.current;
@@ -764,7 +777,11 @@ export function WorkspaceCanvas({
                     const moved = dragged.map((item) =>
                       item.id === target.id ? target : item,
                     );
-                    setGuides({});
+                    setGuides((current) =>
+                      current.x === undefined && current.y === undefined
+                        ? current
+                        : {},
+                    );
                     snapLatest.current = null;
                     void persistDraggedNodes(target, moved).catch(showError);
                   }}

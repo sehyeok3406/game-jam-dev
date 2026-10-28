@@ -23,6 +23,8 @@ interface Ports {
 }
 export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
   const isCurrent = useViewLifetime(scope);
+  const sequence = useRef(0);
+  const pending = useRef(new Map<string, number>());
   const live = useRef(ports);
   live.current = ports;
   const updatePreviewWindows = useCallback(
@@ -30,6 +32,8 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
       if (!windows.length) return;
       const { api, setPreviewWindows } = live.current();
       if (!isCurrent()) return;
+      const ticket = ++sequence.current;
+      for (const { relative } of windows) pending.current.set(relative, ticket);
       const normalized = windows.map(({ relative, state }) => ({
         relative,
         state: normalizePreviewWindow(state),
@@ -44,7 +48,10 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
         ...current,
         ...Object.fromEntries(
           normalized.flatMap(({ relative, state }, index) =>
-            results[index].status === 'fulfilled' ? [[relative, state]] : [],
+            results[index].status === 'fulfilled' &&
+            pending.current.get(relative) === ticket
+              ? [[relative, state]]
+              : [],
           ),
         ),
       }));
@@ -58,6 +65,7 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
       const { setPreviewWindows, api, showError } = live.current();
 
       if (!isCurrent()) return;
+      pending.current.set(relative, ++sequence.current);
       const normalized = normalizePreviewWindow(state);
       setPreviewWindows((current) => ({ ...current, [relative]: normalized }));
       try {

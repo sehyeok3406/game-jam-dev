@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
 import { useRuntime } from '../runtime/RuntimeProvider';
@@ -15,10 +16,10 @@ import { useDocumentEditing } from './useDocumentEditing';
 import type { DocumentCanvasNode } from './types';
 export type { DocumentCanvasNode, DocumentNodeData } from './types';
 
-export function DocumentCard({
+const DocumentCardContent = memo(function DocumentCardContent({
   data,
   selected,
-}: NodeProps<DocumentCanvasNode>) {
+}: Pick<NodeProps<DocumentCanvasNode>, 'data' | 'selected'>) {
   const { api, capabilities } = useRuntime();
   const { document } = data;
   const {
@@ -402,4 +403,12 @@ export function DocumentCard({
       </article>
     </>
   );
+});
+
+// Position and dragging belong to React Flow; content receives only its own inputs.
+export function DocumentCard({
+  data,
+  selected,
+}: NodeProps<DocumentCanvasNode>) {
+  return <DocumentCardContent data={data} selected={selected} />;
 }

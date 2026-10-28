@@ -566,6 +566,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   );
   const {
     nodes,
+    selectionContent,
     setNodes,
     onNodesChange,
     selectedIds,
@@ -966,7 +967,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     showError,
     gameUi,
     blockAiFiles,
-    updatePreviewWindow,
     updatePreviewWindows,
     locked,
     sectionCollapsed,
@@ -2115,11 +2115,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     () => documents.filter((document) => selectedIds.includes(document.id)),
     [documents, selectedIds],
   );
-  const selectedDrawings = nodes
-    .filter(
-      (n): n is DrawingCanvasNode => !!n.selected && n.data.kind === 'drawing',
-    )
-    .map((n) => n.data.object);
+  const selectedDrawings = useMemo(
+    () =>
+      selectionContent.flatMap((node) =>
+        node.data.kind === 'drawing' ? [node.data.object] : [],
+      ),
+    [selectionContent],
+  );
   const drawingCopies = (objects: DrawingObject[], offset = 32) =>
     copyDrawingObjects(objects, offset, {
       now: Date.now,
@@ -2153,9 +2155,15 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     () => sections.filter((section) => selectedSectionIds.includes(section.id)),
     [sections, selectedSectionIds],
   );
-  const selectedPreviews = nodes
-    .filter((node) => node.selected && node.data.kind === 'preview')
-    .map((node) => previewDeletionItem((node.data as PreviewNodeData).preview));
+  const selectedPreviews = useMemo(
+    () =>
+      selectionContent.flatMap((node) =>
+        node.data.kind === 'preview'
+          ? [previewDeletionItem(node.data.preview)]
+          : [],
+      ),
+    [selectionContent],
+  );
   const closeContextMenus = () => {
     setContextMenu(null);
     setDocumentContextMenu(null);

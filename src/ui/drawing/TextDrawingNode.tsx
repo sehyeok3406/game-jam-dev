@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
@@ -33,11 +33,13 @@ import {
   serializeCanvasText,
 } from './text-alignment';
 
-export function TextDrawingNode({
+export const TextDrawingNode = memo(function TextDrawingNode({
   data,
   selected,
   object,
-}: NodeProps<DrawingCanvasNode> & { object: TextObject }) {
+}: Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'> & {
+  object: TextObject;
+}) {
   const { api } = useRuntime();
   const [editing, setEditing] = useState(false),
     [error, setError] = useState('');
@@ -593,4 +595,4 @@ export function TextDrawingNode({
       )}
     </div>
   );
-}
+});

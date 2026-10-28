@@ -5,6 +5,21 @@ import { useNodesState, useStoreApi, type Node } from '@xyflow/react';
 export function useCanvasSelection<N extends Node>() {
   const flowStore = useStoreApi<N>();
   const [nodes, setNodes, onNodesChange] = useNodesState<N>([]);
+  // Coordinate changes must not invalidate selection-derived panel content.
+  const selectionContentRef = useRef<Pick<N, 'id' | 'data'>[]>([]);
+  const selected = nodes.filter((node) => node.selected);
+  const previous = selectionContentRef.current;
+  if (
+    selected.length !== previous.length ||
+    selected.some(
+      (node, i) => node.id !== previous[i].id || node.data !== previous[i].data,
+    )
+  )
+    selectionContentRef.current = selected.map(({ id, data }) => ({
+      id,
+      data,
+    }));
+  const selectionContent = selectionContentRef.current;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const selectionBeforeClick = useRef(new Set<string>());
@@ -43,6 +58,7 @@ export function useCanvasSelection<N extends Node>() {
 
   return {
     nodes,
+    selectionContent,
     setNodes,
     onNodesChange,
     selectedIds,
