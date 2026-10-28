@@ -7,6 +7,18 @@
 - 여러 HTML 창을 놓을 때 기존 일괄 위치 갱신을 사용하고, 오래된 저장 응답이 최신 화면 좌표를 덮지 않도록 했습니다.
 - 위치는 드롭 시 기존 경로로 저장합니다. 이동 중 저장과 주기적 복구 초안은 추가하지 않았습니다.
 
+2026-10-29 [v0.38.4 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.38.4)를 게시했다. 제품 커밋과 태그는 ddecb1cd19bc1189fae5fd3e75ddc82540c6510f다. [Windows·Linux CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/40789068723), 최종 Windows 패키지의 100개 실제 드래그·이동 중 무저장·Undo/Redo·재시작 보존을 확인했다. 변경 전에도 재현된 UI 검사 제약과 상세 근거는 [검증 보고서](docs/audits/2026-10-29-multi-drag-performance.md)에 구분했다.
+
+검증한 package에 make --from-package를 사용했다. 테스트한 app.asar와 nupkg 안의 app.asar SHA-256은 7d88197943c1ef6ff8081114de1a42df07789ebb6f0d262acbf34925b8ec16c3으로 일치한다.
+
+| 공개 파일                     | 크기(바이트) | SHA-256                                                          |
+| ----------------------------- | -----------: | ---------------------------------------------------------------- |
+| Game.Jam-0.38.4.Setup.exe     |    194399232 | 9c3656e02c5af7a6e2a36c64a3b835621b1cf51fb57a1c395b200f62adce7393 |
+| game_canvas-0.38.4-full.nupkg |    193490740 | db6b9c4260a1a2bb9f3f525ec3bca6325f765950c6fba91f61b63068609aa6b1 |
+| RELEASES                      |           83 | d21b260cf5d94e3c0d75a2cea91ab07fb357abe0a9cffadfdb385a690327d5dd |
+
+GitHub 자산 digest/크기와 로컬 파일이 일치하고, 익명 공개 다운로드 3개 모두 HTTP 200 및 크기가 일치한다. RELEASES는 직접 다운로드한 바이트의 SHA-256과 로컬 SHA-1/패키지 이름/크기를 검증했다. update.electronjs.org의 0.38.3→0.38.4 JSON 응답과 Squirrel RELEASES의 URL·SHA-1·193490740바이트도 일치하여 **배포 파일 게시·검증 및 자동 업데이트 피드 반영 완료**를 확인했다. 운영 서버·터널은 재시작하지 않았고 사용자 설치 앱의 실제 업데이트 적용은 별도다.
+
 ## v0.38.3 HTML 구현 기본 지시를 인게임 화면 중심으로 변경
 
 HTML 구현의 기본 지시에 실행 화면 전체를 하나의 인게임 화면으로 구성하는 원칙을 추가했다. 제목·설명·조작 안내를 게임 영역 바깥에 배치하는 웹 페이지 구성을 기본으로 사용하지 않고, 필요한 정보를 게임 장르에 맞는 HUD나 게임 내 메뉴로 제공하도록 안내한다. 특정 장르·레퍼런스·렌더링 방식은 강제하지 않는다.

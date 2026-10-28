@@ -26,3 +26,9 @@
 - 성능 계측은 mock 저장 fixture이고 파일 쓰기 성능을 증명하지 않는다. 파일/재시작/히스토리는 별도 최종 package 검사로 확인했다. 기존 혼합 항목이 하나의 원자적 저장/Undo가 되는 새 정책은 없다.
 
 로컬 근거는 out/drag-performance/{baseline,optimized}.json, out/\*-final.log, out/drag-packaged-final.log, out/editing-packaged-final.log, out/internet-host-retry.log, out/{html-preview,section}-baseline.log에 보존한다. 실제 유료 AI·운영 서버·사용자 프로젝트를 사용하지 않았다.
+
+## 최종 게시 및 추가 검사 기록
+
+v0.38.4 정식 게시와 공개 3개 자산의 SHA-256/크기/접근, RELEASES 바이트 해시 및 nupkg SHA-1/크기, 업데이트 JSON과 Squirrel feed의 0.38.4 반영을 확인했다. 원격 Windows 전체 검사·Linux 서버/Windows 백업 호환 검사·타입·린트 CI가 모두 성공했다: https://github.com/sehyeok3406/game-jam-dev/actions/runs/40789068723 . 검증한 package와 make 후 및 nupkg 내부 app.asar 해시가 일치한다. 세부 파일 해시는 UPDATES.md에 기록했다.
+
+통합 명령 전체는 캔버스 전환 UI의 ResizeObserver 알림 단언 때문에 실패했다. 같은 하위 UI 검사를 재실행하면 문서 컨텍스트 메뉴 대기에서 실패했고, 변경 전 origin/main archive도 같은 컨텍스트 메뉴 대기로 실패했다. 앞서 열거한 native/backend 통합 부분의 통과와 명령 전체 통과를 구분한다. 기존 HTML/section UI 2개와 함께 해결되지 않은 검사 제약으로 남긴다. 규칙·시간 제한·예외를 완화하지 않았다.
