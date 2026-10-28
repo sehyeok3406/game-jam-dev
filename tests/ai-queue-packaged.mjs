@@ -26,6 +26,15 @@ async function port() {
   return p;
 }
 const bin = path.join(root, 'mock-bin');
+// Exercise the production HTML validator through local and shared publication.
+// A saved candidate may be supplied without adding private game content to tests.
+const htmlFixture = path.join(root, 'fixture.html');
+await fs.writeFile(
+  htmlFixture,
+  process.env.GAMEJAM_HTML_VALIDATION_FIXTURE
+    ? await fs.readFile(process.env.GAMEJAM_HTML_VALIDATION_FIXTURE, 'utf8')
+    : '<!doctype html><html lang="ko"><head><meta charset="UTF-8"><title>승인된 게임</title></head><body><h1>패키지 승인 검증 완료</h1><div id="box" style="width:100px;height:100px"></div><script>let n=0;new ResizeObserver(()=>{if(++n<3)box.style.width=(100+n)+"px"}).observe(box);</script></body></html>',
+);
 await fs.mkdir(path.join(bin, 'node_modules/@anthropic-ai/claude-code'), {
   recursive: true,
 });
@@ -48,7 +57,7 @@ let input = ''; process.stdin.on('data', (d) => input += d); process.stdin.on('e
   for (const output of spec.expected_outputs) {
     if (!output.endsWith('.html')) throw Error('Unexpected fixture output');
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, '<!doctype html><html lang="ko"><head><meta charset="UTF-8"><title>승인된 게임</title></head><body><h1>패키지 승인 검증 완료</h1></body></html>');
+    fs.writeFileSync(output, fs.readFileSync(${JSON.stringify(htmlFixture)}, 'utf8'));
   }
   setTimeout(() => console.log(JSON.stringify({ type: 'result', is_error: false, result: 'mock queued' })), 1800);
 });
@@ -270,10 +279,30 @@ try {
   );
   await call(admin, 'cancelQueuedTask', b.runId);
   await admin.wait(
-    `window.gameCanvas.listAiQueue().then(ts=>ts.find(t=>t.runId===${JSON.stringify(c.runId)})?.status==='completed')`,
+    `window.gameCanvas.listAiQueue().then(ts=>['completed','failed'].includes(ts.find(t=>t.runId===${JSON.stringify(c.runId)})?.status))`,
   );
   const localTasks = await call(admin, 'listAiQueue');
-  assert.equal(localTasks.find((t) => t.runId === a.runId).status, 'completed');
+  const firstStatus = localTasks.find((t) => t.runId === a.runId).status;
+  assert.equal(
+    firstStatus,
+    'completed',
+    firstStatus === 'failed'
+      ? JSON.stringify(
+          JSON.parse(
+            await fs.readFile(
+              path.join(
+                root,
+                'queue-admin',
+                '.history',
+                a.runId,
+                'diagnostic.json',
+              ),
+              'utf8',
+            ),
+          ).failure,
+        )
+      : undefined,
+  );
   assert.equal(localTasks.find((t) => t.runId === b.runId).status, 'cancelled');
   assert.equal((await call(admin, 'listPreviews')).length, 2);
   await call(admin, 'saveDocument', {
@@ -305,8 +334,23 @@ try {
     /AI 작업/,
   );
   await admin.wait(
-    `window.gameCanvas.listAiQueue().then(ts=>ts.find(t=>t.runId===${JSON.stringify(e.runId)})?.status==='completed')`,
+    `window.gameCanvas.listAiQueue().then(ts=>['completed','failed'].includes(ts.find(t=>t.runId===${JSON.stringify(e.runId)})?.status))`,
   );
+  const sharedTasks = await call(admin, 'listAiQueue');
+  for (const run of [d, e]) {
+    const task = sharedTasks.find((t) => t.runId === run.runId);
+    if (task.status === 'failed') {
+      const workspace = await call(admin, 'getWorkspace');
+      const report = JSON.parse(
+        await fs.readFile(
+          path.join(workspace.root, '.history', run.runId, 'diagnostic.json'),
+          'utf8',
+        ),
+      );
+      assert.fail(JSON.stringify(report.failure));
+    }
+    assert.equal(task.status, 'completed', JSON.stringify(task));
+  }
   assert.equal(
     (await call(admin, 'listAiQueue')).find((t) => t.runId === d.runId).status,
     'completed',
@@ -317,12 +361,34 @@ try {
     (await call(admin, 'readPreview', htmlMaterial.relativePath)).content,
     htmlMaterial.content,
   );
-  await stopChild(server);
-  await startServer();
   assert.equal((await call(admin, 'listAiQueue')).length, 2);
   console.log(
     'PASS: bundled Node/server plus independent desktop clients share durable reservations, enforce locks and automatically execute queued work',
   );
+  for (const script of [
+    'new ResizeObserver(()=>{box.style.width=(++n+100)+"px"}).observe(box);',
+    'throw new Error("packaged runtime failure");',
+  ]) {
+    await fs.writeFile(
+      htmlFixture,
+      `<html><body><div id="box" style="width:100px;height:100px"></div><script>let n=0;${script}</script></body></html>`,
+    );
+    const failed = await enqueue();
+    await admin.wait(
+      `window.gameCanvas.listAiQueue().then(ts=>ts.find(t=>t.runId===${JSON.stringify(failed.runId)})?.status==='failed')`,
+    );
+    assert.equal((await call(admin, 'listPreviews')).length, 4);
+    assert.equal(
+      (await call(admin, 'readPreview', htmlMaterial.relativePath)).content,
+      htmlMaterial.content,
+    );
+  }
+  console.log(
+    'PASS: packaged HTML validation rejects persistent resize loops and runtime errors while preserving published results',
+  );
+  await stopChild(server);
+  await startServer();
+  assert.equal((await call(admin, 'listAiQueue')).length, 4);
 } finally {
   for (const context of apps) {
     context.ws?.close();

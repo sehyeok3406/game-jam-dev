@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { mkdtempSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { app } from 'electron';
 import { validateHtml } from '../src/html-validation';
 
+app.setPath(
+  'userData',
+  mkdtempSync(path.join(os.tmpdir(), 'gamejam-html-validation-')),
+);
 app.on('window-all-closed', () => {});
 
 app.whenReady().then(async () => {
@@ -54,6 +61,46 @@ app.whenReady().then(async () => {
       /fixture rejection/,
     );
     console.log('PASS: rejected promise is rejected');
+    const resizeFixture = (script: string) =>
+      `<html><body><div id="box" style="width:100px;height:100px"></div><script>
+      const box=document.getElementById('box');let count=0;
+      new ResizeObserver(()=>{${script}}).observe(box);
+      </script></body></html>`;
+    await validateHtml(
+      resizeFixture('if(++count<3)box.style.width=(100+count)+"px";'),
+    );
+    console.log(
+      'PASS: native resize-delivery notices may settle across frames',
+    );
+    await assert.rejects(
+      validateHtml(resizeFixture('box.style.width=(100+(++count))+"px";')),
+      /ResizeObserver 크기 변경이 반복/,
+    );
+    console.log('PASS: persistent native resize loops remain fatal');
+    await assert.rejects(
+      validateHtml(
+        resizeFixture(
+          'if(++count===1){box.style.width="101px";setTimeout(()=>{throw new Error("failure after resize notice")},100);}',
+        ),
+      ),
+      /failure after resize notice/,
+    );
+    console.log('PASS: real runtime errors after resize notices remain fatal');
+    for (const script of [
+      'throw new Error("ResizeObserver loop completed with undelivered notifications.");',
+      'throw "ResizeObserver loop completed with undelivered notifications.";',
+      'dispatchEvent(new ErrorEvent("error",{message:"ResizeObserver loop completed with undelivered notifications."}));',
+      'console.error("ResizeObserver loop completed with undelivered notifications.");',
+      'Promise.reject("ResizeObserver loop completed with undelivered notifications.");',
+    ]) {
+      await assert.rejects(
+        validateHtml(`<html><body><script>${script}</script></body></html>`),
+        /HTML 초기 실행 오류/,
+      );
+    }
+    console.log(
+      'PASS: matching script exceptions, console errors and rejections remain fatal',
+    );
     if (process.argv[2]) {
       await validateHtml(
         await fs.readFile(process.argv[2], 'utf8'),
