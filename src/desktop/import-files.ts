@@ -107,7 +107,8 @@ export async function readImportSources(
     if (
       !name ||
       name.length > 200 ||
-      /[\\/\x00-\x1f]/.test(name) ||
+      /[\\/]/.test(name) ||
+      [...name].some((character) => character.charCodeAt(0) < 32) ||
       ![
         '.md',
         '.html',

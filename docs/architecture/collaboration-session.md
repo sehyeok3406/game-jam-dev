@@ -1,5 +1,9 @@
 # 공동 프로젝트 연결과 세션 보존
 
+## v0.37.0 생성·모드 전환 변경
+
+현재 생성 방식 선택과 실제 참여 종료/소유권 인계는 [프로젝트 모드 전환](project-mode-transitions.md)을 따른다. 아래 기존 생성·leave 동작 설명은 레거시 API 경로의 계약이며 새 사용자 전환 흐름과 구분한다. 새 폼은 경로 선택과 생성을 분리하고, 신규 전환은 목록 ID·분류를 유지한다. 전환 API는 기존 property/mutation 큐와 세션 검사를 사용한다.
+
 `CollaborationService`는 공동 생성·참여·복구의 사전 조건/순서, 충돌 선택 전 백업, 초대 갱신 후 저장, 역할·잠금 API 연결을 담당한다. application의 `ConnectionOffer`는 activate/retain 함수만 제공하며 token/recovery key와 OS 암호화 수단을 노출하지 않는다. 기존 공개 CollaborationState의 관리자 초대/복구 표시 계약은 바꾸지 않는다.
 
 `desktop/ipc/collaboration-session.ts`가 기존 11개 wire를 등록한다. 생성·참여·복구·탈퇴·충돌 해결·복원 재개·초대·역할 변경은 기존 property queue를 flush한 뒤 mutation 큐를 사용한다. 홈 이동/열기와 네트워크 연결 응답이 교차하지 않도록 한다. 읽기와 문서 lock/unlock은 독립 경로를 유지한다. 편집 flush가 unlock 응답을 기다리는 동안 같은 mutation 큐를 점유해 교착하지 않도록 하기 위함이다. 기존 client/server 입력 검증·권한·프로토콜 v1과 sender 경계는 그대로다.

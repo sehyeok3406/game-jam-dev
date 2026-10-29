@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
@@ -30,12 +30,20 @@ import { validateDrawingObject } from '../../drawing-model';
 import { useRuntime } from '../runtime/runtime-context';
 import type { DrawingCanvasNode } from './DrawingNode';
 import './text-drawing.css';
+import {
+  CanvasTextAlignment,
+  alignCanvasText,
+  canvasTextAlignment,
+  serializeCanvasText,
+} from './text-alignment';
 
-export function TextDrawingNode({
+export const TextDrawingNode = memo(function TextDrawingNode({
   data,
   selected,
   object,
-}: NodeProps<DrawingCanvasNode> & { object: TextObject }) {
+}: Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'> & {
+  object: TextObject;
+}) {
   const { api } = useRuntime();
   const [editing, setEditing] = useState(false),
     [error, setError] = useState('');
@@ -79,6 +87,7 @@ export function TextDrawingNode({
         link: false,
         trailingNode: false,
       }),
+      CanvasTextAlignment,
     ],
     content: JSON.parse(object.geometry.document),
     editable: false,
@@ -91,7 +100,7 @@ export function TextDrawingNode({
       },
     },
     onUpdate: ({ editor }) =>
-      callbacks.current.changed(JSON.stringify(editor.getJSON())),
+      callbacks.current.changed(serializeCanvasText(editor.getJSON())),
   });
   const marks = useEditorState({
     editor,
@@ -101,6 +110,9 @@ export function TextDrawingNode({
       underline: editor?.isActive('underline'),
       bullet: editor?.isActive('bulletList'),
       ordered: editor?.isActive('orderedList'),
+      align: editor
+        ? canvasTextAlignment(editor.state, geometry.align, !editing)
+        : null,
     }),
   });
   const backup = async () => {
@@ -297,7 +309,7 @@ export function TextDrawingNode({
     local.current = object.geometry;
     base.current = object.geometry;
     setGeometry(object.geometry);
-    if (JSON.stringify(editor.getJSON()) !== object.geometry.document)
+    if (serializeCanvasText(editor.getJSON()) !== object.geometry.document)
       editor.commands.setContent(JSON.parse(object.geometry.document), {
         emitUpdate: false,
       });
@@ -363,13 +375,16 @@ export function TextDrawingNode({
     <div
       ref={root}
       className={`canvas-text-node${editing ? ' canvas-text-node--editing nodrag nopan nowheel' : ''}`}
-      style={{
-        fontSize: geometry.fontSize,
-        color: geometry.color,
-        fontFamily: geometry.fontFamily,
-        textAlign: geometry.align,
-        opacity: object.style.opacity,
-      }}
+      style={
+        {
+          fontSize: geometry.fontSize,
+          color: geometry.color,
+          fontFamily: geometry.fontFamily,
+          textAlign: geometry.align,
+          '--canvas-text-align': geometry.align,
+          opacity: object.style.opacity,
+        } as import('react').CSSProperties
+      }
       aria-label="캔버스 텍스트"
       onDoubleClick={(event) => {
         event.stopPropagation();
@@ -505,10 +520,23 @@ export function TextDrawingNode({
             <button
               key={align}
               aria-label={label}
-              title={label}
-              aria-pressed={geometry.align === align}
+              title={
+                data.textAlignmentSupported === false
+                  ? '줄별 텍스트 정렬을 사용하려면 협업 서버를 업데이트해주세요.'
+                  : label
+              }
+              disabled={data.textAlignmentSupported === false}
+              aria-pressed={marks?.align === align}
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => change({ ...local.current, align })}
+              onClick={() =>
+                command(() => {
+                  const chain = editor?.chain().focus();
+                  if (!editing) chain?.selectAll();
+                  chain
+                    ?.command((props) => alignCanvasText(props, align))
+                    .run();
+                })
+              }
             >
               <Icon size={17} />
             </button>
@@ -639,4 +667,4 @@ export function TextDrawingNode({
       )}
     </div>
   );
-}
+});

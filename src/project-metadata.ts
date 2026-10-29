@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from './markdown.ts';
+import { initialProjectSnapshot } from './core/projects/initial-project.ts';
 import { projectPath } from './project-store.ts';
 
 const metadataPath = '.canvas/project.json';
@@ -48,20 +49,7 @@ export async function initializeProjectDocument(root: string) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     await fs.writeFile(
       projectFile,
-      matter.stringify(
-        `\n# ${name}\n\n게임 아이디어를 자유롭게 기록해보세요.\n`,
-        {
-          id: 'project',
-          title: name,
-          type: 'overview',
-          status: 'draft',
-          x: 80,
-          y: 80,
-          width: 360,
-          height: 320,
-          sources: [],
-        },
-      ),
+      initialProjectSnapshot(name)['project.md'],
       'utf8',
     );
   }

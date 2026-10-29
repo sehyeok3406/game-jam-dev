@@ -572,6 +572,9 @@ export function useCanvasNodes(
           draggable: !locked,
           data: {
             kind: 'drawing',
+            textAlignmentSupported:
+              !collaboration.active ||
+              collaboration.drawingTextAlignmentVersion === 1,
             scope: workspace.saveScope,
             draftRegistry,
             onCommand: async (command) => {

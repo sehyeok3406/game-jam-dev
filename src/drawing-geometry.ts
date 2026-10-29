@@ -311,7 +311,7 @@ export function drawingSvg(o: DrawingObject) {
     s = o.style;
   if (o.kind === 'text') {
     const g = o.geometry;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width}" height="${b.height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="font:${g.fontSize}px ${g.fontFamily};line-height:1.4;color:${g.color};text-align:${g.align};overflow-wrap:anywhere;opacity:${s.opacity};padding:4px">${textDocumentHtml(g.document)}</div></foreignObject></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width}" height="${b.height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="font:${g.fontSize}px ${g.fontFamily};line-height:1.4;color:${g.color};text-align:${g.align};overflow-wrap:anywhere;opacity:${s.opacity};padding:4px">${textDocumentHtml(g.document, g.align)}</div></foreignObject></svg>`;
   }
   const path = o.kind === 'stroke' ? strokePath(o) : shapePath(o),
     head = arrowHead(o);

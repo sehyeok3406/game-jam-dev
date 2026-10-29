@@ -25,6 +25,7 @@ type Options = {
   sessions: DesktopProjectSessions<CollaborationClient>;
   library(): ProjectLibrary;
   hasTrash(id: string): boolean;
+  hasSharedTrash?(projectId: string): boolean;
   userData(): string;
   store(): CollaborationSessionStore;
   cache: CollaborationCacheQueue;
@@ -42,6 +43,21 @@ type Options = {
   }): Promise<{ key: string; internal: boolean }>;
   prepareLock(path: string): Promise<void>;
   client?: typeof CollaborationClient;
+  safeCreate?(
+    input: Parameters<CollaborationSessionPort['create']>[0],
+    source: {
+      name: string;
+      files: import('../../contracts/project.ts').Snapshot;
+    },
+    root: string | null,
+  ): Promise<ConnectionOffer>;
+  toLocal?(
+    input: import('../../contracts/project-mode.ts').LocalConversionInput,
+  ): Promise<void>;
+  handover?(
+    action: 'prepare' | 'accept' | 'cancel',
+    successorId?: string,
+  ): Promise<void>;
 };
 /** Credentials, paths, cache format and Electron lifecycle remain in the desktop boundary. */
 export class DesktopCollaborationSessions implements CollaborationSessionPort {
@@ -99,6 +115,8 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     input: Parameters<CollaborationSessionPort['create']>[0],
     source: Parameters<CollaborationSessionPort['create']>[1],
   ) {
+    if (this.options.safeCreate)
+      return this.options.safeCreate(input, source, this.sessions.root);
     const creation = await this.options.creation(input);
     const created = await (this.options.client ?? CollaborationClient).create(
       input.serverUrl,
@@ -141,7 +159,11 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     const o = this.options,
       scope = this.scope();
     o.resetClipboard();
-    if (o.hasTrash(`shared:${credentials.projectId}`))
+    if (
+      o.hasSharedTrash
+        ? o.hasSharedTrash(credentials.projectId)
+        : o.hasTrash(`shared:${credentials.projectId}`)
+    )
       throw Error('이 PC의 사본이 휴지통에 있습니다. 먼저 복원해주세요.');
     if (!/^[a-f0-9-]{36}$/.test(credentials.projectId))
       throw Error('공동 프로젝트 ID가 올바르지 않습니다.');
@@ -213,6 +235,10 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
         client.state.role,
         localRoot,
       );
+    credentials.libraryId = o
+      .library()
+      .findShared(credentials.projectId, credentials.serverUrl).id;
+    await this.persist(client, localRoot);
     assertCurrent();
     o.notify();
     return client.state;
@@ -247,6 +273,23 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     this.sessions.localRootBeforeShare = null;
     o.clearState();
     o.changed(noCollaboration(), true);
+  }
+  resolveCreation(input: { serverUrl: string; serverKey: string }) {
+    return this.options.creation(input);
+  }
+  async toLocal(
+    input: import('../../contracts/project-mode.ts').LocalConversionInput,
+  ) {
+    if (!this.options.toLocal)
+      throw Error('프로젝트 전환을 지원하지 않습니다.');
+    await this.options.toLocal(input);
+  }
+  async handover(
+    action: 'prepare' | 'accept' | 'cancel',
+    successorId?: string,
+  ) {
+    if (!this.options.handover) throw Error('소유권 인계를 지원하지 않습니다.');
+    await this.options.handover(action, successorId);
   }
   async leave() {
     const o = this.options,

@@ -68,6 +68,16 @@ export class CollaborationService {
     const current = p.scope();
     return this.activate(offer, current.localRoot ?? current.root);
   }
+  toLocal(
+    input: import('../../contracts/project-mode.ts').LocalConversionInput,
+  ) {
+    if (!this.ports.toLocal) throw Error('프로젝트 전환을 지원하지 않습니다.');
+    return this.ports.toLocal(input);
+  }
+  handover(action: 'prepare' | 'accept' | 'cancel', successorId?: string) {
+    if (!this.ports.handover) throw Error('소유권 인계를 지원하지 않습니다.');
+    return this.ports.handover(action, successorId);
+  }
   leave() {
     return this.ports.leave();
   }

@@ -277,6 +277,7 @@ test('two real clients share lists, reject stale edits, undo content and reopen 
   peer.accept(joined.result);
   clients.push(peer);
   assert.equal(owner.state.drawingTextVersion, 1);
+  assert.equal(owner.state.drawingTextAlignmentVersion, 1);
   const o = object();
   await owner.command('drawings:apply', {
     canvasId: 'default',
@@ -288,7 +289,14 @@ test('two real clients share lists, reject stale edits, undo content and reopen 
     snapshotDrawings(peer.files)[0].geometry.document,
     o.geometry.document,
   );
-  const geometry = { ...o.geometry, color: '#ff0000' };
+  const aligned = JSON.parse(o.geometry.document);
+  aligned.content[1].content[0].content[0].attrs = { textAlign: 'center' };
+  aligned.content[2].content[1].content[0].attrs = { textAlign: 'right' };
+  const geometry = {
+    ...o.geometry,
+    color: '#ff0000',
+    document: JSON.stringify(aligned),
+  };
   await peer.command('drawings:apply', {
     canvasId: 'default',
     action: 'patch',
@@ -336,6 +344,32 @@ test('two real clients share lists, reject stale edits, undo content and reopen 
   );
   assert.equal(old.status, 409);
   assert.match((await old.json()).error, /텍스트.*업데이트/);
+  const legacyTextClient = await fetch(
+    `${url}/projects/${initial.credentials.projectId}/state`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${initial.credentials.token}`,
+      },
+      body: JSON.stringify({
+        drawingEraseVersion: 1,
+        drawingsVersion: 1,
+        drawingTextVersion: 1,
+      }),
+    },
+  );
+  assert.equal(legacyTextClient.status, 409);
+  assert.match((await legacyTextClient.json()).error, /줄별 정렬.*업데이트/);
+  peer.state.drawingTextAlignmentVersion = undefined;
+  await assert.rejects(
+    peer.command('drawings:apply', {
+      canvasId: 'default',
+      action: 'patch',
+      patches: [{ id: o.id, generation: o.generation, geometry }],
+    }),
+    /줄별.*서버.*업데이트/,
+  );
   const port = server.port;
   clients.forEach((c) => c.stop());
   await server.close();

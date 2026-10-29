@@ -63,7 +63,12 @@ export async function buildSelfHostRuntime() {
       );
     }
   }
-  for (const name of ['connect.ps1', 'diagnostics.ps1', 'host.ps1'])
+  for (const name of [
+    'connect.ps1',
+    'diagnostics.ps1',
+    'host.ps1',
+    'inspect-ai-state.cjs',
+  ])
     await copyVerified(
       path.join(root, 'tools/internet-host', name),
       path.join(directory, name),
@@ -92,6 +97,7 @@ export async function buildSelfHostRuntime() {
     'connect.ps1',
     'diagnostics.ps1',
     'host.ps1',
+    'inspect-ai-state.cjs',
     'bridge.ps1',
     'runtime-version.json',
   ])

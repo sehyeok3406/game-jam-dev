@@ -48,6 +48,8 @@ const messages: Record<string, string> = {
   'GC-HOST-014': '다른 창에서 서버 준비 중입니다. 완료 후 다시 확인하세요.',
   'GC-HOST-015':
     '설정을 저장하지 못했습니다. 데이터 폴더 권한과 디스크 공간을 확인하세요.',
+  'GC-HOST-016':
+    '진행 중인 서버 작업을 확인하지 못해 종료하지 않았습니다. 서버 데이터와 실행 도구를 확인해주세요.',
   'GC-HOST-AI':
     '서버에서 AI 작업이 진행 중입니다. 작업을 완료하거나 앱에서 중지한 뒤 다시 시도하세요.',
   'GC-HOST-DOWNLOAD':
@@ -206,6 +208,7 @@ export class SelfHostService {
       'connect.ps1',
       'diagnostics.ps1',
       'host.ps1',
+      'inspect-ai-state.cjs',
       'runtime-version.json',
     ];
     const contents = await Promise.all(

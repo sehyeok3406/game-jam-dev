@@ -498,7 +498,7 @@ test('member role changes protect owner/AI runner and validate target/role befor
     f.queued(created, (p, m) => f.members.setRole(p, m, input));
   await assert.rejects(
     change({ memberId: created.state.memberId, role: 'removed' }),
-    /생성자/,
+    /소유자/,
   );
   await assert.rejects(
     change({ memberId: 'missing', role: 'viewer' }),

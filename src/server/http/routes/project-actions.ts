@@ -32,8 +32,10 @@ export function projectActionRoute(
     const project = ports.get(id);
     if (!project) return ports.unavailable(id);
     const token = bearerToken(request);
-    const member = ports.authenticate(project, token);
-    ports.limit(id + ':' + member.id, 'member', 600);
+    if (action !== 'detach-status') {
+      const member = ports.authenticate(project, token);
+      ports.limit(id + ':' + member.id, 'member', 600);
+    }
     const input = await body(request);
     const result = await ports.run(id, token, action, input);
     reply(response, 200, projectResponse(ports.get(id), input, result));

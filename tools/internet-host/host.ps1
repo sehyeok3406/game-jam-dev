@@ -59,6 +59,21 @@ function Process-Record($Process, [string]$Executable, [string]$Marker) {
     marker = $Marker
   }
 }
+function Assert-HostAiIdle($Runtime) {
+  $script:HostFailureCode = 'GC-HOST-016'
+  $inspector = Join-Path $PSScriptRoot 'inspect-ai-state.cjs'
+  $inspectionNode = $NodePath
+  if (-not $inspectionNode -and $Runtime.server) { $inspectionNode = $Runtime.server.executable }
+  if (-not $inspectionNode) { $inspectionNode = (Get-Command node.exe -ErrorAction Stop).Source }
+  $result = & $inspectionNode --no-warnings $inspector (Join-Path $StateDirectory 'projects') 2>$null
+  $inspectionExit = $LASTEXITCODE
+  if ($inspectionExit -eq 10 -and $result -eq 'busy') {
+    $script:HostFailureCode = 'GC-HOST-AI'
+    throw 'AI work is active; no process was changed.'
+  }
+  if ($inspectionExit -ne 0 -or $result -ne 'idle') { throw 'Cannot verify AI state; no process was changed.' }
+  $script:HostFailureCode = 'GC-HOST-005'
+}
 function Stop-Owned($Runtime) {
   foreach ($record in @($Runtime.tunnel, $Runtime.server)) {
     $found = Get-OwnedProcess $record
@@ -83,7 +98,10 @@ function Test-Health([string]$Address) {
 $script:HostFailureCode = 'GC-HOST-005'
 $existing = Read-Runtime
 if ($Action -eq 'Stop') {
-  if ($existing) { Stop-Owned $existing }
+  if ($existing) {
+    if (Get-OwnedProcess $existing.server) { Assert-HostAiIdle $existing }
+    Stop-Owned $existing
+  }
   Write-Output 'Internet collaboration host stopped. Saved projects and the encrypted key are kept.'
   exit 0
 }
@@ -122,28 +140,8 @@ if ($Action -eq 'RestartServer') {
   if (-not (Test-Path -LiteralPath $serverEntry -PathType Leaf)) {
     throw 'Build the new server first: npm run collaboration:build'
   }
-  # Never interrupt an active AI lease. Only inspect current checkpoint state;
-  # do not print document contents, tokens, nicknames or the creation key.
-  $projectsPath = Join-Path $StateDirectory 'projects'
-  if (Test-Path -LiteralPath $projectsPath) {
-    foreach ($folder in Get-ChildItem -LiteralPath $projectsPath -Directory) {
-      if ($folder.Name -notmatch '^[a-f0-9-]{36}$') { throw 'Unexpected project directory; no process was changed.' }
-      try {
-        $runtimeStatePath = Join-Path $folder.FullName 'runtime.json'
-        if (Test-Path -LiteralPath $runtimeStatePath) {
-          $checkpoint = Get-Content -LiteralPath $runtimeStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        } else {
-          $head = Get-Content -LiteralPath (Join-Path $folder.FullName 'head.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($head.checkpoint -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid checkpoint identifier.' }
-        $checkpoint = Get-Content -LiteralPath (Join-Path $folder.FullName "checkpoints/$($head.checkpoint)/state.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-        }
-      } catch {
-        # PowerShell parser errors can include the complete private JSON value.
-        throw 'Cannot inspect a current project checkpoint. No process was changed; private checkpoint contents were withheld.'
-      }
-      if ($checkpoint.job) { throw 'An AI job is active. Finish or stop it in the app before restarting. No process was changed.' }
-    }
-  }
+  # Inspect the authoritative SQLite/WAL state, or the legacy checkpoint format.
+  Assert-HostAiIdle $existing
   $creationKey = Read-CreationKey
   $savedEnvironment = @{}
   $newServer = $null

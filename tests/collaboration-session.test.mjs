@@ -208,7 +208,7 @@ test('role/lock/unlock preserve independent lock lane and AI lock preparation', 
   await assert.rejects(f.service.lock('a.md'), /AI lock/);
   assert.equal(f.calls.length, 0);
 });
-test('existing 11 session IPC wires serialize transitions but never queue read/lock release behind a drain', async () => {
+test('all 13 session IPC wires serialize transitions but never queue read/lock release behind a drain', async () => {
   const f = fixture(),
     handlers = new Map();
   let queued = 0;
@@ -224,7 +224,7 @@ test('existing 11 session IPC wires serialize transitions but never queue read/l
       return operation();
     },
   );
-  assert.equal(handlers.size, 11);
+  assert.equal(handlers.size, 13);
   handlers.get('collaboration:get')();
   await handlers.get('collaboration:lock')(null, 'a.md');
   await handlers.get('collaboration:unlock')(null, 'a.md');

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   NodeResizeControl,
   NodeResizer,
@@ -21,7 +22,10 @@ export type KanbanCanvasData = KanbanBoardProps & {
   controls: () => void;
 };
 export type KanbanCanvasNode = Node<KanbanCanvasData, 'kanban'>;
-export function KanbanNode({ data, selected }: NodeProps<KanbanCanvasNode>) {
+const KanbanNodeContent = memo(function KanbanNodeContent({
+  data,
+  selected,
+}: Pick<NodeProps<KanbanCanvasNode>, 'data' | 'selected'>) {
   const p = data.preferences;
   const count = data.documents.filter(
     (d) =>
@@ -108,4 +112,9 @@ export function KanbanNode({ data, selected }: NodeProps<KanbanCanvasNode>) {
       </section>
     </>
   );
+});
+
+// Position and dragging belong to React Flow; content receives only its own inputs.
+export function KanbanNode({ data, selected }: NodeProps<KanbanCanvasNode>) {
+  return <KanbanNodeContent data={data} selected={selected} />;
 }

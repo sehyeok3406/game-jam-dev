@@ -128,7 +128,16 @@ export class ProjectLibrary {
     return next;
   }
   get(id: string) {
-    const item = this.entries.find((entry) => entry.id === id);
+    const item =
+      this.entries.find((entry) => entry.id === id) ??
+      this.entries.find(
+        (entry) =>
+          (id.startsWith('shared:') &&
+            entry.kind === 'shared' &&
+            entry.projectId === id.slice(7)) ||
+          (id.startsWith('local:') &&
+            (entry.root ?? entry.localRoot)?.toLowerCase() === id.slice(6)),
+      );
     if (!item) throw new Error('프로젝트를 찾을 수 없습니다.');
     return structuredClone(item);
   }
@@ -138,9 +147,33 @@ export class ProjectLibrary {
         '공동 세션을 안전하게 기억하려면 Windows 암호화 저장소를 사용할 수 있어야 합니다.',
       );
   }
+  findRoot(root: string) {
+    const entry = this.entries.find(
+      (e) => (e.root ?? e.localRoot)?.toLowerCase() === root.toLowerCase(),
+    );
+    return entry ? structuredClone(entry) : undefined;
+  }
+  findShared(projectId: string, serverUrl?: string) {
+    const entries = this.entries.filter(
+      (e) => e.kind === 'shared' && e.projectId === projectId,
+    );
+    const exact = entries.find((e) => e.serverUrl === serverUrl);
+    if (exact) return structuredClone(exact);
+    if (entries.length === 1) return structuredClone(entries[0]);
+    throw Error(
+      '공동 프로젝트 연결을 찾을 수 없거나 여러 서버에 있습니다. 프로젝트 카드를 선택해주세요.',
+    );
+  }
   async rememberLocal(root: string, name: string) {
+    const prior = this.findRoot(root);
+    if (prior?.kind === 'shared') return;
     return this.upsert({
-      id: `local:${root.toLowerCase()}`,
+      ...prior,
+      id:
+        prior?.id ??
+        (this.entries.some((e) => e.id === `local:${root.toLowerCase()}`)
+          ? randomUUID()
+          : `local:${root.toLowerCase()}`),
       name,
       kind: 'local',
       root,
@@ -154,16 +187,48 @@ export class ProjectLibrary {
     localRoot: string | null,
   ) {
     this.assertSecureSession();
-    const id = `shared:${credentials.projectId}`;
+    const prior =
+      this.entries.find(
+        (e) =>
+          e.kind === 'shared' &&
+          e.projectId === credentials.projectId &&
+          e.serverUrl === credentials.serverUrl,
+      ) ??
+      this.entries.find(
+        (e) =>
+          e.id === credentials.libraryId &&
+          ((e.kind === 'local' && e.root === localRoot) ||
+            (e.kind === 'shared' && e.projectId === credentials.projectId)),
+      );
+    const preferred =
+      credentials.libraryId ?? `shared:${credentials.projectId}`;
+    const id =
+      prior?.id ??
+      (this.entries.some((e) => e.id === preferred) ? randomUUID() : preferred);
     return this.upsert({
+      ...prior,
+      root: undefined,
       id,
       name,
       kind: 'shared',
       serverUrl: credentials.serverUrl,
       projectId: credentials.projectId,
-      credentials,
+      credentials: { ...credentials, libraryId: id },
       role,
       localRoot,
+      lastOpenedAt: Date.now(),
+    });
+  }
+  async markTransition(id: string, pending: boolean) {
+    await this.upsert({ ...this.get(id), transitionPending: pending });
+  }
+  async makeLocal(id: string, root: string, name: string) {
+    const entry = this.get(id);
+    await this.upsert({
+      id: entry.id,
+      root,
+      name,
+      kind: 'local',
       lastOpenedAt: Date.now(),
     });
   }
@@ -180,6 +245,7 @@ export class ProjectLibrary {
     );
   }
   async removeProject(id: string) {
+    id = this.get(id).id;
     await this.modifyEntries(() =>
       this.entries.filter((entry) => entry.id !== id),
     );

@@ -149,7 +149,12 @@ const api: GameCanvasApi = {
   removeProjectFolder: (id) => ipcRenderer.invoke('projects:folder-remove', id),
   revealProject: (id) => ipcRenderer.invoke('projects:reveal', id),
   openProject: (id) => ipcRenderer.invoke('projects:open', id),
-  createProject: (name) => ipcRenderer.invoke('projects:create', name),
+  chooseProjectParent: () => ipcRenderer.invoke('projects:choose-parent'),
+  createProject: (input) => ipcRenderer.invoke('projects:create', input),
+  convertProjectToLocal: (input) =>
+    ipcRenderer.invoke('collaboration:to-local', input),
+  projectHandover: (action, successorId) =>
+    ipcRenderer.invoke('collaboration:handover', action, successorId),
   goHome: () => ipcRenderer.invoke('projects:home'),
   updateProjectServer: (id, serverUrl) =>
     ipcRenderer.invoke('projects:server', id, serverUrl),

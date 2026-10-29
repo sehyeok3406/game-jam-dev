@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useEffect,
   useRef,
   type ComponentProps,
@@ -26,10 +27,9 @@ export function CanvasResizeProvider({
   scope: string;
   children: ReactNode;
 }) {
+  const value = useMemo(() => ({ save, scope }), [save, scope]);
   return (
-    <ResizeContext.Provider value={{ save, scope }}>
-      {children}
-    </ResizeContext.Provider>
+    <ResizeContext.Provider value={value}>{children}</ResizeContext.Provider>
   );
 }
 

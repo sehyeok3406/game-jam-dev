@@ -229,7 +229,9 @@ try {
     serverKey: '',
     nickname: '격리 패키지 관리자',
   });
-  const sharedId = 'shared:' + shared.projectId;
+  const sharedId = (await call('listProjects')).find(
+    (e) => e.projectId === shared.projectId,
+  ).id;
   await call('goHome');
   await call('renameProject', sharedId, '패키지 공동 이름');
   const online = (await call('listProjects', true)).find(

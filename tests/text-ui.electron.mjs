@@ -47,10 +47,18 @@ async function run() {
       });
     await pause();
   };
-  const toolbar = (label) =>
-    js(
-      `document.querySelector('.canvas-text-toolbar [aria-label=${JSON.stringify(label)}]').click()`,
+  const toolbar = async (label) => {
+    const point = await js(
+      `(()=>{const r=document.querySelector('.canvas-text-toolbar [aria-label=${JSON.stringify(label)}]').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`,
     );
+    await click(point.x, point.y);
+  };
+  const selectLine = async (selector, full = false) => {
+    await js(
+      `(()=>{const p=document.querySelector(${JSON.stringify(selector)}),range=document.createRange();p.closest('.tiptap').focus();range.selectNodeContents(p);${full ? '' : 'range.collapse(true);'}const selection=getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'));})()`,
+    );
+    await pause();
+  };
   const list = () => js('window.gameCanvas.listDrawings()');
   const saved = (condition) =>
     wait(
@@ -145,8 +153,82 @@ async function run() {
     await wait(
       '!!document.querySelector(".canvas-text-node .tiptap[contenteditable=true]")',
     );
+    await pause(100);
+    await selectLine('.canvas-text-node ul > li:first-child > p');
     await toolbar('가운데 정렬');
-    await saved('o[0].geometry.align==="center"');
+    await saved(
+      'JSON.parse(o[0].geometry.document).content[1].content[0].content[0].attrs?.textAlign==="center"',
+    );
+    assert.equal((await list())[0].geometry.align, 'left');
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-text-node ul > li:first-child")).textAlign',
+      ),
+      'center',
+    );
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-text-node ul > li:first-child")).listStylePosition',
+      ),
+      'inside',
+    );
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-text-node ul > li:first-child > p")).display',
+      ),
+      'inline',
+    );
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-text-node ul > li:nth-child(2)")).textAlign',
+      ),
+      'left',
+    );
+    await selectLine('.canvas-text-node ol > li:last-child > p', true);
+    await toolbar('오른쪽 정렬');
+    await saved(
+      'JSON.parse(o[0].geometry.document).content[2].content[1].content[0].attrs?.textAlign==="right"',
+    );
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-text-node ol > li:last-child")).textAlign',
+      ),
+      'right',
+    );
+    await key('z', ['control']);
+    await saved(
+      '!JSON.parse(o[0].geometry.document).content[2].content[1].content[0].attrs?.textAlign',
+    );
+    await key('z', ['control', 'shift']);
+    await saved(
+      'JSON.parse(o[0].geometry.document).content[2].content[1].content[0].attrs?.textAlign==="right"',
+    );
+    await selectLine('.canvas-text-node .tiptap > p:first-child', true);
+    await toolbar('가운데 정렬');
+    await saved(
+      'JSON.parse(o[0].geometry.document).content[0].attrs?.textAlign==="center"',
+    );
+    assert.equal(
+      await js(
+        'getComputedStyle(document.querySelector(".canvas-text-node ol > li:first-child")).textAlign',
+      ),
+      'left',
+    );
+    await fs.writeFile(
+      'out/text-ui/alignment.png',
+      (await win.webContents.capturePage()).toPNG(),
+    );
+    await toolbar('텍스트 편집 완료');
+    assert.equal(
+      await js(
+        'document.querySelectorAll(".canvas-text-toolbar [aria-pressed=true][aria-label$=정렬]").length',
+      ),
+      0,
+    );
+    await toolbar('오른쪽 정렬');
+    await saved(
+      '(()=>{const doc=JSON.parse(o[0].geometry.document);return doc.content[0].attrs?.textAlign==="right"&&doc.content[1].content.every(i=>i.content[0].attrs?.textAlign==="right")&&doc.content[2].content.every(i=>i.content[0].attrs?.textAlign==="right")})()',
+    );
     await toolbar('텍스트 편집 완료');
     await wait('!!document.querySelector(".react-flow__resize-control")');
     const oldWidth = (await list())[0].transform.width;

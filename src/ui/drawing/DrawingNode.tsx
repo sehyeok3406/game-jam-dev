@@ -37,6 +37,7 @@ export type DrawingNodeData = {
   kind: 'drawing';
   object: DrawingObject;
   locked: boolean;
+  textAlignmentSupported?: boolean;
   zoom: number;
   onGesture: (active: boolean) => void;
   onPatch: (patch: DrawingPatch) => void;
@@ -81,7 +82,10 @@ export function DrawingGraphic({
             overflowWrap: 'anywhere',
           }}
           dangerouslySetInnerHTML={{
-            __html: textDocumentHtml(object.geometry.document),
+            __html: textDocumentHtml(
+              object.geometry.document,
+              object.geometry.align,
+            ),
           }}
         />
       </foreignObject>
@@ -150,19 +154,20 @@ export function DrawingGraphic({
     </g>
   );
 }
-export const DrawingNode = memo(function DrawingNode(
-  props: NodeProps<DrawingCanvasNode>,
-) {
-  return props.data.object.kind === 'text' ? (
-    <TextDrawingNode {...props} object={props.data.object} />
+export const DrawingNode = memo(function DrawingNode({
+  data,
+  selected,
+}: NodeProps<DrawingCanvasNode>) {
+  return data.object.kind === 'text' ? (
+    <TextDrawingNode data={data} selected={selected} object={data.object} />
   ) : (
-    <GraphicDrawingNode {...props} />
+    <GraphicDrawingNode data={data} selected={selected} />
   );
 });
 const GraphicDrawingNode = memo(function GraphicDrawingNode({
   data,
   selected,
-}: NodeProps<DrawingCanvasNode>) {
+}: Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'>) {
   const [draft, setDraft] = useState<DrawingObject | null>(null),
     flow = useReactFlow();
   const draftRef = useRef<DrawingObject | null>(null);

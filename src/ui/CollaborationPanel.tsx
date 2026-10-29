@@ -71,6 +71,21 @@ export function CollaborationPanel({
   const [leaveConfirm, setLeaveConfirm] = useState(
     previewState('collaboration') === 'leave',
   );
+  const [localParent, setLocalParent] = useState('');
+  const [successorId, setSuccessorId] = useState('');
+  const me = state.members.find((member) => member.id === state.memberId);
+  const others = state.members.filter((member) => member.id !== state.memberId);
+  const lastAdmin =
+    state.role === 'admin' && !others.some((member) => member.role === 'admin');
+  const needsSuccessor = !!me?.owner || lastAdmin;
+  const handoverReady =
+    !!state.handover?.accepted &&
+    state.handover.from === state.memberId &&
+    state.handover.to === successorId;
+  useEffect(() => {
+    if (state.handover && state.handover.from === state.memberId)
+      setSuccessorId(state.handover.to);
+  }, [state.handover?.to, state.handover?.from, state.memberId]);
   const [testUsers, setTestUsers] = useState<TestUsersState | null>(null);
   const [testCount, setTestCount] = useState(3);
   const [testPrefix, setTestPrefix] = useState('테스트 사용자');
@@ -424,7 +439,7 @@ export function CollaborationPanel({
                     </strong>
                     <small>
                       {member.owner
-                        ? '프로젝트 생성자'
+                        ? '프로젝트 소유자'
                         : member.online
                           ? '접속 중'
                           : '오프라인'}
@@ -522,35 +537,169 @@ export function CollaborationPanel({
               같은 메모는 한 명씩 편집합니다. AI 작업 중에는 모두의 문서 편집이
               잠깁니다. HTML 플레이 상태와 최소화는 각자 유지됩니다.
             </p>
-            {leaveConfirm ? (
+            {state.handover && state.handover.to === state.memberId && (
               <div className="collaboration-confirm">
                 <p>
-                  이 PC에 저장된 참여 세션을 삭제하고 이전 로컬 프로젝트로
-                  돌아갈까요? 다음에는 초대 코드 또는 관리자 복구가 필요합니다.
-                  {state.pendingChanges
-                    ? ' 미동기화 작업이 있습니다. 먼저 동기화하거나 충돌을 해결해주세요.'
-                    : ''}
+                  현재 소유자가 내게 소유권 인계를 요청했습니다. 수락하면 새
+                  복구 정보를 이 PC에 안전하게 보관하며, 상대가 로컬 전환을
+                  완료할 때 소유권이 넘어옵니다.
                 </p>
-                <button disabled={busy} onClick={() => setLeaveConfirm(false)}>
-                  취소
-                </button>
                 <button
-                  disabled={busy || !!state.pendingChanges}
+                  disabled={busy || !state.connected || state.handover.accepted}
+                  onClick={() =>
+                    void action(() =>
+                      api.collaboration.projectHandover('accept'),
+                    )
+                  }
+                >
+                  {state.handover.accepted
+                    ? '인계 수락 완료 · 전환 대기'
+                    : '소유권 인계 수락'}
+                </button>
+              </div>
+            )}
+            {leaveConfirm ? (
+              <div className="collaboration-confirm">
+                <h3>로컬로 전환</h3>
+                <p>
+                  최신 공동 자료를 이 PC에 보관하고 내 참여만 종료합니다. 다른
+                  팀원은 계속 공동 작업합니다. 같은 참여 자격을 사용하는 다른
+                  창의 접근도 종료됩니다.
+                </p>
+                {needsSuccessor && (
+                  <label>
+                    후임 관리자{me?.owner ? ' · 소유자' : ''}
+                    <select
+                      aria-label="후임 관리자"
+                      disabled={busy}
+                      value={successorId}
+                      onChange={(event) => setSuccessorId(event.target.value)}
+                    >
+                      <option value="">다른 참여자를 선택하세요</option>
+                      {others.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.nickname} · {ROLE_NAMES[member.role]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {needsSuccessor && !others.length && (
+                  <p role="alert">
+                    공동 프로젝트에는 관리자가 최소 1명 있어야 합니다. 다른
+                    참여자를 초대하고 권한을 넘긴 뒤 전환해주세요.
+                  </p>
+                )}
+                {me?.owner && (
+                  <>
+                    <button
+                      disabled={
+                        busy ||
+                        !state.connected ||
+                        !successorId ||
+                        handoverReady
+                      }
+                      onClick={() =>
+                        void action(() =>
+                          api.collaboration.projectHandover(
+                            'prepare',
+                            successorId,
+                          ),
+                        )
+                      }
+                    >
+                      {handoverReady
+                        ? '후임의 인계 수락 확인됨'
+                        : '소유권 인계 요청'}
+                    </button>
+                    <p>
+                      후임이 접속해 인계를 수락하고 새 복구 정보를 보관하면
+                      전환할 수 있습니다. 기존 복구 키는 전환 완료 시
+                      무효화됩니다.
+                    </p>
+                  </>
+                )}
+                <label>
+                  저장 위치
+                  <div className="project-location-row">
+                    <input
+                      aria-label="로컬 전환 저장 위치"
+                      readOnly
+                      value={localParent}
+                      placeholder="기존 로컬 폴더 사용 · 없으면 위치 선택"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void action(async () => {
+                          const parent =
+                            await api.projects.chooseProjectParent();
+                          if (parent) setLocalParent(parent);
+                        })
+                      }
+                    >
+                      폴더 선택
+                    </button>
+                  </div>
+                </label>
+                <p>
+                  새 위치를 선택하면 그 안에 프로젝트 이름의 폴더를 만듭니다.
+                  기존 폴더가 외부에서 수정됐으면 다른 위치를 선택해주세요. 이
+                  PC가 서버를 운영한다면 서버와 터널은 계속 실행됩니다.
+                </p>
+                {state.pendingChanges ? (
+                  <p role="alert">미동기화 작업과 충돌을 먼저 해결해주세요.</p>
+                ) : null}
+                {state.projectModeVersion !== 1 && (
+                  <p role="alert">
+                    프로젝트 전환을 지원하는 서버로 업데이트해주세요.
+                  </p>
+                )}
+                <button
+                  disabled={busy}
                   onClick={() =>
                     void action(async () => {
-                      await beforeSwitch();
-                      await api.collaboration.leaveCollaboration();
+                      if (
+                        state.handover &&
+                        state.handover.from === state.memberId
+                      )
+                        await api.collaboration.projectHandover('cancel');
                       setLeaveConfirm(false);
-                      report('이전 로컬 프로젝트로 돌아왔습니다.');
                     })
                   }
                 >
-                  세션 삭제하고 나가기
+                  취소
+                </button>
+                <button
+                  disabled={
+                    busy ||
+                    !state.connected ||
+                    !!state.pendingChanges ||
+                    state.projectModeVersion !== 1 ||
+                    (needsSuccessor && !successorId) ||
+                    (!!me?.owner && !handoverReady)
+                  }
+                  onClick={() =>
+                    void action(async () => {
+                      await beforeSwitch();
+                      await api.collaboration.convertProjectToLocal({
+                        parent: localParent || undefined,
+                        successorId: needsSuccessor ? successorId : undefined,
+                      });
+                      setLeaveConfirm(false);
+                      report(
+                        '최신 자료를 보관하고 로컬 프로젝트로 전환했습니다.',
+                      );
+                    })
+                  }
+                >
+                  완료
                 </button>
               </div>
             ) : (
               <button disabled={busy} onClick={() => setLeaveConfirm(true)}>
-                이 PC에서 참여 세션 삭제
+                로컬로 전환
               </button>
             )}
           </>
@@ -565,7 +714,7 @@ export function CollaborationPanel({
                 aria-pressed={tab === 'create'}
                 onClick={() => setTab('create')}
               >
-                현재 프로젝트 공유
+                공동으로 전환
               </button>
               <button
                 aria-pressed={tab === 'join'}
@@ -623,8 +772,8 @@ export function CollaborationPanel({
                   </label>
                 )}
                 <p className="collaboration-help">
-                  현재 로컬 문서를 서버에 복사합니다. 원본 로컬 폴더는 그대로
-                  남으며, 이후 공동 편집은 서버 사본에 저장됩니다.
+                  현재 프로젝트를 공동으로 전환합니다. 홈에는 같은 카드 하나를
+                  유지하며, 이후 편집은 서버에 저장됩니다.
                 </p>
                 <button
                   disabled={busy}

@@ -27,10 +27,6 @@ interface GeometryPorts {
     saving: boolean;
   };
   blockAiFiles: (paths: string[]) => boolean;
-  updatePreviewWindow: (
-    relative: string,
-    state: PreviewWindowState,
-  ) => Promise<void>;
   updatePreviewWindows: (
     windows: { relative: string; state: PreviewWindowState }[],
   ) => Promise<void>;
@@ -90,7 +86,6 @@ function createGeometryActions(
     showError,
     gameUi,
     blockAiFiles,
-    updatePreviewWindow,
     updatePreviewWindows,
     locked,
     sectionCollapsed,
@@ -311,19 +306,29 @@ function createGeometryActions(
     ) {
       return;
     }
-    for (const moved of movedNodes) {
-      if (moved.data.kind === 'preview') {
-        await updatePreviewWindow(moved.data.preview.relativePath, {
-          ...moved.data.windowState,
-          x: moved.position.x,
-          y: moved.position.y,
-          width: moved.measured?.width ?? moved.data.windowState.width,
-          height: moved.data.windowState.collapsed
-            ? moved.data.windowState.height
-            : (moved.measured?.height ?? moved.data.windowState.height),
-        });
-      }
-    }
+    await updatePreviewWindows(
+      movedNodes.flatMap((moved) =>
+        moved.data.kind === 'preview'
+          ? [
+              {
+                relative: moved.data.preview.relativePath,
+                state: {
+                  ...moved.data.windowState,
+                  x: moved.position.x,
+                  y: moved.position.y,
+                  width: moved.measured?.width ?? moved.data.windowState.width,
+                  height: moved.data.windowState.collapsed
+                    ? moved.data.windowState.height
+                    : (moved.measured?.height ?? moved.data.windowState.height),
+                },
+              },
+            ]
+          : [],
+      ),
+    ).catch((error) => {
+      if (isCurrent()) showError(error);
+    });
+    if (!isCurrent()) return;
     if (!movedNodes.some((node) => node.data.kind !== 'preview')) return;
     if (locked || !isCurrent()) return;
 

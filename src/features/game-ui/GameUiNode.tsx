@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
@@ -56,7 +57,10 @@ export type GameUiNodeData = {
   exportPng: (data: string, name: string) => Promise<boolean>;
 };
 export type GameUiCanvasNode = Node<GameUiNodeData, 'game-ui'>;
-export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
+const GameUiNodeContent = memo(function GameUiNodeContent({
+  data,
+  selected,
+}: Pick<NodeProps<GameUiCanvasNode>, 'data' | 'selected'>) {
   const flow = useReactFlow();
   const f = data.frame,
     [ids, setSelectedIds] = useState<string[]>(
@@ -1506,4 +1510,9 @@ export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
       )}
     </div>
   );
+});
+
+// Position and dragging belong to React Flow; content receives only its own inputs.
+export function GameUiNode({ data, selected }: NodeProps<GameUiCanvasNode>) {
+  return <GameUiNodeContent data={data} selected={selected} />;
 }

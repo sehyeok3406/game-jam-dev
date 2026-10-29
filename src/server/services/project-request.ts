@@ -1,3 +1,4 @@
+import { detachStatus } from './project-mode-service.ts';
 import { assertEraseSupport } from './drawing-capabilities.ts';
 import type { Project, Member } from '../project-state.ts';
 import {
@@ -36,6 +37,7 @@ export function createProjectRequest(ports: Ports) {
     ports.queue(id, async () => {
       let project = ports.get(id);
       if (!project) return ports.unavailable(id);
+      if (action === 'detach-status') return detachStatus(project, input);
       const member = ports.authenticate(project, token);
       if (action === 'lifecycle' || action.startsWith('trash'))
         return ports.lifecycle(project, member, action, input);

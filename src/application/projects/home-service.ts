@@ -7,7 +7,7 @@ import type {
   SharedLifecycleAction,
 } from '../ports/home-projects.ts';
 import { homeName } from '../../home-organization.ts';
-import { projectDirectoryName } from '../../project-name.ts';
+import { projectDirectoryName } from '../../core/projects/project-name.ts';
 
 type Ports = {
   registry: HomeProjectRegistry;
@@ -19,6 +19,10 @@ type Ports = {
   serverAddress(url: string): string;
   chooseParent(): Promise<string | null>;
   reveal(root: string): void;
+  createShared?(
+    input: import('../../contracts/project-mode.ts').CreateProjectInput,
+  ): Promise<import('../../contracts/project.ts').WorkspaceState>;
+  beforeOpen?(id: string): Promise<void>;
   changed(): void;
   stopViewer(): void;
   drainViewer(): Promise<void>;
@@ -115,6 +119,7 @@ export class ProjectHomeService {
   async open(id: string) {
     const p = this.ports;
     if (p.trash.hasProject(id)) throw Error('휴지통에서 먼저 복원해주세요.');
+    await p.beforeOpen?.(id);
     const entry = p.registry.get(id),
       current = p.session.current();
     if (
@@ -132,10 +137,27 @@ export class ProjectHomeService {
     await p.session.suspend();
     return p.session.openShared(id);
   }
-  async create(inputName: string) {
+  chooseParent() {
+    return this.ports.chooseParent();
+  }
+  async create(
+    input:
+      | string
+      | import('../../contracts/project-mode.ts').CreateProjectInput,
+  ) {
     const p = this.ports,
-      name = projectDirectoryName(inputName);
-    const parent = await p.chooseParent();
+      name = projectDirectoryName(
+        typeof input === 'string' ? input : input.name,
+      );
+    if (typeof input !== 'string' && input.mode === 'shared') {
+      if (!p.createShared)
+        throw Error('이 환경에서는 공동 프로젝트를 생성할 수 없습니다.');
+      return p.createShared({ ...input, name });
+    }
+    if (typeof input !== 'string' && (input.mode !== 'local' || !input.parent))
+      throw Error('프로젝트 방식과 저장 위치를 선택해주세요.');
+    const parent =
+      typeof input === 'string' ? await p.chooseParent() : input.parent;
     if (!parent) return p.session.workspace();
     const root = await p.local.create(parent, name);
     await p.session.suspend();
@@ -161,7 +183,9 @@ export class ProjectHomeService {
   }
   inspectConnection(text: string) {
     const info = this.ports.parseConnection(text);
-    const entry = this.ports.registry.get(`shared:${info.projectId}`);
+    const entry =
+      this.ports.registry.findShared?.(info.projectId, info.serverUrl) ??
+      this.ports.registry.get(`shared:${info.projectId}`);
     if (!this.ports.registry.hasSharedSession(entry.id))
       throw Error(
         '이 프로젝트의 참여 세션이 없습니다. 초대 코드로 참여해주세요.',

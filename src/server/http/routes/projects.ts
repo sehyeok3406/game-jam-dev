@@ -18,12 +18,14 @@ export function projectsRoute(ports: Ports): HttpRoute {
   return async (request, response, url) => {
     if (
       request.method !== 'POST' ||
-      !['/projects', '/join', '/recover'].includes(url.pathname)
+      !['/projects', '/projects-mode', '/join', '/recover'].includes(
+        url.pathname,
+      )
     )
       return false;
     const peer =
       ports.peer?.(request) ?? request.socket.remoteAddress ?? 'unknown';
-    if (url.pathname === '/projects') {
+    if (url.pathname === '/projects' || url.pathname === '/projects-mode') {
       ports.limit(peer, 'create', 10);
       if (!ports.validKey(String(request.headers['x-server-key'] ?? '')))
         throw new ApiError('서버 생성 키가 올바르지 않습니다.', 403);
@@ -34,8 +36,10 @@ export function projectsRoute(ports: Ports): HttpRoute {
         url.pathname === '/join' ? 20 : 10,
       );
     const input = await body(request);
+    if (url.pathname === '/projects-mode' && input.projectModeVersion !== 1)
+      throw new ApiError('프로젝트 전환 프로토콜이 올바르지 않습니다.', 400);
     const result =
-      url.pathname === '/projects'
+      url.pathname === '/projects' || url.pathname === '/projects-mode'
         ? await ports.create(input)
         : url.pathname === '/join'
           ? await ports.join(input)

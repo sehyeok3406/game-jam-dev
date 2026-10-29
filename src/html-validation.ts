@@ -53,8 +53,21 @@ export async function validateHtml(content: string, relativePath?: string) {
       code: 'GC-HTML-004',
     }),
   );
-  const instrumentation =
-    '<script>window.addEventListener("error",e=>console.error(e.message||"HTML 실행 오류"));window.addEventListener("unhandledrejection",e=>console.error(String(e.reason)));</script>';
+  // A browser resize-delivery notice can settle on the next frame. Keep real
+  // exceptions fatal, and still reject layouts that repeatedly fail to settle.
+  const instrumentation = `<script>(()=>{
+    let resizeNotices=0;
+    window.addEventListener("error",e=>{
+      if(e.isTrusted&&e.error===null&&e.message==="ResizeObserver loop completed with undelivered notifications."){
+        e.preventDefault();
+        if(++resizeNotices===10)console.error("ResizeObserver 크기 변경이 반복되어 화면이 안정화되지 않았습니다.");
+        else if(resizeNotices<10)console.warn(e.message);
+        return;
+      }
+      console.error(e.message||"HTML 실행 오류");
+    });
+    window.addEventListener("unhandledrejection",e=>console.error(String(e.reason)));
+  })();</script>`;
   const instrumented = normalized.replace(
     /<head([^>]*)>/i,
     `<head$1>${instrumentation}`,

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { type Node, type NodeProps } from '@xyflow/react';
 import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
 import {
@@ -56,7 +57,10 @@ export type PreviewNodeData = {
 
 export type PreviewCanvasNode = Node<PreviewNodeData, 'preview'>;
 
-export function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
+const PreviewCardContent = memo(function PreviewCardContent({
+  data,
+  selected,
+}: Pick<NodeProps<PreviewCanvasNode>, 'data' | 'selected'>) {
   const pageLinks = useDocumentLinks();
   const linkedDocument = pageLinks.documents.find(
     (doc) => doc.htmlSource === data.preview.relativePath,
@@ -337,4 +341,9 @@ export function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
       </section>
     </>
   );
+});
+
+// Position and dragging belong to React Flow; content receives only its own inputs.
+export function PreviewCard({ data, selected }: NodeProps<PreviewCanvasNode>) {
+  return <PreviewCardContent data={data} selected={selected} />;
 }

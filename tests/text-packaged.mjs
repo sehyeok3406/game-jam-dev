@@ -186,9 +186,53 @@ try {
   await send('Input.insertText', { text: '번호 첫 항목' });
   await key('Enter', 'Enter', 13);
   await send('Input.insertText', { text: '번호 둘째 항목' });
+  const selectLine = async (selector) => {
+    await js(
+      `(()=>{const p=document.querySelector(${JSON.stringify(selector)}),range=document.createRange();p.closest('.tiptap').focus();range.selectNodeContents(p);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'));})()`,
+    );
+    await pause();
+  };
+  const alignLine = async (selector, label) => {
+    await selectLine(selector);
+    const point = await js(
+      `(()=>{const r=document.querySelector('.canvas-text-toolbar [aria-label=${JSON.stringify(label)}]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+    );
+    for (const type of ['mousePressed', 'mouseReleased'])
+      await send('Input.dispatchMouseEvent', {
+        type,
+        ...point,
+        button: 'left',
+        buttons: type === 'mousePressed' ? 1 : 0,
+        clickCount: 1,
+      });
+    await pause();
+  };
+  await alignLine('.canvas-text-node ul > li > p', '가운데 정렬');
+  await alignLine('.canvas-text-node ol > li:last-child > p', '오른쪽 정렬');
   await key('Escape', 'Escape', 27);
   await wait(
     'window.gameCanvas.listDrawings().then(o=>o[0]?.geometry.document.includes("번호 둘째 항목"))',
+  );
+  await wait(
+    'window.gameCanvas.listDrawings().then(o=>JSON.parse(o[0].geometry.document).content[2].content[1].content[0].attrs?.textAlign==="right")',
+  );
+  assert.equal(
+    await js(
+      'getComputedStyle(document.querySelector(".canvas-text-node ul > li")).textAlign',
+    ),
+    'center',
+  );
+  assert.equal(
+    await js(
+      'getComputedStyle(document.querySelector(".canvas-text-node ol > li:last-child")).textAlign',
+    ),
+    'right',
+  );
+  assert.equal(
+    await js(
+      'getComputedStyle(document.querySelector(".canvas-text-node ol > li:first-child")).textAlign',
+    ),
+    'left',
   );
   const expected = await js(
     'window.gameCanvas.listDrawings().then(o=>o[0].geometry)',
@@ -227,6 +271,19 @@ try {
     await js('document.querySelectorAll(".canvas-text-node ol > li").length'),
     2,
   );
+  assert.equal(
+    await js(
+      'getComputedStyle(document.querySelector(".canvas-text-node ul > li")).textAlign',
+    ),
+    'center',
+  );
+  assert.equal(
+    await js(
+      'getComputedStyle(document.querySelector(".canvas-text-node ol > li:last-child")).textAlign',
+    ),
+    'right',
+  );
+  await screenshot('alignment-reopened');
   await stop(true);
   await boot();
   assert.equal(
@@ -245,6 +302,8 @@ try {
         passed: true,
         nativeKoreanInput: true,
         bulletsAndNumbering: true,
+        independentParagraphAlignment: true,
+        markerAlignment: true,
         diskPersistence: true,
         fullRestart: true,
         autoStartOnOpensManagement: true,

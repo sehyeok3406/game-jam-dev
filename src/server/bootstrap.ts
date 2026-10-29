@@ -59,6 +59,7 @@ import {
   unavailableProject,
 } from './services/lifecycle-policy.ts';
 import { createProjectRetention } from './services/project-retention.ts';
+import { createProjectModeService } from './services/project-mode-service.ts';
 import { createProjectService } from './services/project-service.ts';
 import { createMemberService } from './services/member-service.ts';
 import { createApprovalService } from './services/approval-service.ts';
@@ -429,7 +430,19 @@ export async function createCollaborationServer(options: Options) {
         now: Date.now,
         announce,
       });
+      const modeExecute = createProjectModeService({
+        persist,
+        envelope,
+        id: randomUUID,
+        record: (p, m, label) => recordChanges(p, m, p.files, label),
+        cleanup: (id, memberId) => {
+          online.get(id)?.delete(memberId);
+          for (const [relative, lock] of projectLocks(id))
+            if (lock.memberId === memberId) projectLocks(id).delete(relative);
+        },
+      });
       const dispatch = createProjectActions({
+        modes: { execute: modeExecute },
         stateService,
         members,
         approvals,

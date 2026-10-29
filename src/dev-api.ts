@@ -739,6 +739,13 @@ export function createDevGameCanvasApi(
       throw new Error('저장 위치 보기는 데스크톱 앱에서 사용해주세요.');
     },
     openProject: async () => api.getWorkspace(),
+    chooseProjectParent: async () => '/preview/projects',
+    convertProjectToLocal: async () => {
+      throw Error('프로젝트 전환은 데스크톱 앱에서 사용해주세요.');
+    },
+    projectHandover: async () => {
+      throw Error('소유권 인계는 데스크톱 앱에서 사용해주세요.');
+    },
     createProject: async () => {
       throw new Error('새 프로젝트 생성은 데스크톱 앱에서 사용해주세요.');
     },

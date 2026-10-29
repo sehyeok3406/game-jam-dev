@@ -2,6 +2,7 @@
 export function serverCapabilities() {
   return {
     projectCopyVersion: 1,
+    projectModeVersion: 1,
     taskInstructionsEditable: true,
     taskResultNaming: true,
     gamejamWorkflow: true,
@@ -10,6 +11,7 @@ export function serverCapabilities() {
     drawingsVersion: 1,
     drawingEraseVersion: 1,
     drawingTextVersion: 1,
+    drawingTextAlignmentVersion: 1,
     gamejamTextMaterialsVersion: 1,
     gameUiVersion: 2,
     documentStatusesVersion: 1,
