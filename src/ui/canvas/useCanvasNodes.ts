@@ -575,6 +575,42 @@ export function useCanvasNodes(
             scope: workspace.saveScope,
             draftRegistry,
             onCommand: async (command) => {
+              // Check and delete in one existing atomic batch, including on older
+              // text-capable servers that ignore conditional deletion fields.
+              if (
+                command.action === 'delete' &&
+                command.targets?.some((t) => t.expectedGeometry)
+              ) {
+                await drawing.flush();
+                await api.editor.applyCanvasCommands({
+                  scope: workspace.saveScope!,
+                  clipboardContextId: workspace.clipboardContextId,
+                  requestId: crypto.randomUUID(),
+                  commands: [
+                    {
+                      channel: 'drawings:apply',
+                      input: {
+                        canvasId: activeCanvas,
+                        action: 'patch',
+                        patches: command.targets
+                          .filter((t) => t.expectedGeometry)
+                          .map((t) => ({
+                            id: t.id,
+                            generation: t.generation,
+                            geometry: t.expectedGeometry,
+                            expectedGeometry: t.expectedGeometry,
+                          })),
+                      },
+                    },
+                    {
+                      channel: 'drawings:apply',
+                      input: { ...command, canvasId: activeCanvas },
+                    },
+                  ],
+                });
+                await drawing.reload();
+                return;
+              }
               if (command.action === 'create' && command.objects?.[0])
                 createdDrawingSelection.current = command.objects[0].id;
               await drawing.submit(command);

@@ -194,11 +194,11 @@ export function gameUiStyle(
     backgroundColor: ['button', 'panel'].includes(i.kind)
       ? mix('#f1f5f9', i.color, 0.25)
       : '#f1f5f9',
-    backgroundOpacity: 1,
+    backgroundOpacity: i.kind === 'text' ? 0 : 1,
     borderColor:
       i.kind === 'skills' || i.kind === 'items' ? '#64748b' : i.color,
     borderOpacity: 1,
-    borderWidth: 2,
+    borderWidth: i.kind === 'text' ? 0 : 2,
     borderStyle: 'solid',
     borderPosition: 'center',
     cornerRadius: Math.min(12, i.height / 4),

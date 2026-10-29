@@ -5,6 +5,7 @@ import ReactMarkdown, {
 } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
+import { remarkLineBreaks } from './markdown-line-breaks';
 import {
   AUTO_LINK_TITLE,
   parseDocumentLink,
@@ -147,7 +148,7 @@ export function DocumentMarkdown({
         urlTransform={(url) =>
           parseDocumentLink(url) ? url : defaultUrlTransform(url)
         }
-        remarkPlugins={[remarkGfm, remarkBreaks]}
+        remarkPlugins={[remarkGfm, remarkBreaks, remarkLineBreaks]}
         components={components}
       >
         {body}

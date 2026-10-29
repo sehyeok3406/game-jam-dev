@@ -31,6 +31,22 @@ const frame = () => ({
   items: [newGameUiItem('health', randomUUID)],
   descriptionPath: null,
 });
+test('legacy text stays transparent and supports explicit background, border and corners', () => {
+  const text = newGameUiItem('text', randomUUID);
+  assert.equal(gameUiStyle(text).backgroundOpacity, 0);
+  assert.equal(gameUiStyle(text).borderWidth, 0);
+  const styled = {
+    ...text,
+    backgroundColor: '#ffffff',
+    backgroundOpacity: 1,
+    borderColor: '#112233',
+    borderWidth: 6,
+    cornerRadius: 14,
+  };
+  assert.equal(gameUiStyle(styled).borderColor, '#112233');
+  assert.equal(gameUiStyle(styled).cornerRadius, 14);
+  assert.equal(gameUiStyle({ ...styled, borderOpacity: 0 }).borderWidth, 6);
+});
 const patch = (f, item, changes) => ({
   id: f.id,
   generation: f.generation,

@@ -98,6 +98,31 @@ async function run() {
         items.some((i) => i.types.includes('image/png')),
         'Windows bitmap clipboard must map to PNG',
       );
+      await new Promise((resolve, reject) => {
+        const child = spawn(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-STA',
+            '-Command',
+            'Add-Type -AssemblyName System.Windows.Forms; $files = [System.Collections.Specialized.StringCollection]::new(); $null = $files.Add("C:\\clipboard-test.md"); [System.Windows.Forms.Clipboard]::SetFileDropList($files)',
+          ],
+          { windowsHide: true, stdio: 'pipe' },
+        );
+        child.on('error', reject);
+        child.on('exit', (code) =>
+          code === 0
+            ? resolve()
+            : reject(Error('Windows file clipboard failed')),
+        );
+      });
+      items = await clipboard.read();
+      const files = items.find((i) => i.types.includes('text/uri-list'));
+      assert.ok(files, 'Windows copied files must expose a URI list');
+      assert.match(
+        await (await files.getType('text/uri-list')).text(),
+        /file:\/\/\/C:\/clipboard-test.md/i,
+      );
     }
     console.log(
       'PASS: actual Electron PNG/HTML, PNG transparency, app token and Windows bitmap clipboard formats',

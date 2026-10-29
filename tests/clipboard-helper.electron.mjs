@@ -73,6 +73,23 @@ async function run() {
         ]);
       else if (req.url === '/text')
         await clipboard.writeText('test external text');
+      else if (req.url === '/files')
+        await new Promise((resolve, reject) => {
+          const child = spawn(
+            'powershell.exe',
+            [
+              '-NoProfile',
+              '-STA',
+              '-Command',
+              'Add-Type -AssemblyName System.Windows.Forms; $files = [System.Collections.Specialized.StringCollection]::new(); foreach ($file in ($env:QA_CLIPBOARD_FILES | ConvertFrom-Json)) { $null = $files.Add($file) }; [System.Windows.Forms.Clipboard]::SetFileDropList($files)',
+            ],
+            { windowsHide: true, stdio: 'ignore' },
+          );
+          child.on('error', reject);
+          child.on('exit', (code) =>
+            code === 0 ? resolve() : reject(Error('Windows file copy failed')),
+          );
+        });
       else if (req.url === '/bitmap')
         await new Promise((resolve, reject) => {
           const child = spawn(

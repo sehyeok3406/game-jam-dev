@@ -21,7 +21,11 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { TextObject } from '../../drawing-types';
-import { EMPTY_TEXT_DOCUMENT, validateTextDocument } from '../../text-document';
+import {
+  EMPTY_TEXT_DOCUMENT,
+  isEmptyTextDocument,
+  validateTextDocument,
+} from '../../text-document';
 import { validateDrawingObject } from '../../drawing-model';
 import { useRuntime } from '../runtime/runtime-context';
 import type { DrawingCanvasNode } from './DrawingNode';
@@ -51,10 +55,17 @@ export function TextDrawingNode({
   const sequence = useRef(Date.now()),
     ready = useRef(false);
   const root = useRef<HTMLDivElement>(null);
+  const mounted = useRef(true),
+    editingSession = useRef(false),
+    editEpoch = useRef(0);
+  const finishAfterComposition = useRef(false);
+  const finishAfterLoad = useRef(false);
+  const finishing = useRef(false);
   const key = `canvas-text:${data.scope}:${object.id}`;
   const callbacks = useRef({
     changed: (_document: string) => {},
     flush: async () => {},
+    finish: () => {},
   });
   const editor = useEditor({
     extensions: [
@@ -171,12 +182,60 @@ export function TextDrawingNode({
       void callbacks.current.flush().catch(() => undefined);
     }, 450);
   };
+  const finishEditing = () => {
+    if (!editingSession.current || finishing.current) return;
+    if (!ready.current) {
+      finishAfterLoad.current = true;
+      return;
+    }
+    if (editor?.view.composing) {
+      finishAfterComposition.current = true;
+      return;
+    }
+    editingSession.current = false;
+    finishAfterComposition.current = false;
+    setEditing(false);
+    const epoch = editEpoch.current;
+    const value = local.current;
+    const destination = latest.current;
+    finishing.current = true;
+    void flush()
+      .then(async () => {
+        if (
+          !mounted.current ||
+          editEpoch.current !== epoch ||
+          local.current !== value ||
+          latest.current.scope !== destination.scope ||
+          latest.current.locked ||
+          recovered ||
+          !isEmptyTextDocument(value.document)
+        )
+          return;
+        await destination.onCommand({
+          action: 'delete',
+          targets: [
+            {
+              id: object.id,
+              generation: object.generation,
+              expectedGeometry: value,
+            },
+          ],
+        });
+        await api.saves.setEditorDraft(key, null, ++sequence.current);
+      })
+      .catch((failure) => setError(`텍스트 편집 종료 실패: ${String(failure)}`))
+      .finally(() => {
+        finishing.current = false;
+      });
+  };
   callbacks.current = {
     changed: (document) => change({ ...local.current, document }),
     flush,
+    finish: finishEditing,
   };
   useEffect(() => {
     let active = true;
+    mounted.current = true;
     if (!editor) return;
     void api.saves
       .getEditorDraft(key)
@@ -219,12 +278,14 @@ export function TextDrawingNode({
           setLoaded(true);
           if (dirty.current)
             void callbacks.current.flush().catch(() => undefined);
+          if (finishAfterLoad.current) callbacks.current.finish();
         }
       });
     const unregister = data.draftRegistry.register(key, () =>
       callbacks.current.flush(),
     );
     return () => {
+      mounted.current = false;
       active = false;
       unregister();
       if (timer.current) clearTimeout(timer.current);
@@ -242,10 +303,16 @@ export function TextDrawingNode({
       });
   }, [editor, object.geometry]);
   useEffect(() => {
-    if (!selected || data.locked) {
+    if (data.locked) {
+      editingSession.current = false;
       setEditing(false);
       void callbacks.current.flush().catch(() => undefined);
-    } else if (local.current.document === EMPTY_TEXT_DOCUMENT) setEditing(true);
+    } else if (!selected) callbacks.current.finish();
+    else if (local.current.document === EMPTY_TEXT_DOCUMENT) {
+      editingSession.current = true;
+      editEpoch.current++;
+      setEditing(true);
+    }
   }, [selected, data.locked]);
   useEffect(() => {
     editor?.setEditable(editing && !data.locked && loaded, false);
@@ -282,7 +349,11 @@ export function TextDrawingNode({
     return () => observer.disconnect();
   }, [editor, data.locked]);
   const startEditing = () => {
-    if (!data.locked) setEditing(true);
+    if (!data.locked) {
+      editingSession.current = true;
+      editEpoch.current++;
+      setEditing(true);
+    }
   };
   const command = (fn: () => void) => {
     startEditing();
@@ -315,8 +386,7 @@ export function TextDrawingNode({
           event.stopPropagation();
           if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
             event.preventDefault();
-            setEditing(false);
-            void flush().catch(() => undefined);
+            finishEditing();
           }
         }
       }}
@@ -325,9 +395,12 @@ export function TextDrawingNode({
           !event.currentTarget.contains(event.relatedTarget as Node) &&
           !(event.relatedTarget as Element)?.closest?.('.canvas-text-toolbar')
         ) {
-          setEditing(false);
-          void flush().catch(() => undefined);
+          finishEditing();
         }
+      }}
+      onCompositionEnd={() => {
+        if (finishAfterComposition.current)
+          setTimeout(() => callbacks.current.finish(), 30);
       }}
     >
       <NodeToolbar
@@ -444,8 +517,7 @@ export function TextDrawingNode({
             title="텍스트 편집 완료"
             aria-label="텍스트 편집 완료"
             onClick={() => {
-              setEditing(false);
-              void flush().catch(() => undefined);
+              finishEditing();
             }}
           >
             <Check size={17} />

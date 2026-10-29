@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import ts from 'typescript';
 import { APP_API_GROUPS } from '../src/contracts/app-api.ts';
 import { groupBridge } from '../src/ui/runtime/bridge-runtime.ts';
 import { createMemoryPreferences } from '../src/ui/runtime/preferences.ts';
@@ -12,35 +11,6 @@ import { applyExternalCommand } from '../src/application/editing/command-service
 import { createCollaborationServer } from '../src/collaboration-server.ts';
 import { CollaborationClient } from '../src/collaboration-client.ts';
 import { serverCapabilities } from '../src/server/capabilities.ts';
-
-test('contracts import only contracts, including inline import types', async () => {
-  const root = path.resolve('src/contracts');
-  for (const entry of await fs.readdir(root)) {
-    const filename = path.join(root, entry);
-    const sf = ts.createSourceFile(
-      filename,
-      await fs.readFile(filename, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-    );
-    function visit(node) {
-      let specifier;
-      if (
-        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-        node.moduleSpecifier
-      )
-        specifier = node.moduleSpecifier.text;
-      if (ts.isImportTypeNode(node)) specifier = node.argument.literal.text;
-      if (specifier) {
-        assert.ok(specifier.startsWith('.'), `${entry}: ${specifier}`);
-        const target = path.resolve(path.dirname(filename), specifier);
-        assert.ok(target.startsWith(root + path.sep), `${entry}: ${specifier}`);
-      }
-      ts.forEachChild(node, visit);
-    }
-    visit(sf);
-  }
-});
 
 test('grouped bridge forwards arguments, binding, rejection and unsubscribe without touching the global', async () => {
   let listener;
@@ -98,29 +68,10 @@ test('preview preference stores isolate project keys and preserve Storage enumer
   assert.equal(one.length, 1);
 });
 
-test('desktop absence is explicit and UI feature code has no global bridge or preference access', async () => {
+test('desktop absence is explicit', () => {
   assert.throws(() => requireDesktopApi({}), {
     code: 'GC-RUNTIME-UNSUPPORTED',
   });
-  async function check(directory) {
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        await check(filename);
-        continue;
-      }
-      if (!/\.tsx?$/.test(entry.name) || entry.name === 'uiDebugPreview.tsx')
-        continue;
-      const source = await fs.readFile(filename, 'utf8');
-      assert.doesNotMatch(
-        source,
-        /window\.gameCanvas|\blocalStorage\b/,
-        filename,
-      );
-    }
-  }
-  await check('src/ui');
-  await check('src/features');
 });
 
 test('external command validation keeps save reducer output distinct from IPC and rejects a mixed invalid batch atomically', () => {

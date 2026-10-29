@@ -114,6 +114,10 @@ export type ImportFilesInput = {
   x: number;
   y: number;
   imagePurpose: 'asset' | 'diagram';
+  /** Browser File bytes for a drop; omitted for the native file picker. */
+  files?: { name: string; bytes: Uint8Array }[];
+  scope?: string;
+  contextId?: string;
 };
 export type CanvasClipboardCopyInput = {
   scope: string;
@@ -127,18 +131,19 @@ export type CanvasClipboardPasteInput = ImportFilesInput & {
   internalCopyId?: string;
 };
 export type CanvasClipboardPasteResult =
+  | { kind: 'text'; text: string }
   | {
       kind: 'internal';
       copyId: string;
     }
   | {
-      kind: 'images';
+      kind: 'images' | 'files';
       documents: CanvasDocument[];
     }
   | {
       kind: 'empty' | 'unsupported' | 'stale-internal';
     };
-export type ImportBatchInput = ImportFilesInput & {
+export type ImportBatchInput = Omit<ImportFilesInput, 'files'> & {
   files: {
     name: string;
     content: string;

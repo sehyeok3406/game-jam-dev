@@ -598,6 +598,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     setImagePurpose,
     importError,
     importFiles,
+    dropFiles,
   } = useWorkspaceImport(selectionScope, () => ({
     capabilities,
     setNotice,
@@ -668,6 +669,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       setSelectedIds,
       setSelectedSectionIds,
       imagePurpose,
+      textSupported:
+        !collaboration.active || collaboration.drawingTextVersion === 1,
       selectCreated,
     }),
   );
@@ -3611,6 +3614,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceCanvas
         {...{
+          dropFiles,
           compactChrome,
           materialItems,
           dockPanel,

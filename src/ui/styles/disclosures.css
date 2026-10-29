@@ -1,0 +1,111 @@
+/* Native details keep their keyboard and accessibility behavior. Markers were
+   hidden by the canvas reset, so accordion headings draw one explicit chevron.
+   Compact menu triggers have separate affordances below. Self-host headings
+   already contain a stateful SVG chevron and must not receive a second one. */
+:root
+  details:not(
+    .canvas-main-menu,
+    .canvas-zoom-menu,
+    .canvas-tool-more,
+    .canvas-drawing-group,
+    .drawing-tool-menu,
+    .selection-arrange-menu
+  ):not(:has(> summary > .self-host-disclosure))
+  > summary {
+  position: relative;
+  list-style: none;
+  padding-inline-start: 22px;
+  min-height: 24px;
+  cursor: pointer;
+}
+:root details > summary::marker {
+  content: '';
+}
+:root details > summary::-webkit-details-marker {
+  display: none;
+}
+:root
+  details:not(
+    .canvas-main-menu,
+    .canvas-zoom-menu,
+    .canvas-tool-more,
+    .canvas-drawing-group,
+    .drawing-tool-menu,
+    .selection-arrange-menu
+  ):not(:has(> summary > .self-host-disclosure))
+  > summary::before,
+.disclosure-trigger::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 5px;
+  inset-block-start: calc(0.5lh - 3px);
+  width: 6px;
+  height: 6px;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  color: var(--text-muted, currentColor);
+  pointer-events: none;
+}
+:root details > summary::before,
+.disclosure-trigger::before {
+  transform: rotate(-45deg);
+}
+:root details[open] > summary::before,
+.disclosure-trigger[aria-expanded='true']::before {
+  transform: rotate(45deg);
+}
+:root details > summary:focus-visible {
+  outline: 2px solid var(--selection);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.disclosure-trigger {
+  position: relative;
+  padding-inline-start: 24px;
+}
+
+/* Text and tool dropdowns need an indicator without widening the compact bar.
+   Ellipsis menu buttons already use an established menu icon. */
+:is(
+    .canvas-drawing-group,
+    .drawing-tool-menu,
+    .selection-arrange-menu,
+    .canvas-zoom-menu
+  )
+  > summary {
+  position: relative;
+}
+:is(
+    .canvas-drawing-group,
+    .drawing-tool-menu,
+    .selection-arrange-menu,
+    .canvas-zoom-menu
+  )
+  > summary::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-inline-end: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor;
+  inset-inline-end: 3px;
+  inset-block-start: 7px;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+:is(
+    .canvas-drawing-group,
+    .drawing-tool-menu,
+    .selection-arrange-menu,
+    .canvas-zoom-menu
+  )[open]
+  > summary::after {
+  transform: rotate(225deg);
+}
+:root .selection-arrange-menu > summary {
+  padding-inline-end: 22px;
+}
+.selection-arrange-menu > summary::after,
+.canvas-zoom-menu > summary::after {
+  inset-block-start: calc(50% - 3px);
+}

@@ -72,8 +72,7 @@ export function GameUiDetailInspector({
     void Promise.resolve(result).catch(() => {});
     return result;
   };
-  const surface = items.every((i) => i.kind !== 'text'),
-    fills = items.every(isGauge);
+  const fills = items.every(isGauge);
   const source = (key: keyof GameUiStyle) =>
     activeState === 'normal'
       ? undefined
@@ -200,8 +199,27 @@ export function GameUiDetailInspector({
         <ColorField
           label={label}
           value={mixed(k)}
-          apply={(v) => changeStyle({ [k]: v })}
-          preview={(v) => changeStyle({ [k]: v }, true)}
+          apply={(v) =>
+            changeStyle({
+              [k]: v,
+              ...(k === 'backgroundColor' &&
+              styles.every((s) => s.backgroundOpacity === 0)
+                ? { backgroundOpacity: 1 }
+                : {}),
+            })
+          }
+          preview={(v) =>
+            changeStyle(
+              {
+                [k]: v,
+                ...(k === 'backgroundColor' &&
+                styles.every((s) => s.backgroundOpacity === 0)
+                  ? { backgroundOpacity: 1 }
+                  : {}),
+              },
+              true,
+            )
+          }
           cancel={() => draft({})}
           opacity={typeof v === 'number' ? Number((v * 100).toFixed(2)) : ''}
           applyOpacity={(n) => changeStyle({ [alpha]: n / 100 })}
@@ -270,88 +288,116 @@ export function GameUiDetailInspector({
         </div>
         <details open className="game-ui-appearance">
           <summary>외형</summary>
-          {surface &&
-            choice(
-              'UI 외형',
-              shape,
-              Object.fromEntries(
-                Object.entries(GAME_UI_SHAPES).filter(
-                  ([key]) => key !== 'ring' || fills,
-                ),
+          {choice(
+            'UI 외형',
+            shape,
+            Object.fromEntries(
+              Object.entries(GAME_UI_SHAPES).filter(
+                ([key]) => key !== 'ring' || fills,
               ),
-              (v) => apply({ shape: v as GameUiItem['shape'] }),
-            )}
+            ),
+            (v) => apply({ shape: v as GameUiItem['shape'] }),
+          )}
           <p className="game-ui-help">
             불투명도 0%는 숨김, 100%는 완전히 보입니다.
           </p>
-          {surface && styleColor('배경색', 'backgroundColor')}
-          {surface && styleColor('테두리 색', 'borderColor')}
-          {surface && styleNumber('테두리 두께', 'borderWidth', 0, 128)}
-          {surface &&
-            items.every((i) => ['rectangle', 'rounded'].includes(i.shape)) && (
-              <>
-                {styleNumber('모서리 R값', 'cornerRadius')}
-                <button
-                  type="button"
-                  onClick={() => {
-                    changeStyle({
-                      cornerRadii: styles[0].cornerRadii
-                        ? null
-                        : [
-                            styles[0].cornerRadius,
-                            styles[0].cornerRadius,
-                            styles[0].cornerRadius,
-                            styles[0].cornerRadius,
-                          ],
-                    });
-                  }}
-                >
-                  {styles[0].cornerRadii ? '모서리 연결' : '모서리별 R값'}
-                </button>
-                {styles[0].cornerRadii &&
-                  ['왼쪽 위', '오른쪽 위', '오른쪽 아래', '왼쪽 아래'].map(
-                    (l, n) => (
-                      <NumberField
-                        key={l}
-                        label={`${l} R값`}
-                        value={styles[0].cornerRadii![n]}
-                        apply={(v) => {
-                          const r = [...styles[0].cornerRadii!] as [
-                            number,
-                            number,
-                            number,
-                            number,
-                          ];
-                          r[n] = v;
-                          changeStyle({ cornerRadii: r });
-                        }}
-                      />
-                    ),
-                  )}
-              </>
-            )}
-          {fills && !one && styleColor('채움색', 'fillColor')}
-          {surface && (
-            <details className="game-ui-advanced">
-              <summary>테두리 위치·점선</summary>{' '}
-              {choice(
-                '테두리 형태',
-                mixed('borderStyle'),
-                { solid: '실선', dashed: '파선', dotted: '점선' },
-                (v) =>
-                  changeStyle({ borderStyle: v as GameUiStyle['borderStyle'] }),
+          {styleColor('배경색', 'backgroundColor')}
+          <label>
+            <input
+              type="checkbox"
+              aria-label="테두리 표시"
+              checked={styles.every(
+                (s) => s.borderWidth > 0 && s.borderOpacity > 0,
               )}
-              {choice(
-                '테두리 위치',
-                mixed('borderPosition'),
-                { inside: '안쪽', center: '중앙', outside: '바깥쪽' },
-                (v) =>
+              ref={(input) => {
+                if (input)
+                  input.indeterminate =
+                    styles.some(
+                      (s) => s.borderWidth > 0 && s.borderOpacity > 0,
+                    ) &&
+                    !styles.every(
+                      (s) => s.borderWidth > 0 && s.borderOpacity > 0,
+                    );
+              }}
+              onChange={(e) =>
+                changeStyle(
+                  e.target.checked
+                    ? {
+                        borderOpacity: 1,
+                        ...(styles.some((s) => s.borderWidth === 0)
+                          ? { borderWidth: 2 }
+                          : {}),
+                      }
+                    : { borderOpacity: 0 },
+                )
+              }
+            />
+            테두리 표시
+          </label>
+          {styleColor('테두리 색', 'borderColor')}
+          {styleNumber('테두리 두께', 'borderWidth', 0, 128)}
+          {items.every((i) => ['rectangle', 'rounded'].includes(i.shape)) && (
+            <>
+              {styleNumber('모서리 R값', 'cornerRadius')}
+              <button
+                type="button"
+                onClick={() => {
                   changeStyle({
-                    borderPosition: v as GameUiStyle['borderPosition'],
-                  }),
-              )}
-            </details>
+                    cornerRadii: styles[0].cornerRadii
+                      ? null
+                      : [
+                          styles[0].cornerRadius,
+                          styles[0].cornerRadius,
+                          styles[0].cornerRadius,
+                          styles[0].cornerRadius,
+                        ],
+                  });
+                }}
+              >
+                {styles[0].cornerRadii ? '모서리 연결' : '모서리별 R값'}
+              </button>
+              {styles[0].cornerRadii &&
+                ['왼쪽 위', '오른쪽 위', '오른쪽 아래', '왼쪽 아래'].map(
+                  (l, n) => (
+                    <NumberField
+                      key={l}
+                      label={`${l} R값`}
+                      value={styles[0].cornerRadii![n]}
+                      apply={(v) => {
+                        const r = [...styles[0].cornerRadii!] as [
+                          number,
+                          number,
+                          number,
+                          number,
+                        ];
+                        r[n] = v;
+                        changeStyle({ cornerRadii: r });
+                      }}
+                    />
+                  ),
+                )}
+            </>
           )}
+          {fills && !one && styleColor('채움색', 'fillColor')}
+          <details className="game-ui-advanced">
+            <summary>테두리 위치·점선</summary>{' '}
+            {choice(
+              '테두리 형태',
+              mixed('borderStyle'),
+              { solid: '실선', dashed: '파선', dotted: '점선' },
+              (v) =>
+                changeStyle({ borderStyle: v as GameUiStyle['borderStyle'] }),
+            )}
+            {choice(
+              '테두리 위치',
+              mixed('borderPosition'),
+              { inside: '안쪽', center: '중앙', outside: '바깥쪽' },
+              (v) =>
+                changeStyle({
+                  borderPosition: v as GameUiStyle['borderPosition'],
+                }),
+            )}
+          </details>
           {styleNumber('전체 불투명도 (%)', 'opacity', 0, 100, true)}
           <p className="game-ui-help">
             전체 불투명도는 배경·테두리·문자에 함께 적용됩니다.

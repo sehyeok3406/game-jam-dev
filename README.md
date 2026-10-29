@@ -1,5 +1,7 @@
 # Game Jam! (game-jam-dev)
 
+개발 시작: [구현 지침](AGENTS.md) · [아키텍처·영역별 설계 안내](docs/architecture/README.md)
+
 개발 폴더 용량 관리: [개발 결과물 정리 도구와 보존 기준](DEVELOPMENT_ARTIFACT_CLEANUP.md)
 
 ### v0.26.0 게임 실행 오류 안내·추적

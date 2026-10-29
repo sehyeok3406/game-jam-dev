@@ -7,6 +7,8 @@ import { copiedSelection } from './selection-plan.ts';
 import type { DrawingCanvasNode } from '../drawing/DrawingNode';
 import { requireDesktopApi } from '../runtime/desktop-api.ts';
 import { useViewLifetime } from '../workspace/useViewLifetime.ts';
+import { createTextObject, plainTextDocument } from '../../text-document';
+import { previewNodeId } from '../workspace/workspace-types';
 import type { CanvasNode } from '../workspace/workspace-types.ts';
 interface Ports {
   capabilities: Readonly<{
@@ -58,6 +60,7 @@ interface Ports {
     import('react').SetStateAction<string[]>
   >;
   imagePurpose: 'asset' | 'diagram';
+  textSupported: boolean;
   selectCreated: (ids: string[], ready?: () => void) => void;
 }
 export function useCanvasClipboard(
@@ -191,7 +194,7 @@ export function useCanvasClipboard(
       window.dispatchEvent(new Event('canvas-clipboard-paste'));
     void queueClipboardAction(async () => {
       if (!sameProject()) return;
-      if (sameView()) setNotice('클립보드 이미지를 붙여넣는 중…');
+      if (sameView()) setNotice('클립보드 내용을 붙여넣는 중…');
       const copied = canvasClipboardRef.current;
       const result = await requireDesktopApi(api).pasteCanvasClipboard({
         ...target,
@@ -206,8 +209,7 @@ export function useCanvasClipboard(
         if (sameView())
           setNotice(
             {
-              empty:
-                '붙여넣을 이미지나 복사한 카드가 없습니다. 이미지를 복사한 뒤 다시 시도해주세요.',
+              empty: '붙여넣을 텍스트·이미지·파일이나 복사한 카드가 없습니다.',
               unsupported:
                 'PNG, JPG, WebP, GIF 이미지 데이터를 붙여넣을 수 있습니다.',
               'stale-internal':
@@ -218,8 +220,24 @@ export function useCanvasClipboard(
       }
       let created: CanvasDocument[] = [];
       let copies: DrawingObject[] = [];
-      if (result.kind === 'images') created = result.documents;
-      else if (result.kind === 'internal') {
+      if (result.kind === 'images' || result.kind === 'files')
+        created = result.documents;
+      else if (result.kind === 'text') {
+        if (!sameView()) return;
+        if (!ports().textSupported)
+          throw new Error(
+            '텍스트를 붙여넣으려면 협업 서버를 업데이트해주세요.',
+          );
+        const object = createTextObject(target.x, target.y);
+        object.geometry.document = plainTextDocument(result.text);
+        copies = [object];
+        await drawing.submit({
+          action: 'create',
+          canvasId: target.canvasId,
+          requestId: target.requestId,
+          objects: copies,
+        });
+      } else if (result.kind === 'internal') {
         if (
           !copied ||
           copied.copyId !== result.copyId ||
@@ -271,21 +289,21 @@ export function useCanvasClipboard(
       } catch {
         if (sameView())
           setNotice(
-            result.kind === 'images'
-              ? '이미지는 저장됐지만 화면을 갱신하지 못했습니다. 프로젝트를 다시 열어 확인해주세요.'
-              : '복사본은 저장됐지만 화면을 갱신하지 못했습니다. 프로젝트를 다시 열어 확인해주세요.',
+            '붙여넣은 내용은 저장됐지만 화면을 갱신하지 못했습니다. 프로젝트를 다시 열어 확인해주세요.',
           );
         return;
       }
       if (!sameView()) return;
-      const createdIds = created.map((doc) => doc.id);
-      setSelectedIds(createdIds);
+      const createdIds = created.map((doc) =>
+        doc.htmlSource ? previewNodeId(doc.htmlSource) : doc.id,
+      );
+      setSelectedIds(created.map((doc) => doc.id));
       setSelectedSectionIds([]);
       selectCreated(
         [...createdIds, ...copies.map((o) => 'drawing:' + o.id)],
         () => {
           if (!sameView()) return;
-          if (result.kind === 'images')
+          if (result.kind === 'images' || result.kind === 'files')
             void flowRef.current?.fitView({
               nodes: createdIds.map((id) => ({ id })),
               padding: 0.2,
@@ -298,7 +316,11 @@ export function useCanvasClipboard(
       setNotice(
         result.kind === 'images'
           ? `이미지 ${created.length}개를 붙여넣었습니다.`
-          : `${created.length}개 파일 · ${copies.length}개 그림의 복사본을 만들었습니다.`,
+          : result.kind === 'files'
+            ? `파일 ${created.length}개를 프로젝트에 복사했습니다. 원본 파일은 변경하지 않았습니다.`
+            : result.kind === 'text'
+              ? '텍스트를 붙여넣었습니다.'
+              : `${created.length}개 파일 · ${copies.length}개 그림의 복사본을 만들었습니다.`,
       );
     }).catch((error) => {
       if (sameView()) showError(error);

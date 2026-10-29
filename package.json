@@ -58,6 +58,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:contracts": "tsc -p tsconfig.contracts.json",
     "typecheck:core": "tsc -p tsconfig.core.json",
+    "test:architecture": "node --test tests/architecture-boundaries.test.mjs",
     "test:runtime-contracts": "node --test tests/runtime-contracts.test.mjs",
     "test:project-session": "node tests/run-project-session-main.mjs",
     "test:multiplayer-diagnostics": "node tests/run-multiplayer-diagnostics.mjs",

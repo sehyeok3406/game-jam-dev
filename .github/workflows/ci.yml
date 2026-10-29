@@ -17,6 +17,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --include=dev
+      - name: Architecture boundaries
+        run: npm run test:architecture
       - run: npm run typecheck && npm run typecheck:contracts && npm run typecheck:core
   lint:
     runs-on: ubuntu-latest

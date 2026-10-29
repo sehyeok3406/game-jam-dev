@@ -132,8 +132,8 @@
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
-  min-height: 64px;
-  padding: 12px 14px 8px;
+  min-height: 48px;
+  padding: 8px 14px;
   gap: 6px;
   border-bottom: 1px solid var(--border);
 }
@@ -172,19 +172,18 @@
   margin: 2px 0 0;
 }
 .game-ui-inspector .game-ui-inspector-name label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 .game-ui-inspector .game-ui-inspector-name input {
   width: 100%;
   max-width: none;
-  padding: 3px 0;
+  padding: 5px 8px;
   min-height: 27px;
-  border-color: transparent;
-  background: transparent;
+  border-color: var(--border);
+  background: var(--surface-subtle);
   font-weight: 650;
   font-size: 15px;
 }
@@ -193,18 +192,22 @@
 }
 .game-ui-inspector-toolbar {
   display: flex;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: 4px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .game-ui-inspector-toolbar button:first-child {
-  margin-right: auto;
-  color: var(--selection);
-  background: var(--selection-soft);
+  margin-right: 0;
+}
+.game-ui-inspector-toolbar button {
+  flex: 1;
+  white-space: nowrap;
 }
 .game-ui-inspector button[aria-pressed='true'] {
   border-color: var(--selection);
+  color: var(--selection);
+  background: var(--selection-soft);
 }
 .game-ui-inspector-scroll {
   flex: 1;
@@ -216,7 +219,7 @@
   border-radius: 0 0 12px 12px;
 }
 .game-ui-inspector-layers {
-  padding: 0 16px;
+  padding: 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
 }
@@ -574,7 +577,7 @@
 }
 .game-ui-library-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin: 10px 0;
 }
@@ -613,7 +616,48 @@
   height: 10px;
   border: 1px solid currentColor;
   border-radius: 3px;
-  background: linear-gradient(to right, var(--selection) 65%, transparent 65%);
+  background: linear-gradient(to right, currentColor 65%, transparent 65%);
+}
+.game-ui-library-preview--health {
+  color: #dc2626;
+}
+.game-ui-library-preview--mana {
+  color: #2563eb;
+}
+.game-ui-library-preview--stamina {
+  color: #16a34a;
+}
+.game-ui-library-preview--experience {
+  color: #d97706;
+}
+.game-ui-library-caption {
+  display: block;
+  min-width: 0;
+  text-align: left;
+}
+.game-ui-library-caption small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.game-ui-library-category h4 {
+  font-size: 12px;
+  margin: 16px 0 8px;
+  color: var(--text-muted);
+}
+.game-ui-library-search {
+  display: grid;
+  gap: 6px;
+}
+.game-ui-inspector .game-ui-library-search input {
+  width: 100%;
+  max-width: none;
+}
+.game-ui-library-presets select {
+  max-width: 100%;
 }
 .game-ui-library-preview--skills i,
 .game-ui-library-preview--items i {

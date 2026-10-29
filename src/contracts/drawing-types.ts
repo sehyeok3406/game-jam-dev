@@ -91,6 +91,7 @@ export type DrawingCommand = {
   targets?: {
     id: string;
     generation: string;
+    expectedGeometry?: DrawingObject['geometry'];
   }[];
   targetCanvasId?: string;
 };

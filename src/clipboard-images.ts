@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { CanvasError } from './app-errors.ts';
 import { encodeAsset, MAX_IMAGE_BYTES, validateImage } from './file-assets.ts';
 
@@ -19,7 +20,31 @@ export type ClipboardSource = {
 export type ClipboardContents =
   | { kind: 'internal'; copyId: string }
   | { kind: 'stale-internal' | 'empty' | 'unsupported' }
+  | { kind: 'text'; text: string }
+  | { kind: 'paths'; paths: string[] }
   | { kind: 'images'; files: { name: string; content: string }[] };
+
+/** Electron maps native copied files (including Windows FileDrop) to URI lists. */
+export function readClipboardFilePaths(raw: string): string[] | undefined {
+  const urls = raw
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((line) => line && !line.startsWith('#'));
+  if (!urls.some((url) => /^file:/i.test(url))) return undefined;
+  if (urls.length > 20)
+    throw new CanvasError(
+      'GC-IMPORT-001',
+      '한 번에 최대 20개의 파일을 복사해주세요.',
+    );
+  try {
+    return urls.map((url) => fileURLToPath(url));
+  } catch {
+    throw new CanvasError(
+      'GC-IMPORT-001',
+      '클립보드 파일 경로를 읽을 수 없습니다. 다시 복사해주세요.',
+    );
+  }
+}
 
 export function assertClipboardDimensions(bytes: Buffer, ext: string) {
   let width = 0,
@@ -84,16 +109,40 @@ export async function readCanvasClipboard(
       return { kind: 'stale-internal' };
     }
   }
+  const fileFormat = 'text/uri-list';
+  const fileItem = items.find((item) => item.types.includes(fileFormat));
+  if (fileItem) {
+    const blob = await fileItem.getType(fileFormat);
+    if (!(blob instanceof Blob) || blob.size > 1_000_000)
+      throw new CanvasError(
+        'GC-IMPORT-001',
+        '클립보드 파일 목록을 읽을 수 없습니다.',
+      );
+    const paths = readClipboardFilePaths(await blob.text());
+    if (paths) return { kind: 'paths', paths };
+  }
   const selected = items.flatMap((item) => {
     const format = imageTypes.find(([mime]) => item.types.includes(mime));
     return format ? [{ item, mime: format[0], ext: format[1] }] : [];
   });
-  if (!selected.length)
+  if (!selected.length) {
+    const textItem = items.find((item) => item.types.includes('text/plain'));
+    if (textItem) {
+      const blob = await textItem.getType('text/plain');
+      if (!(blob instanceof Blob) || blob.size > 100_000)
+        throw new CanvasError(
+          'GC-IMPORT-001',
+          '붙여넣을 텍스트가 너무 큽니다. MD 파일로 불러와주세요.',
+        );
+      const text = await blob.text();
+      if (text.trim()) return { kind: 'text', text };
+    }
     return {
       kind: items.some((i) => i.types.some((t) => t.startsWith('image/')))
         ? 'unsupported'
         : 'empty',
     };
+  }
   if (selected.length > 20)
     throw new CanvasError(
       'GC-IMPORT-001',

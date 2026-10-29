@@ -18,6 +18,8 @@ const profile = path.join(
   profileId,
 );
 const game = path.join(root, 'game');
+const external = path.join(root, '탐색기 파일.md');
+await fs.writeFile(external, '# 탐색기 파일 붙여넣기\n\n원본 보존');
 await fs.mkdir(game, { recursive: true });
 await fs.writeFile(
   path.join(game, 'project.md'),
@@ -53,6 +55,7 @@ const helper = spawn(electron, ['tests/clipboard-helper.electron.mjs'], {
     ...process.env,
     QA_CLIPBOARD_PORT: String(clipboardPort),
     QA_CLIPBOARD_TOKEN: token,
+    QA_CLIPBOARD_FILES: JSON.stringify([external]),
   },
 });
 let diagnostic = '';
@@ -207,8 +210,11 @@ try {
   await writeClipboard('text');
   await focusCanvas();
   await key('v');
-  await wait(
-    'document.body.textContent.includes("붙여넣을 이미지나 복사한 카드가 없습니다")',
+  await wait('document.querySelectorAll(".canvas-text-node").length===1');
+  assert.ok(
+    (await js('window.gameCanvas.listDrawings()')).some(
+      (o) => o.kind === 'text' && o.geometry.document.includes('external text'),
+    ),
   );
   assert.equal((await images()).length, 2);
   await writeClipboard('bitmap');
@@ -319,6 +325,42 @@ try {
   assert.notEqual(
     await js('window.gameCanvas.getWorkspace().then(w=>w.clipboardContextId)'),
     oldContext,
+  );
+  await focusCanvas();
+  await js(
+    `(()=>{const data=new DataTransfer();data.items.add(new File(['# 드롭 문서 본문'],'native-drop.md',{type:'text/markdown'}));data.items.add(new File(['<!doctype html><html><body>드롭 HTML</body></html>'],'native-drop.html',{type:'text/html'}));const p=document.querySelector('.react-flow__pane'),r=p.getBoundingClientRect();p.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+r.height/2,dataTransfer:data}));})()`,
+  );
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("드롭 문서 본문"))&&d.some(x=>x.htmlSource))',
+  );
+  const dropped = await js(
+    'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.body.includes("드롭 문서 본문")||x.htmlSource))',
+  );
+  assert.equal(dropped.length, 2);
+  for (const d of dropped)
+    assert.ok((await fs.readFile(path.join(game, d.relativePath))).length);
+  await js('window.gameCanvas.undo()');
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>!d.some(x=>x.body.includes("드롭 문서 본문")))',
+  );
+  await js('window.gameCanvas.redo()');
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("드롭 문서 본문")))',
+  );
+  await writeClipboard('files');
+  await focusCanvas();
+  await key('v');
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
+  );
+  assert.match(await fs.readFile(external, 'utf8'), /원본 보존/);
+  await js('window.gameCanvas.undo()');
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>!d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
+  );
+  await js('window.gameCanvas.redo()');
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
   );
   console.log(
     'PASS: packaged native Ctrl+V, internal copy precedence, external text/bitmap/Chromium copy, title focus, undo/redo, reload and full process restart persistence',

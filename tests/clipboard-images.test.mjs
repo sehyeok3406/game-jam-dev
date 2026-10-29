@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
 import {
   readCanvasClipboard,
   assertClipboardDimensions,
@@ -17,6 +19,50 @@ const png = Buffer.from(
 const item = (data) => ({
   types: Object.keys(data),
   getType: async (mime) => new Blob([data[mime]]),
+});
+
+test('clipboard plain text remains literal; copied file URI lists take precedence over text', async () => {
+  const text = '<b>그대로</b>\n두 번째 줄';
+  assert.deepEqual(
+    await readCanvasClipboard([
+      item({ 'text/plain': text, 'text/html': '<b>그대로</b>' }),
+    ]),
+    { kind: 'text', text },
+  );
+  assert.deepEqual(
+    await readCanvasClipboard([item({ 'text/plain': ' \n\t' })]),
+    { kind: 'empty' },
+  );
+  const file = path.resolve('복사한 파일.md');
+  assert.deepEqual(
+    await readCanvasClipboard([
+      item({
+        'text/uri-list': '# file list\r\n' + pathToFileURL(file).href + '\r\n',
+        'text/plain': 'wrong fallback',
+      }),
+    ]),
+    { kind: 'paths', paths: [file] },
+  );
+  await assert.rejects(
+    readCanvasClipboard([
+      item({
+        'text/uri-list': pathToFileURL(file).href + '\nhttps://example.test',
+      }),
+    ]),
+    /경로/,
+  );
+  await assert.rejects(
+    readCanvasClipboard([
+      item({
+        'text/uri-list': Array(21).fill(pathToFileURL(file).href).join('\n'),
+      }),
+    ]),
+    /20/,
+  );
+  await assert.rejects(
+    readCanvasClipboard([item({ 'text/plain': 'x'.repeat(100_001) })]),
+    /너무 큽니다/,
+  );
 });
 
 test('clipboard chooses a single preferred MIME, ignores HTML, and generates safe names', async () => {
@@ -71,7 +117,7 @@ test('registered internal token wins; stale, malformed and oversized tokens cann
       [item({ 'text/plain': 'text copied after cards' })],
       copyId,
     ),
-    { kind: 'empty' },
+    { kind: 'text', text: 'text copied after cards' },
   );
   assert.deepEqual(
     await readCanvasClipboard([item({ 'image/svg+xml': '<svg/>' })]),

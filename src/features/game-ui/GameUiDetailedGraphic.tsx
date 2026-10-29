@@ -281,17 +281,15 @@ export function GameUiItemGraphic({
             </mask>
           )}
         </defs>
-        {i.kind !== 'text' && (
-          <path
-            d={d}
-            fill={
-              selected && i.backgroundColor === undefined
-                ? '#cbd5e1'
-                : s.backgroundColor
-            }
-            fillOpacity={s.backgroundOpacity}
-          />
-        )}
+        <path
+          d={d}
+          fill={
+            selected && i.backgroundColor === undefined
+              ? '#cbd5e1'
+              : s.backgroundColor
+          }
+          fillOpacity={s.backgroundOpacity}
+        />
         {gauge && (
           <g
             mask={segments > 1 && !radial ? `url(#${key}-segments)` : undefined}
@@ -334,7 +332,7 @@ export function GameUiItemGraphic({
             )}
           </g>
         )}
-        {i.kind !== 'text' && s.borderWidth > 0 && (
+        {s.borderWidth > 0 && (
           <path
             d={d}
             fill="none"
@@ -431,7 +429,11 @@ export function GameUiGraphic({
       height={frame.viewportHeight}
       viewBox={`0 0 ${frame.viewportWidth} ${frame.viewportHeight}`}
     >
-      <rect width="100%" height="100%" fill="#ffffff" />
+      <rect
+        width="100%"
+        height="100%"
+        fill={frame.backgroundColor ?? '#ffffff'}
+      />
       {frame.items.map((i) => (
         <g key={i.id} transform={gameUiTransform(i)}>
           <GameUiItemGraphic

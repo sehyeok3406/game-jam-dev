@@ -210,6 +210,82 @@ async function run() {
     );
     await saved('o[0].geometry.document.includes("저장 재시도 내용")');
     await wait('!document.querySelector(".canvas-text-error")');
+    await key('Escape');
+    const panePoint = await js(
+      `(()=>{for(let y=250;y<700;y+=80)for(let x=500;x<1100;x+=80)if(document.elementFromPoint(x,y)?.classList.contains('react-flow__pane'))return {x,y};throw Error('No empty canvas point')})()`,
+    );
+    await click(panePoint.x, panePoint.y);
+    await key('t');
+    await click(panePoint.x, panePoint.y);
+    await wait('document.activeElement?.classList.contains("tiptap")');
+    await wait('window.gameCanvas.listDrawings().then(o=>o.length===2)');
+    await pause(550);
+    assert.equal(
+      (await list()).length,
+      2,
+      'An empty box survives while editing',
+    );
+    await toolbar('굵게');
+    await pause(150);
+    assert.equal(
+      (await list()).length,
+      2,
+      'Formatting an empty box does not finish editing',
+    );
+    await key('Escape');
+    await wait('window.gameCanvas.listDrawings().then(o=>o.length===1)');
+    await js('window.gameCanvas.undo()');
+    await wait('window.gameCanvas.listDrawings().then(o=>o.length===2)');
+    await pause(550);
+    assert.equal(
+      (await list()).length,
+      2,
+      'Undo restores an empty box without immediately deleting it',
+    );
+    await js('window.gameCanvas.redo()');
+    await wait('window.gameCanvas.listDrawings().then(o=>o.length===1)');
+    await click(panePoint.x, panePoint.y);
+    await key('t');
+    await click(panePoint.x, panePoint.y);
+    await wait('document.activeElement?.classList.contains("tiptap")');
+    await win.webContents.insertText('  \n\t');
+    await click(panePoint.x + 120, panePoint.y + 120);
+    await wait('window.gameCanvas.listDrawings().then(o=>o.length===1)');
+    // The grouped runtime picks up a replaced bridge method; OS clipboard is untouched.
+    await js(
+      `window.qaPaste=window.gameCanvas.pasteCanvasClipboard;window.qaPasteCalls=0;window.gameCanvas.pasteCanvasClipboard=async()=>{window.qaPasteCalls++;return {kind:'text',text:'<b>붙여넣은 한글</b>\\n두 번째 줄'}};void 0`,
+    );
+    await click(panePoint.x, panePoint.y);
+    await key('v', ['control']);
+    await wait(
+      'window.gameCanvas.listDrawings().then(o=>o.some(v=>v.kind==="text"&&v.geometry.document.includes("붙여넣은 한글")))',
+    );
+    assert.equal(await js('window.qaPasteCalls'), 1);
+    assert.ok(
+      (await list()).some((o) =>
+        o.geometry.document.includes('<b>붙여넣은 한글</b>'),
+      ),
+    );
+    await js('window.gameCanvas.pasteCanvasClipboard=window.qaPaste;void 0');
+    // A browser File drop must use canvas coordinates and send file bytes, never navigate.
+    await js(
+      `window.qaImport=window.gameCanvas.importFiles;window.gameCanvas.importFiles=async(input)=>{window.qaDropped=input;return []};void 0`,
+    );
+    await js(
+      `(()=>{const d=new DataTransfer();d.items.add(new File(['# 드롭 한글'], 'drag.md', {type:'text/markdown'}));document.querySelector('.react-flow__pane').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,clientX:${panePoint.x},clientY:${panePoint.y},dataTransfer:d}));})()`,
+    );
+    await wait('!!window.qaDropped');
+    assert.equal(await js('window.qaDropped.files[0].name'), 'drag.md');
+    assert.equal(
+      await js('new TextDecoder().decode(window.qaDropped.files[0].bytes)'),
+      '# 드롭 한글',
+    );
+    assert.ok(
+      await js(
+        'Number.isFinite(window.qaDropped.x)&&Number.isFinite(window.qaDropped.y)',
+      ),
+    );
+    await js('window.gameCanvas.importFiles=window.qaImport;void 0');
     win.setSize(1024, 768);
     await pause(150);
     await fs.writeFile(
@@ -222,7 +298,7 @@ async function run() {
     );
     assert.deepEqual(errors, []);
     console.log(
-      'PASS: native text creation, Korean input, bullets, numbering, nested Tab/Shift+Tab, empty-item exit, bold, composition, autosave, project reopen, alignment, resize, duplicate/delete, undo/redo, durable failed-save retry and compact layout.',
+      'PASS: text editing, empty-box cleanup/undo, whitespace cleanup, plain-text paste, File drop input, durable save retry and compact layout.',
     );
   } catch (error) {
     console.error(error);

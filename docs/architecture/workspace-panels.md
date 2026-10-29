@@ -11,6 +11,8 @@
 
 ## 포커스와 표시 순서
 
+2026-10-27 게임 UI 패널 정리: `PluginControlPanel`의 `embedded`와 게임 UI inspector의 기존 embedded 계약으로 우측 패널의 중복 닫기·이동·크기 조절 UI를 제외한다. 공통 패널이 닫히면 게임 UI provider의 활성 소유자를 해제해 UI 편집 버튼으로 한 번에 다시 열 수 있다. 독립 패널은 기존 창 조작을 유지한다. 게임 UI의 추가·속성·화면 설정과 접힌 레이어 목록은 표시 상태이며 저장·권한·명령 큐의 책임을 바꾸지 않는다.
+
 기존 `.dialog-backdrop` 80, `.modal-backdrop` 1200, `.workflow-modal-backdrop` 1500 등 CSS의 ancestor z-index와 동점의 DOM 순서로 활성 창을 정한다. CSS 숫자나 디자인은 변경하지 않는다. native `showModal` dialog는 브라우저의 top layer와 자체 포커스/Tab 처리를 유지한다.
 
 활성 창의 Tab/Shift+Tab 경계에서 한 번만 순환하고 disabled·hidden·inert·숨긴 컨트롤은 제외한다. 위쪽 창이 닫히면 아래쪽 창의 원래 컨트롤, 마지막 창이 닫히면 연결된 원래 버튼으로 복귀한다. 자동 업데이트처럼 뒤쪽 창이 나중에 열려도 앞 창의 포커스를 가져가지 않으며, 앞 창이 먼저 없어지면 복귀 경로를 이어 보존한다. 닫힌/삭제된 트리거에는 포커스를 강제하지 않는다. 표시되지 않은 Electron 검사 창처럼 focusin이 생략되는 호스트에서도 현재 activeElement를 함께 확인한다.
@@ -18,6 +20,12 @@
 업데이트의 document Escape listener는 실제 최상위 modal이 업데이트일 때만 닫는다. 협업 창은 busy 중 Escape로 닫지 않고, 정상 상태의 Escape는 해당 창만 닫는다. 기존 command/compare/workflow의 자체 처리도 유지한다. UI debug console은 기존 canvas shortcut 예외처럼 자체 포커스를 유지한다.
 
 modal이 없을 때 canvas drag의 style 변경마다 전체 workspace를 다시 검색하지 않고, 바뀐 subtree에 modal이 생겼는지 확인한다. 실제 창이 열린 동안에는 DOM/가시성 변화를 따라간다. 상태/문서 저장이나 협업 프로토콜은 포커스 처리와 결합하지 않는다.
+
+## 접기·펼치기 표시 (2026-10-27)
+
+`src/ui/styles/disclosures.css`는 네이티브 `details > summary`의 공통 꺾쇠를 표시한다. 닫힘은 오른쪽, 열림은 아래쪽이며, 제목의 줄바꿈과 키보드 포커스를 유지한다. 기존 캔버스의 marker 숨김에도 표시되며, 서버 도움말의 `.self-host-disclosure` SVG는 중복 생성하지 않는다. 문서·섹션의 최소화/확대 버튼, 패널 전환·설정·생략 메뉴의 기존 식별 아이콘은 그대로 사용한다. 작은 도형·그리기·정렬·확대율 메뉴에는 크기를 늘리지 않는 드롭다운 표시를 사용한다.
+
+표시만 공통화하며 접힘 상태·개인 설정·저장 명령·권한은 기존 컴포넌트가 소유한다. 새 아코디언은 네이티브 details/summary를 사용하면 공통 표시를 받는다. 네이티브 요소를 쓸 수 없는 접기 버튼에는 `aria-expanded`와 `.disclosure-trigger`를 함께 사용한다. `node tests/run-disclosures-ui.mjs`는 실제 UI 미리보기의 게임 UI·AI 설정/라이브러리/검토/상세·협업 복구를 양쪽 테마에서 검사하고 네이티브 Enter/Space와 서버 도움말의 기존 SVG 표시를 검증한다. `game-ui-packaged.mjs`에도 실제 패키지의 꺾쇠 상태 검사가 있다.
 
 ## 빌드 경로 보완
 

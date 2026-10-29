@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   ArrowLeft,
-  ChevronRight,
   Columns3,
+  Gamepad2,
   GripHorizontal,
   Puzzle,
   X,
@@ -33,6 +33,7 @@ export function PluginControlPanel({
   children,
   close,
   canvasName,
+  embedded = false,
 }: {
   page: PluginPanelPage;
   navigate: (page: PluginPanelPage) => void;
@@ -43,6 +44,7 @@ export function PluginControlPanel({
   children: ReactNode;
   close: () => void;
   canvasName: string;
+  embedded?: boolean;
 }) {
   const panel = useRef<HTMLElement>(null),
     header = useRef<HTMLElement>(null),
@@ -136,7 +138,12 @@ export function PluginControlPanel({
         ref={header}
         className="plugin-control-header"
         onPointerDown={(e) => {
-          if (e.button !== 0 || (e.target as Element).closest('button')) return;
+          if (
+            embedded ||
+            e.button !== 0 ||
+            (e.target as Element).closest('button')
+          )
+            return;
           e.stopPropagation();
           const target = e.currentTarget,
             start = panel.current!.getBoundingClientRect(),
@@ -196,14 +203,18 @@ export function PluginControlPanel({
             ? '플러그인 관리'
             : BUILTIN_CANVAS_FEATURES.find((f) => f.id === page)?.name}
         </strong>
-        <GripHorizontal size={16} className="plugin-panel-grip" />
-        <button
-          className="icon-button"
-          aria-label="플러그인 패널 닫기"
-          onClick={close}
-        >
-          <X size={17} />
-        </button>
+        {!embedded && (
+          <GripHorizontal size={16} className="plugin-panel-grip" />
+        )}
+        {!embedded && (
+          <button
+            className="icon-button"
+            aria-label="플러그인 패널 닫기"
+            onClick={close}
+          >
+            <X size={17} />
+          </button>
+        )}
       </header>
       <div className="plugin-control-content">
         <small className="plugin-current-canvas">
@@ -216,7 +227,11 @@ export function PluginControlPanel({
             </p>
             {BUILTIN_CANVAS_FEATURES.map((feature) => (
               <div key={feature.id} className="builtin-feature-row">
-                <Columns3 size={23} />
+                {feature.id === 'builtin.game-ui' ? (
+                  <Gamepad2 size={23} />
+                ) : (
+                  <Columns3 size={23} />
+                )}
                 <button
                   className="builtin-feature-open"
                   onClick={() => navigate(feature.id)}
@@ -231,14 +246,6 @@ export function PluginControlPanel({
                   checked={enabled(feature.id)}
                   onChange={(e) => toggle(feature.id, e.target.checked)}
                 />
-                <button
-                  className="icon-button"
-                  title={`${feature.name} 열기`}
-                  aria-label={`${feature.name} 열기`}
-                  onClick={() => navigate(feature.id)}
-                >
-                  <ChevronRight size={17} />
-                </button>
               </div>
             ))}
             <div className="plugin-built-in-note">
@@ -250,82 +257,90 @@ export function PluginControlPanel({
           children
         )}
       </div>
-      <button
-        className="plugin-panel-resize"
-        aria-label="플러그인 패널 크기 조절"
-        title="끌어서 크기 조절 · 방향키로 크기 조절"
-        onKeyDown={(e) => {
-          if (
-            !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
-          )
-            return;
-          e.preventDefault();
-          updateGeometry({
-            x: box.x,
-            y: box.y,
-            width: Math.max(
-              320,
-              Math.min(
-                window.innerWidth - box.x - 8,
-                box.width +
-                  (e.key === 'ArrowRight'
-                    ? 20
-                    : e.key === 'ArrowLeft'
-                      ? -20
-                      : 0),
+      {!embedded && (
+        <button
+          className="plugin-panel-resize"
+          aria-label="플러그인 패널 크기 조절"
+          title="끌어서 크기 조절 · 방향키로 크기 조절"
+          onKeyDown={(e) => {
+            if (
+              !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(
+                e.key,
+              )
+            )
+              return;
+            e.preventDefault();
+            updateGeometry({
+              x: box.x,
+              y: box.y,
+              width: Math.max(
+                320,
+                Math.min(
+                  window.innerWidth - box.x - 8,
+                  box.width +
+                    (e.key === 'ArrowRight'
+                      ? 20
+                      : e.key === 'ArrowLeft'
+                        ? -20
+                        : 0),
+                ),
               ),
-            ),
-            height: Math.max(
-              230,
-              Math.min(
-                window.innerHeight - box.y - 8,
-                box.height +
-                  (e.key === 'ArrowDown' ? 20 : e.key === 'ArrowUp' ? -20 : 0),
+              height: Math.max(
+                230,
+                Math.min(
+                  window.innerHeight - box.y - 8,
+                  box.height +
+                    (e.key === 'ArrowDown'
+                      ? 20
+                      : e.key === 'ArrowUp'
+                        ? -20
+                        : 0),
+                ),
               ),
-            ),
-          });
-        }}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const target = e.currentTarget,
-            start = panel.current!.getBoundingClientRect(),
-            px = e.clientX,
-            py = e.clientY;
-          target.setPointerCapture(e.pointerId);
-          cleanup.current?.();
-          const move = (event: PointerEvent) => {
-            if (panel.current)
-              Object.assign(panel.current.style, {
-                width: `${Math.max(320, Math.min(window.innerWidth - start.x - 8, start.width + event.clientX - px))}px`,
-                height: `${Math.max(230, Math.min(window.innerHeight - start.y - 8, start.height + event.clientY - py))}px`,
-              });
-          };
-          const end = () => {
+            });
+          }}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const target = e.currentTarget,
+              start = panel.current!.getBoundingClientRect(),
+              px = e.clientX,
+              py = e.clientY;
+            target.setPointerCapture(e.pointerId);
             cleanup.current?.();
-            cleanup.current = null;
-            const r = panel.current?.getBoundingClientRect();
-            if (r)
-              updateGeometry({
-                x: r.x,
-                y: r.y,
-                width: r.width,
-                height: r.height,
-              });
-          };
-          cleanup.current = () => {
-            target.removeEventListener('pointermove', move);
-            target.removeEventListener('pointerup', end);
-            target.removeEventListener('pointercancel', end);
-          };
-          target.addEventListener('pointermove', move);
-          target.addEventListener('pointerup', end);
-          target.addEventListener('pointercancel', end);
-        }}
-      >
-        <GripHorizontal size={14} />
-      </button>
+            const move = (event: PointerEvent) => {
+              if (panel.current)
+                Object.assign(panel.current.style, {
+                  width: `${Math.max(320, Math.min(window.innerWidth - start.x - 8, start.width + event.clientX - px))}px`,
+                  height: `${Math.max(230, Math.min(window.innerHeight - start.y - 8, start.height + event.clientY - py))}px`,
+                });
+            };
+            const end = () => {
+              cleanup.current?.();
+              cleanup.current = null;
+              const r = panel.current?.getBoundingClientRect();
+              if (r)
+                updateGeometry({
+                  x: r.x,
+                  y: r.y,
+                  width: r.width,
+                  height: r.height,
+                });
+            };
+            cleanup.current = () => {
+              target.removeEventListener('pointermove', move);
+              target.removeEventListener('pointerup', end);
+              target.removeEventListener('pointercancel', end);
+            };
+            target.addEventListener('pointermove', move);
+            target.addEventListener('pointerup', end);
+            target.addEventListener('pointercancel', end);
+          }}
+        >
+          <GripHorizontal size={14} />
+        </button>
+      )}
     </aside>
   );
 }

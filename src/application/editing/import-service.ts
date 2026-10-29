@@ -80,7 +80,7 @@ export class FileImportService {
           )
           .catch(() => {
             throw Error(
-              `이미지 기록과 복구에 실패했습니다. 프로젝트에서 확인할 파일: ${Object.keys(changes).join(', ')}`,
+              `파일 기록과 복구에 실패했습니다. 프로젝트에서 확인할 파일: ${Object.keys(changes).join(', ')}`,
             );
           });
         throw error;

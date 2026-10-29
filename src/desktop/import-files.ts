@@ -33,30 +33,108 @@ export async function importSelectedFiles(
       '파일을 넣을 위치와 이미지 용도를 확인해주세요.',
     );
   authorize();
-  const chosen = await dialog.showOpenDialog({
-    title: 'Markdown · HTML 게임 · 이미지 불러오기',
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      {
-        name: 'Markdown · HTML · 이미지',
-        extensions: ['md', 'html', 'htm', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
-      },
-    ],
-  });
+  const chosen =
+    input.files === undefined
+      ? await dialog.showOpenDialog({
+          title: 'Markdown · HTML 게임 · 이미지 불러오기',
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            {
+              name: 'Markdown · HTML · 이미지',
+              extensions: [
+                'md',
+                'html',
+                'htm',
+                'png',
+                'jpg',
+                'jpeg',
+                'webp',
+                'gif',
+              ],
+            },
+          ],
+        })
+      : null;
   assertCurrent();
-  if (chosen.canceled || !chosen.filePaths.length) return [];
-  if (chosen.filePaths.length > 20)
+  if (chosen && (chosen.canceled || !chosen.filePaths.length)) return [];
+  if (
+    input.files !== undefined &&
+    (!Array.isArray(input.files) ||
+      input.files.some(
+        (file) =>
+          !file ||
+          typeof file !== 'object' ||
+          'path' in file ||
+          typeof file.name !== 'string' ||
+          !(file.bytes instanceof Uint8Array),
+      ))
+  )
+    throw new CanvasError('GC-IMPORT-001', '불러올 파일 정보를 확인해주세요.');
+  const sources = chosen
+    ? chosen.filePaths.map((path) => ({ path }))
+    : input.files!;
+  const files = await readImportSources(sources, assertCurrent);
+  const {
+    files: _bytes,
+    scope: _scope,
+    contextId: _context,
+    ...position
+  } = input;
+  return applyFiles({ ...position, files });
+}
+
+/** Picker, clipboard file lists and browser drops share decoding and limits. */
+export async function readImportSources(
+  sources: ({ path: string } | { name: string; bytes: Uint8Array })[],
+  assertCurrent: () => void,
+): Promise<ImportBatchInput['files']> {
+  if (!sources.length || sources.length > 20)
     throw new CanvasError(
       'GC-IMPORT-001',
       '한 번에 최대 20개 파일을 선택해주세요.',
     );
   let total = 0;
   const files: { name: string; content: string }[] = [];
-  for (const absolute of chosen.filePaths) {
-    const name = path.basename(absolute),
+  for (const source of sources) {
+    assertCurrent();
+    const absolute = 'path' in source ? source.path : undefined;
+    const name = absolute
+        ? path.basename(absolute)
+        : 'name' in source
+          ? source.name
+          : '',
       ext = path.extname(name).toLowerCase();
+    if (
+      !name ||
+      name.length > 200 ||
+      /[\\/\x00-\x1f]/.test(name) ||
+      ![
+        '.md',
+        '.html',
+        '.htm',
+        '.png',
+        '.jpg',
+        '.jpeg',
+        '.webp',
+        '.gif',
+      ].includes(ext)
+    )
+      throw new CanvasError(
+        'GC-IMPORT-001',
+        `${name}: MD, HTML, HTM, PNG, JPG, WebP, GIF 파일만 지원합니다.`,
+      );
     const isHtml = ['.html', '.htm'].includes(ext);
-    const stat = await fs.stat(absolute);
+    if ('bytes' in source && !(source.bytes instanceof Uint8Array))
+      throw new CanvasError(
+        'GC-IMPORT-001',
+        '불러올 파일 데이터를 확인해주세요.',
+      );
+    const stat = absolute
+      ? await fs.stat(absolute)
+      : {
+          size: 'bytes' in source ? source.bytes.byteLength : 0,
+          isFile: () => true,
+        };
     if (
       !stat.isFile() ||
       stat.size >
@@ -76,7 +154,15 @@ export async function importSelectedFiles(
         'GC-IMPORT-001',
         '한 번에 최대 12MB까지 선택해주세요. 나눠서 불러올 수 있습니다.',
       );
-    const bytes = await fs.readFile(absolute);
+    const bytes = absolute
+      ? await fs.readFile(absolute)
+      : Buffer.from((source as { bytes: Uint8Array }).bytes);
+    // The selected disk file may have changed between stat and read.
+    if (bytes.length !== stat.size)
+      throw new CanvasError(
+        'GC-IMPORT-001',
+        `${name}: 파일이 변경되었습니다. 다시 불러와주세요.`,
+      );
     assertCurrent();
     if (ext === '.md' || isHtml) {
       try {
@@ -108,5 +194,5 @@ export async function importSelectedFiles(
     }
   }
   assertCurrent();
-  return applyFiles({ ...input, files });
+  return files;
 }

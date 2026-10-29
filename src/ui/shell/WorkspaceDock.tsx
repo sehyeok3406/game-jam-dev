@@ -1202,6 +1202,7 @@ export function WorkspaceDock({
           )}
           {!home && pluginPanelOpen && (
             <PluginControlPanel
+              embedded
               page={pluginPanelPage}
               navigate={setPluginPanelPage}
               enabled={(id) =>

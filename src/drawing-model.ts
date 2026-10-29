@@ -394,11 +394,18 @@ export function applyDrawing(files: Snapshot, input: DrawingCommand): Snapshot {
       new Set(input.targets.map((t) => t.id)).size !== input.targets.length
     )
       fail();
-    const removed = input.targets.map(
-      (t) =>
-        f.objects.find((o) => o.id === t.id && o.generation === t.generation) ??
-        fail('그림이 변경되었습니다. 다시 선택해주세요.'),
-    );
+    const removed = input.targets.map((t) => {
+      const object = f.objects.find(
+        (o) => o.id === t.id && o.generation === t.generation,
+      );
+      if (
+        !object ||
+        (t.expectedGeometry !== undefined &&
+          !same(object.geometry, t.expectedGeometry))
+      )
+        fail('그림이 변경되었습니다. 다시 선택해주세요.');
+      return object;
+    });
     f.objects = f.objects.filter((o) => !removed.includes(o));
     if (input.action === 'move') {
       const target = input.targetCanvasId;

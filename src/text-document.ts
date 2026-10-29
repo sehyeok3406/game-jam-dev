@@ -5,6 +5,29 @@ export const EMPTY_TEXT_DOCUMENT = JSON.stringify({
   content: [{ type: 'paragraph' }],
 });
 
+export function isEmptyTextDocument(raw: string): boolean {
+  validateTextDocument(raw);
+  const visit = (node: { text?: string; content?: (typeof node)[] }): boolean =>
+    !(node.text ?? '').trim() && (node.content ?? []).every(visit);
+  return visit(JSON.parse(raw));
+}
+
+/** Plain clipboard text stays literal; it is never interpreted as HTML/Markdown. */
+export function plainTextDocument(text: string): string {
+  const document = JSON.stringify({
+    type: 'doc',
+    content: text
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((line) => ({
+        type: 'paragraph',
+        ...(line ? { content: [{ type: 'text', text: line }] } : {}),
+      })),
+  });
+  validateTextDocument(document);
+  return document;
+}
+
 /** A small, bounded ProseMirror schema. No HTML, links, images or arbitrary attributes. */
 export function validateTextDocument(raw: unknown): void {
   const fail = (): never => {

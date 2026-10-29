@@ -40,6 +40,10 @@ import {
   type Theme,
 } from '../workspace/workspace-types.ts';
 interface Props {
+  dropFiles: (
+    files: File[],
+    position: { x: number; y: number },
+  ) => Promise<void>;
   materialItems: import('../CanvasOverlays').CanvasItem[];
   compactChrome: boolean;
   dockPanel: import('../CanvasChrome').CanvasPanelId | null;
@@ -222,6 +226,7 @@ interface Props {
   nodeTypes: NodeTypes;
 }
 export function WorkspaceCanvas({
+  dropFiles,
   materialItems,
   compactChrome,
   dockPanel,
@@ -314,6 +319,33 @@ export function WorkspaceCanvas({
       <div
         className="canvas-shell"
         tabIndex={-1}
+        onDragOverCapture={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = locked ? 'none' : 'copy';
+        }}
+        onDropCapture={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (
+            Array.from(event.dataTransfer.items).some(
+              (item) => item.webkitGetAsEntry?.()?.isDirectory,
+            )
+          ) {
+            setNotice(
+              '폴더는 불러올 수 없습니다. 폴더 안의 파일을 선택해주세요.',
+            );
+            return;
+          }
+          const position = flowRef.current?.screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          if (position)
+            void dropFiles(Array.from(event.dataTransfer.files), position);
+        }}
         onClickCapture={(event) => {
           const id = (event.target as Element)
             .closest('.react-flow__node')
@@ -454,9 +486,7 @@ export function WorkspaceCanvas({
           embedded
           externalHost={gameUiPanelHost}
           onActiveChange={setGameUiPanelActive}
-          suspended={
-            !!inspectorId || (dockPanel !== null && dockPanel !== 'properties')
-          }
+          suspended={!!inspectorId || dockPanel !== 'properties'}
           onOpen={() => {
             setDockPanel('properties');
             setInspectorId(null);

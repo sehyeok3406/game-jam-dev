@@ -1,5 +1,17 @@
 # 편집 명령 연결과 검증 범위
 
+## 캔버스 외부 입력과 빈 텍스트 정리 (2026-10-29)
+
+외부 파일 드롭은 브라우저 `File`을 이름·`Uint8Array` DTO로 읽어 기존 `files:import`를 사용한다. 드롭 입력에는 시작 saveScope/clipboardContextId를 전달하고 IPC 진입과 mutation 큐 안에서 다시 검증한다. desktop의 `readImportSources`가 선택창·드롭·클립보드 파일의 확장자/크기/UTF-8/이미지 검사를 함께 수행하고 `FileImportService`가 기존 `files:import-batch`로 게시한다. renderer가 전달한 파일 목록에서 로컬 경로를 받지 않는다. 폴더·미지원 파일·검증 실패가 포함되면 배치 전체를 반영하지 않는다. 파일 수 20개·총 12MB·MD 2MB·HTML 8MB·이미지 5MB 제한과 단일 HTML 가져오기 정책을 유지한다.
+
+클립보드는 내부 복사 토큰 → 로컬 파일 URI 목록 → 이미지 → 일반 텍스트 순서로 해석한다. Windows 탐색기 FileDrop은 Electron이 제공하는 `text/uri-list`로 읽고 원본을 바꾸지 않는다. 파일/이미지는 기존 클립보드 요청 중복 방지·세션 검사·저장 후 히스토리 인정/실패 복구 경로를 함께 사용한다. 텍스트는 HTML/Markdown으로 실행·해석하지 않고 텍스트 문서 스키마로 변환한 뒤 기존 그림 생성 명령/저장 큐로 새 텍스트 상자를 만든다. 입력란 안의 붙여넣기는 기존 입력 소유권을 유지한다.
+
+빈 내용 자동 삭제는 캔버스 텍스트 상자의 실제 편집 종료(외부 클릭·선택 해제·완료·Escape)에만 적용한다. 공백·줄바꿈·빈 목록도 빈 내용이며 IME 조합·서식 도구 이동·일반 메모/문서·단순 화면 로딩은 삭제 계기가 아니다. 보관 초안 로딩과 저장 성공 후 기존 명령/Undo·Redo를 사용한다. 삭제 target의 선택적 `expectedGeometry`를 reducer에서 비교하여 다른 사용자의 후속 내용 변경을 삭제하지 않는다. UI는 기존 `canvas:batch` 안에 조건부 geometry patch와 삭제를 묶어 이전 텍스트 지원 서버에서도 조건을 원자적으로 검사한다. 배치 전체가 지원되지 않으면 오류를 반환하며 개별 삭제로 우회하지 않는다.
+
+검증은 `canvas-text.test.mjs`, `clipboard-images.test.mjs`, production mock IPC의 `test:clipboard`, 실제 입력 UI의 `test:text:ui`, Windows OS clipboard와 실제 패키지의 `test:clipboard:packaged`로 나누어 수행한다. 검사 명령의 존재만으로 실행 통과를 의미하지 않는다.
+
+## 기존 명령 경로
+
 공개 reducer 계약은 `contracts/commands.ts`의 26개 명령이다. 새 공동 편집 경로는 기존 등록된 IPC → `desktop/ipc/collaboration` → session별 `SharedEditingService` → 인증된 `CollaborationClient.command` → 기존 서버/reducer 순서다. 서버 권한·revision·잠금·receipt 및 오프라인 영속 저장의 소유권은 바꾸지 않았다.
 
 `SharedWorkspaceReader`가 상세/목록 DTO, 개인별 접기 상태와 증분 canvas projection을 소유한다. `SharedEditingService`가 명령 전후 session 검사, mirror/trash 연결, 성공한 history receipt의 Undo 기록과 결과 DTO 변환을 소유한다. 서비스 port에는 root 경로나 인증 token을 전달하지 않는다.

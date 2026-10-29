@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import '../src/main';
 import { createCollaborationServer } from '../src/collaboration-server';
 import { CollaborationClient } from '../src/collaboration-client';
@@ -42,7 +43,16 @@ const nativeImage = () => {
   clipboard.items = [new ClipboardItem({ 'image/png': new Blob([png]) })];
 };
 try {
-  await new Promise((r) => setTimeout(r, 80));
+  for (
+    let i = 0;
+    i < 200 && (!createdWindows[0] || !handlers.has('projects:create'));
+    i++
+  )
+    await new Promise((r) => setTimeout(r, 25));
+  assert.ok(
+    createdWindows[0] && handlers.has('projects:create'),
+    'Main process must finish startup',
+  );
   const project = await call('projects:create', 'clipboard-test');
   ({ saveScope: scope, clipboardContextId: contextId } =
     await call('workspace:get'));
@@ -104,7 +114,7 @@ try {
       ...request(),
       internalCopyId: copyId,
     }),
-    { kind: 'empty' },
+    { kind: 'text', text: 'external text' },
   );
   nativeImage();
   assert.equal(
@@ -128,6 +138,86 @@ try {
     'PASS: production clipboard IPC saves once, records/undoes/redoes bytes, internal/external precedence and copy deduplication',
   );
 
+  const dropInput = {
+    ...request(),
+    files: [
+      { name: 'drop.md', bytes: new TextEncoder().encode('# 드롭 문서') },
+      {
+        name: 'drop.html',
+        bytes: new TextEncoder().encode(
+          '<!doctype html><html><body>드롭 HTML</body></html>',
+        ),
+      },
+      { name: 'drop.png', bytes: new Uint8Array(png) },
+    ],
+  };
+  const dropped = await call('files:import', dropInput);
+  assert.equal(dropped.length, 3);
+  assert.ok(dropped.some((d: any) => d.htmlSource));
+  for (const d of dropped)
+    assert.ok(await fs.readFile(path.join(project.root, d.relativePath)));
+  await call('edit:undo');
+  assert.ok(
+    !(await call('documents:list')).some((d: any) =>
+      dropped.some((v: any) => v.id === d.id),
+    ),
+  );
+  await call('edit:redo');
+  const previous = await call('documents:list');
+  await assert.rejects(
+    call('files:import', {
+      ...dropInput,
+      files: [
+        dropInput.files[0],
+        { name: 'bad.exe', bytes: new Uint8Array([1]) },
+      ],
+    }),
+    /지원/,
+  );
+  assert.deepEqual(await call('documents:list'), previous);
+  assert.throws(
+    () => call('files:import', { ...dropInput, contextId: randomUUID() }),
+    /프로젝트가 변경/,
+  );
+  await assert.rejects(
+    call('files:import', {
+      ...dropInput,
+      files: [{ path: path.join(project.root, 'project.md') }],
+    }),
+    /파일 정보/,
+  );
+  const external = path.join(root, '복사한 문서.md');
+  await fs.writeFile(external, '# 탐색기 복사\n\n원본');
+  clipboard.items = [
+    new ClipboardItem({
+      'text/uri-list': new Blob([pathToFileURL(external).href + '\r\n']),
+    }),
+  ];
+  const fileRequest = request();
+  const [pasted, repeated] = await Promise.all([
+    call('clipboard:canvas-paste', fileRequest),
+    call('clipboard:canvas-paste', fileRequest),
+  ]);
+  assert.equal(pasted.kind, 'files');
+  assert.deepEqual(pasted, repeated);
+  assert.equal(pasted.documents.length, 1);
+  assert.match(await fs.readFile(external, 'utf8'), /원본/);
+  await call('edit:undo');
+  assert.ok(
+    !(await call('documents:list')).some(
+      (d: any) => d.id === pasted.documents[0].id,
+    ),
+  );
+  await call('edit:redo');
+  assert.ok(
+    (await call('documents:list')).some(
+      (d: any) => d.id === pasted.documents[0].id,
+    ),
+  );
+  console.log(
+    'PASS: MD/HTML/image drops, atomic rejection, session guard, copied files, deduplication and undo/redo',
+  );
+
   const read = clipboard.read;
   let resolveRead: (value: ClipboardItem[]) => void;
   clipboard.read = () =>
@@ -139,7 +229,7 @@ try {
   await new Promise((r) => setTimeout(r, 10));
   await call('projects:home');
   resolveRead!([new ClipboardItem({ 'image/png': new Blob([png]) })]);
-  await assert.rejects(slow, /프로젝트가 변경/);
+  await assert.rejects(slow, /프로젝트(?: 세션이|가) 변경/);
   clipboard.read = read;
   const entries = await call('projects:list');
   await call(

@@ -59,6 +59,55 @@ const patch = (f, i, changes) =>
       },
     ],
   });
+test('frame background is optional, validated, conflict checked and preserved through merge and Undo', () => {
+  const f = create();
+  const base = init(f);
+  const edit = (color, expected = undefined, files = base) =>
+    applyGameUi(
+      files,
+      command(f, 'frame', {
+        changes: { backgroundColor: color },
+        expected: { backgroundColor: expected },
+      }),
+    );
+  assert.equal(get(base, f).backgroundColor, undefined);
+  const colored = edit('#34495e');
+  assert.equal(get(colored, f).backgroundColor, '#34495e');
+  for (const invalid of ['red', '#fff', '#12345678', null, 12, 'url(x)'])
+    assert.throws(() => edit(invalid));
+  assert.throws(() => edit('#ffffff', undefined, colored), /충돌/);
+  const other = applyGameUi(
+    base,
+    command(f, 'frame', {
+      changes: { title: '새 화면' },
+      expected: { title: f.title },
+    }),
+  );
+  const merged = readGameUi(
+    mergeGameUi(
+      base[gameUiPath(f.id)],
+      colored[gameUiPath(f.id)],
+      other[gameUiPath(f.id)],
+    ),
+  );
+  assert.equal(merged.title, '새 화면');
+  assert.equal(merged.backgroundColor, '#34495e');
+  assert.throws(
+    () =>
+      mergeGameUi(
+        base[gameUiPath(f.id)],
+        colored[gameUiPath(f.id)],
+        edit('#ffffff')[gameUiPath(f.id)],
+      ),
+    /병합/,
+  );
+  const undone = invertEdit(colored, base, colored, 'undo');
+  assert.equal(get(undone, f).backgroundColor, undefined);
+  assert.equal(
+    get(invertEdit(undone, base, colored, 'redo'), f).backgroundColor,
+    '#34495e',
+  );
+});
 test('frame is standalone; description is opt-in and reused; names and user descriptions follow stable IDs', () => {
   const f = create(),
     a = newGameUiItem('health', randomUUID),

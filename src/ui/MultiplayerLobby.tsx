@@ -163,6 +163,7 @@ export function MultiplayerLobby({
         <button
           type="button"
           title="함께 플레이 연결 확인"
+          className="disclosure-trigger"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >

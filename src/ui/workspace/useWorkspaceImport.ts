@@ -71,8 +71,15 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
     setImportTarget(center);
     setImportError('');
   };
-  const importFiles = async () => {
+  const importFiles = async (drop?: {
+    files: File[];
+    x: number;
+    y: number;
+  }) => {
     const {
+      capabilities,
+      workspace,
+      onBlocked,
       setNotice,
       locked,
       flowRef,
@@ -83,16 +90,45 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
       selectCreated,
     } = ports();
 
-    if (!importTarget || importingFiles || locked) return;
+    if (!capabilities.localFiles)
+      return setNotice('파일 가져오기는 PC 앱에서 사용할 수 있습니다.');
+    if (locked) return onBlocked();
+    const position = drop ?? importTarget;
+    if (!position || importingFiles || !workspace.root) return;
     if (pending.current) return;
     pending.current = true;
     setImportingFiles(true);
     setImportError('');
+    const destination = {
+      x: position.x,
+      y: position.y,
+      canvasId: activeCanvasRef.current,
+      imagePurpose,
+      scope: workspace.saveScope,
+      contextId: workspace.clipboardContextId,
+    };
     try {
+      if (
+        drop &&
+        (!drop.files.length ||
+          drop.files.length > 20 ||
+          drop.files.reduce((sum, file) => sum + file.size, 0) > 12_000_000)
+      )
+        throw new Error(
+          '한 번에 최대 20개 파일, 총 12MB까지 불러올 수 있습니다.',
+        );
+      const files = drop
+        ? await Promise.all(
+            drop.files.map(async (file) => ({
+              name: file.name,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+            })),
+          )
+        : undefined;
+      if (!isCurrent()) return;
       const imported = await requireDesktopApi(api).importFiles({
-        ...importTarget,
-        canvasId: activeCanvasRef.current,
-        imagePurpose,
+        ...destination,
+        ...(files ? { files } : {}),
       });
       if (!isCurrent()) return;
       if (!imported.length) {
@@ -142,6 +178,8 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
     imagePurpose,
     setImagePurpose,
     importError,
-    importFiles,
+    importFiles: () => importFiles(),
+    dropFiles: (files: File[], position: { x: number; y: number }) =>
+      importFiles({ files, ...position }),
   };
 }

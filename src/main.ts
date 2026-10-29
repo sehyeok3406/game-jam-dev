@@ -64,7 +64,7 @@ import {
   FileImportService,
   assertImportAccess,
 } from './application/editing/import-service';
-import { importSelectedFiles } from './desktop/import-files';
+import { importSelectedFiles, readImportSources } from './desktop/import-files';
 import { LocalCommandService } from './application/editing/command-service';
 import {
   filesystemCommandPublisher,
@@ -653,7 +653,12 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
   const context = args[0] as
     | { scope?: string; contextId?: string; clipboardContextId?: string }
     | undefined;
-  if (channel === 'clipboard:canvas-paste' || context?.clipboardContextId)
+  if (
+    channel === 'clipboard:canvas-paste' ||
+    context?.clipboardContextId ||
+    (channel === 'files:import' &&
+      (args[0] as ImportFilesInput)?.files !== undefined)
+  )
     assertClipboardContext(
       context?.scope,
       context?.contextId ?? context?.clipboardContextId,
@@ -1520,6 +1525,14 @@ const handle = (
       | (CanvasClipboardPasteInput & { clipboardContextId?: string })
       | undefined;
     if (
+      channel === 'files:import' &&
+      (args[0] as ImportFilesInput)?.files !== undefined
+    ) {
+      if (!isUpdateSender(event))
+        throw new Error('앱의 캔버스에서만 파일을 불러올 수 있습니다.');
+      assertClipboardContext(clipboardInput?.scope, clipboardInput?.contextId);
+    }
+    if (
       channel.startsWith('clipboard:canvas-') ||
       clipboardInput?.clipboardContextId
     ) {
@@ -1839,7 +1852,9 @@ const applyImportedFiles = async (
             userEdits(root, session, editJournal).record(
               before,
               after,
-              '이미지 붙여넣기',
+              payload.files.every((file) => /^clipboard-/.test(file.name))
+                ? '이미지 붙여넣기'
+                : '파일 붙여넣기',
             ),
         }
       : undefined,
@@ -2047,18 +2062,29 @@ const registerIpc = () => {
       contents: ClipboardContents,
     ): Promise<CanvasClipboardPasteResult> => {
       assertClipboardContext(input.scope, input.contextId);
-      if (contents.kind !== 'images') return contents;
+      if (contents.kind !== 'images' && contents.kind !== 'paths')
+        return contents;
+      const files =
+        contents.kind === 'paths'
+          ? await readImportSources(
+              contents.paths.map((path) => ({ path })),
+              () => assertClipboardContext(input.scope, input.contextId),
+            )
+          : contents.files;
       const documents = await applyImportedFiles(
         {
           canvasId: input.canvasId,
           x: input.x,
           y: input.y,
           imagePurpose: input.imagePurpose,
-          files: contents.files,
+          files,
         },
         input,
       );
-      return { kind: 'images', documents };
+      return {
+        kind: contents.kind === 'paths' ? 'files' : 'images',
+        documents,
+      };
     },
   );
   draftStore = new EditorDraftStore(

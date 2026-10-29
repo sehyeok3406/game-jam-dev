@@ -4,6 +4,8 @@ import {
   createTextObject,
   validateTextDocument,
   textDocumentHtml,
+  plainTextDocument,
+  isEmptyTextDocument,
 } from '../src/text-document.ts';
 import {
   applyDrawing,
@@ -58,6 +60,63 @@ const object = () => {
 };
 const create = (o) =>
   applyDrawing({}, { canvasId: 'default', action: 'create', objects: [o] });
+
+test('empty detection includes whitespace, line breaks and empty lists; plain paste preserves literal text', () => {
+  assert.equal(
+    isEmptyTextDocument(createTextObject(0, 0).geometry.document),
+    true,
+  );
+  assert.equal(isEmptyTextDocument(plainTextDocument(' \r\n\t\n')), true);
+  assert.equal(
+    isEmptyTextDocument(
+      JSON.stringify({
+        type: 'doc',
+        content: [
+          {
+            type: 'bulletList',
+            content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }],
+          },
+        ],
+      }),
+    ),
+    true,
+  );
+  const raw = plainTextDocument('<script>문자 그대로</script>\r\n\r\n다음 줄');
+  assert.equal(isEmptyTextDocument(raw), false);
+  assert.equal(JSON.parse(raw).content.length, 3);
+  assert.match(textDocumentHtml(raw), /&lt;script&gt;/);
+  assert.throws(() => plainTextDocument('x'.repeat(100_001)));
+});
+
+test('automatic empty text deletion refuses concurrent content edits and accepts the expected geometry', () => {
+  const o = createTextObject(0, 0),
+    before = create(o);
+  const command = {
+    canvasId: 'default',
+    action: 'delete',
+    targets: [
+      { id: o.id, generation: o.generation, expectedGeometry: o.geometry },
+    ],
+  };
+  assert.equal(snapshotDrawings(applyDrawing(before, command)).length, 0);
+  const changed = applyDrawing(before, {
+    canvasId: 'default',
+    action: 'patch',
+    patches: [
+      {
+        id: o.id,
+        generation: o.generation,
+        expectedGeometry: o.geometry,
+        geometry: {
+          ...o.geometry,
+          document: plainTextDocument('다른 사용자가 작성'),
+        },
+      },
+    ],
+  });
+  assert.throws(() => applyDrawing(changed, command), /변경/);
+  assert.equal(snapshotDrawings(changed).length, 1);
+});
 test('text and mixed/nested bullet and numbered lists round trip through the drawing store and deltas', () => {
   const o = object(),
     files = create(o);
