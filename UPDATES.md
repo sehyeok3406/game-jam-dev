@@ -10,6 +10,18 @@
 
 통합 소스의 자동 테스트 1,035개(실패/skip 0), root/contracts/core 타입·린트/서식·아키텍처 검사를 통과했다. production mock IPC와 실제 Windows 클립보드에서 가져오기·중복 방지·프로젝트 전환·Undo/Redo·권한·원본 보존을 확인했다. UI 검사에서 빈 상자의 편집 중 유지·편집 종료 삭제·복원·공백 정리·텍스트 붙여넣기·File 드롭과 기존 텍스트 줄별 정렬 회귀를 확인했다. 새 설계 예외는 추가하지 않았다.
 
+2026-10-29 [v0.39.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.39.0)를 게시했다. 제품 소스·태그는 `933065dc01f021f7e36985bfb3082c2c5f6fb96f`이며 [Windows·Linux CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/40861171986)의 타입·린트·Windows 전체 테스트·Linux 서버/백업 검사가 모두 성공했다. 실제 Windows 패키지의 파일 드롭·클립보드 파일/이미지/텍스트·입력 포커스·Undo/Redo·프로세스 재시작 보존, 텍스트 줄별 정렬·목록, 게임 UI inspector·범위·지속 저장, 100개 문서 이동의 중간 쓰기 없음·드롭 한 history 배치·동일 이동량·재시작 보존을 확인했다. 새로 만든 합성 Windows 백업으로 패키지의 Node/서버 복구 검사도 통과했다. 운영 서버·터널·실제 AI 공급자는 실행하거나 재시작하지 않았다.
+
+제품 입력 584개의 지문은 `aefc64b8ec8cd5973ac10ee940fa884faf4a5963953ae2197df3905001695d1c`다. 한 번 빌드·검증한 패키지에 `make --from-package`를 적용했으며 app.asar SHA-256 `4b1ebe14ce98f3b92fbbc91fd1475c9974a93ff6c4a5a91206ea58ec70c942db`와 내장 서버 런타임 46개 파일의 해시·크기가 nupkg 내부까지 일치한다.
+
+| 공개 파일                     | 크기(바이트) | SHA-256                                                          |
+| ----------------------------- | -----------: | ---------------------------------------------------------------- |
+| Game.Jam-0.39.0.Setup.exe     |    194535424 | 7f3599b94f96b755e81c9e2c58ba73315f3e0180157e60c3d20fa8058639fc22 |
+| game_canvas-0.39.0-full.nupkg |    193633234 | 050f2260b7938fa7e703e41cb1911dbd4c17ccbc4d5ec6e3b19ecd402771b7bb |
+| RELEASES                      |           83 | 077120931c9afa1a81b56c91d8abe53601019d5a00e688f170fd4c05a41b286a |
+
+GitHub 자산 SHA-256·크기가 로컬과 같고 세 파일의 인증 없는 공개 다운로드는 모두 200이다. 공개 RELEASES의 바이트 해시·패키지 이름·SHA-1 `CD4145479E8EBD87D4DE6FE6EBF492F49915F43E`·크기 193633234바이트를 대조했다. 기존 게시·검증 경로를 사용하여 대용량 파일 전체를 재다운로드하지 않았다. 게시 직후 v0.38.4와 v0.39.0의 Windows RELEASES 피드가 새 패키지 URL·SHA-1·크기를 반환해 **배포 파일 게시·검증과 자동 업데이트 피드 반영을 모두 확인했다.** [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.39.0/Game.Jam-0.39.0.Setup.exe). 근거는 로컬 `out/release-v0.39.0`에 보존했다.
+
 ## v0.38.4 다중 선택 드래그 성능 개선
 
 - 카드 위치가 바뀔 때 문서 Markdown·HTML·그림·게임 UI·칸반 내용을 불필요하게 다시 계산하던 비용을 줄였습니다.
