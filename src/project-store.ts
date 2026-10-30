@@ -10,6 +10,8 @@ import { GAME_UI_DIRECTORY } from './game-ui-types.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { projectRelativeLocation } from './adapters/filesystem/project-location.ts';
+import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
 import type { HistoryEntry } from './shared';
 import { isPreviewPath } from './preview-output.ts';
 import { isAssetPath, encodeAsset, decodeAsset } from './file-assets.ts';
@@ -31,7 +33,11 @@ async function readSnapshotFile(absolute: string, relative: string) {
 function snapshotBytes(relative: string, content: string) {
   return isAssetPath(relative) ? decodeAsset(relative, content) : content;
 }
-export async function projectPath(root: string, relativePath: string) {
+export async function projectPath(
+  root: string,
+  relativePath: string,
+  raw = false,
+) {
   if (
     !relativePath ||
     relativePath.includes('\\') ||
@@ -39,7 +45,10 @@ export async function projectPath(root: string, relativePath: string) {
   )
     throw new Error('올바르지 않은 프로젝트 경로입니다.');
   const realRoot = await fs.realpath(root);
-  const target = path.resolve(realRoot, relativePath);
+  const target = path.resolve(
+    realRoot,
+    raw ? relativePath : await projectRelativeLocation(realRoot, relativePath),
+  );
   const isInside = (candidate: string) => {
     const relative = path.relative(realRoot, candidate);
     return (
@@ -80,6 +89,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
         await walk(`${relative}/${entry}`);
     } else if (
       relative.endsWith('.md') ||
+      relative === PROJECT_LAYOUT_PATH ||
       isPreviewPath(relative) ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
@@ -98,6 +108,9 @@ export async function captureProject(root: string): Promise<Snapshot> {
     'docs',
     'sections',
     '.ai/tasks',
+    'docs/html-sources',
+    'docs/text-sources',
+    PROJECT_LAYOUT_PATH,
     RESULT_CATALOG_PATH,
     CANVAS_SHEETS_PATH,
     DOCUMENT_STATUSES_PATH,
@@ -110,9 +123,18 @@ export async function captureProject(root: string): Promise<Snapshot> {
     await walk(relative);
   return snapshot;
 }
-export async function materialize(root: string, snapshot: Snapshot) {
+export async function materialize(
+  root: string,
+  snapshot: Snapshot,
+  raw = false,
+) {
+  if (!raw && snapshot[PROJECT_LAYOUT_PATH]) {
+    const marker = await projectPath(root, PROJECT_LAYOUT_PATH);
+    await fs.mkdir(path.dirname(marker), { recursive: true });
+    await fs.writeFile(marker, snapshot[PROJECT_LAYOUT_PATH], 'utf8');
+  }
   for (const [relative, content] of Object.entries(snapshot)) {
-    const absolute = await projectPath(root, relative);
+    const absolute = await projectPath(root, relative, raw);
     await fs.mkdir(path.dirname(absolute), { recursive: true });
     await fs.writeFile(absolute, snapshotBytes(relative, content), 'utf8');
   }
@@ -146,7 +168,7 @@ export async function saveHistory(
         selected[file.relativePath] = snapshot[file.relativePath];
     const versionRoot = path.join(folder, version);
     await fs.mkdir(versionRoot, { recursive: true });
-    await materialize(versionRoot, selected);
+    await materialize(versionRoot, selected, true);
   }
   await writeHistoryEntry(root, entry);
   if (entry.status === 'completed' && files.length) {

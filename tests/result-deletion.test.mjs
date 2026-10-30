@@ -78,6 +78,8 @@ test('project document can be deleted individually, in a batch and with its sect
 test('reopening and renaming a project after deletion do not recreate the default document', async (t) => {
   const root = await fixture(t);
   await initializeProjectDocument(root);
+  assert.equal((await captureProject(root))['project.md'], undefined);
+  await fs.writeFile(path.join(root, 'project.md'), md('project'));
   assert.ok((await captureProject(root))['project.md']);
   await saveProjectName(root, '게임 프로젝트');
   await fs.unlink(path.join(root, 'project.md'));

@@ -1152,7 +1152,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const editBusy =
     legacyEditBusy || selectionBusy || sectionBusy || collapseBusy;
 
-  const organizedSets = documentSets(documents.map((doc) => doc.relativePath));
+  const organizedSets = documentSets(
+    documents.map((doc) => doc.relativePath),
+    collaboration.active && collaboration.projectLayoutVersion !== 2
+      ? []
+      : documents,
+  );
   const documentChoiceForUpdate = (baseDir: string) => {
     const group = organizedSets.find((set) => set.baseDir === baseDir);
     return {
@@ -3404,6 +3409,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           workflowChange,
           workflowEditable,
           workflowReason,
+          prepareLayout: () => flushEditors(),
         }}
       />
       <WorkspaceChrome

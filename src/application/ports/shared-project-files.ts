@@ -5,7 +5,7 @@ export type ProjectFileEffects = {
   trashItem(absolute: string): Promise<void>;
 };
 export interface SharedProjectFiles {
-  ensure(): Promise<void>;
+  ensure(snapshot?: Snapshot): Promise<void>;
   capture(): Promise<Snapshot>;
   move(
     before: Snapshot,

@@ -1,4 +1,6 @@
 import fs from 'node:fs/promises';
+import { requireProjectLayoutSupport } from '../../adapters/http/project-layout-support.ts';
+import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import path from 'node:path';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import {
@@ -85,6 +87,8 @@ export class DesktopProjectModes {
   }
   private async createRemote(key: string, attempt: Creation) {
     const p = this.ports;
+    if (attempt.files[PROJECT_LAYOUT_PATH])
+      await requireProjectLayoutSupport(serverAddress(attempt.serverUrl));
     const result = (await CollaborationClient.fetch(
       attempt.serverUrl,
       '/projects-mode',

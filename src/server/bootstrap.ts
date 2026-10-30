@@ -320,6 +320,7 @@ export async function createCollaborationServer(options: Options) {
         matches: same,
       };
       const projectService = createProjectService({
+        locked: (id) => projectLocks(id).size > 0,
         projects: {
           count: () => projects.size,
           all: () => projects.values(),

@@ -64,6 +64,47 @@ const adapter = (read, write, extra = {}) => ({
   ...extra,
 });
 
+test('a pending draft and later edits follow the authoritative migration path without changing identity or text', async () => {
+  const storage = memory(),
+    queue = new DocumentSaveQueue(storage);
+  let online = false;
+  let aliases = {};
+  let current = doc();
+  const writes = [];
+  await queue.activate(
+    adapter(
+      async (relative) => (relative === current.relativePath ? current : null),
+      async (input) => {
+        writes.push(input);
+        current = { ...current, body: input.body, title: input.title };
+        return current;
+      },
+      {
+        canSend: () => online,
+        resolvePath: (relative) => aliases[relative] ?? relative,
+      },
+    ),
+  );
+  await queue.enqueue(request(1, 'offline draft'));
+  await tick();
+  aliases = { 'ideas/note.md': 'docs/Note.md' };
+  current = { ...current, relativePath: 'docs/Note.md' };
+  online = true;
+  queue.wake();
+  await queue.flush('one');
+  assert.equal(writes[0].relativePath, 'docs/Note.md');
+  assert.equal(writes[0].body, 'offline draft');
+  await queue.enqueue({
+    ...request(2, 'new edit'),
+    relativePath: 'docs/Note.md',
+    base: { title: 'Note', body: 'offline draft' },
+  });
+  await queue.flush('one');
+  assert.equal(current.body, 'new edit');
+  assert.equal((await queue.list('one'))[0].relativePath, 'docs/Note.md');
+  queue.dispose();
+});
+
 test('a late save completion keeps its starting session identity after the same scope is reopened', async () => {
   const entered = deferred(),
     finish = deferred(),

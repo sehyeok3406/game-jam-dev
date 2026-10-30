@@ -1,4 +1,7 @@
 import { ServerLimits } from './contracts/server-limits.ts';
+import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
+import { allocateDocumentPath } from './core/projects/document-path.ts';
 import { importProjectCopy } from './project-copy.ts';
 import { layoutValues } from './core/editing/layout.ts';
 import type { CommandEnvironment } from './core/editing/environment.ts';
@@ -91,6 +94,7 @@ export function collaborationPath(relative: unknown): string {
       ) ||
       isPreviewPath(relative) ||
       relative === 'output/README.md' ||
+      relative === PROJECT_LAYOUT_PATH ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
       relative === DOCUMENT_STATUSES_PATH ||
@@ -112,6 +116,7 @@ export function collaborationPath(relative: unknown): string {
             !(
               ([
                 RESULT_CATALOG_PATH,
+                PROJECT_LAYOUT_PATH,
                 CANVAS_SHEETS_PATH,
                 DOCUMENT_STATUSES_PATH,
                 KANBAN_VIEW_PATH,
@@ -130,6 +135,7 @@ export function collaborationPath(relative: unknown): string {
 export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
+  readProjectLayout(files as Snapshot);
   if ((files as Snapshot)[DOCUMENT_STATUSES_PATH])
     readStatuses((files as Snapshot)[DOCUMENT_STATUSES_PATH]);
   validateCanvasMembership(files as Snapshot);
@@ -527,7 +533,7 @@ export function reduceCollaboration(
   if (channel === 'files:import-batch') {
     const additions = layoutNewDocuments(
       files,
-      buildFileImports(input as ImportBatchInput, environment),
+      buildFileImports(input as ImportBatchInput, environment, files),
       {
         x: Number(input.x),
         y: Number(input.y),
@@ -614,7 +620,9 @@ export function reduceCollaboration(
   let result: unknown;
   if (channel === 'documents:create-idea') {
     const id = `idea-${environment.id().slice(0, 8)}`,
-      relative = `ideas/${id}.md`;
+      relative = readProjectLayout(files)
+        ? allocateDocumentPath('새 아이디어', Object.keys(next), id)
+        : `ideas/${id}.md`;
     const explicit = input.width !== undefined || input.height !== undefined;
     const bounds = explicit
       ? {
@@ -640,6 +648,7 @@ export function reduceCollaboration(
         id,
         canvas_id: canvasId(input.canvasId),
         title: '새 아이디어',
+        creation_origin: 'manual',
         type: 'idea',
         status: 'draft',
         ...layout,
@@ -716,8 +725,13 @@ export function reduceCollaboration(
       const member = record(item),
         parsed = read(member.path),
         suffix = environment.id().slice(0, 8);
-      const relative =
-        parsed.relative === 'project.md'
+      const relative = readProjectLayout(files)
+        ? allocateDocumentPath(
+            `${parsed.data.title ?? '문서'} 복사본`,
+            Object.keys(next),
+            suffix,
+          )
+        : parsed.relative === 'project.md'
           ? `docs/project-copy-${suffix}.md`
           : parsed.relative.replace(/\.md$/, `-copy-${suffix}.md`);
       write(
@@ -729,6 +743,7 @@ export function reduceCollaboration(
               ? assertCanvas(files, input.canvasId)
               : canvasId(parsed.data.canvas_id),
           id: `copy-${suffix}`,
+          creation_origin: 'duplicate',
           status_property_enabled:
             parsed.data.status_property_enabled !== false,
           title: `${parsed.data.title ?? '문서'} 복사본`,

@@ -1,6 +1,7 @@
 /** Wire v1 fields shared by health and authenticated state. */
 export function serverCapabilities() {
   return {
+    projectLayoutVersion: 2,
     projectCopyVersion: 1,
     projectModeVersion: 1,
     taskInstructionsEditable: true,

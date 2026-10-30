@@ -8,13 +8,14 @@ import { normalizeSectionMembers } from '../../core/editing/section-members.ts';
 import { projectPath } from '../../project-store.ts';
 import { filesystemProjectRepository } from './local-project-repository.ts';
 import { readDocument } from './documents.ts';
+import { logicalProjectPath } from '../../core/projects/project-layout.ts';
 
 /** Readers and section writes are bound to one private project root. */
 export function filesystemProjectReader(
   root: string,
   assertCurrent: () => void = () => {},
 ) {
-  const DOCUMENT_FOLDERS = ['ideas', 'docs', path.join('.ai', 'tasks')];
+  const DOCUMENT_FOLDERS = ['ideas', 'docs', '.ai/tasks', 'docs/html-sources'];
   const SECTION_FOLDER = 'sections';
   const parseDocument = (absolutePath: string) =>
     readDocument(root, absolutePath);
@@ -26,9 +27,9 @@ export function filesystemProjectReader(
     ]);
     const parsed = matter(raw);
     const data = parsed.data as Record<string, unknown>;
-    const relativePath = path
-      .relative(root, absolutePath)
-      .replaceAll('\\', '/');
+    const relativePath = logicalProjectPath(
+      path.relative(root, absolutePath).replaceAll('\\', '/'),
+    );
     const fallbackTitle = path.basename(absolutePath, '.md');
     const number = (key: string, fallback: number) =>
       typeof data[key] === 'number' ? data[key] : fallback;
@@ -66,11 +67,13 @@ export function filesystemProjectReader(
 
   const listDocuments = async () => {
     const folders = await Promise.all(
-      DOCUMENT_FOLDERS.map((folder) =>
-        findMarkdownFiles(path.join(root, folder)),
+      DOCUMENT_FOLDERS.map(async (folder) =>
+        findMarkdownFiles(await projectPath(root, folder)),
       ),
     );
-    const all = [path.join(root, 'project.md'), ...folders.flat()];
+    const all = [
+      ...new Set([await projectPath(root, 'project.md'), ...folders.flat()]),
+    ];
     const documents = await Promise.all(
       all.map(async (file) => {
         try {
@@ -90,7 +93,9 @@ export function filesystemProjectReader(
   };
 
   const listSections = async () => {
-    const files = await findMarkdownFiles(path.join(root, SECTION_FOLDER));
+    const files = await findMarkdownFiles(
+      await projectPath(root, SECTION_FOLDER),
+    );
     const sections = await Promise.all(
       files.map(async (file) => {
         try {

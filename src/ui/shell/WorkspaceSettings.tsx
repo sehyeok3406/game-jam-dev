@@ -1,7 +1,9 @@
 import { Bot, FolderOpen, Frame, Keyboard, RefreshCw, X } from 'lucide-react';
 import type { CodexConnectionStatus, PreviewResult } from '../../shared.ts';
 import { requireDesktopApi } from '../runtime/desktop-api.ts';
+import { ProjectLayoutControl } from './ProjectLayoutControl.tsx';
 interface Props {
+  prepareLayout?: () => Promise<void>;
   settingsOpen: boolean;
   setSettingsOpen: (value: import('react').SetStateAction<boolean>) => void;
   workflowEditable: boolean;
@@ -36,6 +38,7 @@ interface Props {
   setShortcutsOpen: (value: import('react').SetStateAction<boolean>) => void;
 }
 export function WorkspaceSettings({
+  prepareLayout,
   settingsOpen,
   setSettingsOpen,
   workflowEditable,
@@ -128,6 +131,12 @@ export function WorkspaceSettings({
           >
             <FolderOpen size={16} /> 프로젝트 폴더 열기
           </button>
+          <ProjectLayoutControl
+            api={api}
+            prepare={prepareLayout}
+            disabled={locked || editBusy || movingResults}
+            refresh={() => loadProject(false, true)}
+          />
           <button
             disabled={locked || editBusy || movingResults}
             onClick={() => {

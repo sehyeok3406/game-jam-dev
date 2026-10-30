@@ -5,6 +5,7 @@ import { WorkspaceCanvasTools } from '../canvas/WorkspaceCanvasTools';
 import { WorkspaceHeader } from '../shell/WorkspaceHeader';
 import { WorkspaceHistoryPanels } from '../history/WorkspaceHistoryPanels';
 import { WorkspaceSettings } from '../shell/WorkspaceSettings';
+import { ProjectLayoutControl } from './ProjectLayoutControl.tsx';
 import { WorkspaceAiPanels } from '../ai/WorkspaceAiPanels';
 import { WorkspaceInspector } from '../shell/WorkspaceInspector';
 import { WorkspaceCanvas } from '../canvas/WorkspaceCanvas';
@@ -138,6 +139,7 @@ type Props = Pick<
     | 'statusError'
     | 'workflowBusy'
     | 'workflowEditable'
+    | 'prepareLayout'
   > &
   Pick<
     ComponentProps<typeof WorkspaceAiPanels>,
@@ -365,6 +367,7 @@ export function WorkspaceDock({
   workflowBusy,
   workflowChange,
   workflowEditable,
+  prepareLayout,
   workflowReason,
 }: Props) {
   const { capabilities } = useRuntime();
@@ -1174,6 +1177,12 @@ export function WorkspaceDock({
               >
                 <FolderOpen size={16} /> 프로젝트 폴더 열기
               </button>
+              <ProjectLayoutControl
+                api={api}
+                prepare={prepareLayout}
+                disabled={locked || editBusy || movingResults}
+                refresh={() => loadProject(false, true)}
+              />
               <button
                 disabled={locked || editBusy || movingResults}
                 onClick={() => {

@@ -8,6 +8,7 @@ import { cardColor } from '../../card-colors.ts';
 import { isPreviewPath } from '../../preview-output.ts';
 import { normalizeSources } from '../../core/documents/source-references.ts';
 import { projectPath } from '../../project-store.ts';
+import { logicalProjectPath } from '../../core/projects/project-layout.ts';
 export const readDocument = async (
   root: string,
   absolutePath: string,
@@ -20,7 +21,9 @@ export const readDocument = async (
     fs.stat(absolutePath),
   ]);
   const parsed = matter(raw);
-  const relativePath = path.relative(root, absolutePath).replaceAll('\\', '/');
+  const relativePath = logicalProjectPath(
+    path.relative(root, absolutePath).replaceAll('\\', '/'),
+  );
   const fallbackTitle = path.basename(absolutePath, '.md');
   const data = parsed.data as Record<string, unknown>;
   const asset = imageAsset(data.asset);

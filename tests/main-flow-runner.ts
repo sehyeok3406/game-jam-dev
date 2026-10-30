@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { projectPath } from '../src/project-store.ts';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { createCollaborationServer } from '../src/collaboration-server';
@@ -115,9 +116,8 @@ try {
     await assert.rejects(call('projects:create', name), /프로젝트 이름/);
   const englishProject = await call('projects:create', 'PROJECTRC');
   assert.equal(englishProject.root, path.join(root, 'PROJECTRC'));
-  assert.ok(
-    await fs.readFile(path.join(englishProject.root, 'project.md'), 'utf8'),
-  );
+  assert.deepEqual(await call('documents:list'), []);
+  await assert.rejects(fs.access(path.join(englishProject.root, 'project.md')));
   await call('projects:home');
   console.log(
     'PASS: PROJECTRC creates a project with the production IPC handler',
@@ -128,6 +128,20 @@ try {
   const newProject = await call('projects:create', '홈 생성 검증');
   assert.equal(newProject.root, path.join(root, '홈 생성 검증'));
   const newProjectFile = path.join(newProject.root, 'project.md');
+  assert.deepEqual(await call('documents:list'), []);
+  await assert.rejects(fs.access(newProjectFile));
+  // Explicit legacy document fixture keeps rename/deletion compatibility coverage.
+  await fs.writeFile(
+    newProjectFile,
+    matter.stringify('# 사용자가 작성한 소개', {
+      id: 'project',
+      title: '홈 생성 검증',
+      project_name: '홈 생성 검증',
+      type: 'overview',
+      status: 'draft',
+      sources: [],
+    }),
+  );
   const originalProjectContent = await fs.readFile(newProjectFile, 'utf8');
   await assert.rejects(call('projects:create', '홈 생성 검증'), /이미/);
   assert.equal(
@@ -2156,7 +2170,7 @@ try {
   });
   const canvasOutput = matter(
     await fs.readFile(
-      path.join(canvasProject.root, canvasTask.relativePath),
+      await projectPath(canvasProject.root, canvasTask.relativePath),
       'utf8',
     ),
   ).data.expected_outputs[0];
@@ -2329,7 +2343,7 @@ try {
   assert.equal((await call('drawings:list'))[0].canvasId, 'default');
   await assert.rejects(
     fs.stat(
-      path.join(
+      await projectPath(
         (await call('workspace:get')).root,
         '.canvas/drawings/ipc-shop.json',
       ),
@@ -2426,7 +2440,7 @@ try {
   const health = newGameUiItem('health', () => crypto.randomUUID());
   await call('game-ui:apply', frameCommand('add', { items: [health] }));
   await call('game-ui:apply', frameCommand('describe'));
-  const descriptionPath = `docs/ui/${frame.id}.md`,
+  const descriptionPath = (await call('game-ui:list'))[0].descriptionPath,
     doc = await call('documents:get', descriptionPath);
   await call('documents:save', {
     relativePath: descriptionPath,
@@ -2465,7 +2479,7 @@ try {
   assert.equal((await call('game-ui:list'))[0].x, 900);
   assert.ok(
     await fs.stat(
-      path.join(
+      await projectPath(
         (await call('workspace:get')).root,
         `.canvas/game-ui/${frame.id}.json`,
       ),

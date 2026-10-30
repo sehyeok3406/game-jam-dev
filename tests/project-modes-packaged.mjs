@@ -1,4 +1,8 @@
 import { CollaborationClient } from '../src/collaboration-client.ts';
+import {
+  physicalProjectPath,
+  readProjectLayout,
+} from '../src/core/projects/project-layout.ts';
 import { randomBytes } from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -296,7 +300,12 @@ try {
   );
   assert.equal((await call('getWorkspace')).root, createdRoot);
   for (const relative of latestPaths)
-    await fs.access(path.join(createdRoot, relative));
+    await fs.access(
+      path.join(
+        createdRoot,
+        physicalProjectPath(relative, !!readProjectLayout(peer.files)),
+      ),
+    );
   await peer.refresh();
   assert.equal(peer.state.role, 'admin');
   assert.equal(peer.state.members.length, 1);

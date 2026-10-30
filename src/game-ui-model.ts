@@ -1,4 +1,6 @@
 import matter from './game-ui-markdown.ts';
+import { allocateDocumentPath } from './core/projects/document-path.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
 import {
   GAME_UI_DIRECTORY,
   GAME_UI_KINDS,
@@ -63,7 +65,9 @@ export function readGameUi(raw: string, path?: string): GameUiFrame {
     !Array.isArray(f.items) ||
     f.items.length > 500 ||
     !(
-      f.descriptionPath === null || f.descriptionPath === `docs/ui/${f.id}.md`
+      f.descriptionPath === null ||
+      f.descriptionPath === `docs/ui/${f.id}.md` ||
+      /^docs\/[^/\\]+\.md$/.test(f.descriptionPath)
     ) ||
     raw.length > 2_000_000
   )
@@ -443,7 +447,9 @@ export function applyGameUi(files: Files, c: GameUiCommand): Files {
     const ids = new Set(c.targets.map((t) => t.id));
     f.items = f.items.filter((i) => !ids.has(i.id));
   } else if (c.action === 'describe') {
-    f.descriptionPath = `docs/ui/${f.id}.md`;
+    f.descriptionPath ??= readProjectLayout(files)
+      ? allocateDocumentPath(`${f.title} UI 설명`, Object.keys(next), f.id)
+      : `docs/ui/${f.id}.md`;
     if (!next[f.descriptionPath]) {
       next[f.descriptionPath] = matter.stringify(
         `# ${f.title} — UI 설명\n\n## UI 목록\n\n| UI 이름 | 기능 설명 |\n| --- | --- |\n\n`,

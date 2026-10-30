@@ -1,4 +1,5 @@
 import type { Snapshot } from '../../contracts/project.ts';
+import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import type { HistoryEntry } from '../../contracts/history.ts';
 import type { AiProviderId } from '../../contracts/ai.ts';
 import type { AiFileLock } from '../../contracts/ai.ts';
@@ -153,10 +154,36 @@ export class AiRunService {
         'GC-SYNC-001',
         `작업 중 외부 변경을 발견했습니다. 결과를 보류합니다: ${external}`,
       );
-    const artifacts = Object.fromEntries(
-      outputs.map((relative) => [relative, staged[relative]]),
-    );
     const taskData = matter(this.baseline[this.taskPath]).data;
+    const artifacts = Object.fromEntries(
+      outputs.map((relative) => {
+        if (!relative.startsWith('docs/') || !relative.endsWith('.md'))
+          return [relative, staged[relative]];
+        const parsed = matter(staged[relative]);
+        const grouping =
+          readProjectLayout(current) &&
+          taskData.document_output_mode !== undefined &&
+          !parsed.data.document_bundle_id &&
+          !parsed.data.document_bundle
+            ? {
+                document_bundle_id: `format-${taskData.id}`,
+                document_output: {
+                  key: `d${outputs.indexOf(relative) + 1}`,
+                  instructions: '',
+                },
+              }
+            : {};
+        return [
+          relative,
+          matter.stringify(parsed.content, {
+            ...parsed.data,
+            ...grouping,
+            creation_origin: 'ai',
+            ai_task_path: this.taskPath,
+          }),
+        ];
+      }),
+    );
     let changes = input.shared
       ? artifacts
       : layoutNewDocuments(current, artifacts, {

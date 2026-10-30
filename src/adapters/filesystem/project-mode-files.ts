@@ -1,4 +1,9 @@
 import fs from 'node:fs/promises';
+import {
+  installProjectLayout,
+  recoverProjectLayout,
+} from './layout-migration.ts';
+import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ModeSnapshot } from '../../contracts/project-mode.ts';
@@ -105,6 +110,7 @@ export class ProjectModeFiles {
   }
   async finish(attempt: LocalAttempt) {
     await fs.mkdir(attempt.target, { recursive: true });
+    await recoverProjectLayout(attempt.target);
     await recoverInterruptedHistory(attempt.target);
     const current = await captureProject(attempt.target);
     if (snapshotFingerprint(current) !== snapshotFingerprint(attempt.files)) {
@@ -126,7 +132,9 @@ export class ProjectModeFiles {
         createdAt: Date.now(),
         finishedAt: Date.now(),
       });
-      await applyChanges(attempt.target, current, changes);
+      if (attempt.files[PROJECT_LAYOUT_PATH] && !current[PROJECT_LAYOUT_PATH])
+        await installProjectLayout(attempt.target, attempt.files);
+      else await applyChanges(attempt.target, current, changes);
     }
     await saveProjectName(attempt.target, attempt.name);
     const authorship = await projectPath(

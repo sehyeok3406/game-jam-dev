@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { projectPath } from './project-store.ts';
 import { randomUUID } from 'node:crypto';
 import { ProjectLibrary, type SavedProject } from './project-library.ts';
 import type { ProjectTrashEntry } from './shared.ts';
@@ -182,7 +183,7 @@ export class ProjectTrash {
     if (entry.kind === 'local' && identity) {
       const marker =
         (await fs
-          .stat(path.join(root, '.canvas/project.json'))
+          .stat(await projectPath(root, '.canvas/project.json'))
           .catch(() => null)) ??
         (await fs.stat(path.join(root, 'project.md')).catch(() => null));
       if (!marker) throw Error('프로젝트 폴더인지 확인할 수 없습니다.');

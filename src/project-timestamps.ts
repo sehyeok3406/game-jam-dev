@@ -2,13 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isPreviewPath } from './preview-output.ts';
 import { isAssetPath } from './file-assets.ts';
+import { projectPath } from './project-store.ts';
 
 /** Read metadata only, never game contents or history backups. Do not follow links. */
 export async function localProjectTimestamps(root: string) {
   const realRoot = await fs.realpath(root);
   let modifiedAt = 0;
   const walk = async (relative: string) => {
-    const absolute = path.join(realRoot, relative);
+    const absolute = await projectPath(realRoot, relative);
     let stat;
     try {
       stat = await fs.lstat(absolute);
@@ -40,6 +41,8 @@ export async function localProjectTimestamps(root: string) {
     'output',
     'assets/images',
     '.canvas',
+    '.canvas/layout.json',
+    '.canvas/project.json',
   ]) {
     const segments = relative.split('/');
     let linkedParent = false;

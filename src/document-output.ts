@@ -3,6 +3,11 @@ export type { DocumentResultChoice } from './contracts/document-output.ts';
 import { CanvasError } from './app-errors.ts';
 import { resultFileStem } from './result-name.ts';
 import { documentTemplates } from './document-format.ts';
+import type { CanvasDocument } from './contracts/documents.ts';
+import type { Snapshot } from './contracts/project.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
+import { allocateDocumentPath } from './core/projects/document-path.ts';
+import matter from './markdown.ts';
 export const DOCUMENT_NAMES = [
   'game-overview.md',
   'core-loop.md',
@@ -24,7 +29,22 @@ export function documentVersion(baseDir: string) {
     );
   return Number(match[1]);
 }
-export function documentSets(paths: string[]) {
+type OutputRecord = Pick<
+  CanvasDocument,
+  'relativePath' | 'documentBundleId' | 'outputKey' | 'title' | 'type'
+>;
+export function documentSets(paths: string[], records: OutputRecord[] = []) {
+  const bundles = new Map<string, OutputRecord[]>();
+  for (const record of records)
+    if (record.documentBundleId) {
+      const group = bundles.get(record.documentBundleId) ?? [];
+      group.push(record);
+      bundles.set(record.documentBundleId, group);
+    }
+  const groupedPaths = new Set(
+    [...bundles.values()].flat().map((d) => d.relativePath),
+  );
+  paths = paths.filter((p) => !groupedPaths.has(p));
   const groups = new Set(
     paths
       .filter((path) =>
@@ -40,7 +60,7 @@ export function documentSets(paths: string[]) {
             Number.isSafeInteger(Number(dir.split('/').at(-1)!.slice(1)))),
       ),
   );
-  return [...groups]
+  const legacy = [...groups]
     .sort((a, b) => documentVersion(a) - documentVersion(b))
     .map((baseDir) => {
       const example = paths.find(
@@ -103,11 +123,45 @@ export function documentSets(paths: string[]) {
               ),
       };
     });
+  return [
+    ...legacy,
+    ...[...bundles].map(([id, docs]) => ({
+      baseDir: `bundle:${id}`,
+      version: 1,
+      label: docs.find((d) => d.outputKey === 'd1')?.title ?? docs[0].title,
+      structure: docs.some((d) => d.outputKey)
+        ? ('custom' as const)
+        : ('systems' as const),
+      paths: docs
+        .sort((a, b) =>
+          a.outputKey && b.outputKey
+            ? Number(a.outputKey.slice(1)) - Number(b.outputKey.slice(1))
+            : Number(b.type === 'overview') - Number(a.type === 'overview') ||
+              a.relativePath.localeCompare(b.relativePath),
+        )
+        .map((d) => d.relativePath),
+    })),
+  ];
+}
+export function documentOutputRecords(files: Snapshot): OutputRecord[] {
+  return Object.entries(files)
+    .filter(([p]) => p.startsWith('docs/') && p.endsWith('.md'))
+    .map(([relativePath, raw]) => {
+      const data = matter(raw).data;
+      return {
+        relativePath,
+        title: String(data.title ?? relativePath),
+        type: data.type,
+        outputKey: data.document_output?.key,
+        documentBundleId: data.document_bundle_id ?? data.document_bundle?.id,
+      };
+    });
 }
 export function resolveDocumentOutputs(
   reservedPaths: string[],
   choice: DocumentResultChoice = { mode: 'update' },
   name?: string,
+  context?: { files: Snapshot; id: string },
 ) {
   const stem = resultFileStem(name);
   if (
@@ -117,11 +171,90 @@ export function resolveDocumentOutputs(
     throw new CanvasError('GC-AI-004', '문서 결과 구성을 확인해주세요.');
   if (!['new', 'update'].includes(choice.mode))
     throw new CanvasError('GC-AI-004', '문서 결과 방식을 확인해주세요.');
-  if (choice.baseDir !== undefined) documentVersion(choice.baseDir);
+  if (choice.baseDir !== undefined && !choice.baseDir.startsWith('bundle:'))
+    documentVersion(choice.baseDir);
   const templates =
     choice.structure === 'custom'
       ? documentTemplates(choice.documents)
       : undefined;
+  if (
+    context &&
+    (readProjectLayout(context.files) || choice.baseDir?.startsWith('bundle:'))
+  ) {
+    const sets = documentSets(
+      reservedPaths,
+      documentOutputRecords(context.files),
+    );
+    const existing =
+      choice.mode === 'update'
+        ? sets.find(
+            (set) => set.baseDir === (choice.baseDir ?? sets.at(-1)?.baseDir),
+          )
+        : undefined;
+    if (choice.mode === 'update' && choice.baseDir && !existing)
+      throw new CanvasError(
+        'GC-AI-004',
+        '갱신할 문서 묶음을 찾을 수 없습니다.',
+      );
+    if (existing) {
+      if (templates && existing.structure !== 'custom')
+        throw new CanvasError(
+          'GC-AI-004',
+          '다른 출력 구성은 새 문서 묶음으로 만들어주세요.',
+        );
+      if (!templates) return existing.paths;
+      const byKey = new Map(
+        existing.paths.map((path) => [
+          matter(context.files[path]).data.document_output?.key,
+          path,
+        ]),
+      );
+      if (
+        existing.paths.some(
+          (path) =>
+            !templates.some(
+              (t) =>
+                t.key === matter(context.files[path]).data.document_output?.key,
+            ),
+        )
+      )
+        throw new CanvasError('GC-AI-004', '기존 묶음의 문서는 유지해주세요.');
+      const used = [...reservedPaths];
+      return templates.map((doc) => {
+        const path =
+          byKey.get(doc.key) ??
+          allocateDocumentPath(
+            `${stem ? stem + '-' : ''}${doc.title}`,
+            used,
+            `${context.id}-${doc.key}`,
+          );
+        used.push(path);
+        return path;
+      });
+    }
+    if (templates) {
+      const used = [...reservedPaths];
+      return templates.map((doc) => {
+        const path = allocateDocumentPath(
+          `${stem ? stem + '-' : ''}${doc.title}`,
+          used,
+          `${context.id}-${doc.key}`,
+        );
+        used.push(path);
+        return path;
+      });
+    }
+    let prefix = stem || '문서';
+    let version = 1;
+    while (
+      documentOutputs('docs', prefix).some((p) => reservedPaths.includes(p))
+    )
+      prefix = `${stem || '문서'}-v${++version}`;
+    return documentOutputs('docs', prefix).slice(
+      0,
+      choice.structure === 'systems' ? 1 : 3,
+    );
+  }
   const customOutputs = (base: string, fileStem: string) =>
     templates!.map(
       (doc) =>

@@ -1,5 +1,6 @@
 import { assertWorkflowReferences } from './document-statuses-storage.ts';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses.ts';
+import { remapLayoutSnapshot } from './adapters/markdown/layout-snapshot.ts';
 import { mergeProperties } from './sync-properties.ts';
 import type { Snapshot } from './project-store.ts';
 import { assertRemovedImagesUnreferenced } from './asset-reference-safety.ts';
@@ -52,6 +53,8 @@ export function invertEdit(
 ): Snapshot {
   if (direction !== 'undo' && direction !== 'redo')
     throw new Error('올바르지 않은 편집 방향입니다.');
+  before = remapLayoutSnapshot(current, before);
+  after = remapLayoutSnapshot(current, after);
   const expected = direction === 'undo' ? after : before;
   const desired = direction === 'undo' ? before : after;
   const touched = Object.keys({ ...before, ...after }).filter(

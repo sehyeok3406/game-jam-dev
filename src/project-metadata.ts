@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from './markdown.ts';
-import { initialProjectSnapshot } from './core/projects/initial-project.ts';
 import { projectPath } from './project-store.ts';
 
 const metadataPath = '.canvas/project.json';
@@ -42,16 +41,5 @@ export async function initializeProjectDocument(root: string) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   const name = await localProjectName(root);
-  const projectFile = await projectPath(root, 'project.md');
-  try {
-    await fs.access(projectFile);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    await fs.writeFile(
-      projectFile,
-      initialProjectSnapshot(name)['project.md'],
-      'utf8',
-    );
-  }
   await saveProjectName(root, name);
 }

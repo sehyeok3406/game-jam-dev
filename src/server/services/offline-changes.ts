@@ -1,6 +1,7 @@
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import { CANVAS_SHEETS_PATH } from '../../canvas-sheets.ts';
+import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import { collaborationPath, checkSnapshot } from '../../collaboration-model.ts';
 import { workflowOnlyChange } from '../../sync-properties.ts';
 import { ApiError } from './errors.ts';
@@ -23,7 +24,19 @@ export function planOfflineChanges(
   for (const [key, value] of changes) {
     const relative = collaborationPath(key);
     if (
+      files[PROJECT_LAYOUT_PATH] &&
+      !files[relative] &&
+      (relative === 'project.md' ||
+        relative.startsWith('ideas/') ||
+        (relative.startsWith('docs/') && !/^docs\/[^/]+\.md$/.test(relative)))
+    )
+      throw new ApiError(
+        '문서 경로가 이전되었습니다. 최신 앱에서 미전송 변경을 다시 확인해주세요.',
+        409,
+      );
+    if (
       relative === CANVAS_SHEETS_PATH ||
+      relative === PROJECT_LAYOUT_PATH ||
       relative.startsWith('.ai/tasks/') ||
       relative.startsWith('output/') ||
       (relative.startsWith('docs/html-sources/') &&

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isPreviewPath } from '../preview-output.ts';
 import { collaborationPath } from '../collaboration-model.ts';
 import { localFileAuthorship } from '../project-store.ts';
+import { projectPath } from '../project-store.ts';
 
 type Shell = {
   reveal(absolute: string): void;
@@ -20,10 +21,14 @@ export class DesktopProjectPaths {
   }
   private async resolve(relativePath: string) {
     this.assertCurrent();
-    const absolute = path.resolve(this.root, relativePath);
-    const relative = path.relative(this.root, absolute);
+    const requested = path.resolve(this.root, relativePath);
+    const relative = path.relative(this.root, requested);
     if (relative.startsWith('..') || path.isAbsolute(relative))
       throw Error('프로젝트 폴더 밖에는 접근할 수 없습니다.');
+    const absolute = await projectPath(
+      this.root,
+      relative.replaceAll('\\', '/') || '.',
+    );
     const realRoot = await fs.realpath(this.root),
       realTarget = await fs.realpath(absolute);
     this.assertCurrent();

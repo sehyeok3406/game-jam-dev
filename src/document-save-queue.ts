@@ -24,6 +24,7 @@ export type DocumentSaveStorage = {
   flush: (scope?: string, key?: string) => Promise<void>;
 };
 export type DocumentSaveAdapter = {
+  resolvePath?: (relativePath: string) => string | Promise<string>;
   session?: import('./contracts/project-session.ts').ProjectSessionRef;
   scope: string;
   isCurrent: () => boolean;
@@ -129,8 +130,18 @@ export class DocumentSaveQueue {
     await this.ready;
     if (!this.adapter?.isCurrent() || this.adapter.scope !== request.scope)
       throw new Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+    const adapter = this.adapter;
+    if (adapter.resolvePath) {
+      request = {
+        ...request,
+        relativePath: await adapter.resolvePath(request.relativePath),
+      };
+      if (!adapter.isCurrent() || this.adapter !== adapter)
+        throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+    }
     const key = identity(request.scope, request.key);
     let entry = this.entries.get(key);
+    if (entry) await this.relocate(entry, adapter);
     if (
       entry &&
       (entry.request.documentId !== request.documentId ||
@@ -179,6 +190,24 @@ export class DocumentSaveQueue {
     this.kick(key);
     return this.state(entry);
   }
+  private async relocate(
+    entry: DocumentSaveRecord,
+    adapter: DocumentSaveAdapter,
+  ) {
+    if (!adapter.resolvePath) return;
+    const relative = await adapter.resolvePath(entry.request.relativePath);
+    if (!adapter.isCurrent() || this.adapter !== adapter)
+      throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+    if (relative !== entry.request.relativePath) {
+      entry.request = { ...entry.request, relativePath: relative };
+      const key = identity(entry.request.scope, entry.request.key);
+      const document = this.documents.get(key);
+      if (document)
+        this.documents.set(key, { ...document, relativePath: relative });
+      await this.storage.put(structuredClone(entry));
+      this.emit(entry, undefined, adapter.session);
+    }
+  }
   wake() {
     if (this.disposed) return;
     void this.ready
@@ -224,6 +253,7 @@ export class DocumentSaveQueue {
             return;
           }
           try {
+            await this.relocate(entry, adapter);
             await this.storage.flush(entry.request.scope, entry.request.key);
             const current = await adapter.read(entry.request.relativePath);
             if (!adapter.isCurrent() || this.adapter !== adapter) return;

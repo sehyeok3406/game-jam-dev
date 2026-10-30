@@ -886,24 +886,31 @@ export function ProjectHome({
                         },
                       ]
                     : []),
-                  menu.project.kind === 'local'
-                    ? {
-                        label: '저장 위치 보기',
-                        action: () =>
-                          void action(() =>
-                            requireDesktopApi(api).revealProject(
-                              menu.project!.id,
-                            ),
-                          ),
-                      }
-                    : {
-                        label: '서버 주소 변경',
-                        action: () => {
-                          setError('');
-                          setServer(menu.project!);
-                          setAddress(menu.project!.serverUrl ?? '');
+                  {
+                    label: '탐색기에서 표시',
+                    action: () =>
+                      void action(async () => {
+                        const result = await requireDesktopApi(
+                          api,
+                        ).revealProject(menu.project!.id);
+                        if (result?.offline)
+                          setError(
+                            '서버의 최신 상태를 확인하지 못해 이 PC에 보관된 사본을 열었습니다.',
+                          );
+                      }),
+                  },
+                  ...(menu.project.kind === 'shared'
+                    ? [
+                        {
+                          label: '서버 주소 변경',
+                          action: () => {
+                            setError('');
+                            setServer(menu.project!);
+                            setAddress(menu.project!.serverUrl ?? '');
+                          },
                         },
-                      },
+                      ]
+                    : []),
                 ]
               : [
                   {

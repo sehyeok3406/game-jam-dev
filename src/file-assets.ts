@@ -1,4 +1,6 @@
 import type { CommandEnvironment } from './core/editing/environment.ts';
+import { allocateDocumentPath } from './core/projects/document-path.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
 import { randomUUID } from 'node:crypto';
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
@@ -120,6 +122,7 @@ export function imageAsset(value: unknown): ImageAsset | undefined {
 export function buildFileImports(
   input: ImportBatchInput,
   environment: CommandEnvironment = { now: Date.now, id: randomUUID },
+  existing: Snapshot = {},
 ): Snapshot {
   if (
     !input ||
@@ -154,7 +157,7 @@ export function buildFileImports(
       );
     const ext = file.name.split('.').at(-1)!.toLowerCase();
     const id = `import-${environment.id()}`;
-    const relative = `docs/imported/${id}.md`;
+    let relative = `docs/imported/${id}.md`;
     const title = file.name.replace(/\.[^.]+$/, '');
     const data: Record<string, unknown> = {
       id,
@@ -222,12 +225,19 @@ export function buildFileImports(
         mime: IMAGE_MIMES[ext],
         bytes: bytes.length,
       };
-      body = `![불러온 이미지](../../${assetPath})\n\n## 이미지 용도\n\n${input.imagePurpose === 'asset' ? '게임 에셋' : '게임 구조·시스템 설명 도식'}\n\n## 설명\n\n이 이미지의 역할이나 사용 방법을 작성하세요.\n\n원본 이미지: \`${assetPath}\`\n`;
+      body = `![불러온 이미지](${readProjectLayout(existing) ? '../' : '../../'}${assetPath})\n\n## 이미지 용도\n\n${input.imagePurpose === 'asset' ? '게임 에셋' : '게임 구조·시스템 설명 도식'}\n\n## 설명\n\n이 이미지의 역할이나 사용 방법을 작성하세요.\n\n원본 이미지: \`${assetPath}\`\n`;
     } else
       throw new CanvasError(
         'GC-IMPORT-001',
         `${file.name}: MD, HTML, HTM, PNG, JPG, WebP, GIF 파일만 지원합니다.`,
       );
+    if (readProjectLayout(existing))
+      relative = allocateDocumentPath(
+        String(data.title),
+        [...Object.keys(existing), ...Object.keys(additions)],
+        id,
+      );
+    data.creation_origin = ext in IMAGE_MIMES ? 'image-import' : 'file-import';
     additions[relative] = matter.stringify(body, data);
     total += Buffer.byteLength(file.content);
   });

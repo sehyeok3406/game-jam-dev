@@ -6,6 +6,8 @@ import type { FileAuthorshipMap } from './documents.ts';
 import type { DrawingDelta } from './drawing-types.ts';
 export type CollaborationRole = 'admin' | 'editor' | 'viewer';
 export type CollaborationState = {
+  projectLayoutVersion?: number;
+  fileLayoutVersion?: number;
   projectModeVersion?: number;
   handover?: import('./project-mode.ts').ProjectHandover;
   projectCopyVersion?: number;
@@ -98,6 +100,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationCommand = {
+  projectLayoutVersion?: number;
   drawingTextVersion?: number;
   drawingTextAlignmentVersion?: number;
   drawingEraseVersion?: number;

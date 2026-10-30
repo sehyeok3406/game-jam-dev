@@ -26,6 +26,11 @@ type Ports = {
     execute: (p: Project, m: Member, input: CollaborationCommand) => unknown;
   };
   projectService: {
+    upgradeLayout?: (
+      p: Project,
+      m: Member,
+      input: Record<string, unknown>,
+    ) => unknown;
     rename: (p: Project, m: Member, input: Record<string, unknown>) => unknown;
   };
   ai: {
@@ -79,6 +84,8 @@ export function createProjectActions(ports: Ports) {
     if (action === 'invite') return ports.members.rotateInvite(project, member);
     if (action === 'rename')
       return ports.projectService.rename(project, member, input);
+    if (action === 'layout-upgrade')
+      return ports.projectService.upgradeLayout?.(project, member, input);
     if (action === 'role') return ports.members.setRole(project, member, input);
     if (
       ['history', 'history-read', 'history-change', 'restore'].includes(action)

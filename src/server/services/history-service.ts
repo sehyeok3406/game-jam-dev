@@ -1,4 +1,5 @@
 import { ServerLimits } from '../../contracts/server-limits.ts';
+import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import type { Project, Member } from '../project-state.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import type { CollaborationEnvelope } from '../../contracts/collaboration.ts';
@@ -60,10 +61,13 @@ export function createHistoryService(ports: Ports) {
         record.entry.actorId !== member.id
       )
         throw new ApiError('본인의 편집 작업만 되돌릴 수 있습니다.', 403);
+      const aliases = readProjectLayout(project.files)?.aliases ?? {};
       for (const file of record.entry.files) {
         if (file.relativePath.startsWith('.ai/tasks/')) ports.admin(member);
         if (
-          ports.locks(project.id).has(file.relativePath) &&
+          ports
+            .locks(project.id)
+            .has(aliases[file.relativePath] ?? file.relativePath) &&
           changedGroups(
             file.relativePath,
             record.before[file.relativePath],

@@ -1,4 +1,8 @@
 import { collaborationTransport } from './adapters/http/collaboration-transport.ts';
+import { remapPendingLayout } from './adapters/markdown/layout-snapshot.ts';
+import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
+import { requireProjectLayoutSupport } from './adapters/http/project-layout-support.ts';
+import { supportsSharedAiProvider } from './core/ai/catalog.ts';
 import {
   objectId,
   workflowOnlyChange,
@@ -151,6 +155,8 @@ export class CollaborationClient {
     name: string,
     files: Snapshot,
   ) {
+    if (files[PROJECT_LAYOUT_PATH])
+      await requireProjectLayoutSupport(serverAddress(serverUrl));
     const result = (await this.fetch(
       serverAddress(serverUrl),
       '/projects',
@@ -204,7 +210,13 @@ export class CollaborationClient {
     token = '',
     key = '',
   ): Promise<unknown> {
-    return this.transport(serverUrl, endpoint, input, token, key);
+    return this.transport(
+      serverUrl,
+      endpoint,
+      { projectLayoutVersion: 2, ...(input as object) },
+      token,
+      key,
+    );
   }
   static async recover(
     serverUrl: string,
@@ -332,6 +344,13 @@ export class CollaborationClient {
       return;
     }
     const draft = this.offline;
+    if (result.files[PROJECT_LAYOUT_PATH] && !draft.base[PROJECT_LAYOUT_PATH]) {
+      const mapped = remapPendingLayout(result.files, draft.base, draft.local);
+      draft.base = mapped.base;
+      draft.local = mapped.local;
+      draft.transaction = undefined;
+      await this.persist();
+    }
     // The same persisted ID is retried before planning a new merge. This handles a lost acknowledgement.
     if (draft.transaction) {
       try {
@@ -522,6 +541,30 @@ export class CollaborationClient {
           return;
         }
         if (this.state.awaitingResume) return;
+        if (
+          this.outgoing?.local &&
+          result.files?.[PROJECT_LAYOUT_PATH] &&
+          !this.outgoing.base[PROJECT_LAYOUT_PATH]
+        ) {
+          const attempted = this.outgoing;
+          const pending = remapPendingLayout(
+            result.files,
+            attempted.base,
+            attempted.local!,
+          );
+          this.offline = this.offline
+            ? {
+                ...remapPendingLayout(
+                  result.files,
+                  this.offline.base,
+                  this.offline.local,
+                ),
+              }
+            : pending;
+          this.files = this.offline.local;
+          this.outgoing = null;
+          await this.persist();
+        }
         if (this.outgoing) {
           const serverState = result;
           const attempted = this.outgoing;
@@ -1426,10 +1469,10 @@ export class CollaborationClient {
           'GC-AI-004',
           '시스템별 문서 생성을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
         );
-      if (providerId !== 'codex-cli' && !this.state.multiProviderAi)
+      if (!supportsSharedAiProvider(this.state, providerId))
         throw new CanvasError(
           'GC-AI-010',
-          'AI 실행에는 협업 서버 v0.8.0 이상이 필요합니다.',
+          '선택한 AI 제공자를 지원하지 않는 협업 서버입니다. 서버를 업데이트해주세요.',
         );
       if (reasoningEffort && this.state.aiReasoningVersion !== 1)
         throw new Error('추론 수준을 지정하려면 협업 서버를 업데이트해주세요.');
@@ -1460,6 +1503,11 @@ export class CollaborationClient {
   }
   async enqueueAi(input: import('./shared').StartCodexRunInput) {
     return this.serial(async () => {
+      if (!supportsSharedAiProvider(this.state, input.providerId))
+        throw new CanvasError(
+          'GC-AI-010',
+          '선택한 AI 제공자를 지원하지 않는 협업 서버입니다. 서버를 업데이트해주세요.',
+        );
       if (this.state.aiQueueVersion !== 1)
         throw new Error('예약 실행을 사용하려면 협업 서버를 업데이트해주세요.');
       if (input.reasoningEffort && this.state.aiReasoningVersion !== 1)

@@ -229,7 +229,13 @@ export type GameCanvasApi = {
   createProjectFolder: (name: string) => Promise<void>;
   renameProjectFolder: (id: string, name: string) => Promise<void>;
   removeProjectFolder: (id: string) => Promise<void>;
-  revealProject: (id: string) => Promise<void>;
+  revealProject: (id: string) => Promise<void | { offline: boolean }>;
+  getProjectLayout: () => Promise<
+    import('./project-layout.ts').ProjectLayoutStatus
+  >;
+  upgradeProjectLayout: (
+    session: import('./project-session.ts').ProjectSessionRef,
+  ) => Promise<import('./project-layout.ts').ProjectLayoutStatus>;
   openProject: (id: string) => Promise<WorkspaceState>;
   chooseProjectParent: () => Promise<string | null>;
   createProject: (
@@ -453,6 +459,8 @@ export const APP_API_GROUPS = {
   renameProjectFolder: 'projects',
   removeProjectFolder: 'projects',
   revealProject: 'desktop',
+  getProjectLayout: 'desktop',
+  upgradeProjectLayout: 'desktop',
   openProject: 'projects',
   chooseProjectParent: 'projects',
   createProject: 'projects',

@@ -153,11 +153,15 @@ export function createTaskPlan(
   if (
     documents &&
     docChoice?.baseDir &&
+    !docChoice.baseDir.startsWith('bundle:') &&
     !Object.keys(files).some((path) => path.startsWith(`${docChoice.baseDir}/`))
   )
     throw new CanvasError('GC-AI-004', '갱신할 기존 문서를 찾을 수 없습니다.');
   let docOutputs = documents
-    ? resolveDocumentOutputs(reserved, docChoice, input.resultName)
+    ? resolveDocumentOutputs(reserved, docChoice, input.resultName, {
+        files,
+        id,
+      })
     : [];
   const previousBundle =
     documents && files[docOutputs[0]]

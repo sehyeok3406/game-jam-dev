@@ -5,6 +5,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { physicalProjectPath } from '../src/core/projects/project-layout.ts';
 const root = await fs.mkdtemp(
   path.join(os.tmpdir(), 'gamejam-mirror-packaged-'),
 );
@@ -179,7 +180,12 @@ try {
   assert.ok(
     path.resolve(workspace.root).startsWith(path.resolve(profile) + path.sep),
   );
-  const mirrored = (relative) => path.join(workspace.root, relative);
+  const layout = await call('getProjectLayout');
+  assert.equal(layout.version, 1);
+  await call('upgradeProjectLayout', layout.session);
+  assert.equal((await call('getProjectLayout')).version, 2);
+  const mirrored = (relative) =>
+    path.join(workspace.root, physicalProjectPath(relative, true));
   await move(original, 'systems', 'first');
   assert.equal(await fs.readFile(mirrored(first), 'utf8'), html);
   assert.equal(
@@ -244,35 +250,38 @@ try {
     'preserved shared asset',
   );
   await call('goHome');
-  await call('openProject', localId);
-  const document = await call('getDocument', 'project.md');
+  // The original card remains shared after conversion. Use an independent local project for the session switch.
+  const localWorkspace = await call('createProject', {
+    mode: 'local',
+    parent: root,
+    name: 'separate-local',
+  });
+  const document = await call('createIdea', { x: 80, y: 80 });
+  const localPath = document.relativePath;
   await call('saveDocument', {
-    relativePath: 'project.md',
+    relativePath: localPath,
     title: '로컬 변경',
     body: '새 세션의 내용',
     revision: document.revision,
     documentId: document.id,
   });
-  assert.match(
-    (await call('getDocument', 'project.md')).body,
-    /새 세션의 내용/,
-  );
+  assert.match((await call('getDocument', localPath)).body, /새 세션의 내용/);
   assert.equal(await fs.readFile(mirrored(restored), 'utf8'), html);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await js(
     'window.__mirrorWatchCount = 0; window.__stopMirrorWatch = window.gameCanvas.onWorkspaceChanged(() => window.__mirrorWatchCount++)',
   );
   const localDocument = await fs.readFile(
-    path.join(game, 'project.md'),
+    path.join(localWorkspace.root, localPath),
     'utf8',
   );
   await fs.writeFile(
-    path.join(game, 'project.md'),
+    path.join(localWorkspace.root, localPath),
     localDocument.replace('새 세션의 내용', '외부 파일 변경 감시 확인'),
   );
   await wait('window.__mirrorWatchCount > 0');
   assert.match(
-    (await call('getDocument', 'project.md')).body,
+    (await call('getDocument', localPath)).body,
     /외부 파일 변경 감시 확인/,
   );
   await js('window.__stopMirrorWatch()');

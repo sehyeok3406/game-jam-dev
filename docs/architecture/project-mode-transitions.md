@@ -1,5 +1,7 @@
 # 프로젝트 생성과 모드 전환 · v0.37.0
 
+2026-10-30 이후 새 직접 생성은 [파일 구조 v2](decisions/0003-project-file-layout.md)와 빈 캔버스를 사용한다. 이름은 독립 metadata에 둔다. 기존 프로젝트는 앱 업데이트나 모드 조회로 자동 이전하지 않는다. v2 공유 자료를 로컬로 전환할 때 물리 경로 전환 journal을 사용하며 기존 이름·작성자·복구 보장을 유지한다. 새 구조를 지원하지 않는 서버에는 생성 요청 전에 업데이트를 안내한다.
+
 ## 책임과 식별
 
 생성 폼의 이름/방식/선택 경로는 UI 상태다. `ProjectHomeService.chooseParent()`는 경로 선택만 하고, `create()`는 명시적으로 전달된 이름과 상위 폴더를 검증한 뒤 생성한다. 공통 이름 검사와 초기 자료 생성은 `core/projects`에 둔다. IPC와 preload는 runtime의 projects/collaboration 계약을 연결한다.

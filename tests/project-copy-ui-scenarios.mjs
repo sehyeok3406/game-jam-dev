@@ -297,13 +297,21 @@ export async function projectCopyNativeScenarios({ call, wait, game, root }) {
   const localTargetId = 'local:' + path.join(root, 'target').toLowerCase(),
     localSourceId = 'local:' + game.toLowerCase();
   const server = await call('startLocalCollaborationServer');
-  const sharedB = await call('createCollaboration', {
+  await call('createProject', {
+    mode: 'shared',
+    requestId: crypto.randomUUID(),
+    name: '독립 공동 복사 대상',
     serverUrl: server.serverUrl,
     serverKey: '',
     nickname: '복사 패키지 관리자',
   });
+  const sharedB = await call('getCollaboration');
   const sharedBId = 'shared:' + sharedB.projectId;
+  assert.deepEqual(await call('listDocuments'), []);
   await call('openProject', localSourceId);
+  const sourceDocuments = (await call('listDocuments')).map(
+    ({ id, body, relativePath }) => ({ id, body, relativePath }),
+  );
   const selection = {
     canvasId: 'default',
     documents: [{ id: 'a', path: 'docs/a.md' }],
@@ -340,9 +348,20 @@ export async function projectCopyNativeScenarios({ call, wait, game, root }) {
     selection,
   });
   await call('openProject', sharedBId);
-  assert.equal((await call('listDocuments')).length, 5);
+  const copiedDocuments = await call('listDocuments');
+  assert.equal(copiedDocuments.length, 2);
+  assert.ok(
+    copiedDocuments.every((d) => /^docs\/[^/]+\.md$/.test(d.relativePath)),
+  );
   await call('openProject', 'shared:' + sharedA.projectId);
-  assert.equal((await call('listDocuments')).length, 4);
+  assert.deepEqual(
+    (await call('listDocuments')).map(({ id, body, relativePath }) => ({
+      id,
+      body,
+      relativePath,
+    })),
+    sourceDocuments,
+  );
   await call('openProject', localTargetId);
   await wait('window.gameCanvas.listDocuments().then(d=>d.length===4)');
   assert.equal(

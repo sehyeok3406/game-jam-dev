@@ -256,7 +256,130 @@ try {
   assert.equal(reconnected.connected, true);
   assert.equal(reconnected.role, 'admin');
   assert.equal(reconnected.serverUrl, currentServer.serverUrl);
+  assert.equal(
+    (await call('getProjectLayout')).version,
+    1,
+    'An app restart must not migrate an existing shared project',
+  );
+  const sharedRoot = (await call('getWorkspace')).root;
+  const layoutDialog = '[role=dialog][aria-label="프로젝트 파일 구조 정리"]';
+  await wait(
+    '!!document.querySelector(".canvas-main-menu") || !!document.querySelector(".home-project-card")',
+  );
+  if (!(await js('!!document.querySelector(".canvas-main-menu")')))
+    await js(
+      'Array.from(document.querySelectorAll(".home-project-card")).find(e=>e.textContent.includes("패키지 공동 이름")).querySelector(".home-project-open").click()',
+    );
+  await wait('!!document.querySelector(".canvas-main-menu summary")');
+  await js('document.querySelector(".canvas-main-menu summary").click()');
+  await clickText('.canvas-main-menu button', '설정 및 도구');
+  await wait('!!document.querySelector(".canvas-settings")');
+  await clickText('.canvas-settings button', '프로젝트 파일 구조 정리…');
+  await wait(`!!document.querySelector(${JSON.stringify(layoutDialog)})`);
+  assert.ok(
+    await js(
+      `document.querySelector(${JSON.stringify(layoutDialog)}).textContent.includes("다른 사용자도 업데이트")`,
+    ),
+  );
+  const layoutScreenshot = await send('Page.captureScreenshot', {
+    format: 'png',
+  });
+  await fs.mkdir(path.resolve('out/test-validation'), { recursive: true });
+  await fs.writeFile(
+    path.resolve('out/test-validation/project-layout-dialog.png'),
+    Buffer.from(layoutScreenshot.data, 'base64'),
+  );
+  await clickText(
+    '[role=dialog][aria-label="프로젝트 파일 구조 정리"] button',
+    '파일 구조 정리',
+  );
+  await wait('window.gameCanvas.getProjectLayout().then(s=>s.version===2)');
+  await wait(
+    `document.querySelector(${JSON.stringify(layoutDialog)}).textContent.includes("이미 새 파일 구조")`,
+  );
+  await clickText(
+    '[role=dialog][aria-label="프로젝트 파일 구조 정리"] button',
+    '닫기',
+  );
+  assert.ok(
+    await fs.stat(path.join(sharedRoot, '.gamejam/project/layout.json')),
+  );
+  await assert.rejects(fs.access(path.join(sharedRoot, 'project.md')), {
+    code: 'ENOENT',
+  });
+  const migrated = (await call('listDocuments')).find(
+    (d) => d.id === 'project',
+  );
+  assert.match(migrated.relativePath, /^docs\/[^/]+\.md$/);
+  assert.match(migrated.body, /원본 한글 내용/);
+  const idea = await call('createIdea', { x: 900, y: 500 });
+  assert.match(idea.relativePath, /^docs\/[^/]+\.md$/);
+  await js(
+    `document.querySelector(${JSON.stringify('button[title="프로젝트 홈으로 돌아가기"]')}).click()`,
+  );
+  await wait('!!document.querySelector(".home-project-card")');
+  await js(
+    'Array.from(document.querySelectorAll(".home-project-card")).find(e=>e.textContent.includes("패키지 공동 이름")).querySelector(".home-project-more").click()',
+  );
+  await wait(
+    '!!Array.from(document.querySelectorAll(".home-context-menu button")).find(e=>e.textContent.trim()==="탐색기에서 표시")',
+  );
+  await clickText('.home-context-menu button', '탐색기에서 표시');
+  await wait('!document.querySelector(".home-context-menu")');
+  assert.equal(
+    (await call('getWorkspace')).root,
+    null,
+    'Reveal must not switch the active project',
+  );
+  const blank = await call('createProject', {
+    mode: 'local',
+    name: '빈 패키지 프로젝트',
+    parent: root,
+  });
+  assert.deepEqual(await call('listDocuments'), []);
+  await assert.rejects(fs.access(path.join(blank.root, 'project.md')), {
+    code: 'ENOENT',
+  });
+  const blankEntry = (await call('listProjects')).find(
+    (entry) => entry.root === blank.root,
+  );
   await call('goHome');
+  await call('openProject', sharedId);
+  const copySource = await call('getWorkspace');
+  const copied = await call('copySelectionToProject', {
+    session: copySource.session,
+    targetId: blankEntry.id,
+    requestId: randomUUID(),
+    canvasId: 'default',
+    selection: {
+      canvasId: 'default',
+      documents: [{ id: migrated.id, path: migrated.relativePath }],
+      sections: [],
+      previews: [],
+      drawings: [],
+    },
+  });
+  assert.equal(copied.count, 1);
+  assert.ok(
+    copied.paths.every((relative) => /^docs\/[^/]+\.md$/.test(relative)),
+  );
+  assert.match(
+    await fs.readFile(path.join(blank.root, copied.paths[0]), 'utf8'),
+    /creation_origin: project-copy/,
+  );
+  await call('goHome');
+  await stop(true);
+  await boot();
+  await call('openProject', sharedId);
+  assert.equal((await call('getProjectLayout')).version, 2);
+  assert.match(
+    (await call('getDocument', migrated.relativePath)).body,
+    /원본 한글 내용/,
+  );
+  await call('goHome');
+  console.log(
+    'PASS: shared layout upgrade uses the real settings dialog, preserves documents across restart, exposes the home Explorer action without switching projects, and new projects stay empty',
+  );
   const info = JSON.stringify({
     format: 'gamejam-connection',
     version: 1,

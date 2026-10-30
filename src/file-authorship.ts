@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import matter from './markdown.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
 import type { Snapshot } from './project-store.ts';
 import type {
   FileActor,
@@ -42,13 +43,20 @@ export function advanceAuthorship(
 ): FileAuthorshipMap {
   const next = { ...current };
   if (entry.status !== 'completed') return next;
+  const migration = !readProjectLayout(before)
+    ? readProjectLayout(after)
+    : null;
+  const oldPaths = new Map(
+    Object.entries(migration?.aliases ?? {}).map(([old, to]) => [to, old]),
+  );
   const actor = historyActor(entry),
     time = entry.finishedAt ?? entry.createdAt;
   for (const [relative, content] of Object.entries(after)) {
     if (before[relative] === content) continue;
     const identity = fileId(relative, content);
+    const previousRecord = current[oldPaths.get(relative) ?? relative];
     const previous =
-      current[relative]?.fileId === identity ? current[relative] : undefined;
+      previousRecord?.fileId === identity ? previousRecord : undefined;
     const newlyCreated = before[relative] === undefined && !restoring(entry);
     next[relative] = {
       ...previous,
@@ -56,8 +64,8 @@ export function advanceAuthorship(
       contentHash: hash(content),
       createdBy: previous?.createdBy ?? (newlyCreated ? actor : undefined),
       createdAt: previous?.createdAt ?? (newlyCreated ? time : undefined),
-      lastEditedBy: actor,
-      lastEditedAt: time,
+      lastEditedBy: migration && previous ? previous.lastEditedBy : actor,
+      lastEditedAt: migration && previous ? previous.lastEditedAt : time,
     };
   }
   // Retain identities of deleted files so restoration does not invent a creator.

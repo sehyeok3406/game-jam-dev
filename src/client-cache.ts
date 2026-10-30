@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { CollaborationEnvelope } from './contracts/collaboration.ts';
 import type { OfflineDraft, OnlineAttempt } from './collaboration-client.ts';
 import type { Snapshot } from './contracts/project.ts';
+import { projectPath } from './project-store.ts';
 export type ClientCache = CollaborationEnvelope & {
   offline?: OfflineDraft | null;
   outgoing?: OnlineAttempt | null;
@@ -12,11 +13,16 @@ const hashes = new Map<string, string>();
 const stored = new Set<string>();
 export function invalidateClientCache(directory: string) {
   for (const filename of stored)
-    if (filename.startsWith(path.join(directory, '.sync-blobs') + path.sep))
+    if (
+      filename.startsWith(path.join(directory, '.sync-blobs') + path.sep) ||
+      filename.startsWith(
+        path.join(directory, '.gamejam/local/sync/blobs') + path.sep,
+      )
+    )
       stored.delete(filename);
 }
 export async function writeClientCache(directory: string, cache: ClientCache) {
-  const blobs = path.join(directory, '.sync-blobs');
+  const blobs = await projectPath(directory, '.sync-blobs');
   await fs.mkdir(blobs, { recursive: true });
   const encode = async (files?: Snapshot) => {
     if (!files) return files;
@@ -67,11 +73,16 @@ export async function writeClientCache(directory: string, cache: ClientCache) {
     offline,
     outgoing,
   });
-  const temporary = path.join(directory, `server-cache-${randomUUID()}.tmp`);
+  const cachePath = await projectPath(directory, 'server-cache.json');
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  const temporary = `${cachePath}-${randomUUID()}.tmp`;
   await fs.writeFile(temporary, payload, { mode: 0o600, flush: true });
-  await fs.rename(temporary, path.join(directory, 'server-cache.json'));
+  await fs.rename(temporary, cachePath);
 }
 export async function readClientCache(filename: string): Promise<ClientCache> {
+  const root = path.dirname(filename);
+  const blobs = await projectPath(root, '.sync-blobs');
+  filename = await projectPath(root, 'server-cache.json');
   const cache = JSON.parse(await fs.readFile(filename, 'utf8'));
   if (cache.format !== 2) return cache;
   const values = new Map<string, string>();
@@ -83,10 +94,7 @@ export async function readClientCache(filename: string): Promise<ClientCache> {
         throw new Error('협업 캐시 파일 식별자가 올바르지 않습니다.');
       let raw = values.get(hash);
       if (raw === undefined) {
-        raw = await fs.readFile(
-          path.join(path.dirname(filename), '.sync-blobs', hash),
-          'utf8',
-        );
+        raw = await fs.readFile(path.join(blobs, hash), 'utf8');
         values.set(hash, raw);
       }
       result[relative] = raw;

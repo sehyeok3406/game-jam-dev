@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { allocateDocumentPath } from './core/projects/document-path.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
 import matter from './markdown.ts';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
@@ -307,7 +309,12 @@ export function importProjectCopy(
       throw Error('복사 문서 형식을 확인해주세요.');
     const id = environment.id();
     ids.set(String(parsed.data.id ?? relative), id);
-    allocate(relative, `docs/copy-${stamp}/${id}.md`);
+    allocate(
+      relative,
+      readProjectLayout(files)
+        ? allocateDocumentPath(String(parsed.data.title ?? '문서'), used, id)
+        : `docs/copy-${stamp}/${id}.md`,
+    );
   }
   for (const relative of bundle.sections) {
     const parsed = matter(present(normalized, relative));
@@ -472,6 +479,8 @@ export function importProjectCopy(
     ])
       delete metadata[key];
     metadata.id = ids.get(String(data.id ?? from)) ?? environment.id();
+    metadata.creation_origin = 'project-copy';
+    metadata.copied_from = { path: from };
     metadata.canvas_id = canvasId;
     metadata.x = coordinate(data.x) + dx;
     metadata.y = coordinate(data.y) + dy;

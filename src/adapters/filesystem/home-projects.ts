@@ -6,6 +6,8 @@ import { localProjectName, saveProjectName } from '../../project-metadata.ts';
 import { localProjectTimestamps } from '../../project-timestamps.ts';
 import { projectPath, historyId, saveHistory } from '../../project-store.ts';
 import matter from '../../markdown.ts';
+import { materialize } from '../../project-store.ts';
+import { initialProjectSnapshot } from '../../core/projects/initial-project.ts';
 
 /** Existing project.md compare/replace and history format; grouping never moves this directory. */
 export const filesystemHomeProjects: HomeLocalProjects = {
@@ -30,6 +32,8 @@ export const filesystemHomeProjects: HomeLocalProjects = {
         );
       throw error;
     }
+    await materialize(target, initialProjectSnapshot(name));
+    await saveProjectName(target, name);
     return target;
   },
   async rename(inputRoot, name, expectedName) {

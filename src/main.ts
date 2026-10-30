@@ -14,6 +14,16 @@ import {
   LOCAL_MUTATION_LABELS as mutationLabels,
 } from './application/editing/local-mutation-service';
 import { SharedProjectMirror } from './application/editing/shared-project-mirror';
+import { ProjectLayoutService } from './application/projects/layout-service.ts';
+import { checkSnapshot } from './collaboration-model.ts';
+import {
+  recoverProjectLayout,
+  installProjectLayout,
+} from './adapters/filesystem/layout-migration.ts';
+import { layoutMarkdownCodec } from './adapters/markdown/layout-snapshot.ts';
+import { remapLayoutMarkdown } from './adapters/markdown/layout-links.ts';
+import { readDiskProjectLayout } from './adapters/filesystem/project-location.ts';
+import { readProjectLayout } from './core/projects/project-layout.ts';
 import { filesystemSharedProjectFiles } from './adapters/filesystem/shared-project-files';
 import { ensureProjectLayout } from './adapters/filesystem/project-layout';
 import {
@@ -981,6 +991,7 @@ const setWorkspace = async (root: string) => {
   await lifecycle.preserve('switch-project');
   await projectSessions.activate(await fs.realpath(root));
   const activeRoot = requireWorkspace();
+  await recoverProjectLayout(activeRoot);
   await ensureWorkspace();
   await filesystemProjectRepository(activeRoot).recover();
   await saveSettings();
@@ -1571,20 +1582,21 @@ const handle = (
   const invoke: Parameters<typeof ipcMain.handle>[1] = (event, ...args) => {
     const requestSession = projectSessions.ref;
     const sessionBound =
-      channel !== 'workspace:select' &&
-      !channel.startsWith('projects:') &&
-      (guardedChannels.has(channel) ||
-        /^(?:documents|sections|assets|history|preview|drawings|game-ui|canvases|canvas|requests):/.test(
-          channel,
-        ) ||
-        Object.hasOwn(commandLabels, channel) ||
-        [
-          'codex:start',
-          'files:import',
-          'clipboard:canvas-paste',
-          'documents:set-color',
-          'preview:save-window',
-        ].includes(channel));
+      channel.startsWith('projects:layout-') ||
+      (channel !== 'workspace:select' &&
+        !channel.startsWith('projects:') &&
+        (guardedChannels.has(channel) ||
+          /^(?:documents|sections|assets|history|preview|drawings|game-ui|canvases|canvas|requests):/.test(
+            channel,
+          ) ||
+          Object.hasOwn(commandLabels, channel) ||
+          [
+            'codex:start',
+            'files:import',
+            'clipboard:canvas-paste',
+            'documents:set-color',
+            'preview:save-window',
+          ].includes(channel)));
     const clipboardInput = args[0] as
       | (CanvasClipboardPasteInput & { clipboardContextId?: string })
       | undefined;
@@ -2352,6 +2364,25 @@ const registerIpc = () => {
     registry: homeProjectRegistry(projectLibrary),
     local: filesystemHomeProjects,
     shared: desktopSharedProjects({
+      beginReveal: () => {
+        const ref = projectSessions.ref;
+        return () => projectSessions.assertCurrent(ref);
+      },
+      prepareFiles: async (root, files, assertCurrent) => {
+        const effects =
+          projectSessions.root === root
+            ? projectFileEffects(projectSessions.ref)
+            : {
+                pauseWatcher: async () => async () => {},
+                trashItem: async (absolute: string) => {
+                  await shell.trashItem(absolute);
+                },
+              };
+        await new SharedProjectMirror(
+          filesystemSharedProjectFiles(root, effects, assertCurrent),
+          assertCurrent,
+        ).sync(files);
+      },
       library: projectLibrary,
       userData: app.getPath('userData'),
       active: () => projectSessions.client,
@@ -2398,7 +2429,10 @@ const registerIpc = () => {
     parseConnection: parseConnectionInfo,
     serverAddress,
     chooseParent: chooseProjectParent,
-    reveal: (root) => shell.showItemInFolder(root),
+    reveal: async (root) => {
+      const error = await shell.openPath(root);
+      if (error) throw Error(error);
+    },
     changed: notifyWorkspaceChanged,
     stopViewer: () => desktopBootstrap.stopViewerSync(),
     drainViewer: () => desktopBootstrap.webViewer().drain(),
@@ -2413,6 +2447,86 @@ const registerIpc = () => {
   registerProjectIpc(handle, homeProjects, (event) => {
     if (!isUpdateSender(event))
       throw new Error('앱의 홈 화면에서 실행해주세요.');
+  });
+  const projectLayoutService = (event: Electron.IpcMainInvokeEvent) => {
+    const root = requireWorkspace(),
+      ref = projectSessions.ref,
+      client = projectSessions.client;
+    const assertCurrent = () => projectSessions.assertCurrent(ref);
+    return new ProjectLayoutService({
+      assertCurrent,
+      capture: () =>
+        client ? Promise.resolve({ ...client.files }) : captureProject(root),
+      blocked: () =>
+        aiIsActive() ||
+        currentAiFileLock().paths.length ||
+        currentAiFileLock().folders.length
+          ? 'AI 실행·예약을 마친 뒤 정리해주세요.'
+          : client &&
+              (client.offline || client.outgoing || client.heldLocks.size)
+            ? '문서 편집과 미동기화 작업을 마친 뒤 정리해주세요.'
+            : undefined,
+      shared: () =>
+        client
+          ? {
+              supported: client.state.projectLayoutVersion === 2,
+              connected: client.state.connected,
+              admin: client.state.role === 'admin',
+            }
+          : null,
+      preserve: async () => {
+        const saves = await activateDocumentSaves(event);
+        if (saves.some((save) => save.phase !== 'saved'))
+          throw Error(
+            '문서 저장과 충돌 해결을 마친 뒤 파일 구조를 정리해주세요. 초안은 보관됩니다.',
+          );
+        await lifecycle.preserve('switch-project');
+        assertCurrent();
+      },
+      pause: projectFileEffects(ref).pauseWatcher,
+      install: (files) => installProjectLayout(root, files, assertCurrent),
+      upgradeShared: async () => {
+        await client!.refresh();
+        assertCurrent();
+        const result = (await client!.request('layout-upgrade', {
+          revision: client!.state.revision,
+          deltaVersion: undefined,
+          knownRevision: undefined,
+        })) as import('./contracts/collaboration.ts').CollaborationEnvelope;
+        assertCurrent();
+        client!.accept(result);
+        await collaborationCache.drain();
+        return result.files;
+      },
+      record: async (before, after) => {
+        await saveHistory(root, before, after, {
+          id: historyId(),
+          label: '프로젝트 파일 구조 정리',
+          kind: 'restore',
+          status: 'completed',
+          createdAt: Date.now(),
+          finishedAt: Date.now(),
+        });
+      },
+      validate: checkSnapshot,
+      changed: notifyWorkspaceChanged,
+      markdown: layoutMarkdownCodec,
+      links: remapLayoutMarkdown,
+    });
+  };
+  handle('projects:layout-status', async (event) => {
+    if (!isUpdateSender(event))
+      throw Error('앱의 설정 화면에서만 파일 구조를 확인할 수 있습니다.');
+    const session = projectSessions.ref;
+    const status = await projectLayoutService(event).status();
+    projectSessions.assertCurrent(session);
+    return { ...status, session };
+  });
+  handle('projects:layout-upgrade', (event, session) => {
+    if (!isUpdateSender(event))
+      throw Error('앱의 설정 화면에서만 파일 구조를 정리할 수 있습니다.');
+    projectSessions.assertCurrent(session);
+    return projectLayoutService(event).upgrade();
   });
   registerProjectCopyIpc(handle, {
     sessions: projectSessions,
@@ -2550,6 +2664,14 @@ const registerIpc = () => {
       return documentSaveQueue.list(scope);
     saveQueueContext = { scope, root, client, sessionId: session?.sessionId };
     return documentSaveQueue.activate({
+      resolvePath: async (relative) => {
+        const layout = client
+          ? readProjectLayout(client.files)
+          : root
+            ? await readDiskProjectLayout(root)
+            : null;
+        return layout?.aliases[relative] ?? relative;
+      },
       session: session ?? undefined,
       scope,
       isCurrent: () =>

@@ -11,6 +11,11 @@ import type {
 } from '../../application/ports/home-projects.ts';
 import type { SharedProjectLifecycle } from '../../contracts/project.ts';
 import type { CollaborationEnvelope } from '../../collaboration-server.ts';
+import type { Snapshot } from '../../contracts/project.ts';
+import fs from 'node:fs/promises';
+import { writeClientCache } from '../../client-cache.ts';
+import { hasModernLayout } from '../../adapters/filesystem/project-location.ts';
+import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 
 /** Strip encrypted session material before passing a registry entry to application code. */
 export function homeProjectRegistry(
@@ -42,6 +47,12 @@ export function homeProjectRegistry(
 }
 
 type Options = {
+  beginReveal?: () => () => void;
+  prepareFiles?: (
+    root: string,
+    files: Snapshot,
+    assertCurrent: () => void,
+  ) => Promise<void>;
   library: ProjectLibrary;
   userData: string;
   active(): CollaborationClient | null;
@@ -80,6 +91,118 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
       ),
     );
   return {
+    async directory(id) {
+      const assertSession = options.beginReveal?.() ?? (() => {});
+      const entry = library.get(id);
+      const projectId = entry.projectId!;
+      const root = path.join(options.userData, 'shared-workspaces', projectId);
+      const assertCurrent = () => {
+        assertSession();
+        const current = library.get(id);
+        if (
+          current.kind !== 'shared' ||
+          current.projectId !== projectId ||
+          (current.lifecycle && current.lifecycle.status !== 'active')
+        )
+          throw Error('프로젝트 연결이 변경되었습니다. 다시 표시해주세요.');
+      };
+      assertCurrent();
+      await options.drainCache();
+      const saved = await credentials(id);
+      assertCurrent();
+      const cached = await cache(id).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+      const active = options.active();
+      let envelope: CollaborationEnvelope | null = null;
+      let offline = false;
+      if (active?.credentials.projectId === projectId) {
+        if (active.state.accessDenied || active.state.projectDeleted)
+          throw Error('이 프로젝트에 접근할 수 없습니다.');
+        if (!active.offline && !active.outgoing) {
+          try {
+            await active.refresh();
+          } catch (error) {
+            const status =
+              (error as { status?: number; details?: { status?: number } })
+                .status ??
+              (error as { details?: { status?: number } }).details?.status;
+            if (
+              (status && status < 500) ||
+              active.state.accessDenied ||
+              active.state.projectDeleted ||
+              (!Object.keys(active.files).length && !cached)
+            )
+              throw error;
+          }
+        }
+        assertCurrent();
+        if (active.state.accessDenied || active.state.projectDeleted)
+          throw Error('이 프로젝트에 접근할 수 없습니다.');
+        envelope = {
+          files: { ...active.files },
+          state: active.state,
+          revisions: active.revisions,
+        };
+        offline =
+          !active.state.connected || !!active.offline || !!active.outgoing;
+      } else if (cached?.offline || cached?.outgoing) {
+        envelope = {
+          ...cached,
+          files:
+            cached.offline?.local ?? cached.outgoing?.local ?? cached.files,
+        };
+        offline = true;
+      } else {
+        try {
+          envelope = (await fetch(
+            saved.serverUrl,
+            `/projects/${projectId}/state`,
+            {},
+            saved.token,
+          )) as CollaborationEnvelope;
+        } catch (error) {
+          const status =
+            (error as { status?: number; details?: { status?: number } })
+              .status ??
+            (error as { details?: { status?: number } }).details?.status;
+          if (
+            (status && status < 500) ||
+            (error as { lifecycle?: unknown }).lifecycle
+          )
+            throw error;
+          if (!cached)
+            throw Error(
+              '이 PC에 준비된 사본이 없습니다. 서버 연결 후 다시 표시해주세요.',
+            );
+          envelope = cached;
+          offline = true;
+        }
+      }
+      assertCurrent();
+      if (
+        !envelope ||
+        envelope.state.projectDeleted ||
+        envelope.state.accessDenied
+      )
+        throw Error('이 프로젝트에 접근할 수 없습니다.');
+      await fs.mkdir(root, { recursive: true });
+      if (!options.prepareFiles)
+        throw Error('프로젝트 파일 사본을 준비할 수 없는 환경입니다.');
+      if (
+        !(
+          offline &&
+          !envelope.files[PROJECT_LAYOUT_PATH] &&
+          (await hasModernLayout(root))
+        )
+      )
+        await options.prepareFiles(root, envelope.files, assertCurrent);
+      assertCurrent();
+      if (!offline && active?.credentials.projectId !== projectId)
+        await writeClientCache(root, envelope);
+      return { root, offline };
+    },
     async cache(id) {
       const cached = await cache(id);
       return {

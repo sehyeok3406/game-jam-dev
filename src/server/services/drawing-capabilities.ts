@@ -2,15 +2,22 @@ import type { Snapshot } from '../../contracts/project.ts';
 import { isDrawingPath } from '../../drawing-model.ts';
 import { textDocumentHasAlignment } from '../../text-document.ts';
 import { ApiError } from './errors.ts';
+import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 /** Older clients cannot safely display or mutate partially erased strokes. */
 export function assertEraseSupport(
   files: Snapshot,
   input: {
     drawingEraseVersion?: unknown;
+    projectLayoutVersion?: unknown;
     drawingTextVersion?: unknown;
     drawingTextAlignmentVersion?: unknown;
   },
 ) {
+  if (files[PROJECT_LAYOUT_PATH] && input.projectLayoutVersion !== 2)
+    throw new ApiError(
+      '새 파일 구조를 사용하는 프로젝트입니다. 앱을 업데이트해주세요.',
+      409,
+    );
   if (
     input.drawingTextVersion !== 1 &&
     Object.entries(files).some(

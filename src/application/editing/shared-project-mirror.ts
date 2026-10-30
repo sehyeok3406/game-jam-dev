@@ -13,7 +13,7 @@ export class SharedProjectMirror {
     const target = { ...snapshot };
     const files = this.files;
     this.assertCurrent();
-    await files.ensure();
+    await files.ensure(target);
     this.assertCurrent();
     const before = await files.capture();
     this.assertCurrent();

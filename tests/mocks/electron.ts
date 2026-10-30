@@ -103,7 +103,10 @@ export const shell = {
   showItemInFolder: (target: string) => {
     revealedPaths.push(target);
   },
-  openPath: async () => '',
+  openPath: async (target: string) => {
+    revealedPaths.push(target);
+    return '';
+  },
 };
 export const createdWindows: BrowserWindow[] = [];
 export class BrowserWindow extends EventEmitter {

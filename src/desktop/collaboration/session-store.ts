@@ -4,7 +4,7 @@ import type {
   CollaborationCredentials,
   OfflineDraft,
 } from '../../collaboration-client.ts';
-import { historyId } from '../../project-store.ts';
+import { historyId, projectPath } from '../../project-store.ts';
 import { canonical } from '../../trash-files.ts';
 
 type Encryption = {
@@ -61,10 +61,9 @@ export class CollaborationSessionStore {
     assertCurrent();
     if (!offline) return;
     const payload = JSON.stringify(offline);
-    const directory = path.join(
+    const directory = await projectPath(
       root,
-      '.history',
-      `offline-resolution-${historyId()}`,
+      `.history/offline-resolution-${historyId()}`,
     );
     await fs.mkdir(directory, { recursive: true });
     assertCurrent();

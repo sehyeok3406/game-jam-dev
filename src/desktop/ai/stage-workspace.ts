@@ -20,8 +20,8 @@ export async function fileStageWorkspace(
     async initialize(files) {
       await fs.mkdir(directory, { recursive: true });
       await fs.mkdir(input, { recursive: true });
-      await materialize(directory, files);
-      await materialize(input, files);
+      await materialize(directory, files, true);
+      await materialize(input, files, true);
     },
     capture: () => captureProject(directory),
     async write(relative, content) {

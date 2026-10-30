@@ -148,6 +148,9 @@ const api: GameCanvasApi = {
     ipcRenderer.invoke('projects:folder-rename', id, name),
   removeProjectFolder: (id) => ipcRenderer.invoke('projects:folder-remove', id),
   revealProject: (id) => ipcRenderer.invoke('projects:reveal', id),
+  getProjectLayout: () => ipcRenderer.invoke('projects:layout-status'),
+  upgradeProjectLayout: (session) =>
+    ipcRenderer.invoke('projects:layout-upgrade', session),
   openProject: (id) => ipcRenderer.invoke('projects:open', id),
   chooseProjectParent: () => ipcRenderer.invoke('projects:choose-parent'),
   createProject: (input) => ipcRenderer.invoke('projects:create', input),

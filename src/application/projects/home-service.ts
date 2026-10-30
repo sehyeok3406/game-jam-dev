@@ -18,7 +18,7 @@ type Ports = {
   parseConnection(text: string): { projectId: string; serverUrl: string };
   serverAddress(url: string): string;
   chooseParent(): Promise<string | null>;
-  reveal(root: string): void;
+  reveal(root: string): void | Promise<void>;
   createShared?(
     input: import('../../contracts/project-mode.ts').CreateProjectInput,
   ): Promise<import('../../contracts/project.ts').WorkspaceState>;
@@ -166,9 +166,17 @@ export class ProjectHomeService {
   async reveal(id: string) {
     const p = this.ports,
       entry = p.registry.get(id);
-    if (entry.kind !== 'local' || !entry.root)
-      throw Error('로컬 프로젝트를 선택해주세요.');
-    p.reveal(await p.local.directory(entry.root));
+    if (p.trash.hasProject(id)) throw Error('휴지통에서 먼저 복원해주세요.');
+    if (entry.kind === 'shared') {
+      if (!p.shared.directory)
+        throw Error('로컬 사본을 표시할 수 없는 환경입니다.');
+      const result = await p.shared.directory(id);
+      await p.reveal(result.root);
+      return { offline: result.offline };
+    }
+    if (!entry.root) throw Error('프로젝트 폴더를 찾을 수 없습니다.');
+    await p.reveal(await p.local.directory(entry.root));
+    return { offline: false };
   }
   private assertDisconnected(id: string, message: string) {
     if (

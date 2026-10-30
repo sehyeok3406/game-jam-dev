@@ -39,6 +39,7 @@ export type SharedLifecycleAction =
   | 'trash-restore'
   | 'trash-purge';
 export interface HomeSharedProjects {
+  directory?(id: string): Promise<{ root: string; offline: boolean }>;
   cache(
     id: string,
   ): Promise<

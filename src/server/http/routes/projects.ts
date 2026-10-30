@@ -53,6 +53,7 @@ export const projectsActionRoute = (ports: ProjectActionHttpPorts) =>
   projectActionRoute(
     (action) =>
       action === 'rename' ||
+      action === 'layout-upgrade' ||
       action === 'lifecycle' ||
       action.startsWith('trash'),
     ports,

@@ -1,4 +1,5 @@
 import { createMemoryPreferences } from './ui/runtime/preferences';
+import { isAiProvider } from './core/ai/catalog.ts';
 import { createProjectFixture } from './ui/fixtures/project';
 import {
   assertDocumentBase,
@@ -1761,7 +1762,7 @@ export function createDevGameCanvasApi(
         };
       }
       if (activeDevRun) throw new Error('이미 실행 중인 AI 작업이 있습니다.');
-      if (!['codex-cli', 'claude-cli', 'gemini-cli'].includes(providerId))
+      if (!isAiProvider(providerId))
         throw new Error('지원하지 않는 AI 제공자입니다.');
       const runId =
         devAiQueue.find(
@@ -2025,6 +2026,14 @@ export function createDevGameCanvasApi(
         ) ?? { exists: false, relativePath: relative, content: '' },
       ),
     revealPath: async () => undefined,
+    getProjectLayout: async () => ({
+      version: 1,
+      canUpgrade: false,
+      reason: '프로젝트 파일 구조 정리는 PC 앱에서 사용할 수 있습니다.',
+    }),
+    upgradeProjectLayout: async () => {
+      throw Error('프로젝트 파일 구조 정리는 PC 앱에서 사용할 수 있습니다.');
+    },
     openWorkspace: async () => undefined,
     copyText: async (text) => navigator.clipboard.writeText(text),
     onWorkspaceChanged: (listener) => {

@@ -1,4 +1,5 @@
 import type { ResultMove } from './result-folder-plan.ts';
+import { remapLayoutChanges } from './adapters/markdown/layout-snapshot.ts';
 export {
   moveDestination,
   legacyResultMoves,
@@ -99,6 +100,7 @@ export function remapResultChanges(
   current: Snapshot,
   changes: Record<string, string | null>,
 ) {
+  changes = remapLayoutChanges(current, changes);
   if (Object.hasOwn(changes, CATALOG)) return changes;
   const replacements = new Map<string, string>();
   const aliases: ResultMove[] = [];

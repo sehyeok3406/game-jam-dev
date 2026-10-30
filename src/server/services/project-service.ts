@@ -8,6 +8,10 @@ import type { Project, Member } from '../project-state.ts';
 import { ApiError } from './errors.ts';
 import { checkSnapshot } from '../../collaboration-model.ts';
 import { homeName } from '../../home-organization.ts';
+import { planProjectLayout } from '../../application/projects/layout-migration.ts';
+import { layoutMarkdownCodec } from '../../adapters/markdown/layout-snapshot.ts';
+import { remapLayoutMarkdown } from '../../adapters/markdown/layout-links.ts';
+import { readProjectLayout } from '../../core/projects/project-layout.ts';
 
 type Input = Record<string, unknown>;
 type Identity = {
@@ -19,6 +23,7 @@ type Identity = {
   matches: (value: string, hash: string) => boolean;
 };
 type Ports = {
+  locked?: (id: string) => boolean;
   projects: {
     count: () => number;
     all: () => Iterable<Project>;
@@ -265,7 +270,46 @@ export function createProjectService(ports: Ports) {
     await ports.persist(next);
     return ports.envelope(next, member);
   }
+  async function upgradeLayout(project: Project, member: Member, input: Input) {
+    ports.admin(member);
+    ports.editable(project, member);
+    if (readProjectLayout(project.files))
+      return ports.envelope(project, member);
+    if (input.projectLayoutVersion !== 2)
+      throw new ApiError('앱을 업데이트해주세요.', 409);
+    if (input.revision !== project.revision)
+      throw new ApiError(
+        '프로젝트가 변경되었습니다. 새로고침한 뒤 다시 정리해주세요.',
+        409,
+      );
+    if (
+      project.job ||
+      ports.locked?.(project.id) ||
+      project.aiQueue?.some(
+        (t) =>
+          !['completed', 'failed', 'cancelled', 'stopped'].includes(t.status),
+      ) ||
+      Object.values(project.approvals ?? {}).some((r) =>
+        ['pending', 'feedback', 'queued', 'running'].includes(r.status),
+      )
+    )
+      throw new ApiError(
+        '문서 편집과 AI 실행·예약·요청을 마친 뒤 파일 구조를 정리해주세요.',
+        409,
+      );
+    const next = ports.clone(project);
+    const files = planProjectLayout(
+      project.files,
+      layoutMarkdownCodec,
+      remapLayoutMarkdown,
+    );
+    checkSnapshot(files);
+    // The old records remain immutable. Their paths are resolved through the stored aliases.
+    ports.recordChanges(next, member, files, '프로젝트 파일 구조 정리');
+    await ports.persist(next);
+    return ports.envelope(next, member);
+  }
   const create = (input: Input) =>
     ports.queue('project-creation', () => createOnce(input));
-  return { create, join, recover, rename };
+  return { create, join, recover, rename, upgradeLayout };
 }
