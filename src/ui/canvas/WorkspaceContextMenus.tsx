@@ -334,6 +334,29 @@ export function WorkspaceContextMenus({
           <button
             type="button"
             role="menuitem"
+            disabled={!capabilities.localFiles}
+            title={
+              !capabilities.localFiles
+                ? '파일 위치 표시는 PC 앱에서 사용할 수 있습니다.'
+                : undefined
+            }
+            onClick={() => {
+              const relativePath = documentContextMenu.document.relativePath;
+              setDocumentContextMenu(null);
+              void requireDesktopApi(api)
+                .revealPath(relativePath)
+                .catch(showError);
+            }}
+          >
+            <FolderOpen size={16} />
+            <span>
+              <strong>탐색기에서 표시</strong>
+              <small>문서가 저장된 폴더에서 MD 파일 선택</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             disabled={canvasSheets.canvases.length < 2 || locked}
             onClick={() =>
               beginCanvasMove([documentContextMenu.document.relativePath])
