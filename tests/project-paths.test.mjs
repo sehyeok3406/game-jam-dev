@@ -44,7 +44,7 @@ test('native project paths read previews and resolve file/folder opens only insi
   await paths.reveal('output/index.html');
   await paths.open();
   assert.deepEqual(calls, [
-    ['reveal', path.join(root, 'output/index.html')],
+    ['reveal', await fs.realpath(path.join(root, 'output/index.html'))],
     ['open', root],
   ]);
 });
