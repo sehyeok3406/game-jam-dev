@@ -218,3 +218,7 @@ flowchart TD
 - 설정 화면 증거: `out/test-validation/project-layout-dialog.png`. 기존 릴리스 UI 실패 증거: `out/test-validation/project-layout-baseline-canvas-failure.png`.
 
 검증은 격리된 임시 프로젝트와 테스트 프로필만 사용했다. 설치된 앱, 운영 협업 서버, Project-PP 실자료와 다른 사용자의 PC는 변경하지 않았다.
+
+### 배포 후속 기록 (2026-10-31)
+
+사용자의 후속 ‘커밋, 푸쉬 및 배포’ 지시로 v0.40.0을 게시했다. 구현 당시 함께 있던 Grok·AI 모드 변경은 원래 작업 폴더에 보존하고 배포 체크아웃에서 제외했다. 분리한 최종 소스의 root/contracts/core 타입 검사, 전체 린트, Windows 전체 테스트와 Linux 서버·백업 CI를 통과했다. 모든 변경 기능의 최종 패키지·production IPC·내장 서버 검증을 완료한 뒤 `make --from-package`로 검증한 결과물을 게시했다. 공개 파일 해시/크기/접근, RELEASES와 자동 업데이트 피드 반영을 확인했다. 상세 커밋·CI·해시는 [UPDATES](../../UPDATES.md)에 기록했다. 실자료 구조 정리와 운영 서버 재시작은 수행하지 않았다.
