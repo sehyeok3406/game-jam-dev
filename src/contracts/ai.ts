@@ -25,7 +25,11 @@ export type CreateTaskInput = {
     resultName?: string;
   };
 };
-export type AiProviderId = 'codex-cli' | 'claude-cli' | 'gemini-cli';
+export type AiProviderId =
+  | 'codex-cli'
+  | 'claude-cli'
+  | 'gemini-cli'
+  | 'grok-cli';
 export type AiReasoningEffort =
   | 'minimal'
   | 'low'

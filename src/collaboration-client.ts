@@ -7,6 +7,7 @@ import { collaborationTransport } from './adapters/http/collaboration-transport.
 import { remapPendingLayout } from './adapters/markdown/layout-snapshot.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
 import { requireProjectLayoutSupport } from './adapters/http/project-layout-support.ts';
+import { supportsSharedAiProvider } from './core/ai/catalog.ts';
 import {
   objectId,
   workflowOnlyChange,
@@ -1534,10 +1535,10 @@ export class CollaborationClient {
           'GC-AI-004',
           '시스템별 문서 생성을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
         );
-      if (providerId !== 'codex-cli' && !this.state.multiProviderAi)
+      if (!supportsSharedAiProvider(this.state, providerId))
         throw new CanvasError(
           'GC-AI-010',
-          'AI 실행에는 협업 서버 v0.8.0 이상이 필요합니다.',
+          '선택한 AI 제공자를 지원하지 않는 협업 서버입니다. 서버를 업데이트해주세요.',
         );
       if (reasoningEffort && this.state.aiReasoningVersion !== 1)
         throw new Error('추론 수준을 지정하려면 협업 서버를 업데이트해주세요.');
@@ -1568,6 +1569,11 @@ export class CollaborationClient {
   }
   async enqueueAi(input: import('./shared').StartCodexRunInput) {
     return this.serial(async () => {
+      if (!supportsSharedAiProvider(this.state, input.providerId))
+        throw new CanvasError(
+          'GC-AI-010',
+          '선택한 AI 제공자를 지원하지 않는 협업 서버입니다. 서버를 업데이트해주세요.',
+        );
       if (this.state.aiQueueVersion !== 1)
         throw new Error('예약 실행을 사용하려면 협업 서버를 업데이트해주세요.');
       if (input.reasoningEffort && this.state.aiReasoningVersion !== 1)

@@ -10,6 +10,8 @@ export class ProviderRunOutput implements AiRunOutput {
   private emit: (kind: AiRunEvent['kind'], message: string) => void;
   private stdout = '';
   private stderrBuffer = '';
+  private grokText = '';
+  private grokEnded = false;
   lastMessage = '';
   failure = '';
   constructor(
@@ -28,12 +30,21 @@ export class ProviderRunOutput implements AiRunOutput {
       const parsed = JSON.parse(line) as unknown;
       if (this.provider !== 'codex-cli') {
         const info = providerEvent(this.provider, parsed);
+        if (this.provider === 'grok-cli') {
+          if (info && 'delta' in info && info.delta) {
+            this.grokText = (this.grokText + info.message).slice(-16_000);
+            return;
+          }
+          if ((parsed as Record<string, unknown>)?.type === 'end')
+            this.grokEnded = true;
+        }
         if (info?.error) this.failure = info.message;
-        if (info?.result) this.lastMessage = info.message;
+        if (info?.result)
+          this.lastMessage = this.grokText.trim() || info.message;
         if (info?.message)
           this.emit(
             info.error ? 'error' : info.result ? 'result' : 'log',
-            info.message,
+            info.result ? this.lastMessage : info.message,
           );
         return;
       }
@@ -75,11 +86,15 @@ export class ProviderRunOutput implements AiRunOutput {
   flush() {
     if (this.stdout.trim()) this.line(this.stdout);
     this.stdout = '';
+    if (this.provider === 'grok-cli' && !this.grokEnded && !this.failure)
+      this.failure = 'Grok의 실행 완료 이벤트를 받지 못했습니다.';
   }
   reset() {
     this.stdout = '';
     this.stderrBuffer = '';
     this.lastMessage = '';
     this.failure = '';
+    this.grokText = '';
+    this.grokEnded = false;
   }
 }

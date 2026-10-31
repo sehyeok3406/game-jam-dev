@@ -1,4 +1,4 @@
-import type { CodexRunEvent } from './ai.ts';
+import type { AiProviderId, CodexRunEvent } from './ai.ts';
 import type { AiQueueTask } from './ai-task-queue.ts';
 import type { PropertyVersions } from './sync-properties.ts';
 import type { Snapshot } from './project.ts';
@@ -52,6 +52,7 @@ export type CollaborationState = {
   structuredResults?: boolean;
   editorAi?: boolean;
   multiProviderAi?: boolean;
+  supportedAiProviders?: AiProviderId[];
   aiReasoningVersion?: 1;
   active: boolean;
   connected: boolean;

@@ -27,6 +27,16 @@ async function run() {
     throw Error('Approval UI timeout: ' + code);
   };
   const click = async (selector, text) => {
+    if (
+      selector === 'header button' &&
+      ['디스코드 알림', '요청함', '내 요청'].includes(text)
+    ) {
+      await js(
+        `{const button=document.querySelector('[aria-label="협업 패널"]');if(button.getAttribute('aria-expanded')!=='true')button.click();}`,
+      );
+      await wait('!!document.querySelector(".canvas-collaboration")');
+      selector = '.canvas-collaboration button';
+    }
     await js(
       `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(e=>e.textContent.includes(${JSON.stringify(text)})).click()`,
     );
@@ -243,7 +253,8 @@ async function run() {
     await js(
       `document.querySelector('[aria-label="디스코드 알림 닫기"]').click()`,
     );
-    await js(`document.querySelector('[title="설정 및 도구"]').click()`);
+    await js(`document.querySelector('.canvas-main-menu').open=true`);
+    await click('.canvas-main-menu button', '설정 및 도구');
     await click('.canvas-settings button', '디스코드 알림');
     await wait(
       '!!document.querySelector(".discord-approval-dialog details[open]")',
@@ -377,9 +388,13 @@ async function run() {
     await setValue('#ai-result-name', '삭제 요청 다시 제출');
     await click('.ai-request-dialog > footer button', '요청하기');
     await wait('!!document.querySelector(".approval-inbox")');
+    await js(
+      `{const e=document.querySelector('[aria-label="요청 상태"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,'pending');e.dispatchEvent(new Event('change',{bubbles:true}));}`,
+    );
     await wait(
       'Array.from(document.querySelectorAll(".approval-list > button")).some(e=>e.textContent.includes("삭제 요청 다시 제출"))',
     );
+    await click('.approval-list > button', '삭제 요청 다시 제출');
     assert.equal(
       await js('!!document.querySelector(".approval-deletion-record")'),
       false,

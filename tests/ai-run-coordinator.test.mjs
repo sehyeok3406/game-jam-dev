@@ -163,6 +163,32 @@ function fixture(stages = []) {
   };
 }
 
+test('Grok receives fresh scoped inputs for both phases and checks the session again after input capture', async () => {
+  const f = fixture(['first', 'second']);
+  f.context.prepared.providerId = 'grok-cli';
+  const seen = [];
+  f.workflow.inputFiles = async () => ({
+    phase: String(f.workflow.stageIndex),
+  });
+  f.executor.run = async (input) => {
+    seen.push(input.inputFiles);
+    return { code: 0 };
+  };
+  const run = new AiRunCoordinator(f.context, f.ports);
+  await run.prepare();
+  await run.run();
+  assert.deepEqual(seen, [{ phase: '0' }, { phase: '1' }]);
+  const stale = fixture();
+  stale.context.prepared.providerId = 'grok-cli';
+  stale.workflow.inputFiles = async () => {
+    stale.switchProject();
+    return {};
+  };
+  await new AiRunCoordinator(stale.context, stale.ports).run();
+  assert.equal(stale.counts().executors, 0);
+  assert.equal(stale.counts().publishes, 0);
+});
+
 test('coordinator executes/finalizes once and ignores late stream callbacks after completion', async () => {
   const f = fixture();
   let late;

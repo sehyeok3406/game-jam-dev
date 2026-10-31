@@ -181,6 +181,17 @@ async function run() {
       await js(`document.querySelector('#ai-reasoning-effort').disabled`),
       true,
     );
+    await setValue('[aria-label="AI 제공자"]', 'grok-cli');
+    assert.equal(
+      await js(`document.querySelector('#ai-reasoning-effort').disabled`),
+      true,
+    );
+    assert.deepEqual(
+      await js(
+        `Array.from(document.querySelector('[aria-label="모델 버전"]').options).map(e=>e.value)`,
+      ),
+      [''],
+    );
     await setValue('[aria-label="AI 제공자"]', 'claude-cli');
     await setValue('[aria-label="모델 버전"]', 'claude-opus-5-5');
     await setValue('#ai-reasoning-effort', 'xhigh');

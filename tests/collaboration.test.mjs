@@ -485,17 +485,23 @@ async function setup(t) {
   };
 }
 
-test('administrators execute three-provider AI with a single authoritative lease; editors and viewers cannot bypass approval', async (t) => {
+test('administrators execute four-provider AI with a single authoritative lease; editors and viewers cannot bypass approval', async (t) => {
   const { url, code, owner, editor, clients, restart } = await setup(t);
   const joined = await CollaborationClient.join(url, code, '다른 편집자');
   const other = new CollaborationClient(joined.credentials, () => {});
   other.accept(joined.result);
   clients.push(other);
   await owner.setRole(editor.state.memberId, 'admin');
-  for (const providerId of ['codex-cli', 'claude-cli', 'gemini-cli']) {
+  for (const providerId of [
+    'codex-cli',
+    'claude-cli',
+    'gemini-cli',
+    'grok-cli',
+  ]) {
     await editor.refresh();
     assert.equal(editor.state.editorAi, false);
     assert.equal(editor.state.multiProviderAi, true);
+    assert.ok(editor.state.supportedAiProviders.includes(providerId));
     const task = await editor.command('tasks:create', {
       kind: 'implement',
       inputPaths: ['ideas/a.md'],
@@ -549,7 +555,7 @@ test('administrators execute three-provider AI with a single authoritative lease
     (await editor.history()).find(
       (entry) => entry.status === 'completed' && entry.kind === 'ai',
     ).providerId,
-    'gemini-cli',
+    'grok-cli',
   );
   const task = await editor.command('tasks:create', {
     kind: 'implement',
@@ -605,7 +611,7 @@ test('administrators execute three-provider AI with a single authoritative lease
   await owner.refresh();
   assert.match(
     owner.files['output/inbox/untitled/v001/index.html'],
-    /gemini-cli/,
+    /grok-cli/,
   );
   await other.refresh();
   other.state.editorAi = false;

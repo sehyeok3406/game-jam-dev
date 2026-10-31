@@ -118,7 +118,29 @@ export const AI_PROVIDERS: {
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     ],
   },
+  {
+    id: 'grok-cli',
+    label: 'Grok · Grok Build',
+    description: '이 PC의 Grok Build CLI 인증으로 실행합니다.',
+    install: 'npm install -g @xai-official/grok',
+    login: 'grok login (또는 XAI_API_KEY 환경 변수)',
+    models: [{ id: '', label: '자동 선택 · Grok Build' }],
+  },
 ];
+
+/** Older servers advertised a boolean before provider IDs were negotiated. */
+export function supportsSharedAiProvider(
+  state: { multiProviderAi?: boolean; supportedAiProviders?: AiProviderId[] },
+  provider: AiProviderId,
+) {
+  if (Array.isArray(state.supportedAiProviders))
+    return state.supportedAiProviders.includes(provider);
+  return (
+    provider === 'codex-cli' ||
+    (!!state.multiProviderAi &&
+      (provider === 'claude-cli' || provider === 'gemini-cli'))
+  );
+}
 
 export function isAiProvider(value: unknown): value is AiProviderId {
   return AI_PROVIDERS.some((provider) => provider.id === value);

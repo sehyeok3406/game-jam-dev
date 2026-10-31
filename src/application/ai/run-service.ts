@@ -18,7 +18,11 @@ import {
 import { validateHtmlAnalysis } from '../../html-source.ts';
 import { isPreviewPath } from '../../preview-output.ts';
 import { embedSelectedAssets } from '../../ai-asset-links.ts';
-import { changedAiFile } from '../../ai-file-lock.ts';
+import {
+  changedAiFile,
+  taskFileLock,
+  aiLockedSnapshot,
+} from '../../ai-file-lock.ts';
 import { layoutNewDocuments } from '../../new-document-layout.ts';
 import { initializeWorkflows } from '../../document-workflow.ts';
 
@@ -78,6 +82,11 @@ export class AiRunService {
   async preparePhase() {
     await this.workspace.write(this.taskPath, this.stages[this.stageIndex]);
     this.phaseBaseline = await this.workspace.capture();
+  }
+  /** A write-only executor receives only the current task's protected snapshot. */
+  async inputFiles() {
+    const files = await this.workspace.capture();
+    return aiLockedSnapshot(files, taskFileLock(files, this.taskPath));
   }
   async embedAssets(provider: AiProviderId) {
     if (provider === 'codex-cli') return;

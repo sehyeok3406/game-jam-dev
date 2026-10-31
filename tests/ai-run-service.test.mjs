@@ -95,6 +95,18 @@ function fixture() {
   };
 }
 
+test('write-only executor input is scoped to the task and captures the current phase without unrelated documents', async () => {
+  const f = fixture();
+  f.staged()['ideas/unrelated.md'] = 'Do not send this';
+  const files = await f.service.inputFiles();
+  assert.equal(files['ideas/unrelated.md'], undefined);
+  assert.equal(files[taskPath], f.baseline[taskPath]);
+  assert.equal(files['ideas/a.md'], f.baseline['ideas/a.md']);
+  assert.equal(files[output], html('new'));
+  files[output] = 'detached';
+  assert.equal(f.staged()[output], html('new'));
+});
+
 test('AI publication rolls outputs back when completed-history persistence fails', async () => {
   const f = fixture();
   f.service.inspectInput();
