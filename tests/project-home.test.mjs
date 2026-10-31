@@ -16,7 +16,15 @@ import { parseConnectionInfo, connectionInfo } from '../src/connection-info.ts';
 import { serverAddress } from '../src/collaboration-client.ts';
 import { CollaborationClient } from '../src/collaboration-client.ts';
 import { createCollaborationServer } from '../src/collaboration-server.ts';
-import { readHistoryFile, listHistory } from '../src/project-store.ts';
+import {
+  readHistoryFile,
+  listHistory,
+  captureProject,
+} from '../src/project-store.ts';
+import { createTextObject, plainTextDocument } from '../src/text-document.ts';
+import { applyDrawing } from '../src/drawing-model.ts';
+import { SharedProjectMirror } from '../src/application/editing/shared-project-mirror.ts';
+import { filesystemSharedProjectFiles } from '../src/adapters/filesystem/shared-project-files.ts';
 
 const projectId = '00000000-0000-4000-8000-000000000001';
 function fixture() {
@@ -514,7 +522,12 @@ test('shared adapter keeps credentials private and uses current internal server 
     assert.equal(args[0], 'http://127.0.0.1:43210');
     assert.equal(args[3], 'secret-token');
   }
-  assert.deepEqual(f.requests[1][2], { metadataOnly: true });
+  assert.deepEqual(f.requests[1][2], {
+    metadataOnly: true,
+    drawingTextVersion: 1,
+    drawingTextAlignmentVersion: 1,
+    drawingEraseVersion: 1,
+  });
   let seen;
   f.options.client = (credentials) => {
     seen = credentials;
@@ -627,6 +640,96 @@ test('default authenticated transport refreshes and renames through a real tempo
     assert.equal((await adapter.metadata(id)).name, 'renamed');
     await assert.rejects(adapter.rename(id, 'stale', 'saved'), /변경|바뀌/);
     assert.equal((await adapter.metadata(id)).name, 'renamed');
+  } finally {
+    await server.close();
+  }
+});
+
+test('home full snapshot and metadata reads support aligned canvas text without bypassing old-client rejection', async (t) => {
+  const root = await temporary(t);
+  const text = createTextObject(120, 140);
+  const document = JSON.parse(plainTextDocument('홈 탐색기 텍스트 회귀'));
+  document.content[0].attrs = { textAlign: 'center' };
+  text.geometry.document = JSON.stringify(document);
+  const files = applyDrawing(
+    {},
+    { canvasId: 'default', action: 'create', objects: [text] },
+  );
+  const server = await createCollaborationServer({
+    dataDirectory: path.join(root, 'server'),
+    port: 0,
+    creationKey: 'fixture',
+  });
+  try {
+    const url = `http://127.0.0.1:${server.port}`;
+    const created = await CollaborationClient.create(
+      url,
+      'fixture',
+      'owner',
+      '텍스트가 있는 공유 프로젝트',
+      files,
+    );
+    const library = new ProjectLibrary(path.join(root, 'profile'), encryption);
+    await library.load();
+    await library.rememberShared(
+      created.credentials,
+      created.result.state.projectName,
+      'admin',
+      null,
+    );
+    const id = library.list()[0].id;
+    const adapter = desktopSharedProjects({
+      library,
+      userData: path.join(root, 'profile'),
+      active: () => null,
+      internalServerUrl: async () => url,
+      drainCache: async () => {},
+      prepareFiles: async (directory, snapshot, guard) => {
+        await new SharedProjectMirror(
+          filesystemSharedProjectFiles(
+            directory,
+            {
+              pauseWatcher: async () => async () => {},
+              trashItem: async () => {},
+            },
+            guard,
+          ),
+          guard,
+        ).sync(snapshot);
+      },
+    });
+    // These are the exact non-active home paths; neither goes through client.refresh().
+    assert.equal(
+      (await adapter.metadata(id)).name,
+      '텍스트가 있는 공유 프로젝트',
+    );
+    const prepared = await adapter.directory(id);
+    assert.equal(prepared.offline, false);
+    assert.deepEqual(await captureProject(prepared.root), files);
+    const endpoint = `/projects/${created.credentials.projectId}/state`;
+    await assert.rejects(
+      CollaborationClient.fetch(url, endpoint, {}, created.credentials.token),
+      /텍스트.*업데이트/,
+    );
+    await assert.rejects(
+      CollaborationClient.fetch(
+        url,
+        endpoint,
+        { drawingTextVersion: 1 },
+        created.credentials.token,
+      ),
+      /줄별 정렬.*업데이트/,
+    );
+    await assert.rejects(
+      CollaborationClient.fetch(
+        url,
+        endpoint,
+        { drawingTextVersion: 1, drawingTextAlignmentVersion: 1 },
+        created.credentials.token,
+      ),
+      /부분 지우기.*업데이트/,
+    );
+    assert.deepEqual(await captureProject(prepared.root), files);
   } finally {
     await server.close();
   }

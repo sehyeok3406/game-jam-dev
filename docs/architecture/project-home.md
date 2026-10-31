@@ -12,6 +12,8 @@
 
 홈의 ‘탐색기에서 표시’는 로컬·공유에 모두 제공한다. 공유 directory port가 대상 자격·서버 상태·미전송 변경을 확인하고 기존 mirror로 PC 사본을 준비한다. 활성 프로젝트는 전환하지 않는다. 홈 서비스는 준비 완료 후 OS 탐색기를 열고 offline 여부를 반환한다. UI는 오래된 사본을 열었을 때 안내한다. 권한 회수·휴지통·준비 실패·요청 중 세션 교체는 오류로 처리한다. 현재 내장 서버 주소를 재사용한다.
 
+비활성 공유 프로젝트의 전체 snapshot과 metadata 조회는 같은 readState 경계를 사용하며 drawingTextVersion·drawingTextAlignmentVersion·drawingEraseVersion 지원 정보를 전달한다. 활성 client.request를 거치지 않는 홈에서도 기능 협상을 누락하지 않는다. 서버의 구버전 차단 검사는 유지한다. 정렬된 텍스트가 있는 실제 공유 서버와 Windows 홈 탐색기 메뉴를 회귀 검사한다.
+
 파일 구조 정리는 별도 ProjectLayoutService와 세션에 고정된 desktop port를 사용한다. status와 실행 API는 desktop capability이며, 실행은 상태 확인 당시의 session을 다시 검증한다. 기존 projects:reveal은 공유를 포함하도록 확장했다.
 
 ## v0.37.0 생성·모드 전환 변경

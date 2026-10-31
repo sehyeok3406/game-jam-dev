@@ -1,3 +1,4 @@
+import { createTextObject, plainTextDocument } from '../src/text-document.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -379,6 +380,18 @@ try {
   assert.match(migrated.body, /원본 한글 내용/);
   const idea = await call('createIdea', { x: 900, y: 500 });
   assert.match(idea.relativePath, /^docs\/[^/]+\.md$/);
+  const text = createTextObject(1200, 600);
+  const textDocument = JSON.parse(
+    plainTextDocument('홈 탐색기 텍스트 패키지 회귀'),
+  );
+  textDocument.content[0].attrs = { textAlign: 'center' };
+  text.geometry.document = JSON.stringify(textDocument);
+  await call('applyDrawingCommand', {
+    scope: (await call('getWorkspace')).saveScope,
+    canvasId: 'default',
+    action: 'create',
+    objects: [text],
+  });
   await js(
     `document.querySelector(${JSON.stringify('button[title="프로젝트 홈으로 돌아가기"]')}).click()`,
   );
@@ -390,7 +403,21 @@ try {
     '!!Array.from(document.querySelectorAll(".home-context-menu button")).find(e=>e.textContent.trim()==="탐색기에서 표시")',
   );
   await clickText('.home-context-menu button', '탐색기에서 표시');
-  await wait('!document.querySelector(".home-context-menu")');
+  await wait(
+    '!document.querySelector(".home-context-menu") && !document.querySelector(".home-project-more:disabled")',
+  );
+  assert.equal(
+    await js(
+      'document.querySelector(".project-home .home-error")?.textContent ?? ""',
+    ),
+    '',
+    'Home Explorer must accept aligned canvas text',
+  );
+  assert.deepEqual(await call('revealProject', sharedId), { offline: false });
+  assert.equal(
+    (await call('listProjects', true)).find((e) => e.id === sharedId).name,
+    '패키지 공동 이름',
+  );
   assert.equal(
     (await call('getWorkspace')).root,
     null,
@@ -437,6 +464,11 @@ try {
   await boot();
   await call('openProject', sharedId);
   assert.equal((await call('getProjectLayout')).version, 2);
+  assert.equal(
+    (await call('listDrawings')).find((o) => o.id === text.id).geometry
+      .document,
+    text.geometry.document,
+  );
   assert.match(
     (await call('getDocument', migrated.relativePath)).body,
     /원본 한글 내용/,

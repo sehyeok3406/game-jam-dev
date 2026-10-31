@@ -96,6 +96,19 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
         'server-cache.json',
       ),
     );
+  // Home reads have no active client.request() to negotiate drawing capabilities.
+  const readState = (saved: CollaborationCredentials, metadataOnly = false) =>
+    fetch(
+      saved.serverUrl,
+      `/projects/${saved.projectId}/state`,
+      {
+        drawingTextVersion: 1,
+        drawingTextAlignmentVersion: 1,
+        drawingEraseVersion: 1,
+        ...(metadataOnly ? { metadataOnly: true } : {}),
+      },
+      saved.token,
+    );
   return {
     async directory(id) {
       const assertSession = options.beginReveal?.() ?? (() => {});
@@ -162,12 +175,7 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
         offline = true;
       } else {
         try {
-          envelope = (await fetch(
-            saved.serverUrl,
-            `/projects/${projectId}/state`,
-            {},
-            saved.token,
-          )) as CollaborationEnvelope;
+          envelope = (await readState(saved)) as CollaborationEnvelope;
         } catch (error) {
           const status =
             (error as { status?: number; details?: { status?: number } })
@@ -254,12 +262,7 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
     },
     async metadata(id) {
       const saved = await credentials(id);
-      const result = (await fetch(
-        saved.serverUrl,
-        `/projects/${saved.projectId}/state`,
-        { metadataOnly: true },
-        saved.token,
-      )) as CollaborationEnvelope;
+      const result = (await readState(saved, true)) as CollaborationEnvelope;
       return {
         name: result.state.projectName ?? library.get(id).name,
         role: result.state.role,
