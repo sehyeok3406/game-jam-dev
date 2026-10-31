@@ -396,3 +396,20 @@ test('owner recovery during retention rotates management access without exposing
   );
   assert.equal(status.status, 'active');
 });
+
+test('local restore rejects a name now used by another project before moving files or invoking hooks', async (t) => {
+  const f = await fixture(t);
+  const plan = await f.trash.prepare(f.id);
+  const id = await f.trash.trash(plan.token, {});
+  await f.library.rememberLocal(path.join(f.base, 'other'), 'GAME');
+  await assert.rejects(f.trash.restore(id), /같은 이름/);
+  assert.equal(await fs.stat(f.root).catch(() => null), null);
+  assert.ok(!f.seen.includes('restore'));
+  assert.equal(f.trash.list().length, 1);
+  await f.library.renameProject(f.library.list()[0].id, 'other');
+  await f.trash.restore(id);
+  assert.equal(
+    await fs.readFile(path.join(f.root, 'project.md'), 'utf8'),
+    '# game',
+  );
+});

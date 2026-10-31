@@ -1,3 +1,4 @@
+import { sharedWorkspacePath } from './adapters/filesystem/shared-workspace-locations.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -151,7 +152,7 @@ export class ProjectTrash {
     const root =
       entry.kind === 'local'
         ? entry.root!
-        : path.join(this.directory, 'shared-workspaces', entry.projectId!);
+        : sharedWorkspacePath(this.directory, entry);
     if (!path.isAbsolute(root))
       throw Error('프로젝트 경로가 올바르지 않습니다.');
     if (
@@ -273,6 +274,7 @@ export class ProjectTrash {
       this.library.list().some((e) => e.id === record.projectId)
     )
       throw Error('같은 프로젝트가 이미 등록되어 있습니다.');
+    this.library.assertNameAvailable(record.saved.name, record.saved.id);
     record.stage = 'restoring';
     await this.save(record);
     await moveChecked(record.path, record.originalPath, record.identity);

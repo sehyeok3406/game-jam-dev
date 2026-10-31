@@ -1,3 +1,8 @@
+import { requireProjectNamesSupport } from './adapters/http/project-names-support.ts';
+import type {
+  ProjectNameInspection,
+  JoinIdentity,
+} from './contracts/project-names.ts';
 import { collaborationTransport } from './adapters/http/collaboration-transport.ts';
 import { remapPendingLayout } from './adapters/markdown/layout-snapshot.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
@@ -154,6 +159,7 @@ export class CollaborationClient {
     name: string,
     files: Snapshot,
   ) {
+    await requireProjectNamesSupport(serverAddress(serverUrl));
     if (files[PROJECT_LAYOUT_PATH])
       await requireProjectLayoutSupport(serverAddress(serverUrl));
     const result = (await this.fetch(
@@ -185,8 +191,58 @@ export class CollaborationClient {
       },
     };
   }
-  static async join(serverUrl: string, code: string, nickname: string) {
+  static async inspectJoin(
+    serverUrl: string,
+    code: string,
+  ): Promise<ProjectNameInspection> {
+    await requireProjectNamesSupport(serverAddress(serverUrl));
+    return this.nameInspection(
+      await this.fetch(serverAddress(serverUrl), '/join-inspect', {
+        code,
+      }),
+    );
+  }
+  private static nameInspection(value: unknown): ProjectNameInspection {
+    const data = value as ProjectNameInspection | null;
+    if (
+      !data ||
+      typeof data.name !== 'string' ||
+      !/^[a-f0-9-]{36}$/.test(data.projectId) ||
+      !Number.isSafeInteger(data.nameVersion) ||
+      data.nameVersion < 0
+    )
+      throw Error('서버의 프로젝트 이름 정보를 확인할 수 없습니다.');
+    return data;
+  }
+  static async inspectRecovery(
+    serverUrl: string,
+    projectId: string,
+    recoveryKey: string,
+  ) {
+    await requireProjectNamesSupport(serverAddress(serverUrl));
+    return this.nameInspection(
+      await this.fetch(serverAddress(serverUrl), '/recover', {
+        projectId,
+        recoveryKey,
+        inspectOnly: true,
+      }),
+    );
+  }
+  static async join(
+    serverUrl: string,
+    code: string,
+    nickname: string,
+    verified?: { inspection: ProjectNameInspection; identity: JoinIdentity },
+  ) {
     const result = (await this.fetch(serverAddress(serverUrl), '/join', {
+      ...(verified
+        ? {
+            expectedProjectId: verified.inspection.projectId,
+            expectedName: verified.inspection.name,
+            expectedNameVersion: verified.inspection.nameVersion,
+            joinIdentity: verified.identity,
+          }
+        : {}),
       code,
       nickname,
       drawingTextVersion: 1,
@@ -221,10 +277,18 @@ export class CollaborationClient {
     serverUrl: string,
     projectId: string,
     recoveryKey: string,
+    inspection?: ProjectNameInspection,
   ) {
     const result = (await this.fetch(serverAddress(serverUrl), '/recover', {
       projectId,
       recoveryKey,
+      ...(inspection
+        ? {
+            expectedProjectId: inspection.projectId,
+            expectedName: inspection.name,
+            expectedNameVersion: inspection.nameVersion,
+          }
+        : {}),
       drawingTextVersion: 1,
       drawingTextAlignmentVersion: 1,
       drawingEraseVersion: 1,
@@ -1400,6 +1464,8 @@ export class CollaborationClient {
         throw new Error(
           '공동 프로젝트 이름 변경을 지원하는 협업 서버로 업데이트해주세요.',
         );
+      if (this.state.projectNamesVersion !== 1)
+        throw Error('이름 중복 검사를 지원하는 협업 서버로 업데이트해주세요.');
       this.accept(
         (await this.request('rename', {
           name,

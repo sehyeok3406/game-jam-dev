@@ -11,6 +11,7 @@ type Ports = {
   limit: (id: string, kind: string, max: number) => void;
   validKey: (key: string) => boolean;
   create: (input: Record<string, unknown>) => Promise<unknown>;
+  inspectJoin?: (input: Record<string, unknown>) => Promise<unknown>;
   join: (input: Record<string, unknown>) => Promise<unknown>;
   recover: (input: Record<string, unknown>) => Promise<unknown>;
 };
@@ -18,9 +19,13 @@ export function projectsRoute(ports: Ports): HttpRoute {
   return async (request, response, url) => {
     if (
       request.method !== 'POST' ||
-      !['/projects', '/projects-mode', '/join', '/recover'].includes(
-        url.pathname,
-      )
+      ![
+        '/projects',
+        '/projects-mode',
+        '/join',
+        '/join-inspect',
+        '/recover',
+      ].includes(url.pathname)
     )
       return false;
     const peer =
@@ -32,8 +37,8 @@ export function projectsRoute(ports: Ports): HttpRoute {
     } else
       ports.limit(
         peer,
-        url.pathname === '/join' ? 'join' : 'recover',
-        url.pathname === '/join' ? 20 : 10,
+        url.pathname.startsWith('/join') ? 'join' : 'recover',
+        url.pathname.startsWith('/join') ? 20 : 10,
       );
     const input = await body(request);
     if (url.pathname === '/projects-mode' && input.projectModeVersion !== 1)
@@ -41,9 +46,12 @@ export function projectsRoute(ports: Ports): HttpRoute {
     const result =
       url.pathname === '/projects' || url.pathname === '/projects-mode'
         ? await ports.create(input)
-        : url.pathname === '/join'
-          ? await ports.join(input)
-          : await ports.recover(input);
+        : url.pathname === '/join-inspect'
+          ? await (ports.inspectJoin?.(input) ??
+              Promise.reject(new ApiError('서버 업데이트가 필요합니다.', 404)))
+          : url.pathname === '/join'
+            ? await ports.join(input)
+            : await ports.recover(input);
     reply(response, 200, result);
     return true;
   };

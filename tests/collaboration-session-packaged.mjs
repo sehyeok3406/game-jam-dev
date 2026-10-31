@@ -221,8 +221,16 @@ try {
     code: rotated.inviteCode,
     nickname: '패키지 참여자',
   });
-  assert.equal(editor.role, 'editor');
-  const sharedId = 'shared:' + editor.projectId,
+  assert.equal(editor.role, 'admin');
+  assert.equal(
+    editor.memberId,
+    owner.memberId,
+    'Repeated joining must reuse the registered member',
+  );
+  assert.equal(editor.members.length, 2);
+  const sharedId = (await call('listProjects')).find(
+      (entry) => entry.projectId === editor.projectId,
+    ).id,
     sharedRoot = (await call('getWorkspace')).root;
   assert.ok(
     path.resolve(sharedRoot).startsWith(path.resolve(profile) + path.sep),
@@ -294,7 +302,8 @@ try {
   assert.match(backup, /내 PC 오프라인 작업/);
   assert.match(cacheBefore, /offline/);
   await call('leaveCollaboration');
-  await call('openProject', localId);
+  assert.equal((await call('getWorkspace')).root, game);
+  // The legacy leave removes its saved shared card. Recover from the current local return root.
   const recovered = await call('recoverCollaboration', {
     serverUrl,
     projectId: owner.projectId,

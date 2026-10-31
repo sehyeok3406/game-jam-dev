@@ -1,3 +1,4 @@
+import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectCopyService } from '../../application/projects/project-copy-service.ts';
@@ -134,9 +135,10 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
       throw Error('다른 프로젝트를 선택해주세요.');
     const cached = await readClientCache(
       path.join(
-        ports.userData,
-        'shared-workspaces',
-        credentials.projectId,
+        sharedWorkspacePath(ports.userData, {
+          ...entry,
+          projectId: credentials.projectId,
+        }),
         'server-cache.json',
       ),
     ).catch((error: NodeJS.ErrnoException) => {

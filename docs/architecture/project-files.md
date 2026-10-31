@@ -1,5 +1,9 @@
 # 공동 파일 사본과 로컬 편집 반영
 
+## 공유 사본 root · 2026-10-31
+
+[ADR 0004](decisions/0004-project-names-and-shared-folders.md)의 sharedRoot는 mirror 전체 위치다. 새 사본은 이름 폴더, 기존 사본은 저장된 root 또는 기존 UUID 경로를 사용한다. FilesystemSharedWorkspaces와 desktop 조립만 root를 결정하며 다른 호출부는 이름/ID로 경로를 재구성하지 않는다. 이름 정리는 내용 필터 복사가 아닌 전체 디렉터리 rename이다. 추적되지 않은 파일·숨김 자료·서버 캐시·개인 상태·히스토리를 보존하고 journal이 남으면 일반 열기를 통해 옛 root를 재생성하지 않는다. docs 구조 전환과 root 이름 정리는 서로 다른 명시적 동작이다.
+
 ## 프로젝트 파일 구조 v2
 
 [ADR 0003](decisions/0003-project-file-layout.md)의 v2는 사용자 문서를 docs 바로 아래에 두고 실제 내부 파일을 .gamejam/project와 .gamejam/local로 구분한다. snapshot 내부 식별 경로는 유지하며 projectPath의 filesystem 변환과 reader의 역변환을 사용한다. 새 직접 작성·AI 문서·가져오기·복제·프로젝트 간 복사·UI 설명에 같은 문서 경로 규칙을 적용한다. AI 문서 묶음은 속성으로 식별한다.

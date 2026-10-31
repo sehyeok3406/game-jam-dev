@@ -15,6 +15,7 @@ export type Member = {
   role: CollaborationRole;
   owner: boolean;
   tokenHash: string;
+  joinRequestId?: string;
   removed?: boolean;
 };
 export type StoredHistory = {
@@ -41,6 +42,7 @@ export type Job = {
   event: CodexRunEvent;
 };
 export type Project = {
+  nameVersion?: number;
   creation?: { id: string; tokenHash: string; fingerprint: string };
   handover?: import('../contracts/project-mode.ts').ProjectHandover & {
     recoveryHash?: string;

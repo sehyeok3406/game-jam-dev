@@ -34,7 +34,7 @@ test('grouped bridge forwards arguments, binding, rejection and unsubscribe with
     },
   };
   const api = groupBridge(bridge);
-  assert.equal(Object.keys(APP_API_GROUPS).length, 138);
+  assert.equal(Object.keys(APP_API_GROUPS).length, 140);
   assert.deepEqual(await api.projects.listProjects(true), ['bridge']);
   assert.deepEqual(events, [true]);
   const input = { relativePath: 'docs/test.md', title: '저장', body: '한글' };

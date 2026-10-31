@@ -66,7 +66,10 @@ export class CollaborationService {
       }
     }
     const current = p.scope();
-    return this.activate(offer, current.localRoot ?? current.root);
+    return this.activate(
+      offer,
+      scope.shared ? scope.localRoot : (current.localRoot ?? current.root),
+    );
   }
   toLocal(
     input: import('../../contracts/project-mode.ts').LocalConversionInput,

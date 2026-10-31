@@ -73,6 +73,22 @@ export class EditorDraftStore {
   async flush() {
     await Promise.all(this.queues.values());
   }
+  async relocateRoot(from: string, to: string) {
+    const prefix = `game-canvas-draft:${from}:`;
+    const drafts = await this.projectData((key) => key.startsWith(prefix));
+    for (const [key, value] of Object.entries(drafts)) {
+      const target = `game-canvas-draft:${to}:` + key.slice(prefix.length);
+      const existing = await this.get(target);
+      if (
+        existing &&
+        (existing.title !== value.title || existing.body !== value.body)
+      )
+        throw Error(
+          '새 폴더 위치의 보관 초안이 다릅니다. 두 초안을 보존한 채 이전을 보류했습니다.',
+        );
+      await this.set(target, value, value.sequence);
+    }
+  }
   async projectData(
     matches: (key: string) => boolean,
     knownKeys: string[] = [],

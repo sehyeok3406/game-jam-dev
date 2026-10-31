@@ -6,7 +6,6 @@ import type {
   HomeProjectTrash,
   SharedLifecycleAction,
 } from '../ports/home-projects.ts';
-import { homeName } from '../../home-organization.ts';
 import { projectDirectoryName } from '../../core/projects/project-name.ts';
 
 type Ports = {
@@ -19,6 +18,11 @@ type Ports = {
   serverAddress(url: string): string;
   chooseParent(): Promise<string | null>;
   reveal(root: string): void | Promise<void>;
+  registerSelected?(
+    token: string,
+    name: string | null,
+  ): Promise<import('../../contracts/project.ts').WorkspaceState>;
+  tidySharedFolder?(id: string): Promise<void>;
   createShared?(
     input: import('../../contracts/project-mode.ts').CreateProjectInput,
   ): Promise<import('../../contracts/project.ts').WorkspaceState>;
@@ -39,7 +43,7 @@ export class ProjectHomeService {
   }
   async list(refreshShared = false) {
     const p = this.ports;
-    return Promise.all(
+    const entries = await Promise.all(
       p.registry.list().map(async (saved) => {
         const entry = { ...saved };
         if (entry.kind === 'shared') {
@@ -57,7 +61,14 @@ export class ProjectHomeService {
               entry.lifecycle = await p.shared.lifecycle(entry.id, 'lifecycle');
               if (entry.lifecycle.status !== 'active') return entry;
               Object.assign(entry, await p.shared.metadata(entry.id));
-              await p.registry.renameProject(entry.id, entry.name, entry.role);
+              if (p.registry.observeName)
+                await p.registry.observeName(entry.id, entry.name, entry.role);
+              else
+                await p.registry.renameProject(
+                  entry.id,
+                  entry.name,
+                  entry.role,
+                );
             } catch {
               /* Keep the last known name and membership while offline. */
             }
@@ -71,6 +82,8 @@ export class ProjectHomeService {
           entry.current = !current.sharedId && current.root === entry.root;
           try {
             entry.name = await p.local.name(entry.root!);
+            if (entry.name !== saved.name)
+              await p.registry.observeName?.(entry.id, entry.name);
             Object.assign(entry, await p.local.timestamps(entry.root!));
           } catch {
             /* Keep unavailable local projects in the list. */
@@ -79,6 +92,15 @@ export class ProjectHomeService {
         return entry;
       }),
     );
+    const latest = new Map(p.registry.list().map((entry) => [entry.id, entry]));
+    return entries.map((entry) => {
+      const current = latest.get(entry.id);
+      if (current && 'nameConflict' in current)
+        entry.nameConflict = current.nameConflict;
+      if (current && 'folderNamePending' in current)
+        entry.folderNamePending = current.folderNamePending;
+      return entry;
+    });
   }
   folders() {
     return this.ports.registry.listFolders();
@@ -96,10 +118,25 @@ export class ProjectHomeService {
     return this.ports.registry.removeFolder(id);
   }
   async rename(id: string, inputName: string, expectedName?: string) {
+    const name = projectDirectoryName(inputName);
+    const entry = this.ports.registry.get(id);
+    if (name === entry.name) return;
+    if (this.ports.registry.assertNameAvailable) await this.list();
+    const run = () => this.renameNamed(id, name, expectedName);
+    return this.ports.registry.withName
+      ? this.ports.registry.withName(name, entry.id, run)
+      : run();
+  }
+  private async renameNamed(
+    id: string,
+    inputName: string,
+    expectedName?: string,
+  ) {
     const p = this.ports,
-      name = homeName(inputName),
+      name = projectDirectoryName(inputName),
       entry = p.registry.get(id);
     if (entry.kind === 'shared') {
+      p.registry.assertNameAvailable?.(name, entry.id);
       const result = await p.shared.rename(
         id,
         name,
@@ -107,6 +144,7 @@ export class ProjectHomeService {
       );
       await p.registry.renameProject(id, result.name, result.role);
     } else {
+      p.registry.assertNameAvailable?.(name, entry.id);
       await p.local.rename(entry.root!, name, expectedName);
       await p.registry.renameProject(id, name);
     }
@@ -145,10 +183,25 @@ export class ProjectHomeService {
       | string
       | import('../../contracts/project-mode.ts').CreateProjectInput,
   ) {
+    const name = projectDirectoryName(
+      typeof input === 'string' ? input : input.name,
+    );
+    if (this.ports.registry?.assertNameAvailable) await this.list();
+    const run = () => this.createNamed(input);
+    return this.ports.registry?.withName
+      ? this.ports.registry.withName(name, undefined, run)
+      : run();
+  }
+  private async createNamed(
+    input:
+      | string
+      | import('../../contracts/project-mode.ts').CreateProjectInput,
+  ) {
     const p = this.ports,
       name = projectDirectoryName(
         typeof input === 'string' ? input : input.name,
       );
+    p.registry?.assertNameAvailable?.(name);
     if (typeof input !== 'string' && input.mode === 'shared') {
       if (!p.createShared)
         throw Error('이 환경에서는 공동 프로젝트를 생성할 수 없습니다.');
@@ -162,6 +215,29 @@ export class ProjectHomeService {
     const root = await p.local.create(parent, name);
     await p.session.suspend();
     return p.session.openLocal(root);
+  }
+  registerSelected(token: string, name: string | null) {
+    if (!this.ports.registerSelected) throw Error('PC 앱을 업데이트해주세요.');
+    return this.ports.registerSelected(token, name);
+  }
+  async tidySharedFolder(id: string) {
+    const p = this.ports;
+    const entry = p.registry.get(id);
+    if (entry.kind !== 'shared' || p.trash.hasProject(id))
+      throw Error('공유 프로젝트를 선택해주세요.');
+    p.registry.assertNameAvailable?.(entry.name, entry.id);
+    if (!p.tidySharedFolder) throw Error('PC 앱을 업데이트해주세요.');
+    p.stopViewer();
+    try {
+      await p.drainViewer();
+      await p.session.suspend();
+      await p.pauseSaves();
+      await p.drainCache();
+      await p.tidySharedFolder(id);
+      p.changed();
+    } finally {
+      p.startViewer();
+    }
   }
   async reveal(id: string) {
     const p = this.ports,

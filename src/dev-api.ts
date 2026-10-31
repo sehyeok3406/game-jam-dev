@@ -736,6 +736,7 @@ export function createDevGameCanvasApi(
     renameProjectFolder: (id, name) =>
       editHome({ type: 'rename-folder', id, name }),
     removeProjectFolder: (id) => editHome({ type: 'remove-folder', id }),
+    tidySharedProjectFolder: async () => {},
     revealProject: async () => {
       throw new Error('저장 위치 보기는 데스크톱 앱에서 사용해주세요.');
     },
@@ -1068,6 +1069,10 @@ export function createDevGameCanvasApi(
       clipboardContextId: 'dev-preview',
       root: '/demo/game-canvas',
       name: demoProjectName,
+    }),
+    registerSelectedWorkspace: async () => ({
+      root: 'preview',
+      name: '미리보기',
     }),
     selectWorkspace: async () => ({
       root: '/demo/game-canvas',

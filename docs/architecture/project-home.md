@@ -1,5 +1,11 @@
 # 프로젝트 홈 업무 경계
 
+## 프로젝트 이름과 공유 폴더 · 2026-10-31
+
+[ADR 0004](decisions/0004-project-names-and-shared-folders.md)를 따른다. 로컬·공유 이름은 이 PC 목록 전체에서 중복을 거절한다. 기존/원격 중복은 보존하고 홈에 표시한다. 기존 폴더를 처음 등록할 때 충돌하면 SelectedProjectRegistration의 선택 토큰으로 이름 수정 후 등록하며 취소는 토큰을 폐기한다. 선택하지 않은 root를 IPC 인자로 받아 개명하지 않는다.
+
+홈의 ‘공유 사본 폴더 이름 정리’는 별도 projects:folder-name API로 명시적으로 실행한다. viewer·세션·저장 큐·캐시를 정지/완료한 뒤 filesystem journal 이동을 호출한다. 로컬 폴더 위치와 서버 파일 경로는 유지한다. projects:register-selected를 포함한 프로젝트 IPC는 현재 28개다. 공개 registry view는 sharedRoot도 제외한다.
+
 ## 파일 구조와 탐색기 접근 · 2026-10-30
 
 새 로컬·공유 프로젝트는 기본 문서 없이 생성한다. 기존 프로젝트는 명시적으로 파일 구조를 정리하기 전까지 v1을 유지한다. [ADR 0003](decisions/0003-project-file-layout.md)을 따른다.
@@ -12,7 +18,7 @@
 
 현재 생성 방식 선택과 실제 참여 종료/소유권 인계는 [프로젝트 모드 전환](project-mode-transitions.md)을 따른다. 아래 기존 생성·leave 동작 설명은 레거시 API 경로의 계약이며 새 사용자 전환 흐름과 구분한다. 새 폼은 경로 선택과 생성을 분리하고, 신규 전환은 목록 ID·분류를 유지한다. 전환 API는 기존 property/mutation 큐와 세션 검사를 사용한다.
 
-`ProjectHomeService`가 목록 보강, 로컬/공동 이름 변경, 열기/홈 이동/생성, 홈 폴더 분류, 연결 주소 검사/적용, 휴지통 전후의 대기 순서를 소유한다. `desktop/ipc/projects.ts`는 기존 25개 `projects:*` 채널의 인자를 변환한다. 채널·preload API·반환 형식은 유지하며 기존 main의 mutation 큐·AI 작업 보호·외부 창/프레임 거부를 통과해 등록한다. 연결 정보의 sender 검사도 등록 경계에서 유지한다.
+`ProjectHomeService`가 목록 보강, 로컬/공동 이름 변경, 열기/홈 이동/생성, 홈 폴더 분류, 연결 주소 검사/적용, 휴지통 전후의 대기 순서를 소유한다. `desktop/ipc/projects.ts`는 28개 `projects:*` 채널의 인자를 변환한다. 채널·preload API·반환 형식은 유지하며 기존 main의 mutation 큐·AI 작업 보호·외부 창/프레임 거부를 통과해 등록한다. 연결 정보의 sender 검사도 등록 경계에서 유지한다.
 
 - `HomeProjectRegistry`는 공개 항목만 제공한다. desktop의 `homeProjectRegistry`가 `credentials`와 `localRoot`를 제외한다. 토큰·recovery key·암호화·`projects.enc`/`local-projects.json` 저장은 기존 ProjectLibrary에 남는다. 개인 로컬 목록·편집·폴더 분류에 암호화된 공동 세션이나 서버를 요구하지 않는다.
 - `filesystemHomeProjects`는 로컬 이름/시각·경로 확인·mkdir와 이름 저장을 맡는다. `project.md`의 unknown frontmatter/본문, expectedName, 임시 파일 compare/replace, 기존 before/after 히스토리와 `.canvas/project.json`을 유지한다. 삭제된 project.md는 이름 변경으로 다시 만들지 않는다. 디스크 문서/metadata/registry/history를 하나의 새 원자 트랜잭션으로 바꿨다고 주장하지 않는다.

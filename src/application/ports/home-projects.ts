@@ -9,6 +9,17 @@ import type {
 /** Public registry view. Credentials belong to the desktop adapter. */
 export interface HomeProjectRegistry {
   list(): ProjectEntry[];
+  withName?<T>(
+    name: string,
+    exceptId: string | undefined,
+    operation: () => Promise<T>,
+  ): Promise<T>;
+  assertNameAvailable?(name: string, exceptId?: string): void;
+  observeName?(
+    id: string,
+    name: string,
+    role?: ProjectEntry['role'],
+  ): Promise<void>;
   get(id: string): ProjectEntry;
   hasSharedSession(id: string): boolean;
   findShared?(projectId: string, serverUrl?: string): ProjectEntry;

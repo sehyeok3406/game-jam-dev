@@ -1,5 +1,11 @@
 # 공동 프로젝트 연결과 세션 보존
 
+## 이름 사전 확인과 경로 · 2026-10-31
+
+[ADR 0004](decisions/0004-project-names-and-shared-folders.md)의 projectNamesVersion:1을 협상한다. join-inspect는 멤버를 만들지 않고 ID·이름·버전만 반환한다. PC 이름 검사 후 암호화 pending-joins 요청 ID/토큰으로 참여하며 최종 이름 버전을 서버가 다시 확인한다. 이미 보관한 유효 자격은 새 멤버 없이 재사용하며 정지 전 원래 로컬 복귀 위치를 유지한다. 복구도 inspectOnly 인증 조회와 PC 검사 뒤 키 교체를 실행한다. 받은 자격은 활성화 전에 ProjectLibrary에 보관한다. 기존 복구 키 교체 응답 유실의 한계는 ADR에 명시한다.
+
+sharedRoot는 원래 localRoot와 별개이며 새 사본의 이름 경로와 기존 UUID 사본을 같은 resolver로 연다. 기존 중복/원격 이름 변경은 동기화를 끊지 않고 목록에 충돌과 폴더 정리 대기를 표시한다. 폴더 이동 시 root 기반 초안·설정 재연결을 마친 뒤 mapping을 확정하며 시작 시 journal을 먼저 복구한다.
+
 ## v0.37.0 생성·모드 전환 변경
 
 현재 생성 방식 선택과 실제 참여 종료/소유권 인계는 [프로젝트 모드 전환](project-mode-transitions.md)을 따른다. 아래 기존 생성·leave 동작 설명은 레거시 API 경로의 계약이며 새 사용자 전환 흐름과 구분한다. 새 폼은 경로 선택과 생성을 분리하고, 신규 전환은 목록 ID·분류를 유지한다. 전환 API는 기존 property/mutation 큐와 세션 검사를 사용한다.

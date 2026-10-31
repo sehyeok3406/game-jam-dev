@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProjectEntry, ProjectFolder } from '../shared';
 
 export type HomeDialog =
+  | { type: 'register-project'; token: string; name: string }
   | { type: 'rename-project' | 'move-project'; project: ProjectEntry }
   | { type: 'create-folder' }
   | { type: 'rename-folder' | 'remove-folder'; folder: ProjectFolder };
@@ -28,7 +29,9 @@ export function HomeOrganizationDialog({
         : dialog.project.name
       : 'folder' in dialog
         ? dialog.folder.name
-        : '',
+        : 'name' in dialog
+          ? dialog.name
+          : '',
   );
   const ref = useRef<HTMLFormElement>(null);
   const latest = useRef({ close, busy });
@@ -64,6 +67,7 @@ export function HomeOrganizationDialog({
     };
   }, []);
   const titles = {
+    'register-project': '프로젝트 이름을 바꿔 등록',
     'rename-project': '프로젝트 이름 변경',
     'move-project': '홈 폴더로 이동',
     'create-folder': '새 홈 폴더',
@@ -87,13 +91,15 @@ export function HomeOrganizationDialog({
       >
         <h2 id="home-organization-title">{titles[dialog.type]}</h2>
         <p id="home-organization-description">
-          {dialog.type === 'rename-project'
-            ? 'project' in dialog && dialog.project.kind === 'shared'
-              ? '관리자만 서버에 연결해 실제 공동 프로젝트 이름을 변경할 수 있습니다. 다른 팀원에게도 반영됩니다. 서버 저장 경로와 프로젝트 ID는 유지합니다.'
-              : '실제 로컬 프로젝트 이름과 project.md의 제목을 변경합니다. 저장 폴더 경로와 문서 본문은 유지하며 별도의 공동 사본은 바뀌지 않습니다.'
-            : dialog.type === 'remove-folder'
-              ? `“${'folder' in dialog ? dialog.folder.name : ''}” 분류를 삭제합니다. 프로젝트는 전체 목록에 남으며 파일과 공동 세션은 삭제되지 않습니다.`
-              : '이 PC의 홈에서 프로젝트를 정리하는 분류입니다. 실제 파일이나 서버 데이터를 이동하지 않습니다.'}
+          {dialog.type === 'register-project'
+            ? '선택한 폴더의 프로젝트 이름을 변경한 뒤 등록합니다. 기존 폴더 위치와 문서 본문은 유지합니다.'
+            : dialog.type === 'rename-project'
+              ? 'project' in dialog && dialog.project.kind === 'shared'
+                ? '관리자만 서버에 연결해 실제 공동 프로젝트 이름을 변경할 수 있습니다. 다른 팀원에게도 반영됩니다. 서버 저장 경로와 프로젝트 ID는 유지합니다.'
+                : '실제 로컬 프로젝트 이름과 project.md의 제목을 변경합니다. 저장 폴더 경로와 문서 본문은 유지하며 별도의 공동 사본은 바뀌지 않습니다.'
+              : dialog.type === 'remove-folder'
+                ? `“${'folder' in dialog ? dialog.folder.name : ''}” 분류를 삭제합니다. 프로젝트는 전체 목록에 남으며 파일과 공동 세션은 삭제되지 않습니다.`
+                : '이 PC의 홈에서 프로젝트를 정리하는 분류입니다. 실제 파일이나 서버 데이터를 이동하지 않습니다.'}
         </p>
         {dialog.type !== 'remove-folder' && (
           <label>

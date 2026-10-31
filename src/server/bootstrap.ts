@@ -1,3 +1,4 @@
+import { assertProjectNameAvailable } from '../core/projects/project-name.ts';
 import { acquireWriter } from './operations/writer-lock.ts';
 import { assertServiceMode, type ServiceMode } from './config.ts';
 import { createPeerIdentity } from './http/peer.ts';
@@ -200,8 +201,32 @@ export async function createCollaborationServer(options: Options) {
         }
       };
       const persist = async (project: Project) => {
-        synchronizeAiState(project, Date.now);
-        await telemetry.save(() => persistence.persist(project));
+        const usesName = (p: Project | undefined) =>
+          !!p &&
+          (!p.lifecycle ||
+            ['active', 'trashing', 'restoring'].includes(p.lifecycle.status));
+        const save = async () => {
+          synchronizeAiState(project, Date.now);
+          await telemetry.save(() => persistence.persist(project));
+        };
+        const previous = projects.get(project.id);
+        if (
+          usesName(project) &&
+          (!usesName(previous) || project.name !== previous?.name)
+        )
+          return queue('project-names', async () => {
+            try {
+              assertProjectNameAvailable(
+                projects.values(),
+                project.name,
+                project.id,
+              );
+            } catch (error) {
+              throw new ApiError((error as Error).message, 409);
+            }
+            await save();
+          });
+        await save();
       };
       try {
         for (const project of await store.loadAll()) {
@@ -509,6 +534,8 @@ export async function createCollaborationServer(options: Options) {
                 !options.creationKey || same(key, digest(options.creationKey)),
               create: (input) => gate.run(() => projectService.create(input)),
               join: (input) => gate.run(() => projectService.join(input)),
+              inspectJoin: (input) =>
+                gate.run(() => projectService.inspectJoin(input)),
               recover: (input) => gate.run(() => projectService.recover(input)),
             }),
             projectsActionRoute(actionHttp),

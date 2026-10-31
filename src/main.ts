@@ -1,3 +1,10 @@
+import { SelectedProjectRegistration } from './application/projects/selected-project.ts';
+import { relocateWorkspaceSettings } from './adapters/filesystem/workspace-settings.ts';
+import { sharedWorkspacePath } from './adapters/filesystem/shared-workspace-locations.ts';
+import {
+  registeredSharedWorkspace,
+  sharedWorkspaceLocations,
+} from './desktop/projects/workspace-locations.ts';
 import {
   UserEditRecorder,
   RecordedCommandPublisher,
@@ -841,6 +848,12 @@ const workspaceState = async (): Promise<WorkspaceState> => ({
 });
 
 const settingsPath = () => path.join(app.getPath('userData'), SETTINGS_FILE);
+const finishSharedFolderMove = async (from: string, to: string) => {
+  await draftStore.relocateRoot(from, to);
+  await relocateWorkspaceSettings(settingsPath(), from, to);
+  invalidateClientCache(from);
+  invalidateClientCache(to);
+};
 
 const saveSettings = async () => {
   await fs.mkdir(app.getPath('userData'), { recursive: true });
@@ -987,6 +1000,8 @@ const setWorkspace = async (root: string) => {
     return workspaceState();
   }
   if (projectTrash?.hasRoot(root)) throw Error('휴지통에서 먼저 복원해주세요.');
+  if (!registered)
+    projectLibrary.assertNameAvailable(await localProjectName(canonicalRoot));
   resetClipboardContext();
   await lifecycle.preserve('switch-project');
   await projectSessions.activate(await fs.realpath(root));
@@ -2358,7 +2373,33 @@ const registerIpc = () => {
       return service.publish(true);
     },
   );
+  const selectedProject = new SelectedProjectRegistration({
+    id: randomUUID,
+    name: localProjectName,
+    known: (root) => projectLibrary.findRoot(root)?.id,
+    assertName: (name, id) => projectLibrary.assertNameAvailable(name, id),
+    withName: (name, id, run) => projectLibrary.withName(name, id, run),
+    rename: (root, name, expected) =>
+      filesystemHomeProjects.rename(root, name, expected),
+    open: async (root) => {
+      await suspendProject();
+      return setWorkspace(root);
+    },
+  });
   const homeProjects = new ProjectHomeService({
+    registerSelected: (token, name) => selectedProject.register(token, name),
+    tidySharedFolder: async (id) => {
+      if (
+        projectSessions.root ||
+        aiIsActive() ||
+        projectLibrary.get(id).transitionPending
+      )
+        throw Error('홈에서 프로젝트 작업을 마친 뒤 정리해주세요.');
+      await sharedWorkspaceLocations(
+        app.getPath('userData'),
+        projectLibrary,
+      ).rename(id, finishSharedFolderMove);
+    },
     createShared: (input) => projectModes.createDirect(input),
     beforeOpen: (id) => projectModes.recover(id),
     registry: homeProjectRegistry(projectLibrary),
@@ -2630,8 +2671,7 @@ const registerIpc = () => {
       title: '게임 프로젝트 폴더 선택',
     });
     if (result.canceled || !result.filePaths[0]) return workspaceState();
-    await suspendProject();
-    return setWorkspace(result.filePaths[0]);
+    return selectedProject.select(await fs.realpath(result.filePaths[0]));
   });
   documentSaveQueue = new DocumentSaveQueue(
     new DocumentSaveStore(
@@ -2919,6 +2959,18 @@ app.whenReady().then(async () => {
     selfHostLifecycle = feature.lifecycle;
   }
   registerIpc();
+  for (const entry of projectLibrary
+    .list()
+    .filter((e) => e.kind === 'shared')) {
+    try {
+      await sharedWorkspaceLocations(
+        app.getPath('userData'),
+        projectLibrary,
+      ).recover(entry.id, finishSharedFolderMove);
+    } catch {
+      /* Keep this project's journal and original data; its home action can retry. */
+    }
+  }
   const scopeMatches = (
     entry: import('./project-library').SavedProject,
     scope: string,
@@ -2943,11 +2995,7 @@ app.whenReady().then(async () => {
         const root =
           entry.kind === 'local'
             ? entry.root!
-            : path.join(
-                app.getPath('userData'),
-                'shared-workspaces',
-                entry.projectId!,
-              );
+            : sharedWorkspacePath(app.getPath('userData'), entry);
         const identities = [entry.id, root, entry.projectId ?? ''].filter(
           Boolean,
         );
@@ -2984,11 +3032,7 @@ app.whenReady().then(async () => {
         const root =
           entry.kind === 'local'
             ? entry.root!
-            : path.join(
-                app.getPath('userData'),
-                'shared-workspaces',
-                entry.projectId!,
-              );
+            : sharedWorkspacePath(app.getPath('userData'), entry);
         invalidateClientCache(root);
         const settings = await fs
           .readFile(settingsPath(), 'utf8')
@@ -3018,11 +3062,7 @@ app.whenReady().then(async () => {
           await draftStore.set(key, value, value.sequence);
         if (entry.projectId)
           invalidateClientCache(
-            path.join(
-              app.getPath('userData'),
-              'shared-workspaces',
-              entry.projectId,
-            ),
+            sharedWorkspacePath(app.getPath('userData'), entry),
           );
       },
     },
@@ -3105,9 +3145,12 @@ app.whenReady().then(async () => {
           try {
             const cached = await readClientCache(
               path.join(
-                app.getPath('userData'),
-                'shared-workspaces',
-                saved.credentials.projectId,
+                registeredSharedWorkspace(
+                  app.getPath('userData'),
+                  projectLibrary,
+                  saved.credentials.projectId,
+                  saved.credentials.serverUrl,
+                ),
                 'server-cache.json',
               ),
             );

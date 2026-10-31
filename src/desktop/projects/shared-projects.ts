@@ -1,3 +1,5 @@
+import { sharedWorkspaceLocations } from './workspace-locations.ts';
+import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import path from 'node:path';
 import {
   CollaborationClient,
@@ -23,6 +25,11 @@ export function homeProjectRegistry(
 ): HomeProjectRegistry {
   return {
     list: () => library.list(),
+    withName: (name, exceptId, operation) =>
+      library.withName(name, exceptId, operation),
+    assertNameAvailable: (name, exceptId) =>
+      library.assertNameAvailable(name, exceptId),
+    observeName: (...args) => library.observeName(...args),
     hasSharedSession: (id) => !!library.get(id).credentials,
     findShared: (projectId, serverUrl) => {
       const entry = library.findShared(projectId, serverUrl);
@@ -32,6 +39,7 @@ export function homeProjectRegistry(
       const {
         credentials: _credentials,
         localRoot: _localRoot,
+        sharedRoot: _sharedRoot,
         ...entry
       } = library.get(id);
       return entry;
@@ -84,9 +92,7 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
   const cache = (id: string) =>
     readClientCache(
       path.join(
-        options.userData,
-        'shared-workspaces',
-        library.get(id).projectId!,
+        sharedWorkspacePath(options.userData, library.get(id)),
         'server-cache.json',
       ),
     );
@@ -95,7 +101,7 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
       const assertSession = options.beginReveal?.() ?? (() => {});
       const entry = library.get(id);
       const projectId = entry.projectId!;
-      const root = path.join(options.userData, 'shared-workspaces', projectId);
+      let root = sharedWorkspacePath(options.userData, entry);
       const assertCurrent = () => {
         assertSession();
         const current = library.get(id);
@@ -187,6 +193,10 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
         envelope.state.accessDenied
       )
         throw Error('이 프로젝트에 접근할 수 없습니다.');
+      root = await sharedWorkspaceLocations(options.userData, library).ensure(
+        id,
+      );
+      assertCurrent();
       await fs.mkdir(root, { recursive: true });
       if (!options.prepareFiles)
         throw Error('프로젝트 파일 사본을 준비할 수 없는 환경입니다.');

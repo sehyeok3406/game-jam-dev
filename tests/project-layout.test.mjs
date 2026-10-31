@@ -430,6 +430,7 @@ test('shared folder preparation preserves pending edits, works offline and rejec
   const entry = {
     id: 'shared-card',
     kind: 'shared',
+    name: '공유 폴더',
     projectId,
     credentials: {
       serverUrl: 'https://example.com',
@@ -446,7 +447,13 @@ test('shared folder preparation preserves pending edits, works offline and rejec
     prepared = 0,
     failure = null;
   const adapter = desktopSharedProjects({
-    library: { get: () => entry },
+    library: {
+      get: () => entry,
+      assertNameAvailable() {},
+      async setSharedRoot(_id, root) {
+        entry.sharedRoot = root;
+      },
+    },
     userData: profile,
     active: () => null,
     internalServerUrl: async () => '',

@@ -2,6 +2,8 @@
 
 프로젝트 파일 구조 v2는 `tests/project-layout.test.mjs`에서 빈 시작, 문서 경로, 속성에 의한 AI 문서 묶음, ID·링크·섹션 보존, durable 이전 재개, 과거 복원, 관리자 전환·구버전 차단·오프라인 신규 문서·탐색기 사본 준비를 검사한다. 실제 Windows UI/IPC·명시적 공유 전환·재시작·홈 탐색기 메뉴·새 프로젝트 빈 시작은 `tests/projects-packaged.mjs`의 확장 경로를 사용한다. 기본 홈·모드 전환·mirror·복사·AI 검사를 함께 유지한다. 정책은 [ADR 0003](decisions/0003-project-file-layout.md)을 따른다.
 
+프로젝트 이름과 공유 사본은 `tests/project-names.test.mjs`에서 PC·서버 이름 경쟁, 참여 전 검사와 응답 유실 재시도, 기존 중복 보존, 전체 디렉터리 이동·중단 복구·대소문자 개명을 검사한다. `project-trash.test.mjs`는 복원 이름 충돌의 무부작용을 확인하고 `projects-packaged.mjs`는 실제 홈 메뉴 이동·초안·중복 거절·재시작 경로를 확인한다. [ADR 0004](decisions/0004-project-names-and-shared-folders.md)를 따른다.
+
 현재 동작을 고정하는 회귀 목록이다. 명령이 존재한다는 사실은 통과를 뜻하지 않는다. 실행 결과는 실행 계획서 작업 기록을 확인한다.
 
 | 보존할 동작                                        | 검사                                                                                                                                             | 데이터/환경                                                                |

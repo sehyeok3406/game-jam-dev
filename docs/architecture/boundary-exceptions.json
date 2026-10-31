@@ -57,7 +57,6 @@
         "application-dependency|src/application/editing/shared-workspace-reader.ts|src/file-authorship.ts": 1,
         "application-dependency|src/application/editing/shared-workspace-reader.ts|src/app-errors.ts": 1,
         "application-dependency|src/application/editing/user-edit-recorder.ts|src/edit-journal.ts": 1,
-        "application-dependency|src/application/projects/home-service.ts|src/home-organization.ts": 1,
         "application-dependency|src/application/projects/project-copy-service.ts|src/project-copy.ts": 1
       }
     },

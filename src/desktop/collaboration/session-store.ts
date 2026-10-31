@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash, randomUUID, randomBytes } from 'node:crypto';
+import type { JoinIdentity } from '../../contracts/project-names.ts';
 import type {
   CollaborationCredentials,
   OfflineDraft,
@@ -27,6 +29,58 @@ export class CollaborationSessionStore {
     if (!this.encryption.isEncryptionAvailable()) return;
     const payload = this.encryption.encryptString(JSON.stringify(session));
     await fs.writeFile(this.filename, payload);
+  }
+  private joinFile(input: {
+    serverUrl: string;
+    code: string;
+    nickname: string;
+  }) {
+    return path.join(
+      path.dirname(this.filename),
+      'pending-joins',
+      createHash('sha256')
+        .update(
+          JSON.stringify([
+            input.serverUrl.replace(/\/$/, ''),
+            input.code.replace(/[\s-]/g, '').toUpperCase(),
+          ]),
+        )
+        .digest('hex') + '.enc',
+    );
+  }
+  async prepareJoin(input: {
+    serverUrl: string;
+    code: string;
+    nickname: string;
+  }): Promise<JoinIdentity> {
+    if (!this.encryption.isEncryptionAvailable())
+      throw Error('공동 참여 정보를 암호화해 보관할 수 없습니다.');
+    const filename = this.joinFile(input);
+    try {
+      return JSON.parse(
+        this.encryption.decryptString(await fs.readFile(filename)),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const identity = {
+      id: randomUUID(),
+      token: randomBytes(32).toString('hex'),
+    };
+    await fs.mkdir(path.dirname(filename), { recursive: true });
+    await fs.writeFile(
+      filename,
+      this.encryption.encryptString(JSON.stringify(identity)),
+      { flag: 'wx', mode: 0o600, flush: true },
+    );
+    return identity;
+  }
+  async finishJoin(input: {
+    serverUrl: string;
+    code: string;
+    nickname: string;
+  }) {
+    await fs.rm(this.joinFile(input), { force: true });
   }
   async read(): Promise<StoredCollaboration> {
     return JSON.parse(

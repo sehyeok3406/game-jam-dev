@@ -232,6 +232,8 @@ try {
   const sharedId = (await call('listProjects')).find(
     (e) => e.projectId === shared.projectId,
   ).id;
+  const originalSharedRoot = (await call('getWorkspace')).root;
+  assert.equal(path.basename(originalSharedRoot), '패키지에서 바꾼 프로젝트');
   await call('goHome');
   await call('renameProject', sharedId, '패키지 공동 이름');
   const online = (await call('listProjects', true)).find(
@@ -242,6 +244,64 @@ try {
   assert.ok(
     !JSON.stringify(await call('listProjects')).includes('recoveryKey'),
   );
+  await assert.rejects(
+    call('createProject', {
+      mode: 'local',
+      name: '패키지 공동 이름',
+      parent: root,
+    }),
+    /같은 이름/,
+  );
+  await assert.rejects(fs.access(path.join(root, '패키지 공동 이름')), {
+    code: 'ENOENT',
+  });
+  await fs.mkdir(path.join(originalSharedRoot, '.gamejam/local'), {
+    recursive: true,
+  });
+  const preserved = Buffer.from([0, 255, 12, 19]);
+  await fs.writeFile(
+    path.join(originalSharedRoot, '.gamejam/local/unknown.bin'),
+    preserved,
+  );
+  await call(
+    'setEditorDraft',
+    'game-canvas-draft:' + originalSharedRoot + ':unknown.md',
+    { title: '보관 초안', body: '미동기화 내용', sequence: 10 },
+    10,
+  );
+  await send('Page.reload');
+  await wait(
+    'Array.from(document.querySelectorAll(".home-project-card")).some(e=>e.textContent.includes("패키지 공동 이름"))',
+  );
+  await js(
+    'Array.from(document.querySelectorAll(".home-project-card")).find(e=>e.textContent.includes("패키지 공동 이름")).querySelector(".home-project-more").click()',
+  );
+  await clickText('.home-context-menu button', '공유 사본 폴더 이름 정리');
+  const namedSharedRoot = path.join(
+    profile,
+    'shared-workspaces',
+    '패키지 공동 이름',
+  );
+  await wait(
+    'window.gameCanvas.listProjects().then(entries=>entries.some(e=>e.id===' +
+      JSON.stringify(sharedId) +
+      '&&!e.folderNamePending))',
+  );
+  assert.deepEqual(
+    await fs.readFile(path.join(namedSharedRoot, '.gamejam/local/unknown.bin')),
+    preserved,
+  );
+  assert.equal(
+    (
+      await call(
+        'getEditorDraft',
+        'game-canvas-draft:' + namedSharedRoot + ':unknown.md',
+      )
+    ).body,
+    '미동기화 내용',
+  );
+  await assert.rejects(fs.access(originalSharedRoot), { code: 'ENOENT' });
+  assert.equal((await call('getWorkspace')).root, null);
   console.log(
     'PASS: actual Windows home UI renames/groups/opens local projects; IPC trash restores files, drafts and grouping; internal shared server refresh/rename preserves administrator membership',
   );
@@ -262,6 +322,11 @@ try {
     'An app restart must not migrate an existing shared project',
   );
   const sharedRoot = (await call('getWorkspace')).root;
+  assert.equal(sharedRoot, namedSharedRoot);
+  assert.deepEqual(
+    await fs.readFile(path.join(sharedRoot, '.gamejam/local/unknown.bin')),
+    preserved,
+  );
   const layoutDialog = '[role=dialog][aria-label="프로젝트 파일 구조 정리"]';
   await wait(
     '!!document.querySelector(".canvas-main-menu") || !!document.querySelector(".home-project-card")',

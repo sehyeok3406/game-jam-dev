@@ -1,5 +1,6 @@
 import type { CollaborationRole } from './collaboration.ts';
 export type WorkspaceState = {
+  registration?: { token: string; name: string; reason: string };
   libraryId?: string;
   session?: import('./project-session.ts').ProjectSessionRef;
   root: string | null;
@@ -8,6 +9,8 @@ export type WorkspaceState = {
   clipboardContextId?: string;
 };
 export type ProjectEntry = {
+  nameConflict?: boolean;
+  folderNamePending?: boolean;
   transitionPending?: boolean;
   lifecycle?: SharedProjectLifecycle;
   id: string;

@@ -1,3 +1,8 @@
+import {
+  assertProjectNameAvailable,
+  projectDirectoryName,
+  projectNameKey,
+} from './core/projects/project-name.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -7,7 +12,6 @@ import {
   displayHomeProjects,
   editHomeOrganization,
   readHomeOrganization,
-  homeName,
   type HomeEdit,
   type HomeOrganization,
 } from './home-organization.ts';
@@ -15,6 +19,7 @@ import {
 export type SavedProject = ProjectEntry & {
   credentials?: CollaborationCredentials;
   localRoot?: string | null;
+  sharedRoot?: string;
 };
 type Encryption = {
   isEncryptionAvailable(): boolean;
@@ -30,6 +35,7 @@ export class ProjectLibrary {
   private home: HomeOrganization = { folders: [], projects: [] };
   private queue: Promise<unknown> = Promise.resolve();
   private registryQueue: Promise<void> = Promise.resolve();
+  private nameReservations = new Set<string>();
   constructor(directory: string, encryption: Encryption) {
     this.directory = directory;
     this.encryption = encryption;
@@ -73,8 +79,22 @@ export class ProjectLibrary {
     return displayHomeProjects(
       this.entries
         .map(
-          ({ credentials: _credentials, localRoot: _localRoot, ...entry }) => ({
+          ({
+            credentials: _credentials,
+            localRoot: _localRoot,
+            sharedRoot: _sharedRoot,
+            ...entry
+          }) => ({
             ...entry,
+            nameConflict: this.entries.some(
+              (other) =>
+                other.id !== entry.id &&
+                (!other.lifecycle || other.lifecycle.status === 'active') &&
+                projectNameKey(other.name) === projectNameKey(entry.name),
+            ),
+            folderNamePending:
+              entry.kind === 'shared' &&
+              (!_sharedRoot || path.basename(_sharedRoot) !== entry.name),
           }),
         )
         .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt),
@@ -86,11 +106,44 @@ export class ProjectLibrary {
   }
   async renameProject(id: string, name: string, role?: ProjectEntry['role']) {
     const entry = this.get(id);
-    return this.upsert({
-      ...entry,
-      name: homeName(name),
-      ...(entry.kind === 'shared' && role ? { role } : {}),
-    });
+    this.assertNameAvailable(name, entry.id);
+    return this.upsert(
+      {
+        ...entry,
+        name: projectDirectoryName(name),
+        ...(entry.kind === 'shared' && role ? { role } : {}),
+      },
+      true,
+    );
+  }
+  async withName<T>(
+    name: string,
+    exceptId: string | undefined,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    this.assertNameAvailable(name, exceptId);
+    const key = projectNameKey(name);
+    if (this.nameReservations.has(key))
+      throw Error(
+        '같은 이름의 프로젝트 작업이 진행 중입니다. 다른 이름을 입력해주세요.',
+      );
+    this.nameReservations.add(key);
+    try {
+      return await operation();
+    } finally {
+      this.nameReservations.delete(key);
+    }
+  }
+  assertNameAvailable(name: string, exceptId?: string) {
+    assertProjectNameAvailable(this.entries, name, exceptId);
+  }
+  async observeName(id: string, name: string, role?: ProjectEntry['role']) {
+    await this.upsert({ ...this.get(id), name, ...(role ? { role } : {}) });
+  }
+  async setSharedRoot(id: string, sharedRoot: string) {
+    const entry = this.get(id);
+    if (entry.kind !== 'shared') throw Error('공동 프로젝트를 선택해주세요.');
+    await this.upsert({ ...entry, sharedRoot });
   }
   async updateLifecycle(id: string, lifecycle: ProjectEntry['lifecycle']) {
     await this.upsert({ ...this.get(id), lifecycle });
@@ -167,18 +220,22 @@ export class ProjectLibrary {
   async rememberLocal(root: string, name: string) {
     const prior = this.findRoot(root);
     if (prior?.kind === 'shared') return;
-    return this.upsert({
-      ...prior,
-      id:
-        prior?.id ??
-        (this.entries.some((e) => e.id === `local:${root.toLowerCase()}`)
-          ? randomUUID()
-          : `local:${root.toLowerCase()}`),
-      name,
-      kind: 'local',
-      root,
-      lastOpenedAt: Date.now(),
-    });
+    if (!prior) this.assertNameAvailable(name);
+    return this.upsert(
+      {
+        ...prior,
+        id:
+          prior?.id ??
+          (this.entries.some((e) => e.id === `local:${root.toLowerCase()}`)
+            ? randomUUID()
+            : `local:${root.toLowerCase()}`),
+        name,
+        kind: 'local',
+        root,
+        lastOpenedAt: Date.now(),
+      },
+      !prior,
+    );
   }
   async rememberShared(
     credentials: CollaborationCredentials,
@@ -200,37 +257,45 @@ export class ProjectLibrary {
           ((e.kind === 'local' && e.root === localRoot) ||
             (e.kind === 'shared' && e.projectId === credentials.projectId)),
       );
+    if (!prior) this.assertNameAvailable(name);
     const preferred =
       credentials.libraryId ?? `shared:${credentials.projectId}`;
     const id =
       prior?.id ??
       (this.entries.some((e) => e.id === preferred) ? randomUUID() : preferred);
-    return this.upsert({
-      ...prior,
-      root: undefined,
-      id,
-      name,
-      kind: 'shared',
-      serverUrl: credentials.serverUrl,
-      projectId: credentials.projectId,
-      credentials: { ...credentials, libraryId: id },
-      role,
-      localRoot,
-      lastOpenedAt: Date.now(),
-    });
+    return this.upsert(
+      {
+        ...prior,
+        root: undefined,
+        id,
+        name,
+        kind: 'shared',
+        serverUrl: credentials.serverUrl,
+        projectId: credentials.projectId,
+        credentials: { ...credentials, libraryId: id },
+        role,
+        localRoot,
+        lastOpenedAt: Date.now(),
+      },
+      !prior,
+    );
   }
   async markTransition(id: string, pending: boolean) {
     await this.upsert({ ...this.get(id), transitionPending: pending });
   }
   async makeLocal(id: string, root: string, name: string) {
     const entry = this.get(id);
-    await this.upsert({
-      id: entry.id,
-      root,
-      name,
-      kind: 'local',
-      lastOpenedAt: Date.now(),
-    });
+    this.assertNameAvailable(name, entry.id);
+    await this.upsert(
+      {
+        id: entry.id,
+        root,
+        name,
+        kind: 'local',
+        lastOpenedAt: Date.now(),
+      },
+      true,
+    );
   }
   async updateServer(id: string, serverUrl: string) {
     const entry = this.get(id);
@@ -252,18 +317,22 @@ export class ProjectLibrary {
     await this.editHome({ type: 'remove-project', id });
   }
   async restoreEntry(entry: SavedProject) {
-    await this.upsert(entry);
+    this.assertNameAvailable(entry.name, entry.id);
+    await this.upsert(entry, true);
     if (
       entry.folderId &&
       this.home.folders.some((f) => f.id === entry.folderId)
     )
       await this.moveProject(entry.id, entry.folderId);
   }
-  private async upsert(item: SavedProject) {
-    return this.modifyEntries(() => [
-      ...this.entries.filter((entry) => entry.id !== item.id),
-      structuredClone(item),
-    ]);
+  private async upsert(item: SavedProject, checkName = false) {
+    return this.modifyEntries(() => {
+      if (checkName) this.assertNameAvailable(item.name, item.id);
+      return [
+        ...this.entries.filter((entry) => entry.id !== item.id),
+        structuredClone(item),
+      ];
+    });
   }
   private modifyEntries(operation: () => SavedProject[]) {
     const next = this.registryQueue

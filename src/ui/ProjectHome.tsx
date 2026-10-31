@@ -483,7 +483,13 @@ export function ProjectHome({
                 void action(async () => {
                   setAddProject(false);
                   const state = await api.projects.selectWorkspace();
-                  if (state.root) await opened();
+                  if (state.registration) {
+                    setError(state.registration.reason);
+                    setOrganizationDialog({
+                      type: 'register-project',
+                      ...state.registration,
+                    });
+                  } else if (state.root) await opened();
                 })
               }
             >
@@ -713,6 +719,16 @@ export function ProjectHome({
                   </div>
                   <div className="home-project-details">
                     <h3>{entry.name}</h3>
+                    {entry.nameConflict && (
+                      <p className="home-pending">
+                        다른 프로젝트와 이름이 겹칩니다. 이름을 변경해주세요.
+                      </p>
+                    )}
+                    {entry.folderNamePending && (
+                      <p className="home-pending">
+                        공유 사본의 폴더 이름을 정리할 수 있습니다.
+                      </p>
+                    )}
                     {entry.lifecycle && entry.lifecycle.status !== 'active' && (
                       <p className="home-pending">
                         팀 프로젝트{' '}
@@ -902,6 +918,18 @@ export function ProjectHome({
                   ...(menu.project.kind === 'shared'
                     ? [
                         {
+                          label: '공유 사본 폴더 이름 정리',
+                          disabled:
+                            !!menu.project.nameConflict ||
+                            !!menu.project.transitionPending,
+                          action: () =>
+                            void action(() =>
+                              requireDesktopApi(api).tidySharedProjectFolder(
+                                menu.project!.id,
+                              ),
+                            ),
+                        },
+                        {
                           label: '서버 주소 변경',
                           action: () => {
                             setError('');
@@ -951,12 +979,24 @@ export function ProjectHome({
           busy={busy}
           error={error}
           close={() => {
+            if (organizationDialog.type === 'register-project')
+              void api.projects
+                .registerSelectedWorkspace(organizationDialog.token, null)
+                .catch(() => undefined);
             setOrganizationDialog(null);
             setError('');
           }}
           submit={(value) =>
             void action(async () => {
               switch (organizationDialog.type) {
+                case 'register-project':
+                  await api.projects.registerSelectedWorkspace(
+                    organizationDialog.token,
+                    value,
+                  );
+                  setOrganizationDialog(null);
+                  await opened();
+                  return;
                 case 'rename-project':
                   await api.projects.renameProject(
                     organizationDialog.project.id,

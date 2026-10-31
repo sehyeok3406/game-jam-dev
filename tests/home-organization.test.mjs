@@ -37,7 +37,7 @@ test('local/shared registry name refresh preserves independent IDs, folder group
     serverUrl: 'https://fixture.example',
     token: 'private-token-fixture',
   };
-  await library.rememberShared(credentials, 'GameJam_Test', 'viewer', root);
+  await library.rememberShared(credentials, 'GameJam_Shared', 'viewer', root);
   const sharedId = 'shared:shared-test-id';
   await library.renameProject(localId, '내 로컬 기획');
   await library.renameProject(sharedId, '팀 작업');

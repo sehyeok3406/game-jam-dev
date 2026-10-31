@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { requireProjectLayoutSupport } from '../../adapters/http/project-layout-support.ts';
+import { requireProjectNamesSupport } from '../../adapters/http/project-names-support.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import path from 'node:path';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
@@ -87,6 +88,7 @@ export class DesktopProjectModes {
   }
   private async createRemote(key: string, attempt: Creation) {
     const p = this.ports;
+    await requireProjectNamesSupport(serverAddress(attempt.serverUrl));
     if (attempt.files[PROJECT_LAYOUT_PATH])
       await requireProjectLayoutSupport(serverAddress(attempt.serverUrl));
     const result = (await CollaborationClient.fetch(
@@ -143,6 +145,10 @@ export class DesktopProjectModes {
     const key = createKey(url + ':' + (root ?? requestId ?? randomUUID()));
     let attempt = await p.files().read<Creation>(key);
     if (!attempt) {
+      p.library().assertNameAvailable(
+        source.name,
+        root ? p.library().findRoot(root)?.id : undefined,
+      );
       if (root) await p.library().rememberLocal(root, source.name);
       const creation = await p.creation({
         serverUrl: url,
@@ -308,6 +314,7 @@ export class DesktopProjectModes {
           }
         }
         p.sessions.assertCurrent(ref);
+        p.library().assertNameAvailable(snapshot.name, entry.id);
         let target: string;
         if (input.parent)
           target = path.join(

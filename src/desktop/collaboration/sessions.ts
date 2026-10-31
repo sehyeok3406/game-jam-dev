@@ -1,3 +1,7 @@
+import {
+  registeredSharedWorkspace,
+  sharedWorkspaceLocations,
+} from '../projects/workspace-locations.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -99,7 +103,17 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     state: CollaborationState,
   ): ConnectionOffer {
     return {
-      activate: (localRoot) => this.attach(credentials, localRoot),
+      activate: async (localRoot) => {
+        await this.options
+          .library()
+          .rememberShared(
+            credentials,
+            state.projectName ?? '공동 프로젝트',
+            state.role,
+            localRoot,
+          );
+        return this.attach(credentials, localRoot);
+      },
       retain: (localRoot) =>
         this.options
           .library()
@@ -131,18 +145,84 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     );
   }
   async join(input: Parameters<CollaborationSessionPort['join']>[0]) {
-    const joined = await (this.options.client ?? CollaborationClient).join(
-      input.serverUrl,
-      input.code,
-      input.nickname,
-    );
-    return this.offer(joined.credentials, joined.result.state);
+    const api = this.options.client ?? CollaborationClient;
+    const inspection = await api.inspectJoin(input.serverUrl, input.code);
+    let known;
+    try {
+      known = this.options
+        .library()
+        .findShared(inspection.projectId, input.serverUrl);
+    } catch {
+      /* This is a new registration. */
+    }
+    this.options.library().assertNameAvailable(inspection.name, known?.id);
+    if (known?.credentials) {
+      try {
+        const result = (await api.fetch(
+          input.serverUrl,
+          `/projects/${inspection.projectId}/state`,
+          {},
+          known.credentials.token,
+        )) as { state: CollaborationState };
+        return this.offer(known.credentials, result.state);
+      } catch (error) {
+        if (![401, 403].includes(Number((error as { status?: number }).status)))
+          throw error;
+      }
+    }
+    return this.options
+      .library()
+      .withName(inspection.name, known?.id, async () => {
+        const identity = await this.options.store().prepareJoin(input);
+        const joined = await api.join(
+          input.serverUrl,
+          input.code,
+          input.nickname,
+          { inspection, identity },
+        );
+        await this.options
+          .library()
+          .rememberShared(
+            joined.credentials,
+            joined.result.state.projectName ?? inspection.name,
+            joined.result.state.role,
+            this.sessions.localRootBeforeShare,
+          );
+        await this.options.store().finishJoin(input);
+        return this.offer(joined.credentials, joined.result.state);
+      });
   }
   async recover(input: Parameters<CollaborationSessionPort['recover']>[0]) {
-    const recovered = await (
-      this.options.client ?? CollaborationClient
-    ).recover(input.serverUrl, input.projectId, input.recoveryKey);
-    return this.offer(recovered.credentials, recovered.result.state);
+    const api = this.options.client ?? CollaborationClient;
+    const inspection = await api.inspectRecovery(
+      input.serverUrl,
+      input.projectId,
+      input.recoveryKey,
+    );
+    const library = this.options.library();
+    const known = library
+      .list()
+      .some(
+        (entry) =>
+          entry.kind === 'shared' && entry.projectId === inspection.projectId,
+      )
+      ? library.findShared(inspection.projectId, input.serverUrl)
+      : undefined;
+    return library.withName(inspection.name, known?.id, async () => {
+      const recovered = await api.recover(
+        input.serverUrl,
+        input.projectId,
+        input.recoveryKey,
+        inspection,
+      );
+      await library.rememberShared(
+        recovered.credentials,
+        recovered.result.state.projectName ?? inspection.name,
+        recovered.result.state.role,
+        this.sessions.localRootBeforeShare,
+      );
+      return this.offer(recovered.credentials, recovered.result.state);
+    });
   }
   private persist(
     client = this.sessions.client,
@@ -172,11 +252,46 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     await this.sessions.watcher?.close();
     scope.assertCurrent();
     this.sessions.setWatcher(null);
-    const cacheRoot = path.join(
+    let registered;
+    try {
+      registered = o
+        .library()
+        .findShared(credentials.projectId, credentials.serverUrl);
+    } catch {
+      const legacy = registeredSharedWorkspace(
+        o.userData(),
+        o.library(),
+        credentials.projectId,
+        credentials.serverUrl,
+      );
+      // This lookup supplies only a display name. The full guarded cache validation below still rejects damaged bytes.
+      const cached = await readClientCache(
+        path.join(legacy, 'server-cache.json'),
+      ).catch(() => null);
+      const result =
+        cached ??
+        ((await (o.client ?? CollaborationClient).fetch(
+          credentials.serverUrl,
+          `/projects/${credentials.projectId}/state`,
+          { metadataOnly: true },
+          credentials.token,
+        )) as { state: CollaborationState });
+      await o
+        .library()
+        .rememberShared(
+          credentials,
+          result.state.projectName ?? '공동 프로젝트',
+          result.state.role,
+          localRoot,
+        );
+      registered = o
+        .library()
+        .findShared(credentials.projectId, credentials.serverUrl);
+    }
+    const cacheRoot = await sharedWorkspaceLocations(
       o.userData(),
-      'shared-workspaces',
-      credentials.projectId,
-    );
+      o.library(),
+    ).ensure(registered.id);
     await fs.mkdir(cacheRoot, { recursive: true });
     scope.assertCurrent();
     let activeRef = this.sessions.ref;

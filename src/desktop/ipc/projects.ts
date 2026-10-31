@@ -6,6 +6,10 @@ export function registerProjectIpc(
   service: ProjectHomeService,
   assertHome: (event: Parameters<Parameters<IpcRegistrar>[1]>[0]) => void,
 ) {
+  handle('projects:register-selected', (event, token, name) => {
+    assertHome(event);
+    return service.registerSelected(token, name);
+  });
   handle('projects:list', (_event, refresh = false) => service.list(refresh));
   handle('projects:home', () => service.home());
   handle('projects:folders', () => service.folders());
@@ -20,6 +24,10 @@ export function registerProjectIpc(
     service.renameFolder(id, name),
   );
   handle('projects:folder-remove', (_event, id) => service.removeFolder(id));
+  handle('projects:folder-name', (event, id) => {
+    assertHome(event);
+    return service.tidySharedFolder(id);
+  });
   handle('projects:reveal', (_event, id) => service.reveal(id));
   handle('projects:open', (_event, id) => service.open(id));
   handle('projects:choose-parent', (event) => {

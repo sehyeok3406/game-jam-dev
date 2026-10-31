@@ -612,3 +612,12 @@ test('native trash removes only matching session references and leaves unrelated
     localRoot: null,
   });
 });
+
+test('reconnecting from a shared session preserves its original local return root through suspension', async () => {
+  const f = fixture();
+  f.share();
+  const scope = f.ports.scope;
+  f.ports.scope = () => ({ ...scope(), localRoot: '/original-local' });
+  await f.service.join({});
+  assert.deepEqual(f.calls.at(-1), ['activate', '/original-local']);
+});

@@ -7,7 +7,6 @@ import type { Snapshot } from '../../contracts/project.ts';
 import type { Project, Member } from '../project-state.ts';
 import { ApiError } from './errors.ts';
 import { checkSnapshot } from '../../collaboration-model.ts';
-import { homeName } from '../../home-organization.ts';
 import { planProjectLayout } from '../../application/projects/layout-migration.ts';
 import { layoutMarkdownCodec } from '../../adapters/markdown/layout-snapshot.ts';
 import { remapLayoutMarkdown } from '../../adapters/markdown/layout-links.ts';
@@ -106,13 +105,17 @@ export function createProjectService(ports: Ports) {
       throw new ApiError('초기 서버는 프로젝트를 20개까지 지원합니다.', 413);
     checkSnapshot(input.files);
     assertEraseSupport(input.files, input);
+    let name: string;
+    try {
+      name = projectDirectoryName(
+        input.projectModeVersion === 1 ? input.name : nickname(input.name),
+      );
+    } catch (error) {
+      throw new ApiError((error as Error).message, 400);
+    }
     const code = identity?.inviteCode.toUpperCase() ?? ports.identity.invite(),
       token = identity?.token ?? ports.identity.secret(),
-      recoveryKey = identity?.recoveryKey ?? ports.identity.secret(),
-      name =
-        input.projectModeVersion === 1
-          ? projectDirectoryName(input.name)
-          : nickname(input.name);
+      recoveryKey = identity?.recoveryKey ?? ports.identity.secret();
     const member: Member = {
       id: ports.identity.id(),
       nickname: nickname(input.nickname),
@@ -158,6 +161,23 @@ export function createProjectService(ports: Ports) {
       recoveryKey,
     };
   }
+  function inspectJoin(input: Input) {
+    const code = String(input.code ?? '')
+      .replace(/[\s-]/g, '')
+      .toUpperCase();
+    const project = Array.from(ports.projects.all()).find(
+      (p) =>
+        p.inviteExpiresAt > ports.identity.now() &&
+        (!p.lifecycle || p.lifecycle.status === 'active') &&
+        ports.identity.matches(code, p.inviteHash),
+    );
+    if (!project) throw new ApiError('초대 코드가 없거나 만료되었습니다.', 403);
+    return Promise.resolve({
+      projectId: project.id,
+      name: project.name,
+      nameVersion: project.nameVersion ?? 0,
+    });
+  }
   async function join(input: Input) {
     const code = String(input.code ?? '')
       .replace(/[\s-]/g, '')
@@ -172,6 +192,34 @@ export function createProjectService(ports: Ports) {
     return ports.queue(found.id, async () => {
       const project = structuredClone(ports.projects.get(found.id)!);
       ports.assertActive(project);
+      const identity = input.joinIdentity as
+        | { id: string; token: string }
+        | undefined;
+      if (identity) {
+        if (
+          !/^[a-f0-9-]{36}$/.test(identity.id) ||
+          !/^[a-f0-9]{64}$/.test(identity.token)
+        )
+          throw new ApiError('참여 요청 정보가 올바르지 않습니다.', 400);
+        const prior = project.members.find(
+          (m) => m.joinRequestId === identity.id && !m.removed,
+        );
+        if (prior) {
+          if (!ports.identity.matches(identity.token, prior.tokenHash))
+            throw new ApiError('참여 요청 정보가 바뀌었습니다.', 409);
+          return { ...ports.envelope(project, prior), token: identity.token };
+        }
+      }
+      if (
+        input.expectedProjectId !== undefined &&
+        (input.expectedProjectId !== project.id ||
+          input.expectedName !== project.name ||
+          input.expectedNameVersion !== (project.nameVersion ?? 0))
+      )
+        throw new ApiError(
+          '프로젝트 이름이 바뀌었습니다. 다시 참여해주세요.',
+          409,
+        );
       assertEraseSupport(project.files, input);
       if (
         project.inviteExpiresAt < ports.identity.now() ||
@@ -186,13 +234,14 @@ export function createProjectService(ports: Ports) {
           '초기 프로젝트는 최대 20명이 참여할 수 있습니다.',
           413,
         );
-      const token = ports.identity.secret(),
+      const token = identity?.token ?? ports.identity.secret(),
         member: Member = {
           id: ports.identity.id(),
           nickname: nickname(input.nickname),
           role: 'editor',
           owner: false,
           tokenHash: ports.identity.digest(token),
+          ...(identity ? { joinRequestId: identity.id } : {}),
         };
       project.members.push(member);
       await ports.persist(project);
@@ -212,6 +261,22 @@ export function createProjectService(ports: Ports) {
         )
       )
         throw new ApiError('복구 정보가 올바르지 않습니다.', 403);
+      if (input.inspectOnly === true)
+        return {
+          projectId: source.id,
+          name: source.name,
+          nameVersion: source.nameVersion ?? 0,
+        };
+      if (
+        input.expectedProjectId !== undefined &&
+        (input.expectedProjectId !== source.id ||
+          input.expectedName !== source.name ||
+          input.expectedNameVersion !== (source.nameVersion ?? 0))
+      )
+        throw new ApiError(
+          '프로젝트 이름이 바뀌었습니다. 다시 복구해주세요.',
+          409,
+        );
       assertEraseSupport(source.files, input);
       const project = structuredClone(source),
         owner = project.members.find((member) => member.owner)!;
@@ -247,7 +312,7 @@ export function createProjectService(ports: Ports) {
       throw new ApiError('AI 작업이 끝난 뒤 프로젝트 이름을 변경해주세요.');
     let name: string;
     try {
-      name = homeName(input.name as string);
+      name = projectDirectoryName(input.name);
     } catch (error) {
       throw new ApiError((error as Error).message, 400);
     }
@@ -261,6 +326,7 @@ export function createProjectService(ports: Ports) {
       );
     const next = ports.clone(project);
     next.name = name;
+    next.nameVersion = (project.nameVersion ?? 0) + 1;
     ports.recordChanges(
       next,
       member,
@@ -311,5 +377,5 @@ export function createProjectService(ports: Ports) {
   }
   const create = (input: Input) =>
     ports.queue('project-creation', () => createOnce(input));
-  return { create, join, recover, rename, upgradeLayout };
+  return { create, join, inspectJoin, recover, rename, upgradeLayout };
 }

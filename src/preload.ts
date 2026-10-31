@@ -147,6 +147,8 @@ const api: GameCanvasApi = {
   renameProjectFolder: (id, name) =>
     ipcRenderer.invoke('projects:folder-rename', id, name),
   removeProjectFolder: (id) => ipcRenderer.invoke('projects:folder-remove', id),
+  tidySharedProjectFolder: (id) =>
+    ipcRenderer.invoke('projects:folder-name', id),
   revealProject: (id) => ipcRenderer.invoke('projects:reveal', id),
   getProjectLayout: () => ipcRenderer.invoke('projects:layout-status'),
   upgradeProjectLayout: (session) =>
@@ -250,6 +252,8 @@ const api: GameCanvasApi = {
   restoreHistory: (id, relativePath, version) =>
     ipcRenderer.invoke('history:restore', id, relativePath, version),
   getWorkspace: () => ipcRenderer.invoke('workspace:get'),
+  registerSelectedWorkspace: (token, name) =>
+    ipcRenderer.invoke('projects:register-selected', token, name),
   selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
   getCanvasSheets: () => ipcRenderer.invoke('canvases:list'),
   changeCanvasSheets: (input) => ipcRenderer.invoke('canvases:change', input),
