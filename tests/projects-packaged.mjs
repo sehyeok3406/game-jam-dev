@@ -164,6 +164,7 @@ async function fillDialog(value) {
 }
 try {
   await boot();
+  await wait('!!document.querySelector(".home-project-more")');
   const localId = 'local:' + game.toLowerCase();
   await js('document.querySelector(".home-project-more").click()');
   await clickText('.home-context-menu button', '이름 변경');
@@ -475,7 +476,7 @@ try {
   );
   await call('goHome');
   console.log(
-    'PASS: shared layout upgrade uses the real settings dialog, preserves documents across restart, exposes the home Explorer action without switching projects, and new projects stay empty',
+    'PASS: shared layout upgrade uses the real settings dialog, preserves documents across restart, opens aligned-text shared projects from the home Explorer menu without errors or project switching, and new projects stay empty',
   );
   const info = JSON.stringify({
     format: 'gamejam-connection',
