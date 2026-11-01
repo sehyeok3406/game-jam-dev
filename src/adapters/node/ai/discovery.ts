@@ -6,11 +6,18 @@ import type {
   CodexConnectionStatus,
 } from '../../../contracts/ai.ts';
 import { aiProvider } from '../../../core/ai/catalog.ts';
+import {
+  GROK_MIN_VERSION,
+  grokAuthPath,
+  grokVersionSupported,
+  prepareGrokProcess,
+} from './grok.ts';
 
 export type ProcessCollector = (
   command: string,
   args: string[],
   timeout?: number,
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ) => Promise<{ code: number | null; stdout: string; stderr: string }>;
 export type CliCommand = { executable: string; prefix: string[] };
 const exists = async (file: string) =>
@@ -23,7 +30,12 @@ export async function findOtherCli(
   provider: AiProviderId,
   collect: ProcessCollector,
 ): Promise<CliCommand | null> {
-  const name = provider === 'claude-cli' ? 'claude' : 'gemini';
+  const name = {
+    'claude-cli': 'claude',
+    'gemini-cli': 'gemini',
+    'grok-cli': 'grok',
+  }[provider as Exclude<AiProviderId, 'codex-cli'>];
+  if (!name) return null;
   const found = await collect(
     process.platform === 'win32' ? 'where.exe' : 'which',
     [name],
@@ -42,6 +54,14 @@ export async function findOtherCli(
         process.platform === 'win32' ? 'claude.exe' : 'claude',
       ),
     );
+  if (provider === 'grok-cli')
+    candidates.push(
+      path.join(
+        process.env.GROK_HOME || path.join(os.homedir(), '.grok'),
+        'bin',
+        process.platform === 'win32' ? 'grok.exe' : 'grok',
+      ),
+    );
   for (const candidate of candidates) {
     if (process.platform !== 'win32' || candidate.endsWith('.exe')) {
       if (await exists(candidate)) return { executable: candidate, prefix: [] };
@@ -52,7 +72,9 @@ export async function findOtherCli(
       'node_modules',
       provider === 'claude-cli'
         ? '@anthropic-ai/claude-code/cli.js'
-        : '@google/gemini-cli/dist/index.js',
+        : provider === 'gemini-cli'
+          ? '@google/gemini-cli/dist/index.js'
+          : '@xai-official/grok/bin/grok',
     );
     if (await exists(entry)) {
       const nodes = await collect('where.exe', ['node.exe'], 4000);
@@ -101,6 +123,26 @@ export async function otherCliStatus(
       available: true,
       version: version.stdout.trim().slice(0, 120),
     };
+    if (provider === 'grok-cli') {
+      if (!grokVersionSupported(status.version))
+        return {
+          ...status,
+          available: false,
+          message: `Grok Build ${GROK_MIN_VERSION} 이상으로 업데이트해주세요.`,
+        };
+      const configured =
+        !!process.env.XAI_API_KEY || (await exists(grokAuthPath()));
+      const prepared = await prepareGrokProcess(command, collect);
+      await prepared.cleanup();
+      return {
+        ...status,
+        supportsReasoningEffort: false,
+        authenticated: configured,
+        message: configured
+          ? 'Grok 인증 정보가 있습니다. 유효성·모델 권한·사용량은 실제 실행 시 검증됩니다.'
+          : '터미널에서 grok login으로 로그인하거나 XAI_API_KEY를 설정해주세요.',
+      };
+    }
     const help = await collect(command.executable, [
       ...command.prefix,
       '--help',
@@ -149,11 +191,13 @@ export async function otherCliStatus(
         ? 'Gemini 인증 정보가 있습니다. 유효성·잔여 사용량은 실제 실행 시 검증됩니다.'
         : '터미널에서 gemini를 실행해 Google 로그인 후 다시 확인해주세요.',
     };
-  } catch {
+  } catch (error) {
     return {
       ...base,
       message:
-        'CLI 상태 확인 실패. 설치·로그인 상태를 터미널에서 확인해주세요.',
+        provider === 'grok-cli' && error instanceof Error
+          ? error.message
+          : 'CLI 상태 확인 실패. 설치·로그인 상태를 터미널에서 확인해주세요.',
     };
   }
 }

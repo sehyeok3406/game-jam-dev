@@ -10,7 +10,7 @@ import {
 
 import type { GamejamPage } from './gamejam-wizard.ts';
 import type { CreateTaskInput, HistoryEntry } from './shared.ts';
-import { isReasoningEffort } from './core/ai/catalog.ts';
+import { isAiProvider, isReasoningEffort } from './core/ai/catalog.ts';
 export type GamejamDraft = GamejamSavedRequest & {
   approval?: {
     id: string;
@@ -33,9 +33,7 @@ export function readSavedRequest(
   if (
     !object(value) ||
     value.version !== 1 ||
-    !['codex-cli', 'claude-cli', 'gemini-cli'].includes(
-      String(value.providerId),
-    ) ||
+    !isAiProvider(value.providerId) ||
     typeof value.modelId !== 'string' ||
     (value.reasoningEffort != null &&
       !isReasoningEffort(value.reasoningEffort)) ||

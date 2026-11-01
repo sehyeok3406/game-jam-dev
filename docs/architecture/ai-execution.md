@@ -31,3 +31,11 @@ HTML 구현의 편집 가능한 기본 지시는 실행 영역 전체를 하나�
 실행 coordinator가 상태 전이·단계 실행·최종 기록과 한 번의 자원 해제를 소유한다. 로그 callback에는 실행 단계 식별자를 붙여 이전 단계/완료 후 callback을 버린다. 실행 중 session이 바뀌면 결과 반영을 막고, 진단/실패/중지 기록은 시작 root에 남긴다. lease는 반영 직전에도 비교하며 새 lease의 작업을 대신 종료하지 않는다. 진단·히스토리·task 기록 실패는 각각 보고하면서 실행 슬롯 해제를 시도한다.
 
 main은 CLI 연결 확인과 준비 작업, root/session/client를 캡처하는 adapter 조립 및 UI IPC를 맡는다. 실제 공급자 인증, 과금 호출과 운영 서버 배포는 이 구조 검증에 포함하지 않는다.
+
+## Grok Build
+
+`grok-cli`는 공식 Grok Build 1.0.70 이상을 대상으로 한다. Grok의 기본 Read/Grep가 `dontAsk`에서도 외부 파일을 읽을 수 있어, 각 단계의 `taskFileLock` 보호 범위를 application에서 사본으로 전달한다. adapter는 JSON prompt 파일에 지시·문서·HTML과 이미지 content block을 담고, CLI에는 작업 폴더의 `write`만 허용한다. Read/Grep·셸·MCP·웹은 명시적으로 거절한다. 새 단계의 사본을 얻은 뒤 시작 세션을 다시 검사한다. 결과는 기존 검증·반영 흐름을 사용한다.
+
+설정·prompt는 프로젝트 밖의 실행별 OS temp에 둔다. `GROK_HOME`은 이 임시 위치를, `GROK_AUTH_PATH`는 사용자의 기존 CLI 인증 파일을 가리킨다. 인증값을 복사하지 않는다. 외부 설정 탐색을 끄고 실행 전 `inspect --json`으로 예상하지 않은 설정·확장을 거절한다. 정상 종료·취소·준비 실패 시 임시 파일을 제거하며 강제 종료까지 정리한다고 보장하지 않는다. 연결 상태는 인증 정보 존재와 실제 유효성·모델 이용 권한을 구분한다.
+
+협업 state의 `supportedAiProviders` 목록은 서버가 검증할 수 있는 공급자를 광고한다. 목록이 없는 구버전 서버는 기존 boolean에 따라 Codex 또는 기존 세 공급자만 허용한다. 로컬 실행에는 이 서버 능력을 요구하지 않는다. 상세 판단과 대안은 [ADR 0002](decisions/0002-grok-cli-and-provider-capabilities.md)에 기록한다.

@@ -321,7 +321,9 @@ export function WorkspaceAiDialogs({
               <span>
                 {selectedAiProvider === 'codex-cli'
                   ? '격리 작업 사본 · 외부 MCP 제외 · Codex 자동 검토'
-                  : '격리 작업 사본 · 파일 도구만 허용 · 셸·브라우저·MCP 제외'}{' '}
+                  : selectedAiProvider === 'grok-cli'
+                    ? '작업 입력 사본 전달 · 파일 쓰기만 허용 · 외부 읽기·셸·MCP 제외'
+                    : '격리 작업 사본 · 파일 도구만 허용 · 셸·브라우저·MCP 제외'}{' '}
                 · 결과 검증 후 반영
               </span>
             </div>

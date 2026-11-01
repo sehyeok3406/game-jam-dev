@@ -9,6 +9,8 @@ import { spawn } from 'node:child_process';
 const packageDir = path.resolve(
   process.env.GAMEJAM_PACKAGE_DIR ?? 'out/Game Jam!-win32-x64',
 );
+const fixtureProvider = process.env.GAMEJAM_AI_PROVIDER ?? 'claude-cli';
+assert.ok(['claude-cli', 'grok-cli'].includes(fixtureProvider));
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-queue-package-'));
 const profileRoot = path.resolve(
   process.env.APPDATA,
@@ -38,6 +40,10 @@ await fs.writeFile(
 await fs.mkdir(path.join(bin, 'node_modules/@anthropic-ai/claude-code'), {
   recursive: true,
 });
+await fs.mkdir(path.join(bin, 'node_modules/@xai-official/grok/bin'), {
+  recursive: true,
+});
+await fs.writeFile(path.join(bin, 'grok.cmd'), '@echo off\r\nexit /b 1\r\n');
 await fs.writeFile(path.join(bin, 'claude.cmd'), '@echo off\r\nexit /b 1\r\n');
 // The app resolves the npm entrypoint directly; this fixture has no network calls or credentials.
 await fs.writeFile(
@@ -46,11 +52,14 @@ await fs.writeFile(
 const fs = require('node:fs'); const path = require('node:path');
 const matter = require(${JSON.stringify(path.resolve('node_modules/gray-matter'))});
 const args = process.argv.slice(2);
-if (args.includes('--version')) { console.log('approval-package-mock'); process.exit(0); }
+if (args.includes('--version')) { console.log('grok 1.0.70 (approval-package-mock)'); process.exit(0); }
+if (args[0] === 'inspect') { console.log(JSON.stringify({hooks:[],skills:[],plugins:[],mcpServers:[],lspServers:[],projectInstructions:[],permissions:{sources:[]},configSources:{layers:[{path:path.join(process.env.GROK_HOME,'config.toml')}]}})); process.exit(0); }
 if (args.includes('--help')) { console.log('--restricted --strict-mcp-config --tools --output-format'); process.exit(0); }
 if (args[0] === 'auth') { process.exit(0); }
-if (!args.includes('--print')) process.exit(2);
+const grok = args.includes('--prompt-file');
+if (!args.includes('--print') && !grok) process.exit(2);
 let input = ''; process.stdin.on('data', (d) => input += d); process.stdin.on('end', () => {
+  if (grok) input = JSON.parse(fs.readFileSync(args[args.indexOf('--prompt-file')+1], 'utf8'))[0].text;
   const relative = input.match(/at (\\.ai\\/tasks\\/[^\\n]+\\.md)\\./)?.[1];
   if (!relative) throw Error('Missing task scope');
   const spec = matter(fs.readFileSync(relative, 'utf8')).data;
@@ -59,13 +68,18 @@ let input = ''; process.stdin.on('data', (d) => input += d); process.stdin.on('e
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(output, fs.readFileSync(${JSON.stringify(htmlFixture)}, 'utf8'));
   }
-  setTimeout(() => console.log(JSON.stringify({ type: 'result', is_error: false, result: 'mock queued' })), 1800);
+  setTimeout(() => console.log(JSON.stringify(grok ? {type:'end',stopReason:'end_turn'} : { type: 'result', is_error: false, result: 'mock queued' })), 1800);
 });
 `,
+);
+await fs.copyFile(
+  path.join(bin, 'node_modules/@anthropic-ai/claude-code/cli.js'),
+  path.join(bin, 'node_modules/@xai-official/grok/bin/grok'),
 );
 const childEnv = {
   ...process.env,
   PATH: bin + path.delimiter + process.env.PATH,
+  XAI_API_KEY: 'local-fixture-not-a-real-key',
 };
 const serverPort = await port();
 const serverUrl = `http://127.0.0.1:${serverPort}`;
@@ -243,7 +257,7 @@ try {
     return call(admin, 'startCodexRun', {
       queueVersion: 1,
       taskPath: task.relativePath,
-      providerId: 'claude-cli',
+      providerId: fixtureProvider,
       modelId: null,
     });
   };

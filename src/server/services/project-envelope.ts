@@ -2,6 +2,7 @@ import type { Project, Member, Lock } from '../project-state.ts';
 import type { CollaborationEnvelope } from '../../contracts/collaboration.ts';
 import { serverCapabilities } from '../capabilities.ts';
 import { queueTaskView } from '../../ai-task-queue.ts';
+import { AI_PROVIDERS } from '../../core/ai/catalog.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 export const projectEnvelope = (
   project: Project,
@@ -46,6 +47,7 @@ export const projectEnvelope = (
       (item) => item.status === 'pending',
     ).length,
     multiProviderAi: true,
+    supportedAiProviders: AI_PROVIDERS.map((provider) => provider.id),
     aiReasoningVersion: 1,
     projectId: project.id,
     projectName: project.name,

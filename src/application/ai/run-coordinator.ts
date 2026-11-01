@@ -24,6 +24,7 @@ export interface AiRunWorkflow {
   stages: string[];
   stageIndex: number;
   preparePhase(): Promise<void>;
+  inputFiles?(): Promise<Snapshot>;
   embedAssets(provider: PreparedAiRun['providerId']): Promise<void>;
   advance(): Promise<void>;
   validateFinal(
@@ -182,8 +183,18 @@ export class AiRunCoordinator {
         this.acceptingOutput = true;
         try {
           p.assertCurrent();
+          const prepared =
+            this.providerId === 'grok-cli'
+              ? {
+                  ...this.context.prepared,
+                  inputFiles: await workflow.inputFiles?.(),
+                }
+              : this.context.prepared;
+          if (this.providerId === 'grok-cli' && !prepared.inputFiles)
+            throw Error('Grok 실행 입력 사본을 준비하지 못했습니다.');
+          p.assertCurrent();
           result = await p.executor.run(
-            this.context.prepared,
+            prepared,
             this.controller.signal,
             (event) => {
               if (

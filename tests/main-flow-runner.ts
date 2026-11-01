@@ -1970,7 +1970,13 @@ try {
     projectId: shared.projectId,
     recoveryKey: shared.recoveryKey,
   });
-  for (const providerId of ['codex-cli', 'claude-cli', 'gemini-cli']) {
+  process.env.XAI_API_KEY = 'fixture-not-a-real-key';
+  for (const providerId of [
+    'codex-cli',
+    'claude-cli',
+    'gemini-cli',
+    'grok-cli',
+  ]) {
     await otherClient!.refresh();
     const item =
       providerId === 'codex-cli'
@@ -2008,9 +2014,9 @@ try {
   }
   await call('collaboration:leave');
   console.log(
-    'PASS: desktop editor submits requests without execution; administrator approval atomically starts all three mock providers and shares completed results.',
+    'PASS: desktop editor submits requests without execution; administrator approval atomically starts all four mock providers and shares completed results.',
   );
-  for (const providerId of ['claude-cli', 'gemini-cli']) {
+  for (const providerId of ['claude-cli', 'gemini-cli', 'grok-cli']) {
     const workflow = await call('tasks:create', {
       kind: 'organize',
       inputPaths: [idea.relativePath],
@@ -2082,7 +2088,7 @@ try {
     );
   }
   console.log(
-    'PASS: Claude/Gemini IPC adapters run shared editor tasks, sequential workflows, enforce file-only flags, embed selected assets and reject failures/cancellation publication (mock CLI, no paid AI)',
+    'PASS: Claude/Gemini/Grok IPC adapters run shared editor tasks, sequential workflows, embed selected assets and reject failures/cancellation publication (mock CLI, no paid AI)',
   );
   for (const mode of ['fixture-asset-valid', 'fixture-asset-tamper']) {
     const assetTask = await call('tasks:create', {

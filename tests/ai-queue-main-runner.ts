@@ -141,14 +141,17 @@ try {
   );
 
   const originalKey = process.env.GEMINI_API_KEY;
+  const originalXaiKey = process.env.XAI_API_KEY;
   const originalEffort = process.env.CLAUDE_CODE_EFFORT_LEVEL;
   process.env.GEMINI_API_KEY = 'fixture-not-a-real-key';
+  process.env.XAI_API_KEY = 'fixture-not-a-real-key';
   process.env.CLAUDE_CODE_EFFORT_LEVEL = 'low';
   try {
     for (const [providerId, modelId, reasoningEffort] of [
       ['codex-cli', 'gpt-6.1-sol', 'max'],
       ['claude-cli', 'claude-opus-5-5', 'xhigh'],
       ['gemini-cli', 'gemini-3.8-flash', 'high'],
+      ['grok-cli', 'fixture-grok', null],
     ] as const) {
       const run = await call('codex:start', {
         queueVersion: 1,
@@ -188,12 +191,14 @@ try {
   } finally {
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = originalKey;
+    if (originalXaiKey === undefined) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = originalXaiKey;
     if (originalEffort === undefined)
       delete process.env.CLAUDE_CODE_EFFORT_LEVEL;
     else process.env.CLAUDE_CODE_EFFORT_LEVEL = originalEffort;
   }
   console.log(
-    'PASS: production queue passes native reasoning controls to all three adapters and records the selected effort',
+    'PASS: production queue executes all four adapters and records the selected effort',
   );
 
   server = await createCollaborationServer({

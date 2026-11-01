@@ -81,10 +81,10 @@ test('Gemini thinking is scoped to its model and invocation without changing the
   );
 });
 
-test('exactly GPT, Claude and Gemini are supported; file-only adapters never enable shell or permission bypass', () => {
+test('GPT, Claude, Gemini and Grok are supported; file-only adapters never enable shell or permission bypass', () => {
   assert.deepEqual(
     AI_PROVIDERS.map((p) => p.id),
-    ['codex-cli', 'claude-cli', 'gemini-cli'],
+    ['codex-cli', 'claude-cli', 'gemini-cli', 'grok-cli'],
   );
   for (const id of ['other-cli', 'openrouter', '', null])
     assert.equal(isAiProvider(id), false);

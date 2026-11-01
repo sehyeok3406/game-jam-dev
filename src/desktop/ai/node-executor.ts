@@ -11,6 +11,7 @@ import { aiArguments } from '../../adapters/node/ai/providers.ts';
 import { otherCliStatus } from '../../adapters/node/ai/discovery.ts';
 import { inspectCodex } from '../../adapters/node/ai/inspection.ts';
 import { collectProcess, terminateProcessTree } from './process-runner.ts';
+import { prepareGrokProcess } from '../../adapters/node/ai/grok.ts';
 
 /** Owns child processes, UTF-8 decoding and cancellation; the application owns publication. */
 export class NodeAiExecutor implements AiExecutor {
@@ -38,31 +39,58 @@ export class NodeAiExecutor implements AiExecutor {
       throw Error('이미 실행 중인 AI 작업입니다.');
     if (signal.aborted)
       return { code: null, error: Error('AI 실행을 중지했습니다.') };
-    const child = spawn(
-      input.executable.executable,
-      [
-        ...input.executable.prefix,
-        ...aiArguments(
-          this.provider,
-          input.modelId,
-          input.stage,
-          input.reasoningEffort,
-        ),
-      ],
-      {
-        cwd: input.stage,
-        windowsHide: true,
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env:
-          this.provider === 'claude-cli' && input.reasoningEffort
-            ? {
-                ...process.env,
-                CLAUDE_CODE_EFFORT_LEVEL: input.reasoningEffort,
-              }
-            : process.env,
-      },
+    const args = aiArguments(
+      this.provider,
+      input.modelId,
+      input.stage,
+      input.reasoningEffort,
     );
+    const prepared =
+      this.provider === 'grok-cli'
+        ? await prepareGrokProcess(
+            input.executable,
+            collectProcess,
+            input.stage,
+            input.prompt,
+            input.inputFiles,
+          )
+        : null;
+    if (signal.aborted) {
+      await prepared?.cleanup();
+      return { code: null, error: Error('AI 실행을 중지했습니다.') };
+    }
+    if (this.processes.has(input.runId)) {
+      await prepared?.cleanup();
+      throw Error('이미 실행 중인 AI 작업이 있습니다.');
+    }
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(
+        input.executable.executable,
+        [
+          ...input.executable.prefix,
+          ...(prepared ? ['--prompt-file', prepared.promptFile] : []),
+          ...args,
+        ],
+        {
+          cwd: input.stage,
+          windowsHide: true,
+          shell: false,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env:
+            prepared?.env ??
+            (this.provider === 'claude-cli' && input.reasoningEffort
+              ? {
+                  ...process.env,
+                  CLAUDE_CODE_EFFORT_LEVEL: input.reasoningEffort,
+                }
+              : process.env),
+        },
+      );
+    } catch (error) {
+      await prepared?.cleanup();
+      throw error;
+    }
     const active = { child };
     this.processes.set(input.runId, active);
     return new Promise((resolve) => {
@@ -80,7 +108,17 @@ export class NodeAiExecutor implements AiExecutor {
         publish('stderr', stderr.end());
         if (this.processes.get(input.runId) === active)
           this.processes.delete(input.runId);
-        resolve({ code, error });
+        if (prepared)
+          void prepared.cleanup().then(
+            () => resolve({ code, error }),
+            () =>
+              resolve({
+                code,
+                error:
+                  error ?? Error('Grok 임시 실행 파일 정리에 실패했습니다.'),
+              }),
+          );
+        else resolve({ code, error });
       };
       const abort = () => {
         void this.cancel(input.runId).catch((error) => finish(null, error));
@@ -98,7 +136,7 @@ export class NodeAiExecutor implements AiExecutor {
       child.once('close', (code) => finish(code));
       signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) abort();
-      else child.stdin.end(input.prompt, 'utf8');
+      else child.stdin.end(prepared ? undefined : input.prompt, 'utf8');
     });
   }
   cancel(runId: string): Promise<void> {

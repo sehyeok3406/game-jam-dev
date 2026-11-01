@@ -9,7 +9,7 @@ import type {
 import { resultName } from './result-name.ts';
 import { taskInstructions } from './task-instructions.ts';
 import { documentTemplates } from './document-format.ts';
-import { reasoningError } from './core/ai/catalog.ts';
+import { reasoningError, supportsSharedAiProvider } from './core/ai/catalog.ts';
 
 export type GamejamField =
   | 'steps'
@@ -264,7 +264,7 @@ export function gamejamIssues(
         'connection',
         '작업 지시를 사용하려면 협업 서버 v0.7.5 이상으로 업데이트해주세요.',
       );
-    if (context.provider !== 'codex-cli' && !shared.multiProviderAi)
+    if (!supportsSharedAiProvider(shared, context.provider))
       add(
         'connection',
         '선택한 AI 제공자를 지원하지 않는 협업 서버입니다. GPT · Codex를 선택하거나 서버를 업데이트해주세요.',

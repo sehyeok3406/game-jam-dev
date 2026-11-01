@@ -10,9 +10,11 @@ export const collectProcess = (
   command: string,
   args: string[],
   timeoutMs = 10_000,
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ): Promise<ProcessResult> =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
+      ...options,
       windowsHide: true,
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],

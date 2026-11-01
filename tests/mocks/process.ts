@@ -45,12 +45,17 @@ export function spawn(
   options?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ) {
   const isExecution =
-    args[0] === 'exec' || args.includes('--print') || args.includes('--prompt');
+    args[0] === 'exec' ||
+    args.includes('--print') ||
+    args.includes('--prompt') ||
+    args.includes('--prompt-file');
   const provider = args.includes('--print')
     ? 'claude-cli'
     : args.includes('--prompt')
       ? 'gemini-cli'
-      : 'codex-cli';
+      : args.includes('--prompt-file')
+        ? 'grok-cli'
+        : 'codex-cli';
   const child = Object.assign(new EventEmitter(), {
     pid: nextPid++,
     killed: false,
@@ -92,12 +97,32 @@ export function spawn(
           child.emit('close', 0);
           return;
         }
+        if (args[0] === 'inspect') {
+          child.stdout.write(
+            JSON.stringify({
+              hooks: [],
+              skills: [],
+              plugins: [],
+              mcpServers: [],
+              lspServers: [],
+              projectInstructions: [],
+              permissions: { sources: [] },
+              configSources: {
+                layers: [
+                  { path: path.join(options!.env!.GROK_HOME!, 'config.toml') },
+                ],
+              },
+            }),
+          );
+          child.emit('close', 0);
+          return;
+        }
         if (
           args[0] === '--version' ||
           args[0] === 'login' ||
           args[0] === 'auth'
         ) {
-          child.stdout.write('fixture CLI\n');
+          child.stdout.write('grok 1.0.70 (fixture CLI)\n');
           child.emit('close', 0);
           return;
         }
@@ -129,7 +154,15 @@ export function spawn(
             throw new Error('Gemini file restriction missing');
         }
         const mode = args[args.indexOf('--model') + 1];
-        const prompt = child.stdin.read()?.toString() ?? '';
+        const prompt =
+          provider === 'grok-cli'
+            ? JSON.parse(
+                await fs.readFile(
+                  args[args.indexOf('--prompt-file') + 1],
+                  'utf8',
+                ),
+              )[0].text
+            : (child.stdin.read()?.toString() ?? '');
         const taskPath = prompt.match(/at (\.ai\/tasks\/[^\n]+\.md)\./)?.[1];
         const taskSpecification = taskPath
           ? matter(await fs.readFile(path.join(stage, taskPath), 'utf8'))
@@ -420,7 +453,11 @@ export function spawn(
                         mode === 'fixture-provider-error' ? 'error' : 'success',
                       error: { message: 'fixture provider failure' },
                     }
-                  : { type: 'turn.completed' },
+                  : provider === 'grok-cli'
+                    ? mode === 'fixture-provider-error'
+                      ? { type: 'error', message: 'fixture provider failure' }
+                      : { type: 'end', stopReason: 'end_turn' }
+                    : { type: 'turn.completed' },
             ) + '\n',
           );
           child.emit('close', 0);
