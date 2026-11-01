@@ -154,6 +154,15 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     )
       return;
     lastSaveState.current = state;
+    // Discard acknowledges the completed pre-rename queue entry. Its old path
+    // and body must never rebase the editor that has already adopted the name.
+    if (state.phase === 'discarded') {
+      lastSaveState.current = null;
+      setQueueState(null);
+      setSaving(false);
+      setSaveFailed(false);
+      return;
+    }
     if (
       editingPath.current !== state.relativePath &&
       state.sequence >= draftSequence.current
@@ -163,13 +172,6 @@ export function useDocumentEditing(data: DocumentEditingInput) {
         latestRef.current = { ...latestRef.current, body: state.latest.body };
         setBody(state.latest.body);
       }
-    }
-    if (state.phase === 'discarded') {
-      lastSaveState.current = null;
-      setQueueState(null);
-      setSaving(false);
-      setSaveFailed(false);
-      return;
     }
     setQueueState((previous) =>
       previous &&
