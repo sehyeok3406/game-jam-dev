@@ -1753,7 +1753,7 @@ try {
   await call('path:reveal', outputPath);
   assert.equal(revealedPaths.at(-1), path.join(sharedWorkspace, outputPath));
   assert.deepEqual(await fs.readdir(path.dirname(revealedPaths.at(-1)!)), [
-    'index.html',
+    path.basename(outputPath),
   ]);
   assert.equal(
     await fs.readFile(revealedPaths.at(-1)!, 'utf8'),
