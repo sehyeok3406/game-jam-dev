@@ -80,6 +80,8 @@ const replaceName = async (name) => {
 try {
   await boot();
   await wait(`!!document.querySelector('${selector}')`);
+  // Opening may finish applying initial workflow metadata after the first card mount.
+  await new Promise((resolve) => setTimeout(resolve, 600));
   await replaceName('새 문서 이름');
   await new Promise((r) => setTimeout(r, 1400));
   assert.equal((await record()).relativePath, 'docs/original.md');
@@ -144,7 +146,13 @@ try {
   assert.equal((await record()).relativePath, 'docs/정리 이름.md');
   await click(`${selector} .markdown-body p`);
   await wait(`!!document.querySelector('${selector} .tiptap')`);
+  await wait(
+    `document.activeElement===document.querySelector('${selector} .tiptap')`,
+  );
   await send('Input.insertText', { text: '개명 후 입력 ' });
+  await wait(
+    `document.querySelector('${selector} .tiptap')?.textContent.includes('개명 후 입력')`,
+  );
   await key('s', 'KeyS', 83, 2);
   await wait(
     'window.gameCanvas.listDocuments().then(ds=>ds.find(d=>d.id==="native-name")?.body.includes("개명 후 입력"))',
