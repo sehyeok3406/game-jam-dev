@@ -168,8 +168,8 @@ test('read-only plan moves identity and parsed references while preserving sourc
   );
 });
 async function setup(t, initial = files()) {
-  const root = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'gamejam-document-name-'),
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-document-name-')),
   );
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   for (const [p, text] of Object.entries(initial)) {
