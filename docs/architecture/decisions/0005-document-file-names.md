@@ -31,3 +31,5 @@ OS 탐색기의 직접 개명 자동 추적, 임의 동적 코드 교정, 원격
 `document-names.test.mjs`, `file-names-integration.test.mjs`, `document-save-queue.test.mjs`는 실제 임시 파일·이름 규칙·ID·링크·과거 기록·대소문자 역복원·중단 복구·오프라인 초안을 검사한다. `file-names-server.test.mjs`는 실제 서버와 두 클라이언트의 동시 개명, 본문 재접속, 잠금·뷰어·구버전 차단, 동일 요청 재전송과 서버 재시작을 확인한다. 기존 생성/가져오기/프로젝트 복사/HTML·AI·공유 명령 검사를 함께 유지한다.
 
 최종 Windows 패키지의 `document-names-packaged.mjs`와 `unified-file-names-packaged.mjs`는 실제 이름 입력, 취소·오류, 파일·참조·iframe, 일괄 미리보기/확정·Undo/Redo·구조 정리·전체 재시작을 검사한다. 임시 프로젝트와 격리 프로필만 사용한다. 새 파일 형식·동적 의존성 분석·오프라인 구조 변경을 지원할 때 경로 계약과 복구 보장을 재검토한다.
+
+공유 mirror는 새 경로에 같은 source ID가 남은 HTML을 삭제로 처리하지 않는다. 개명 후 같은 결과 폴더·리소스·개인 창 상태를 휴지통에 보내지 않으며, snapshot journal은 기존 asset codec으로 binary bytes를 비교·복구한다. 실제 파일 사본의 개명/역반영·중단 복구·외부 asset 변경 보존을 함께 검사한다.

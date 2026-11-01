@@ -6,6 +6,7 @@ import type { Snapshot } from '../../contracts/project.ts';
 import { applyChanges, projectPath } from '../../project-store.ts';
 import { fileNameKey } from '../../core/documents/file-name.ts';
 import { readFileNames } from '../../core/documents/name-registry.ts';
+import { isAssetPath, encodeAsset, decodeAsset } from '../../file-assets.ts';
 
 const JOURNAL = '.gamejam/local/document-names/pending.json';
 type Journal = {
@@ -18,6 +19,16 @@ const read = async (filename: string) =>
     if (error.code === 'ENOENT') return undefined;
     throw error;
   });
+async function readProjectValue(root: string, relative: string) {
+  const absolute = await projectPath(root, relative);
+  if (!isAssetPath(relative)) return read(absolute);
+  try {
+    return encodeAsset(relative, await fs.readFile(absolute));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
 function moves(before: Snapshot, changes: Record<string, string | null>) {
   const after = { ...before };
   for (const [p, raw] of Object.entries(changes)) {
@@ -72,7 +83,7 @@ async function rollback(root: string, journal: Journal, check: () => void) {
   const paths = Object.keys(journal.changes);
   for (const relative of paths) {
     check();
-    const current = await read(await projectPath(root, relative));
+    const current = await readProjectValue(root, relative);
     const related = paths.filter(
       (p) => fileNameKey(p) === fileNameKey(relative),
     );
@@ -95,11 +106,15 @@ async function rollback(root: string, journal: Journal, check: () => void) {
     await fs.mkdir(path.dirname(filename), { recursive: true });
     const temporary = `${filename}.name-recovery-${randomUUID()}.tmp`;
     try {
-      await fs.writeFile(temporary, raw, {
-        encoding: 'utf8',
-        flag: 'wx',
-        flush: true,
-      });
+      await fs.writeFile(
+        temporary,
+        isAssetPath(relative) ? decodeAsset(relative, raw) : raw,
+        {
+          encoding: 'utf8',
+          flag: 'wx',
+          flush: true,
+        },
+      );
       await fs.rename(temporary, filename);
     } finally {
       await fs.rm(temporary, { force: true });
@@ -158,7 +173,7 @@ export async function applyDocumentNames(
   };
   for (const relative of Object.keys(changes)) {
     runCheck();
-    const current = await read(await projectPath(root, relative));
+    const current = await readProjectValue(root, relative);
     const previous = caseMoves.find((m) => m.to === relative);
     if (
       current !== before[relative] &&

@@ -27,6 +27,10 @@ import {
   legacyResultMoves,
 } from '../src/result-structure.ts';
 import { filesystemProjectRepository } from '../src/adapters/filesystem/local-project-repository.ts';
+import { filesystemSharedProjectFiles } from '../src/adapters/filesystem/shared-project-files.ts';
+import { SharedProjectMirror } from '../src/application/editing/shared-project-mirror.ts';
+import { encodeAsset } from '../src/file-assets.ts';
+import { recoverDocumentNames } from '../src/adapters/filesystem/document-name-transaction.ts';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,6 +51,108 @@ const rename = (files, path, name) =>
     expectedBody: matter(files[path]).content.trim(),
     name,
   }).files;
+
+test('actual shared mirror rename and inverse keep the owned result folder, assets and personal window state', async (t) => {
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'gamejam-name-mirror-')),
+  );
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const relative = 'output/systems/combat/v007/index.html';
+  const source = '<html><body>original</body></html>';
+  const asset = 'output/systems/combat/v007/picture.svg',
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+  const initial = {
+    [relative]: source,
+    [htmlSourcePath(relative)]: sourceMetadata(relative, source),
+    [asset]: encodeAsset(asset, Buffer.from(svg)),
+  };
+  const trashed = [];
+  const files = filesystemSharedProjectFiles(
+    root,
+    {
+      pauseWatcher: async () => async () => {},
+      trashItem: async (p) => {
+        trashed.push(p);
+        await fs.rename(p, p + '.trashed');
+      },
+    },
+    () => {},
+  );
+  const mirror = new SharedProjectMirror(files, () => {});
+  await mirror.sync(initial);
+  const windowPath = path.join(
+    root,
+    '.canvas/previews',
+    htmlSourceId(relative) + '.json',
+  );
+  await fs.mkdir(path.dirname(windowPath), { recursive: true });
+  await fs.writeFile(
+    windowPath,
+    '{"x":77,"y":88,"width":720,"height":520,"collapsed":false}',
+  );
+  const renamed = reduceCollaboration(initial, 'preview:rename', {
+    scope: 's',
+    relativePath: relative,
+    objectId: htmlSourceId(relative),
+    expectedHash: htmlHash(source),
+    name: '전투 화면',
+  }).files;
+  await mirror.sync(renamed);
+  assert.equal(
+    await fs.readFile(
+      path.join(root, 'output/systems/combat/v007/전투 화면.html'),
+      'utf8',
+    ),
+    source,
+  );
+  assert.equal(await fs.readFile(path.join(root, asset), 'utf8'), svg);
+  assert.equal(JSON.parse(await fs.readFile(windowPath, 'utf8')).x, 77);
+  await mirror.sync(initial);
+  assert.equal(await fs.readFile(path.join(root, relative), 'utf8'), source);
+  assert.equal(JSON.parse(await fs.readFile(windowPath, 'utf8')).x, 77);
+  assert.deepEqual(trashed, []);
+  // A shared snapshot also includes unchanged binary support files in its journal.
+  const changes = Object.fromEntries(
+    Object.keys({ ...initial, ...renamed })
+      .filter((p) => initial[p] !== renamed[p])
+      .map((p) => [p, renamed[p] ?? null]),
+  );
+  changes[asset] = initial[asset];
+  const journal = {
+    version: 1,
+    before: Object.fromEntries(
+      Object.keys(changes)
+        .filter((p) => initial[p] !== undefined)
+        .map((p) => [p, initial[p]]),
+    ),
+    changes,
+  };
+  const journalPath = path.join(
+    root,
+    '.gamejam/local/document-names/pending.json',
+  );
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, JSON.stringify(journal));
+  for (const [p, raw] of Object.entries(changes)) {
+    if (p === asset) continue;
+    const absolute = path.join(root, p);
+    if (raw === null) await fs.rm(absolute, { force: true });
+    else {
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, raw);
+    }
+  }
+  await recoverDocumentNames(root);
+  assert.deepEqual(await files.capture(), initial);
+  assert.equal(await fs.readFile(path.join(root, asset), 'utf8'), svg);
+  await fs.writeFile(journalPath, JSON.stringify(journal));
+  await fs.writeFile(path.join(root, asset), 'outside edit');
+  await assert.rejects(recoverDocumentNames(root), /외부 변경/);
+  assert.equal(
+    await fs.readFile(path.join(root, asset), 'utf8'),
+    'outside edit',
+  );
+});
 test('HTML entry rename preserves identity, parsed self links, resources, title content and managed listing', () => {
   const path = 'output/index.html',
     id = htmlSourceId(path);

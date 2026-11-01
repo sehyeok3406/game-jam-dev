@@ -6,6 +6,7 @@ import {
   isPreviewPath,
   previewDeletionTarget,
   previewWindowPath,
+  managedPreviewPaths,
 } from './preview-output.ts';
 
 /** Validate every target before moving any file or owned result folder to trash. */
@@ -17,7 +18,15 @@ export async function trashDeletedFiles(
 ) {
   const removed = Object.keys(before).filter((key) => after[key] === undefined);
   const targets = new Set(removed);
+  const survivors = new Set(
+    managedPreviewPaths(after).map((p) => previewIdentity(after, p)),
+  );
   for (const relative of removed.filter(isPreviewPath)) {
+    // A renamed result still owns this folder and its personal window settings.
+    if (survivors.has(previewIdentity(before, relative))) {
+      targets.delete(relative);
+      continue;
+    }
     const target = previewDeletionTarget(relative);
     for (const key of targets)
       if (key.startsWith(`${target}/`)) targets.delete(key);
