@@ -8,6 +8,7 @@ import {
   isResultFolderPath,
 } from './preview-output.ts';
 import { resultMoves } from './result-structure.ts';
+import { previewIdentity } from './html-source.ts';
 
 async function exists(absolute: string) {
   try {
@@ -78,6 +79,10 @@ export async function moveResultFiles(
     for (const [oldRelative, newRelative] of [
       [source, destination],
       [previewWindowPath(move.from), previewWindowPath(move.to)],
+      [
+        `.canvas/previews/${previewIdentity(before, move.from)}.json`,
+        `.canvas/previews/${previewIdentity(after, move.to)}.json`,
+      ],
     ]) {
       const from = await projectPath(root, oldRelative),
         to = await projectPath(root, newRelative);

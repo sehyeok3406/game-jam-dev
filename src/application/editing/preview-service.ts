@@ -63,6 +63,7 @@ export class ProjectPreviewService {
     });
   }
   private async windowPath(relative: string) {
+    assertPreviewPath(relative);
     const files = await this.ports.project.capture();
     const entry = readFileNames(files).entries.find(
       (e) => e.kind === 'html' && e.path === relative,

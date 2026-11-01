@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { previewIdentity } from './html-source.ts';
 import { projectPath, type Snapshot } from './project-store.ts';
 import {
   isPreviewPath,
@@ -22,6 +23,7 @@ export async function trashDeletedFiles(
       if (key.startsWith(`${target}/`)) targets.delete(key);
     targets.add(target);
     targets.add(previewWindowPath(relative));
+    targets.add(`.canvas/previews/${previewIdentity(before, relative)}.json`);
   }
   const absoluteTargets: string[] = [];
   for (const relative of targets) {
