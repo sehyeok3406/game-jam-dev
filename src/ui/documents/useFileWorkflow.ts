@@ -78,11 +78,10 @@ export function useFileWorkflow(scope: SelectionScope, ports: () => Ports) {
         live.current();
 
       const doc = documents.find((d) => d.id === item.id),
-        p = previews.find((p) => previewNodeId(p.relativePath) === item.id);
+        p = previews.find((p) => previewNodeId(p) === item.id);
       if (!doc && !p) throw Error('문서가 이동되거나 삭제되었습니다.');
       const resolveId = (id?: string) =>
-        previews.find((p) => previewNodeId(p.relativePath) === id)?.sourceId ??
-        id;
+        previews.find((p) => previewNodeId(p) === id)?.sourceId ?? id;
       if (workflowPending.current)
         throw Error('이전 속성 저장이 끝난 뒤 다시 시도해주세요.');
       workflowPending.current = true;

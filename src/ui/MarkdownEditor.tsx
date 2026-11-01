@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { previewState } from './debug/uiDebugPreviewState';
+import type { MarkdownEditFocus } from './documents/markdown-title';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { getMarkRange } from '@tiptap/core';
 import {
@@ -51,7 +52,7 @@ type Props = {
   onFinish: () => void;
   onSave: () => void;
   onCompositionChange?: (value: boolean) => void;
-  initialFocus?: { title: boolean; point?: { x: number; y: number } };
+  initialFocus?: MarkdownEditFocus;
   currentCanvas?: string;
 };
 export function MarkdownEditor({
@@ -610,9 +611,31 @@ export function MarkdownEditor({
   useEffect(() => {
     if (!editor || initialFocus?.title) return;
     const frame = requestAnimationFrame(() => {
-      if (source) areaRef.current?.focus();
-      else {
-        const point = initialFocus?.point;
+      if (source) {
+        areaRef.current?.focus();
+        if (initialFocus?.block && areaRef.current) {
+          const offset = Math.min(
+            initialFocus.block.sourceOffset,
+            areaRef.current.value.length,
+          );
+          areaRef.current.setSelectionRange(offset, offset);
+        }
+      } else {
+        let point = initialFocus?.point;
+        const block = initialFocus?.block;
+        if (block && block.index < editor.state.doc.childCount) {
+          let position = 0;
+          for (let index = 0; index < block.index; index++)
+            position += editor.state.doc.child(index).nodeSize;
+          const element = editor.view.nodeDOM(position);
+          if (element instanceof HTMLElement) {
+            const rect = element.getBoundingClientRect();
+            point = {
+              x: rect.left + Math.max(1, Math.min(block.x, rect.width - 1)),
+              y: rect.top + Math.max(1, Math.min(block.y, rect.height - 1)),
+            };
+          }
+        }
         const hit = point
           ? editor.view.posAtCoords({ left: point.x, top: point.y })
           : null;

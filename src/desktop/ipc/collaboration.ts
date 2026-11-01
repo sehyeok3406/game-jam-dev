@@ -23,6 +23,8 @@ export function dispatchSharedEditingIpc(
     };
   const reader = service.reader;
   switch (channel) {
+    case 'files:inspect-names':
+      return { handled: true, value: service.inspectNames(args[0] as string) };
     case 'document-statuses:get':
       return { handled: true, value: reader.statuses() };
     case 'kanban:get-view':

@@ -9,6 +9,7 @@ import {
   nextPreviewPath,
   previewLabel,
   previewWindowPath,
+  managedPreviewPaths,
 } from '../src/preview-output.ts';
 import {
   captureProject,
@@ -21,7 +22,7 @@ import { expectedArtifacts } from '../src/ai-artifacts.ts';
 test('version paths are restricted, ordered and reserved independently from legacy output', () => {
   assert.equal(
     nextPreviewPath(['output/index.html']),
-    'output/inbox/untitled/v001/index.html',
+    'output/inbox/untitled/v001/새 게임.html',
   );
   assert.equal(
     nextPreviewPath([
@@ -29,7 +30,7 @@ test('version paths are restricted, ordered and reserved independently from lega
       'output/versions/v2.html',
       'output/versions/v7.html',
     ]),
-    'output/inbox/untitled/v001/index.html',
+    'output/inbox/untitled/v001/새 게임.html',
   );
   assert.equal(previewLabel('output/versions/v2.html'), '버전 2');
   assert.equal(previewWindowPath(), '.canvas/preview.json');
@@ -40,8 +41,6 @@ test('version paths are restricted, ordered and reserved independently from lega
   for (const invalid of [
     '../index.html',
     'output/versions/../index.html',
-    'output/versions/v02.html',
-    'output/other.html',
     'C:/temp/file.html',
     'output/versions/v2.html/other',
   ]) {
@@ -51,6 +50,14 @@ test('version paths are restricted, ordered and reserved independently from lega
       expectedArtifacts(`---\nexpected_outputs:\n  - ${invalid}\n---\n`),
     );
   }
+  assert.equal(isPreviewPath('output/other.html'), true);
+  assert.deepEqual(
+    managedPreviewPaths({
+      'output/other.html': '<body>resource</body>',
+      'output/index.html': '<body>game</body>',
+    }),
+    ['output/index.html'],
+  );
   assert.deepEqual(
     expectedArtifacts(
       '---\nexpected_outputs:\n  - output/versions/v2.html\n---\n',

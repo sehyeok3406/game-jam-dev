@@ -80,9 +80,17 @@ export function sameIds(left: string[], right: string[]) {
 }
 
 export const sectionNodeId = (id: string) => `section:${id}`;
-export const previewNodeId = (relative: string) => `preview:${relative}`;
+export const previewNodeId = (
+  value:
+    | string
+    | Pick<
+        import('../../contracts/preview').PreviewResult,
+        'relativePath' | 'identityPath'
+      >,
+) =>
+  `preview:${typeof value === 'string' ? value : (value.identityPath ?? value.relativePath)}`;
 export const previewDeletionItem = (preview: PreviewResult): DeletionItem => ({
-  id: previewNodeId(preview.relativePath),
+  id: previewNodeId(preview),
   title: preview.title || previewLabel(preview.relativePath),
   relativePath: preview.relativePath,
   revision: preview.revision,

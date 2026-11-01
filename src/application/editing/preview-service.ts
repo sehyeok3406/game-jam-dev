@@ -1,3 +1,4 @@
+import { readFileNames } from '../../core/documents/name-registry.ts';
 import type { LocalProjectRepository } from '../ports/local-project-repository.ts';
 import type { ProjectTextFiles } from '../ports/text-files.ts';
 import type { PreviewWindowState } from '../../contracts/preview.ts';
@@ -5,11 +6,10 @@ import { normalizePreviewWindow } from '../../preview-window.ts';
 import {
   DEFAULT_PREVIEW_PATH,
   assertPreviewPath,
-  isPreviewPath,
-  previewVersion,
+  managedPreviewPaths,
   previewWindowPath,
 } from '../../preview-output.ts';
-import { describePreview } from '../../html-source.ts';
+import { describePreview, htmlSourceId } from '../../html-source.ts';
 
 type PreviewPorts = {
   project: LocalProjectRepository;
@@ -24,10 +24,9 @@ export class ProjectPreviewService {
   }
   async list() {
     const files = await this.ports.project.capture();
-    return Object.keys(files)
-      .filter(isPreviewPath)
-      .sort((a, b) => previewVersion(a) - previewVersion(b))
-      .map((path) => describePreview(files, path));
+    return managedPreviewPaths(files)
+      .map((path) => describePreview(files, path))
+      .sort((a, b) => a.version! - b.version!);
   }
   async read(relative = DEFAULT_PREVIEW_PATH) {
     assertPreviewPath(relative);
@@ -35,11 +34,19 @@ export class ProjectPreviewService {
     return { exists: raw !== null, content: raw ?? '', relativePath: relative };
   }
   async window(relative = DEFAULT_PREVIEW_PATH) {
-    const raw = await this.ports.files.read(previewWindowPath(relative));
+    const files = await this.ports.project.capture();
+    const entry = readFileNames(files).entries.find(
+      (e) => e.kind === 'html' && e.path === relative,
+    );
+    const raw =
+      (await this.ports.files.read(await this.windowPath(relative))) ??
+      (await this.ports.files.read(
+        previewWindowPath(entry?.originalPath ?? relative),
+      ));
     return raw === null ? null : normalizePreviewWindow(JSON.parse(raw));
   }
-  saveWindow(state: PreviewWindowState, relative = DEFAULT_PREVIEW_PATH) {
-    const windowPath = previewWindowPath(relative);
+  async saveWindow(state: PreviewWindowState, relative = DEFAULT_PREVIEW_PATH) {
+    const windowPath = await this.windowPath(relative);
     if (
       ![state.x, state.y, state.width, state.height].every(Number.isFinite) ||
       typeof state.collapsed !== 'boolean'
@@ -54,5 +61,12 @@ export class ProjectPreviewService {
         JSON.stringify(normalizePreviewWindow(state)),
       );
     });
+  }
+  private async windowPath(relative: string) {
+    const files = await this.ports.project.capture();
+    const entry = readFileNames(files).entries.find(
+      (e) => e.kind === 'html' && e.path === relative,
+    );
+    return `.canvas/previews/${entry?.id ?? htmlSourceId(relative)}.json`;
   }
 }

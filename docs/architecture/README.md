@@ -32,6 +32,8 @@
 
 ## 변경 영역별로 읽을 문서
 
+사용자 Markdown·HTML의 이름 확정, 기존 파일의 명시적 일괄 통일, 협업 재연결과 생성 경로는 [ADR 0005](decisions/0005-document-file-names.md)를 따른다. 표시 제목과 실제 이름을 함께 확정하며 기존 파일은 열기만으로 개명하지 않는다.
+
 [프로젝트 이름과 공유 폴더 정책](decisions/0004-project-names-and-shared-folders.md)은 PC·서버 이름 중복 검사와 사본 root/journal 경계를 정의한다.
 
 프로젝트 파일 구조 v2, 빈 프로젝트 시작, 명시적 기존 자료 전환과 공유 프로젝트 탐색기 접근은 [ADR 0003](decisions/0003-project-file-layout.md), [프로젝트 파일](project-files.md), [홈](project-home.md)을 함께 확인한다. 논리 snapshot 경로와 실제 .gamejam 저장 위치를 구분한다.

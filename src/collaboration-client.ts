@@ -6,6 +6,7 @@ import type {
 import { collaborationTransport } from './adapters/http/collaboration-transport.ts';
 import { remapPendingLayout } from './adapters/markdown/layout-snapshot.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
+import { FILE_NAMES_PATH } from './contracts/document-names.ts';
 import { requireProjectLayoutSupport } from './adapters/http/project-layout-support.ts';
 import {
   objectId,
@@ -268,7 +269,11 @@ export class CollaborationClient {
     return this.transport(
       serverUrl,
       endpoint,
-      { projectLayoutVersion: 2, ...(input as object) },
+      {
+        projectLayoutVersion: 2,
+        documentNamesVersion: 1,
+        ...(input as object),
+      },
       token,
       key,
     );
@@ -433,6 +438,15 @@ export class CollaborationClient {
           syncMessage: error instanceof Error ? error.message : String(error),
         };
       }
+    }
+    if (
+      result.files[FILE_NAMES_PATH] &&
+      result.files[FILE_NAMES_PATH] !== draft.base[FILE_NAMES_PATH]
+    ) {
+      const mapped = remapPendingLayout(result.files, draft.base, draft.local);
+      draft.base = mapped.base;
+      draft.local = mapped.local;
+      await this.persist();
     }
     const plan = planOfflineMerge(draft.base, draft.local, result.files);
     this.state = {
@@ -875,6 +889,23 @@ export class CollaborationClient {
     return next;
   }
   async command(channel: string, input: unknown) {
+    if (
+      ['documents:rename', 'preview:rename', 'files:unify-names'].includes(
+        channel,
+      )
+    ) {
+      if (this.state.documentNamesVersion !== 1)
+        throw Error('파일 이름을 변경하려면 협업 서버를 업데이트해주세요.');
+      if (
+        this.offline ||
+        !this.state.connected ||
+        this.state.pendingChanges ||
+        this.outgoing
+      )
+        throw Error(
+          '이름 변경은 온라인 동기화 완료 후 진행해주세요. 초안은 유지됩니다.',
+        );
+    }
     if (this.state.projectDeleted || this.state.awaitingResume)
       throw Error(
         this.state.message ?? '삭제된 공동 프로젝트는 편집할 수 없습니다.',
@@ -1193,6 +1224,7 @@ export class CollaborationClient {
         );
       const relative = (input as { relativePath?: string })?.relativePath;
       const command: CollaborationCommand = {
+        documentNamesVersion: 1,
         id:
           channel === 'drawings:apply' ||
           channel === 'game-ui:apply' ||

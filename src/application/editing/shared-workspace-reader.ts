@@ -22,8 +22,7 @@ import { snapshotGameUi } from '../../game-ui-model.ts';
 import { drawingChanges } from './canvas-service.ts';
 import { describePreview } from '../../html-source.ts';
 import {
-  isPreviewPath,
-  previewVersion,
+  managedPreviewPaths,
   assertPreviewPath,
   DEFAULT_PREVIEW_PATH,
 } from '../../preview-output.ts';
@@ -149,13 +148,10 @@ export class SharedWorkspaceReader {
   }
   previews() {
     const state = this.source();
-    return Object.keys(state.files)
-      .filter(isPreviewPath)
-      .sort((left, right) => previewVersion(left) - previewVersion(right))
-      .map((relativePath) => ({
-        ...describePreview(state.files, relativePath),
-        revision: state.revisions[relativePath],
-      }));
+    return managedPreviewPaths(state.files).map((relativePath) => ({
+      ...describePreview(state.files, relativePath),
+      revision: state.revisions[relativePath],
+    }));
   }
   preview(relative?: string) {
     const relativePath = assertPreviewPath(relative ?? DEFAULT_PREVIEW_PATH);

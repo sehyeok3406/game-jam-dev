@@ -13,6 +13,8 @@ export const RESULT_CATEGORIES = {
   inbox: '미분류',
 } as const;
 export type PreviewResult = {
+  identityPath?: string;
+  version?: number;
   propertyPreviousIds?: string[];
   statusPropertyEnabled?: boolean;
   placementId?: string;

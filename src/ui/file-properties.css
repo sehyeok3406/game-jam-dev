@@ -65,6 +65,18 @@
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
+.file-property-row:not(.file-property-row--status) {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: start;
+}
+.file-property-row--status {
+  flex-wrap: wrap;
+}
+.inspector-section-title {
+  margin: 18px 0 8px;
+  font-size: 12px;
+}
 .file-property-row strong {
   flex-shrink: 0;
   font-size: 11px;
@@ -87,7 +99,9 @@
 .file-property-value {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
   font-size: 11px;
 }
 .file-properties-editor > button {

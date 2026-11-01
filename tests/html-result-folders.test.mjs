@@ -58,7 +58,7 @@ test('first HTML and sequential workflow use dedicated folders with identical lo
   ]) {
     const local = plan(initial, options);
     const html = local.data.expected_outputs.at(-1);
-    assert.equal(html, 'output/inbox/한밤의-카페/v001/index.html');
+    assert.equal(html, 'output/inbox/한밤의-카페/v001/한밤의 카페.html');
     assert.equal(previewVersion(html), 1);
     assert.equal(expectedArtifacts(local.raw).at(-1), html);
     const shared = reduceCollaboration(initial, 'tasks:create', options);
@@ -88,23 +88,22 @@ test('pending requests reserve unique folders across legacy, imported and new ou
   const second = plan({ ...files, ...first.tasks }, options, 'second');
   assert.equal(
     first.data.expected_outputs[0],
-    'output/inbox/한밤의-카페/v001/index.html',
+    'output/inbox/한밤의-카페/v001/한밤의 카페.html',
   );
   assert.equal(
     second.data.expected_outputs[0],
-    'output/inbox/한밤의-카페/v002/index.html',
+    'output/inbox/한밤의-카페/v002/한밤의 카페.html',
   );
   assert.equal(
     nextPreviewPath([
       'output/imported/import-00000000-0000-0000-0000-000000000000.html',
     ]),
-    'output/inbox/untitled/v001/index.html',
+    'output/inbox/untitled/v001/새 게임.html',
   );
   for (const invalid of [
     'output/games/v01-game/index.html',
     'output/games/v0/index.html',
     'output/games/v9007199254740992/index.html',
-    'output/games/v2/other.html',
     'output/games/v2/../index.html',
     'output/games/v2-game/notes.md',
     'output/games/v2-game/index.html/other',
@@ -170,18 +169,21 @@ test('output folders contain no app metadata; copying one folder and restoring i
     createdAt: Date.now(),
   });
   const folder = path.dirname(path.join(root, output));
-  assert.deepEqual(await fs.readdir(folder), ['index.html']);
+  assert.deepEqual(await fs.readdir(folder), [path.basename(output)]);
   await fs.cp(folder, path.join(root, 'export-copy'), { recursive: true });
   assert.deepEqual(await fs.readdir(path.join(root, 'export-copy')), [
-    'index.html',
+    path.basename(output),
   ]);
   assert.equal(
-    await fs.readFile(path.join(root, 'export-copy/index.html'), 'utf8'),
+    await fs.readFile(
+      path.join(root, 'export-copy', path.basename(output)),
+      'utf8',
+    ),
     after[output],
   );
   await restoreHistory(root, 'folder-history', output, 'before');
   assert.deepEqual(await captureProject(root), before);
-  assert.deepEqual(await fs.readdir(folder), ['index.html']);
+  assert.deepEqual(await fs.readdir(folder), [path.basename(output)]);
 });
 
 test('old servers cannot silently fall back to flat outputs, but document-only requests remain available', async () => {

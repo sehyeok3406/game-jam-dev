@@ -178,13 +178,13 @@ test('project copy is independent, deduplicates section members, rewrites links/
     section.members.map((m) => m.id).sort(),
     [a.id, b.id].sort(),
   );
-  const html = Object.keys(files).find((key) => key.endsWith('/index.html'));
+  const html = Object.keys(files).find((key) => key.endsWith('.html'));
   assert.notEqual(html, htmlPath);
   assert.equal(files[html], f.files[htmlPath]);
   assert.equal(matter(files[htmlSourcePath(html)]).data.id, htmlSourceId(html));
   for (const name of ['style.css', 'game.js', 'art.png'])
     assert.equal(
-      files[html.replace('index.html', name)],
+      files[path.posix.join(path.posix.dirname(html), name)],
       f.files[htmlPath.replace('index.html', name)],
     );
   assert.notEqual(snapshotDrawings(files)[0].id, f.object.id);

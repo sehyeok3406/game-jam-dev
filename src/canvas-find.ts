@@ -13,10 +13,12 @@ export function findTextRanges(
   let value = '';
   while (walker.nextNode()) {
     const node = walker.currentNode as Text;
-    if (
-      node.parentElement?.closest('button, script, style, [aria-hidden="true"]')
-    )
-      continue;
+    const excluded = node.parentElement?.closest(
+      'button, script, style, [aria-hidden="true"]',
+    );
+    // A caller can explicitly search a title button; controls inside a body
+    // remain excluded, as do hidden text and executable content.
+    if (excluded && !(excluded === root && root.tagName === 'BUTTON')) continue;
     nodes.push({
       node,
       start: value.length,

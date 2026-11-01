@@ -1,14 +1,19 @@
+import type { Snapshot } from './contracts/project.ts';
+import { readFileNames } from './core/documents/name-registry.ts';
+import { documentName } from './core/documents/file-name.ts';
+import browserMarkdown from './game-ui-markdown.ts';
 import type { ResultCategory } from './contracts/preview.ts';
 export type { ResultCategory } from './contracts/preview.ts';
 import { RESULT_CATEGORIES } from './contracts/preview.ts';
 export { RESULT_CATEGORIES } from './contracts/preview.ts';
 import { resultFileStem } from './result-name.ts';
 const STRUCTURED_PATH =
-  /^output\/(systems|ui-ux|content|prototypes|inbox)\/([\p{L}\p{M}\p{N}_-]+)\/v(\d{3,})\/index\.html$/u;
+  /^output\/(systems|ui-ux|content|prototypes|inbox)\/([\p{L}\p{M}\p{N}_-]+)\/v(\d{3,})\/([^/]+)\.html$/u;
 export function resultLocation(relative: string) {
   const match = relative.match(STRUCTURED_PATH);
   if (
     !match ||
+    !validEntryName(match[4]) ||
     !Number.isSafeInteger(Number(match[3])) ||
     Number(match[3]) < 1 ||
     match[3] !== String(Number(match[3])).padStart(3, '0')
@@ -45,7 +50,7 @@ const VERSION_PATH =
   /^output\/versions\/v([1-9]\d*)(?:-([\p{L}\p{M}\p{N}_-]+))?\.html$/u;
 const IMPORT_PATH = /^output\/imported\/import-[a-f0-9-]{36}\.html$/;
 const RESULT_PATH =
-  /^output\/games\/v([1-9]\d*)(?:-([\p{L}\p{M}\p{N}_-]+))?\/index\.html$/u;
+  /^output\/games\/v([1-9]\d*)(?:-([\p{L}\p{M}\p{N}_-]+))?\/([^/]+)\.html$/u;
 const resultMatch = (relative: string) =>
   relative.match(RESULT_PATH) ?? relative.match(VERSION_PATH);
 export function isResultFolderPath(relative: string) {
@@ -68,13 +73,52 @@ export function previewDeletionTarget(relative: string) {
     ? relative.slice(0, relative.lastIndexOf('/'))
     : relative;
 }
-export function isPreviewPath(relative: string): boolean {
+export function isLegacyPreviewPath(relative: string): boolean {
   return (
     relative === DEFAULT_PREVIEW_PATH ||
-    isResultFolderPath(relative) ||
+    (isResultFolderPath(relative) && relative.endsWith('/index.html')) ||
     isImportedPreviewPath(relative) ||
     (VERSION_PATH.test(relative) &&
       Number.isSafeInteger(Number(relative.match(VERSION_PATH)![1])))
+  );
+}
+function validEntryName(stem: string) {
+  try {
+    return documentName(stem) === stem;
+  } catch {
+    return false;
+  }
+}
+export function isPreviewPath(relative: string): boolean {
+  if (typeof relative !== 'string') return false;
+  if (isLegacyPreviewPath(relative)) return true;
+  const parent = relative.slice(0, relative.lastIndexOf('/'));
+  const stem = relative
+    .split('/')
+    .at(-1)
+    ?.replace(/\.html$/, '');
+  return (
+    relative.endsWith('.html') &&
+    !!stem &&
+    validEntryName(stem) &&
+    (['output', 'output/imported', 'output/versions'].includes(parent) ||
+      !!resultLocation(relative) ||
+      isResultFolderPath(relative))
+  );
+}
+export function managedPreviewPaths(files: Snapshot) {
+  const registered = new Set(
+    readFileNames(files)
+      .entries.filter((e) => e.kind === 'html')
+      .map((e) => e.path),
+  );
+  for (const [p, raw] of Object.entries(files))
+    if (p.startsWith('docs/html-sources/') && p.endsWith('.md')) {
+      const path = browserMarkdown(raw).data.html_source;
+      if (typeof path === 'string' && isPreviewPath(path)) registered.add(path);
+    }
+  return Object.keys(files).filter(
+    (p) => isPreviewPath(p) && (isLegacyPreviewPath(p) || registered.has(p)),
   );
 }
 export function assertPreviewPath(relative: string) {
@@ -87,7 +131,7 @@ export function previewVersion(relative: string) {
   if (isImportedPreviewPath(relative)) return 0;
   const location = resultLocation(relative);
   if (location) return location.version;
-  return relative === DEFAULT_PREVIEW_PATH
+  return relative === DEFAULT_PREVIEW_PATH || !resultMatch(relative)
     ? 1
     : Number(resultMatch(relative)![1]);
 }
@@ -103,15 +147,17 @@ export function previewLabel(relative: string) {
 export function previewGameLabel(preview: {
   relativePath: string;
   title?: string;
+  version?: number;
 }) {
   const location = resultLocation(preview.relativePath);
   const name =
     preview.title?.trim() ||
     location?.feature ||
     resultMatch(preview.relativePath)?.[2];
-  if (isImportedPreviewPath(preview.relativePath)) return name || '불러온 HTML';
+  if (isImportedPreviewPath(preview.relativePath) || preview.version === 0)
+    return name || '불러온 HTML';
   return name
-    ? `${name} · 버전 ${previewVersion(preview.relativePath)}`
+    ? `${name} · 버전 ${preview.version ?? previewVersion(preview.relativePath)}`
     : previewLabel(preview.relativePath);
 }
 export function nextPreviewPath(
@@ -132,7 +178,10 @@ export function nextPreviewPath(
         : [];
     }),
   );
-  return structuredPreviewPath(category, feature, highest + 1);
+  return structuredPreviewPath(category, feature, highest + 1).replace(
+    /index\.html$/,
+    `${documentName(name || base?.feature || '새 게임')}.html`,
+  );
 }
 /** Only existing results can be updated; pending tasks reserve new folders. */
 export function resolvePreviewOutput(
@@ -140,6 +189,7 @@ export function resolvePreviewOutput(
   reservedPaths: string[],
   choice: import('./shared').HtmlResultChoice = { mode: 'update' },
   name?: string,
+  versions: Record<string, number> = {},
 ) {
   if (
     choice.category !== undefined &&
@@ -154,7 +204,13 @@ export function resolvePreviewOutput(
     (choice.mode === 'update'
       ? existing.includes(DEFAULT_PREVIEW_PATH)
         ? DEFAULT_PREVIEW_PATH
-        : existing.sort((a, b) => previewVersion(a) - previewVersion(b)).at(-1)
+        : existing
+            .sort(
+              (a, b) =>
+                (versions[a] ?? previewVersion(a)) -
+                (versions[b] ?? previewVersion(b)),
+            )
+            .at(-1)
       : undefined);
   return {
     path:

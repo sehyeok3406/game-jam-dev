@@ -1,5 +1,9 @@
 import type { ResultMove } from './result-folder-plan.ts';
 import { remapLayoutChanges } from './adapters/markdown/layout-snapshot.ts';
+import {
+  readFileNames,
+  rememberFileName,
+} from './core/documents/name-registry.ts';
 export {
   moveDestination,
   legacyResultMoves,
@@ -92,7 +96,11 @@ export function resultMoves(before: Snapshot, after: Snapshot): ResultMove[] {
     if (to && !moves.some((move) => move.from === entry.path))
       moves.push({ from: entry.path, to });
   }
-  return moves;
+  return moves.filter(
+    (move) =>
+      move.from.slice(0, move.from.lastIndexOf('/')) !==
+      move.to.slice(0, move.to.lastIndexOf('/')),
+  );
 }
 
 /** Restore immutable old records into their current result locations. */
@@ -110,7 +118,12 @@ export function remapResultChanges(
       aliases.push({ from, to: entry.path });
       replacements.set(from, entry.path);
       replacements.set(htmlSourcePath(from), htmlSourcePath(entry.path));
-      replacements.set(htmlSourceId(from), htmlSourceId(entry.path));
+      replacements.set(
+        htmlSourceId(from),
+        readFileNames(current).entries.find(
+          (e) => e.kind === 'html' && e.path === entry.path,
+        )?.id ?? htmlSourceId(entry.path),
+      );
     }
   const pattern = [...replacements.keys()]
     .sort((a, b) => b.length - a.length)
@@ -134,7 +147,7 @@ export function remapResultChanges(
             )
           : value;
   }
-  return remapped;
+  return remapLayoutChanges(current, remapped);
 }
 
 export function relocateResults(
@@ -183,6 +196,12 @@ export function relocateResults(
     replacements.set(from, to);
     replacements.set(oldSource, newSource);
     replacements.set(htmlSourceId(from), htmlSourceId(to));
+    if (
+      readFileNames(files).entries.some(
+        (e) => e.kind === 'html' && e.path === from,
+      )
+    )
+      replacements.delete(htmlSourceId(from));
     if (files[oldSource] !== undefined) {
       delete next[oldSource];
       next[newSource] = files[oldSource];
@@ -194,7 +213,14 @@ export function relocateResults(
       );
       entry.path = to;
     } else
-      entries.push({ id: htmlSourceId(from), path: to, previousPaths: [from] });
+      entries.push({
+        id:
+          readFileNames(files).entries.find(
+            (e) => e.kind === 'html' && e.path === from,
+          )?.id ?? htmlSourceId(from),
+        path: to,
+        previousPaths: [from],
+      });
   }
   // Rewrite paths and source identities in frontmatter, nested task plans and
   // Markdown links together. HTML bytes and relative asset links remain intact.
@@ -226,5 +252,20 @@ export function relocateResults(
       null,
       2,
     );
-  return next;
+  let named = next;
+  for (const move of moves) {
+    const entry = readFileNames(files).entries.find(
+      (e) => e.kind === 'html' && e.path === move.from,
+    );
+    if (entry)
+      named = rememberFileName(
+        named,
+        entry.id,
+        'html',
+        move.from,
+        move.to,
+        entry.name,
+      );
+  }
+  return named;
 }

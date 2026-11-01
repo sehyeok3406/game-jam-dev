@@ -389,6 +389,18 @@ export type GameCanvasApi = {
     revision?: number,
   ) => Promise<void>;
   saveDocument: (input: SaveDocumentInput) => Promise<CanvasDocument>;
+  renameDocument: (
+    input: import('./document-names.ts').RenameDocumentInput,
+  ) => Promise<import('./document-names.ts').RenameDocumentResult>;
+  renamePreview: (
+    input: import('./document-names.ts').RenamePreviewInput,
+  ) => Promise<import('./document-names.ts').RenamePreviewResult>;
+  inspectFileNames: (
+    scope: string,
+  ) => Promise<import('./document-names.ts').FileNamePlan>;
+  unifyFileNames: (
+    input: import('./document-names.ts').ApplyFileNamesInput,
+  ) => Promise<string[]>;
   setDocumentCollapsed: (input: SetDocumentCollapsedInput) => Promise<void>;
   deleteDocument: (input: DeleteDocumentInput) => Promise<void>;
   deleteDocuments: (documents: DeleteDocumentInput[]) => Promise<void>;
@@ -535,6 +547,10 @@ export const APP_API_GROUPS = {
   createSection: 'editor',
   renameSection: 'editor',
   saveDocument: 'editor',
+  renameDocument: 'editor',
+  renamePreview: 'editor',
+  inspectFileNames: 'editor',
+  unifyFileNames: 'editor',
   setDocumentCollapsed: 'editor',
   deleteDocument: 'editor',
   deleteDocuments: 'editor',

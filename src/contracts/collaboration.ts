@@ -7,6 +7,7 @@ import type { DrawingDelta } from './drawing-types.ts';
 export type CollaborationRole = 'admin' | 'editor' | 'viewer';
 export type CollaborationState = {
   projectNamesVersion?: number;
+  documentNamesVersion?: number;
   projectLayoutVersion?: number;
   fileLayoutVersion?: number;
   projectModeVersion?: number;
@@ -101,6 +102,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationCommand = {
+  documentNamesVersion?: number;
   projectLayoutVersion?: number;
   drawingTextVersion?: number;
   drawingTextAlignmentVersion?: number;

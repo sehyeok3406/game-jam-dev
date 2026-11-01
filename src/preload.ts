@@ -270,6 +270,10 @@ const api: GameCanvasApi = {
   renameSection: (relativePath, title, revision) =>
     ipcRenderer.invoke('sections:rename', { relativePath, title, revision }),
   saveDocument: (input) => ipcRenderer.invoke('documents:save', input),
+  renameDocument: (input) => ipcRenderer.invoke('documents:rename', input),
+  renamePreview: (input) => ipcRenderer.invoke('preview:rename', input),
+  inspectFileNames: (scope) => ipcRenderer.invoke('files:inspect-names', scope),
+  unifyFileNames: (input) => ipcRenderer.invoke('files:unify-names', input),
   setDocumentCollapsed: (input) =>
     ipcRenderer.invoke('documents:set-collapsed', input),
   deleteDocument: (input) => ipcRenderer.invoke('documents:delete', input),

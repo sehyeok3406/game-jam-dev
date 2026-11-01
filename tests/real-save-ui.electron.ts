@@ -12,7 +12,9 @@ import {
 } from '../src/document-save-queue';
 import { DocumentSaveStore } from '../src/document-save-store';
 import type { CanvasDocument, SaveDocumentInput } from '../src/shared';
-const directory = path.resolve('out/real-save-ui');
+const directory = path.resolve(
+  process.env.GC_SAVE_TEST_DIRECTORY ?? 'out/real-save-ui',
+);
 app.setPath('userData', path.join(directory, 'profile'));
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function run() {
@@ -256,7 +258,7 @@ async function run() {
             count,
             focus,
             await js(
-              '({active:document.activeElement?.tagName,readOnly:window.soakEditor.readOnly,editable:window.soakEditor.contentEditable,overlay:!!document.querySelector("vite-error-overlay"),states:[...document.querySelectorAll(".document-editor__actions [role=status]")].map(e=>e.textContent)})',
+              '({active:document.activeElement?.tagName,activeClass:document.activeElement?.className,activeLabel:document.activeElement?.getAttribute("aria-label"),readOnly:window.soakEditor.readOnly,editable:window.soakEditor.contentEditable,overlay:!!document.querySelector("vite-error-overlay"),states:[...document.querySelectorAll(".document-editor__actions [role=status]")].map(e=>e.textContent)})',
             ),
           );
         if (!focus.active)

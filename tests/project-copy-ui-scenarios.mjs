@@ -179,24 +179,23 @@ export async function projectCopyUiScenarios({
     Buffer.from(shot.data, 'base64'),
   );
   const beforeColorHistory = (await call('listHistory')).length;
-  await js(
-    `document.querySelector('[data-ui-id=selection-menu] [data-card-color=blue]').click()`,
-  );
-  await wait(
-    `window.gameCanvas.listDocuments().then(d=>d.filter(x=>['a','b'].includes(x.id)).every(x=>x.backgroundColor==='blue'))`,
-  );
-  await wait(
-    `document.querySelector('.status-toast')?.textContent.includes('배경색을 변경했습니다')`,
-  );
-  assert.equal((await call('listHistory')).length, beforeColorHistory + 1);
+  const beforeColors = (await call('listDocuments')).map((d) => [
+    d.id,
+    d.backgroundColor,
+  ]);
   assert.equal(
-    (await call('listDocuments')).find((d) => d.id === 'c').backgroundColor,
-    'default',
+    await js(
+      'document.querySelector("[data-ui-id=selection-menu] .card-color-unavailable button").disabled',
+    ),
+    true,
   );
-  await js('document.activeElement?.blur()');
-  await key('Z', ['control']);
-  await wait(
-    `window.gameCanvas.listDocuments().then(d=>d.filter(x=>['a','b'].includes(x.id)).every(x=>x.backgroundColor==='default'))`,
+  await js(
+    'document.querySelector("[data-ui-id=selection-menu] .card-color-unavailable button").click()',
+  );
+  assert.equal((await call('listHistory')).length, beforeColorHistory);
+  assert.deepEqual(
+    (await call('listDocuments')).map((d) => [d.id, d.backgroundColor]),
+    beforeColors,
   );
   // Outside right click must replace the group and retain the original single-item menu.
   await click(await point('c'), 'right');

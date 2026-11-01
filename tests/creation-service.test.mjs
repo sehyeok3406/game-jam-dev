@@ -45,7 +45,7 @@ test('local copy preserves legacy IDs, body, unknown frontmatter, offsets and or
     offsetY: 64,
   });
   assert.equal(copy.id, 'original-a-copy-12345678');
-  assert.equal(copy.relativePath, 'docs/a-copy-12345678.md');
+  assert.equal(copy.relativePath, 'docs/한글 원본 복사본.md');
   assert.equal(copy.title, '한글 원본 복사본');
   assert.deepEqual(
     [copy.x, copy.y, copy.width, copy.height],
@@ -72,20 +72,18 @@ test('a later invalid copy source publishes no earlier copy and a collision neve
   );
   assert.deepEqual(await fs.readdir(path.join(root, 'docs')), ['a.md']);
   await fs.writeFile(
-    path.join(root, 'docs/a-copy-12345678.md'),
+    path.join(root, 'docs/한글 원본 복사본.md'),
     'external file',
   );
-  // The original legacy path can already exist; a captured baseline must not authorize overwriting it.
-  await assert.rejects(
-    service.duplicate({
-      documents: [{ id: 'original-a', path: 'docs/a.md' }],
-      offsetX: 32,
-      offsetY: 32,
-    }),
-    /이미|외부|중복/,
-  );
+  const [copy] = await service.duplicate({
+    documents: [{ id: 'original-a', path: 'docs/a.md' }],
+    offsetX: 32,
+    offsetY: 32,
+  });
+  assert.equal(copy.relativePath, 'docs/한글 원본 복사본 (2).md');
+  assert.equal(copy.title, '한글 원본 복사본 (2)');
   assert.equal(
-    await fs.readFile(path.join(root, 'docs/a-copy-12345678.md'), 'utf8'),
+    await fs.readFile(path.join(root, 'docs/한글 원본 복사본.md'), 'utf8'),
     'external file',
   );
 });

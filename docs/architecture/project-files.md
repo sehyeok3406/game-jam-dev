@@ -1,5 +1,11 @@
 # 공동 파일 사본과 로컬 편집 반영
 
+## 사용자 Markdown·HTML 개명 · 2026-11-01
+
+[ADR 0005](decisions/0005-document-file-names.md)의 개인/공동 경로가 같은 이름 계획을 사용한다. 논리 `.canvas/file-names.json`은 ID와 현재/이전 경로·원래 HTML 진입 경로를 기록한다. v2에서는 기존 path 변환을 통해 `.gamejam/project/canvas/file-names.json`에 저장한다. MD 제목과 실제 basename, HTML 관리 문서의 표시 이름과 실제 entry filename을 함께 확정하며 결과 폴더·리소스·버전은 보존한다. v1의 고정 `project.md`는 기존 구조 정리 후 통일한다.
+
+Filesystem repository는 같은 ID의 MD/HTML 이동 때 영향 파일의 원본/목표를 `.gamejam/local/document-names/pending.json`에 기록한다. 기존 `applyChanges`·외부 변경 검사·history를 재사용한다. 정상 반영 후 journal을 제거하며 오류·다음 열기에서 알려진 내용만 원복한다. 공유 사본도 mirror 재적용 전에 복구한다. 외부 변경이 있으면 복구 자료를 유지하고 열기를 실패 처리한다. session 전환은 이전 root에 복구 자료를 남기며 새 프로젝트에 쓰지 않는다.
+
 ## 공유 사본 root · 2026-10-31
 
 [ADR 0004](decisions/0004-project-names-and-shared-folders.md)의 sharedRoot는 mirror 전체 위치다. 새 사본은 이름 폴더, 기존 사본은 저장된 root 또는 기존 UUID 경로를 사용한다. FilesystemSharedWorkspaces와 desktop 조립만 root를 결정하며 다른 호출부는 이름/ID로 경로를 재구성하지 않는다. 이름 정리는 내용 필터 복사가 아닌 전체 디렉터리 rename이다. 추적되지 않은 파일·숨김 자료·서버 캐시·개인 상태·히스토리를 보존하고 journal이 남으면 일반 열기를 통해 옛 root를 재생성하지 않는다. docs 구조 전환과 root 이름 정리는 서로 다른 명시적 동작이다.

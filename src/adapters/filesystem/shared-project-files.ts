@@ -16,6 +16,7 @@ import {
 } from './layout-migration.ts';
 import { hasModernLayout } from './project-location.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
+import { recoverDocumentNames } from './document-name-transaction.ts';
 
 /** Every operation, including rollback, retains this root and never resolves the active workspace. */
 export function filesystemSharedProjectFiles(
@@ -27,6 +28,7 @@ export function filesystemSharedProjectFiles(
   return {
     ensure: async (snapshot) => {
       await recoverProjectLayout(root, assertCurrent);
+      await recoverDocumentNames(root, assertCurrent);
       if (
         snapshot &&
         !snapshot[PROJECT_LAYOUT_PATH] &&

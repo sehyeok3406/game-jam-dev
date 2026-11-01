@@ -1519,6 +1519,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   );
   const { updatePreviewWindow, updatePreviewWindows, compareWindows } =
     usePreviewWindows(selectionScope, () => ({
+      previews,
       setPreviewWindows,
       api,
       showError,
@@ -1678,7 +1679,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         const preview = previews.find((item) => item.sourceId === id);
         if (preview) {
           if (canvasId(preview.canvasId) !== activeCanvasRef.current) {
-            navigateCanvasItem.current?.(previewNodeId(preview.relativePath));
+            navigateCanvasItem.current?.(previewNodeId(preview));
             return;
           }
           const layout = previewWindows[preview.relativePath];
@@ -1691,7 +1692,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           setNodes((current) =>
             current.map((node) => ({
               ...node,
-              selected: node.id === previewNodeId(preview.relativePath),
+              selected: node.id === previewNodeId(preview),
             })),
           );
           return;
@@ -2324,7 +2325,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       }
       const target = resolved.document;
       const id = target.htmlSource
-        ? previewNodeId(target.htmlSource)
+        ? previewNodeId(
+            previews.find(
+              (preview) => preview.relativePath === target.htmlSource,
+            ) ?? target.htmlSource,
+          )
         : target.id;
       pendingCanvasJump.current = id;
       setTemporaryDocuments((current) => [...new Set([...current, target.id])]);
@@ -2340,8 +2345,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     const itemCanvas =
       documents.find((item) => item.id === id)?.canvasId ??
       sections.find((item) => sectionNodeId(item.id) === id)?.canvasId ??
-      previews.find((item) => previewNodeId(item.relativePath) === id)
-        ?.canvasId ??
+      previews.find((item) => previewNodeId(item) === id)?.canvasId ??
       drawing.items.find((item) => `drawing:${item.id}` === id)?.canvasId;
     if (canvasId(itemCanvas) !== activeCanvasRef.current) {
       pendingCanvasJump.current = id;
@@ -2896,7 +2900,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     const doc = documents.find((item) => item.relativePath === path),
       preview = previews.find((item) => item.relativePath === path);
     if (doc || preview) {
-      const targetId = doc?.id ?? previewNodeId(preview!.relativePath);
+      const targetId = doc?.id ?? previewNodeId(preview!);
       if (
         canvasId(doc?.canvasId ?? preview?.canvasId) !== activeCanvasRef.current
       ) {
@@ -3795,14 +3799,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           movingResults,
           setResultFolderPrompt,
           setPreviewContextMenu,
-          collaboration,
           api,
-          loadProject,
           showError,
           openHistory,
           setDeletePrompt,
           documentContextMenu,
-          flushEditors,
           setDocumentContextMenu,
           toggleDocumentCollapsed,
           onBlocked,
@@ -3848,25 +3849,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           }
           canMove={canvasSheets.canvases.length > 1}
           canCopy={!!api.desktop}
-          onColor={(color) => {
-            const targets = selectionContextMenu.targets;
-            closeContextMenus();
-            if (
-              collaboration.active &&
-              collaboration.projectCopyVersion !== 1
-            ) {
-              showError(
-                Error(
-                  '다중 배경색 변경을 사용하려면 협업 서버를 최신 버전으로 업데이트해주세요.',
-                ),
-              );
-              return;
-            }
-            void selectionActions.setColors(
-              [...targets.documents, ...targets.previews],
-              color,
-            );
-          }}
           onCopy={() => beginProjectCopy(selectionContextMenu.targets)}
           onMove={() => {
             const targets = selectionContextMenu.targets;
@@ -3924,9 +3906,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
                 .filter((doc) => newFileNodes.has(doc.id))
                 .map((doc) => canvasId(doc.canvasId)),
               ...previews
-                .filter((preview) =>
-                  newFileNodes.has(previewNodeId(preview.relativePath)),
-                )
+                .filter((preview) => newFileNodes.has(previewNodeId(preview)))
                 .map((preview) => canvasId(preview.canvasId)),
             ])
           }

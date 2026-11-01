@@ -5,6 +5,57 @@ import os from 'node:os';
 import path from 'node:path';
 import { DocumentSaveQueue } from '../src/document-save-queue.ts';
 import { DocumentSaveStore } from '../src/document-save-store.ts';
+import { remapLayoutMarkdown } from '../src/adapters/markdown/layout-links.ts';
+
+test('durable offline drafts and newer keystrokes follow a remote rename by ID, rebasing links without replacing body edits', async () => {
+  const queue = new DocumentSaveQueue(memory());
+  let online = false;
+  let current = {
+    ...doc('[self](note.md)\n\nbase'),
+    relativePath: 'ideas/note.md',
+  };
+  const writes = [];
+  const base = { title: 'Note', body: current.body };
+  await queue.activate(
+    adapter(
+      async (p) => (p === current.relativePath ? current : null),
+      async (input) => {
+        writes.push(structuredClone(input));
+        current = { ...current, title: input.title, body: input.body };
+        return current;
+      },
+      {
+        canSend: () => online,
+        resolvePath: (_path, id) =>
+          id === current.id ? current.relativePath : _path,
+        remapDraft: (draft, from, to) => ({
+          ...draft,
+          body: remapLayoutMarkdown(draft.body, from, to, { [from]: to }),
+        }),
+      },
+    ),
+  );
+  await queue.enqueue({ ...request(1, '[self](note.md)\n\nfirst edit'), base });
+  current = {
+    ...current,
+    relativePath: 'ideas/최종 이름.md',
+    title: '최종 이름',
+    body: '[self](최종%20이름.md)\n\nbase',
+  };
+  // The still-open editor submits another change from its original path/base.
+  await queue.enqueue({
+    ...request(2, '[self](note.md)\n\nnewest typing'),
+    base,
+  });
+  await tick();
+  online = true;
+  await queue.flush('one');
+  assert.equal(current.title, '최종 이름');
+  assert.equal(current.body, '[self](최종%20이름.md)\n\nnewest typing');
+  assert.ok(writes.every((w) => w.relativePath === current.relativePath));
+  assert.equal((await queue.list('one'))[0].savedSequence, 2);
+  queue.dispose();
+});
 
 const deferred = () => {
   let resolve;
@@ -62,6 +113,52 @@ const adapter = (read, write, extra = {}) => ({
   read,
   write,
   ...extra,
+});
+
+test('a completed queue follows a verified renamed document, while pending work cannot switch paths', async () => {
+  const queue = new DocumentSaveQueue(memory());
+  let current = doc();
+  const writes = [];
+  await queue.activate(
+    adapter(
+      async (relative) => (relative === current.relativePath ? current : null),
+      async (input) => {
+        writes.push(input.relativePath);
+        current = { ...current, title: input.title, body: input.body };
+        return current;
+      },
+    ),
+  );
+  await queue.enqueue(request(1, 'saved body'));
+  await queue.flush('one');
+  current = { ...current, title: '새 이름', relativePath: 'ideas/새 이름.md' };
+  await queue.enqueue({
+    ...request(2, 'edited after rename'),
+    title: current.title,
+    relativePath: current.relativePath,
+    base: { title: current.title, body: current.body },
+  });
+  await queue.flush('one');
+  assert.equal(current.body, 'edited after rename');
+  assert.deepEqual(writes, ['ideas/note.md', 'ideas/새 이름.md']);
+  queue.dispose();
+  const offline = new DocumentSaveQueue(memory());
+  await offline.activate(
+    adapter(
+      async () => current,
+      async () => current,
+      { canSend: () => false },
+    ),
+  );
+  await offline.enqueue(request(1, 'pending'));
+  await assert.rejects(
+    offline.enqueue({
+      ...request(2, 'pending'),
+      relativePath: current.relativePath,
+    }),
+    /식별자/,
+  );
+  offline.dispose();
 });
 
 test('a pending draft and later edits follow the authoritative migration path without changing identity or text', async () => {

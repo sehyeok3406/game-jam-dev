@@ -26,6 +26,9 @@ test('grouped bridge forwards arguments, binding, rejection and unsubscribe with
       if (input.title === 'fail') throw Error('disk');
       return input;
     },
+    async renameDocument(input) {
+      return { input, source: this.prefix };
+    },
     onDocumentSaveChanged(value) {
       listener = value;
       return () => {
@@ -34,11 +37,15 @@ test('grouped bridge forwards arguments, binding, rejection and unsubscribe with
     },
   };
   const api = groupBridge(bridge);
-  assert.equal(Object.keys(APP_API_GROUPS).length, 140);
+  assert.equal(Object.keys(APP_API_GROUPS).length, 144);
   assert.deepEqual(await api.projects.listProjects(true), ['bridge']);
   assert.deepEqual(events, [true]);
   const input = { relativePath: 'docs/test.md', title: '저장', body: '한글' };
   assert.equal(await api.editor.saveDocument(input), input);
+  assert.deepEqual(await api.editor.renameDocument(input), {
+    input,
+    source: 'bridge',
+  });
   await assert.rejects(
     api.editor.saveDocument({ ...input, title: 'fail' }),
     /disk/,

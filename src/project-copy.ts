@@ -1,6 +1,9 @@
+import { documentName } from './core/documents/file-name.ts';
 import path from 'node:path';
-import { allocateDocumentPath } from './core/projects/document-path.ts';
-import { readProjectLayout } from './core/projects/project-layout.ts';
+import {
+  allocateNamedDocumentPath,
+  documentPathTitle,
+} from './core/projects/document-path.ts';
 import matter from './markdown.ts';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
@@ -298,7 +301,6 @@ export function importProjectCopy(
     paths.set(old, relative);
     return relative;
   };
-  const stamp = environment.id();
   for (const relative of bundle.documents) {
     const parsed = matter(present(normalized, relative));
     if (
@@ -311,9 +313,7 @@ export function importProjectCopy(
     ids.set(String(parsed.data.id ?? relative), id);
     allocate(
       relative,
-      readProjectLayout(files)
-        ? allocateDocumentPath(String(parsed.data.title ?? '문서'), used, id)
-        : `docs/copy-${stamp}/${id}.md`,
+      allocateNamedDocumentPath(String(parsed.data.title ?? '문서'), used),
     );
   }
   for (const relative of bundle.sections) {
@@ -335,10 +335,24 @@ export function importProjectCopy(
     const id = environment.id();
     const destination = allocate(
       relative,
-      `output/inbox/copy-${id}/v001/index.html`,
+      `output/inbox/copy-${id}/v001/${documentName(
+        String(
+          matter(present(normalized, htmlSourcePath(relative))).data.title ??
+            relative
+              .split('/')
+              .at(-1)!
+              .replace(/\.html$/, ''),
+        ),
+      )}.html`,
     );
     allocate(htmlSourcePath(relative), htmlSourcePath(destination));
-    ids.set(htmlSourceId(relative), htmlSourceId(destination));
+    ids.set(
+      String(
+        matter(present(normalized, htmlSourcePath(relative))).data.id ??
+          htmlSourceId(relative),
+      ),
+      htmlSourceId(destination),
+    );
     const owned = previewDeletionTarget(relative);
     if (owned !== relative)
       for (const key of Object.keys(normalized))
@@ -545,7 +559,12 @@ export function importProjectCopy(
         (missingSources.length
           ? `\n\n원본 출처: ${missingSources.map((source: string | { id: string; path?: string }) => (typeof source === 'string' ? source : (source.path ?? source.id))).join(', ')}\n`
           : ''),
-      metadata,
+      {
+        ...metadata,
+        ...(bundle.documents.includes(from)
+          ? { title: documentPathTitle(to) }
+          : {}),
+      },
     );
   }
   const drawings = bundle.drawings.map((object) => {

@@ -1,4 +1,14 @@
 /** Allocate readable, flat Markdown filenames. Identity remains in frontmatter. */
+import { availableDocumentName } from '../documents/file-name.ts';
+export function allocateNamedDocumentPath(
+  title: string,
+  paths: Iterable<string>,
+  directory = 'docs',
+) {
+  return `${directory}/${availableDocumentName(title, directory, paths)}.md`;
+}
+export const documentPathTitle = (path: string) =>
+  path.split('/').at(-1)!.replace(/\.md$/, '');
 export function documentFilename(title: string) {
   let stem = title
     .normalize('NFC')

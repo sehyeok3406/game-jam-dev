@@ -1,6 +1,8 @@
 import matter from './game-ui-markdown.ts';
-import { allocateDocumentPath } from './core/projects/document-path.ts';
-import { readProjectLayout } from './core/projects/project-layout.ts';
+import {
+  allocateNamedDocumentPath,
+  documentPathTitle,
+} from './core/projects/document-path.ts';
 import {
   GAME_UI_DIRECTORY,
   GAME_UI_KINDS,
@@ -447,15 +449,16 @@ export function applyGameUi(files: Files, c: GameUiCommand): Files {
     const ids = new Set(c.targets.map((t) => t.id));
     f.items = f.items.filter((i) => !ids.has(i.id));
   } else if (c.action === 'describe') {
-    f.descriptionPath ??= readProjectLayout(files)
-      ? allocateDocumentPath(`${f.title} UI 설명`, Object.keys(next), f.id)
-      : `docs/ui/${f.id}.md`;
+    f.descriptionPath ??= allocateNamedDocumentPath(
+      `${f.title} — UI 설명`,
+      Object.keys(next),
+    );
     if (!next[f.descriptionPath]) {
       next[f.descriptionPath] = matter.stringify(
         `# ${f.title} — UI 설명\n\n## UI 목록\n\n| UI 이름 | 기능 설명 |\n| --- | --- |\n\n`,
         {
           id: f.id + '-description',
-          title: `${f.title} — UI 설명`,
+          title: documentPathTitle(f.descriptionPath),
           type: 'reference',
           status: 'draft',
           canvas_id: f.canvasId,

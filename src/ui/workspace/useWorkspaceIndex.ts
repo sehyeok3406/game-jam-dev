@@ -111,7 +111,7 @@ export function useWorkspaceIndex(ports: Ports) {
       canvasName: canvasSheets.canvases.find(
         (sheet) => sheet.id === canvasId(preview.canvasId),
       )?.name,
-      id: previewNodeId(preview.relativePath),
+      id: previewNodeId(preview),
       title: preview.title ?? previewLabel(preview.relativePath),
       kind: 'html',
       path: preview.relativePath,
@@ -126,9 +126,7 @@ export function useWorkspaceIndex(ports: Ports) {
     documents.find((doc) => doc.id === inspectorId)?.modifiedAt ??
     sections.find((section) => sectionNodeId(section.id) === inspectorId)
       ?.modifiedAt ??
-    previews.find(
-      (preview) => previewNodeId(preview.relativePath) === inspectorId,
-    )?.content;
+    previews.find((preview) => previewNodeId(preview) === inspectorId)?.content;
   useEffect(() => {
     if (!inspectorPath) {
       setInspectorAuthorship(null);

@@ -358,13 +358,13 @@ export function useProjectLoading(ports: () => Ports) {
         indicatorState,
         [
           ...canvasDocuments.map((doc) => doc.id),
-          ...nextPreviews.map((result) => previewNodeId(result.relativePath)),
+          ...nextPreviews.map((result) => previewNodeId(result)),
         ],
         Object.fromEntries(
           nextPreviews.flatMap((result) =>
             (result.previousPaths ?? []).map((old) => [
               previewNodeId(old),
-              previewNodeId(result.relativePath),
+              previewNodeId(result),
             ]),
           ),
         ),
@@ -494,7 +494,7 @@ export function useProjectLoading(ports: () => Ports) {
                     canvasId(result.canvasId) === activeCanvasRef.current,
                 )
                 .map((result) => ({
-                  id: previewNodeId(result.relativePath),
+                  id: previewNodeId(result),
                 })),
               padding: 0.2,
               duration: 350,

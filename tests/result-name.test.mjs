@@ -88,11 +88,11 @@ test('named document sets are reserved, recognized and updated without renaming 
 });
 test('named HTML versions have independent window state and preserve legacy paths', () => {
   const first = nextPreviewPath([], '한밤의 카페');
-  assert.equal(first, 'output/inbox/한밤의-카페/v001/index.html');
+  assert.equal(first, 'output/inbox/한밤의-카페/v001/한밤의 카페.html');
   assert.equal(isPreviewPath(first), true);
   assert.equal(
     nextPreviewPath([first], '다른 게임'),
-    'output/inbox/다른-게임/v001/index.html',
+    'output/inbox/다른-게임/v001/다른 게임.html',
   );
   assert.equal(previewLabel(first), '미분류 / 한밤의-카페 · 버전 1');
   assert.equal(
@@ -107,10 +107,10 @@ test('named HTML versions have independent window state and preserve legacy path
     expectedArtifacts(matter.stringify('task', { expected_outputs: [first] })),
     [first],
   );
+  // Named entry files need not encode a numeric legacy version. Traversal stays forbidden.
   for (const bad of [
     'output/versions/v2-../evil.html',
-    'output/versions/v02-game.html',
-    'output/versions/v9007199254740992.html',
+    'output/versions/../evil.html',
   ])
     assert.equal(isPreviewPath(bad), false);
 });

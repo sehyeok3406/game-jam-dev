@@ -1,3 +1,4 @@
+import { documentPathTitle } from '../../core/projects/document-path.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import type { HistoryEntry } from '../../contracts/history.ts';
@@ -178,6 +179,10 @@ export class AiRunService {
           matter.stringify(parsed.content, {
             ...parsed.data,
             ...grouping,
+            ...(relative.startsWith('docs/') &&
+            !/^docs\/(?:html-sources|text-sources)\//.test(relative)
+              ? { title: documentPathTitle(relative) }
+              : {}),
             creation_origin: 'ai',
             ai_task_path: this.taskPath,
           }),

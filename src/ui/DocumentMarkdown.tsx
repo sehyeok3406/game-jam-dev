@@ -6,6 +6,7 @@ import ReactMarkdown, {
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { remarkLineBreaks } from './markdown-line-breaks';
+import { remarkDocumentTitle } from './documents/markdown-title';
 import {
   AUTO_LINK_TITLE,
   parseDocumentLink,
@@ -133,11 +134,13 @@ function TaskInput({
 
 export function DocumentMarkdown({
   body,
+  title,
   disabled,
   onToggle,
   image,
 }: {
   body: string;
+  title?: string;
   disabled: boolean;
   onToggle: (offset: number, checked: boolean) => void;
   image: RenderSettings['image'];
@@ -148,7 +151,12 @@ export function DocumentMarkdown({
         urlTransform={(url) =>
           parseDocumentLink(url) ? url : defaultUrlTransform(url)
         }
-        remarkPlugins={[remarkGfm, remarkBreaks, remarkLineBreaks]}
+        remarkPlugins={[
+          remarkGfm,
+          remarkBreaks,
+          remarkLineBreaks,
+          [remarkDocumentTitle, { title }],
+        ]}
         components={components}
       >
         {body}

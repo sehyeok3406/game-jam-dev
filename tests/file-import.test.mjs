@@ -92,7 +92,10 @@ test('imports allocate unique IDs and preserve external Markdown metadata withou
     decodeAsset(image.asset.path, imported[image.asset.path]),
     png,
   );
-  const again = buildFileImports(batch());
+  const again = buildFileImports(batch(), undefined, {
+    ...project,
+    ...imported,
+  });
   assert.ok(
     Object.keys(again).every((relative) => imported[relative] === undefined),
   );

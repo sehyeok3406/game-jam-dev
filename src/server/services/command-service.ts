@@ -8,6 +8,7 @@ import { changedGroups } from '../../sync-properties.ts';
 import { ApiError } from './errors.ts';
 
 type CommandProject = {
+  aiQueue?: { status: string }[];
   id: string;
   files: Snapshot;
   propertySync?: boolean;
@@ -82,6 +83,20 @@ export function createCommandService<
       };
     }
     ports.editable(project, member);
+    if (
+      ['documents:rename', 'preview:rename', 'files:unify-names'].includes(
+        command.channel,
+      ) &&
+      (project.job ||
+        project.aiQueue?.some((task) =>
+          ['queued', 'running', 'preparing', 'validating'].includes(
+            task.status,
+          ),
+        ))
+    )
+      throw new ApiError(
+        'AI 실행·예약 작업을 완료하거나 취소한 뒤 이름을 변경해주세요.',
+      );
     if (command.channel === 'documents:save') {
       const relative = collaborationPath(
         (

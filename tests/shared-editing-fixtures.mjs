@@ -3,6 +3,10 @@ import { defaultStatuses } from '../src/document-statuses.ts';
 import { defaultKanbanView } from '../src/features/kanban/view.ts';
 import { RESULT_CATALOG_PATH } from '../src/result-structure.ts';
 import { projectCopyBundle } from '../src/project-copy.ts';
+import { htmlHash, htmlSourceId } from '../src/html-source.ts';
+import { inspectFileNames } from '../src/application/editing/file-name-plan.ts';
+import { previewNameCodec } from '../src/adapters/markdown/preview-names.ts';
+import { remapLayoutMarkdown } from '../src/adapters/markdown/layout-links.ts';
 
 export const environment = () => {
   let id = 0;
@@ -102,6 +106,66 @@ const gameUi = {
   frame,
 };
 const cases = [
+  [
+    'documents:rename',
+    {
+      scope: 'test',
+      relativePath: docPath,
+      objectId: 'a',
+      expectedTitle: 'a',
+      expectedBody: matter(initial()[docPath]).content.trim(),
+      name: '이름 변경',
+    },
+    {
+      scope: 'test',
+      relativePath: docPath,
+      objectId: 'wrong',
+      name: '이름 변경',
+    },
+  ],
+  [
+    'preview:rename',
+    {
+      scope: 'test',
+      relativePath: htmlPath,
+      objectId: htmlSourceId(htmlPath),
+      expectedHash: htmlHash(html),
+      name: '게임 이름',
+    },
+    {
+      scope: 'test',
+      relativePath: htmlPath,
+      objectId: 'wrong',
+      expectedHash: htmlHash(html),
+      name: '게임 이름',
+    },
+  ],
+  [
+    'files:unify-names',
+    {
+      scope: 'test',
+      baseline: inspectFileNames(
+        initial(),
+        'test',
+        {
+          parse: matter,
+          stringify: (body, data) => matter.stringify(body, data),
+        },
+        previewNameCodec,
+        remapLayoutMarkdown,
+      ).baseline,
+      proposals: [
+        {
+          id: 'a',
+          kind: 'markdown',
+          from: docPath,
+          to: 'ideas/통일.md',
+          name: '통일',
+        },
+      ],
+    },
+    { scope: 'test', baseline: 'stale', proposals: [] },
+  ],
   [
     'projects:import-copy',
     {

@@ -3,7 +3,7 @@ import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { isAssetPath, decodeAsset } from './file-assets.ts';
 import { isResultFolderPath, isPreviewPath } from './preview-output.ts';
-import { htmlHash, htmlSourceId, htmlSourcePath } from './html-source.ts';
+import { htmlHash, previewIdentity, htmlSourcePath } from './html-source.ts';
 import type { Snapshot } from './project-store.ts';
 
 export type HtmlInputSource = {
@@ -64,7 +64,7 @@ export function describeHtmlInput(
     }
   }
   return {
-    id: htmlSourceId(path),
+    id: previewIdentity(files, path),
     path,
     sha256: htmlHash(files[path]),
     files: support.map((relative) => ({
@@ -112,7 +112,7 @@ export function validateHtmlInputs(
       !source ||
       !isPreviewPath(source.path) ||
       typeof files[source.path] !== 'string' ||
-      source.id !== htmlSourceId(source.path) ||
+      source.id !== previewIdentity(files, source.path) ||
       source.sha256 !== htmlHash(files[source.path]) ||
       !Array.isArray(source.files) ||
       !Array.isArray(data.inputs) ||

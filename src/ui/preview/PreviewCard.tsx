@@ -1,3 +1,4 @@
+import { PreviewTitle } from './PreviewTitle';
 import { memo } from 'react';
 import { type Node, type NodeProps } from '@xyflow/react';
 import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
@@ -24,7 +25,6 @@ import {
   selectPreviewPreset,
   fitPreviewViewport,
 } from '../../preview-window';
-import { previewLabel } from '../../preview-output';
 import { PREVIEW_SANDBOX } from '../../preview-permissions';
 import { FilePropertyBadges } from '../FileProperties';
 import { DocumentBacklinks } from '../DocumentBacklinks';
@@ -110,25 +110,26 @@ const PreviewCardContent = memo(function PreviewCardContent({
         data-card-color={cardColor(data.preview.backgroundColor)}
         className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${!collapsed && data.preview.warnings?.length ? ' preview-card--warning' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
       >
-        <header className={fullscreen ? 'nodrag' : 'preview-drag-handle'}>
-          {data.aiUsage && (
-            <span className="ai-material-badge nodrag" title={data.aiUsage}>
-              {data.aiUsage}
-            </span>
-          )}
-          <strong
-            title={data.preview.relativePath}
-            data-find-section={`preview:${data.preview.relativePath}`}
-          >
-            <span className="preview-dot" /> HTML 실행 ·{' '}
-            {data.preview.title ?? previewLabel(data.preview.relativePath)}
-          </strong>
+        <header
+          className={`canvas-file-header ${fullscreen ? 'nodrag' : 'preview-drag-handle'}`}
+        >
+          <div className="canvas-file-header__name">
+            <PreviewTitle
+              preview={data.preview}
+              locked={data.locked || data.busy}
+            />
+            {data.aiUsage && (
+              <span className="ai-material-badge nodrag" title={data.aiUsage}>
+                {data.aiUsage}
+              </span>
+            )}
+          </div>
           <span className="preview-card__status">
             {data.busy
               ? 'AI 작업 중 · 이전 결과'
               : fullscreen
                 ? '전체화면 · 클릭해 마우스 시점'
-                : '실행 가능한 결과'}
+                : 'HTML 실행'}
           </span>
           <div className="preview-card__actions nodrag">
             <button
@@ -197,10 +198,7 @@ const PreviewCardContent = memo(function PreviewCardContent({
             </button>
             <FilePropertyBadges
               document={data.preview}
-              relativePath={data.preview.relativePath}
-              authorshipKey={data.authorshipKey}
               visibility={data.propertyVisibility}
-              details={data.onDetails}
               statuses={data.statuses}
               disabled={data.workflowDisabled}
               reason={data.workflowReason}

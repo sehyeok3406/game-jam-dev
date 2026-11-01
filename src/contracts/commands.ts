@@ -37,6 +37,15 @@ export type CommandMap = {
   }>;
   'documents:create-idea': CommandSpec<Input<'createIdea'>, CanvasDocument>;
   'documents:save': CommandSpec<Input<'saveDocument'>>;
+  'documents:rename': CommandSpec<
+    Input<'renameDocument'>,
+    import('./document-names.ts').DocumentNameChange
+  >;
+  'preview:rename': CommandSpec<
+    Input<'renamePreview'>,
+    import('./document-names.ts').DocumentNameChange
+  >;
+  'files:unify-names': CommandSpec<Input<'unifyFileNames'>, string[]>;
   'documents:delete': CommandSpec<Input<'deleteDocument'>>;
   'documents:duplicate': CommandSpec<
     Input<'duplicateDocuments'>,
@@ -90,6 +99,9 @@ export const COMMAND_LABELS = {
   'documents:delete-many': '선택 문서 삭제',
   'documents:create-idea': '메모 추가',
   'documents:save': '문서 수정',
+  'documents:rename': '문서 이름 변경',
+  'preview:rename': 'HTML 이름 변경',
+  'files:unify-names': '파일 이름 통일',
   'documents:delete': '문서 삭제',
   'documents:duplicate': '문서 복사',
   'sections:create': '섹션 생성',

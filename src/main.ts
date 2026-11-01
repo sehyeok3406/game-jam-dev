@@ -93,6 +93,11 @@ import { registerEditingIpc } from './desktop/ipc/editing';
 import { filesystemProjectReader } from './adapters/filesystem/project-reader';
 import { LocalSectionService } from './application/editing/section-service';
 import { LocalCreationService } from './application/editing/creation-service';
+import { DocumentNameService } from './application/editing/document-name-service';
+import { FILE_NAMES_PATH } from './contracts/document-names';
+import { namedPath, readFileNames } from './core/documents/name-registry';
+import { previewNameCodec } from './adapters/markdown/preview-names';
+import { inspectFileNames } from './application/editing/file-name-plan';
 import { markdownCodec } from './adapters/filesystem/markdown-codec';
 import { registerDocumentIpc } from './desktop/ipc/documents';
 import { registerCanvasIpc } from './desktop/ipc/canvas';
@@ -708,6 +713,26 @@ const assertEditable = () => {
     );
 };
 const assertMutationAllowed = async (channel: string, args: unknown[]) => {
+  if (
+    ['documents:rename', 'preview:rename', 'files:unify-names'].includes(
+      channel,
+    )
+  ) {
+    if ((args[0] as { scope?: string })?.scope !== documentSaveScope())
+      throw Error('프로젝트가 변경되었습니다. 이름 변경을 중지했습니다.');
+    assertEditable();
+    const nameLock = currentAiFileLock();
+    if (nameLock.paths.length || nameLock.folders.length)
+      throw Error(
+        'AI 작업이 사용하는 파일이 있습니다. 작업이 끝난 뒤 이름을 변경해주세요.',
+      );
+    const states = await documentSaveQueue.list(documentSaveScope());
+    if (states.some((state) => !['saved', 'discarded'].includes(state.phase)))
+      throw Error(
+        '본문 저장을 완료한 뒤 이름을 변경해주세요. 초안은 유지됩니다.',
+      );
+    return;
+  }
   if (
     channel === 'projects:copy-target' ||
     channel === 'projects:copy-selection'
@@ -1557,6 +1582,17 @@ const sharedEditor = (client: CollaborationClient) => {
   const mirror = sharedProjectMirror(ref, requireWorkspace());
   const service = new SharedEditingService({
     project,
+    inspectNames: (files, scope) => {
+      if (scope !== documentSaveScope())
+        throw Error('프로젝트가 변경되었습니다.');
+      return inspectFileNames(
+        files,
+        scope,
+        markdownCodec,
+        previewNameCodec,
+        remapLayoutMarkdown,
+      );
+    },
     reader: new SharedWorkspaceReader(
       project.read,
       new CanvasView(),
@@ -2255,6 +2291,19 @@ const registerIpc = () => {
 
   const { read: readQueuedDocument, write: writeQueuedDocument } =
     registerDocumentIpc(handle, {
+      scope: documentSaveScope,
+      names: () => {
+        const root = requireWorkspace(),
+          session = projectSessions.ref;
+        const assertCurrent = () => projectSessions.assertCurrent(session);
+        return new DocumentNameService({
+          project: filesystemProjectRepository(root, assertCurrent),
+          documents: filesystemDocumentRepository(root, assertCurrent),
+          markdown: markdownCodec,
+          links: remapLayoutMarkdown,
+          html: previewNameCodec,
+        });
+      },
       documents: listDocuments,
       sections: listSections,
       section: () => {
@@ -2704,12 +2753,55 @@ const registerIpc = () => {
       return documentSaveQueue.list(scope);
     saveQueueContext = { scope, root, client, sessionId: session?.sessionId };
     return documentSaveQueue.activate({
-      resolvePath: async (relative) => {
+      remapDraft: async (value, from, to) => {
+        const files = client?.files ?? (root ? await captureProject(root) : {}),
+          entries = readFileNames(files).entries;
+        const aliases: Record<string, string> = {};
+        for (const entry of entries)
+          for (const previous of entry.previousPaths)
+            if (
+              files[previous] === undefined &&
+              entries.filter((e) => e.previousPaths.includes(previous))
+                .length === 1
+            )
+              aliases[previous] = entry.path;
+        aliases[from] = to;
+        return {
+          ...value,
+          body: remapLayoutMarkdown(value.body, from, to, aliases),
+        };
+      },
+      resolvePath: async (relative, id) => {
         const layout = client
           ? readProjectLayout(client.files)
           : root
             ? await readDiskProjectLayout(root)
             : null;
+        if (id) {
+          const files =
+            client?.files ??
+            (root
+              ? {
+                  [FILE_NAMES_PATH]: await fs
+                    .readFile(await projectPath(root, FILE_NAMES_PATH), 'utf8')
+                    .catch((error: NodeJS.ErrnoException) => {
+                      if (error.code === 'ENOENT') return undefined;
+                      throw error;
+                    }),
+                }
+              : {});
+          const actual = namedPath(
+            Object.fromEntries(
+              Object.entries(files).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === 'string',
+              ),
+            ),
+            id,
+            '',
+          );
+          if (actual) return actual;
+        }
         return layout?.aliases[relative] ?? relative;
       },
       session: session ?? undefined,

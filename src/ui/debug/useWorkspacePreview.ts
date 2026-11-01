@@ -384,7 +384,7 @@ export function useWorkspacePreview(
         state === 'section'
           ? sectionNodeId(section.id)
           : state === 'html'
-            ? previewNodeId(result.relativePath)
+            ? previewNodeId(result)
             : doc.id,
       );
     if (id === 'file-properties' && state === 'unapplied')

@@ -396,24 +396,7 @@
 .document-editor {
   padding: 12px;
   gap: 10px;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-.document-editor > input {
-  width: calc(100% + 24px);
-  min-width: 0;
-  margin: -12px -12px 4px;
-  padding: 18px 16px;
-  border: 0;
-  border-radius: 0;
-  color: var(--document-title-text);
-  background: var(--document-title-background);
-  font-size: 28px;
-  font-weight: 750;
-  line-height: 1.35;
-  letter-spacing: -0.025em;
-}
-.document-editor > input:focus {
-  box-shadow: inset 0 0 0 2px var(--selection-soft);
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 .markdown-editor {
   gap: 6px;

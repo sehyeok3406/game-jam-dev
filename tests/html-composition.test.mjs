@@ -64,7 +64,7 @@ test('HTML-only composition carries every original, support file and provenance 
   assert.equal(data.html_inputs_version, 1);
   assert.equal(
     data.expected_outputs[0],
-    'output/prototypes/통합-게임/v001/index.html',
+    'output/prototypes/통합-게임/v001/통합 게임.html',
   );
   for (const path of [...htmls, js, css, svg, ...htmls.map(htmlSourcePath)])
     assert.ok(data.inputs.includes(path), path);
