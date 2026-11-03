@@ -42,7 +42,10 @@ export class AiDependencyFileExchange implements DependencyPreparationExchange {
     this.ports.assertCurrent();
     if (!this.directory) {
       this.directory = await fs.mkdtemp(
-        path.join(os.tmpdir(), 'gamejam-dependency-exchange-'),
+        path.join(
+          await fs.realpath(os.tmpdir()),
+          'gamejam-dependency-exchange-',
+        ),
       );
       await materialize(this.directory, this.ports.inputs, true);
     }

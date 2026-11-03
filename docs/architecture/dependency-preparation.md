@@ -25,6 +25,8 @@ AI가 라이브러리 후보와 선택 이유를 파일로 요청하면 앱이 �
 
 ## 공통 파일 교환
 
+Windows의 짧은 TEMP 경로·junction 표기 차이를 피하려고 준비 stage는 `realpath(os.tmpdir())` 아래에 생성한다. 정리 때도 같은 실제 부모·링크 여부·실제 경로 일치를 확인한다. 표기가 다르다는 이유로 정상 stage 정리가 실패하지 않도록 하며, 경로 보호 검사는 유지한다.
+
 각 실행은 프로젝트 밖 임시 stage에 선택 입력의 사본을 만든다. `.ai/tasks/dependency-response.json`에 실행 ID·sequence·앱 응답·기존 lock을 제공하고, AI는 `.ai/tasks/dependency-request-<sequence>.json` 하나에 다음 요청을 작성한다.
 
 1. `research`: 패키지 이름 목록. 앱은 설명·현재 latest 버전·참고 링크를 반환한다.

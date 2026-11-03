@@ -22,7 +22,9 @@ assert.equal(
 const result = await verifyServerBundle({
   bundle,
   node: path.join(runtime, 'node.exe'),
-  windowsFixture: path.resolve('out/ci/windows-backup'),
+  windowsFixture: path.resolve(
+    process.env.GAMEJAM_WINDOWS_BACKUP_FIXTURE ?? 'out/ci/windows-backup',
+  ),
 });
 await fs.writeFile(
   'out/r10-packaged-server.json',

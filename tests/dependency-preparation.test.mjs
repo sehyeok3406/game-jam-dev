@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {
   parseDependencyRequest,
   parseDependencyExchange,
@@ -60,6 +61,56 @@ const prepared = {
   executable: { executable: 'unused', prefix: [] },
   prompt: 'unused',
 };
+test('preparation creates and cleans its stage through a canonical TEMP directory alias', async () => {
+  const parent = await fs.realpath(os.tmpdir()),
+    root = await fs.mkdtemp(path.join(parent, 'gamejam-temp-alias-')),
+    alias = path.join(root, 'alias');
+  const previous = Object.fromEntries(
+    ['TEMP', 'TMP', 'TMPDIR'].map((k) => [k, process.env[k]]),
+  );
+  let directory;
+  const exchange = new AiDependencyFileExchange({
+    prepared,
+    inputs: { 'input.md': 'Original' },
+    executor: {
+      async run(input) {
+        directory = input.stage;
+        await fs.writeFile(
+          path.join(directory, '.ai/tasks/dependency-request-1.json'),
+          JSON.stringify({
+            version: 1,
+            runId: prepared.runId,
+            sequence: 1,
+            request: { version: 1, action: 'done', lockSha256: null },
+          }),
+        );
+        return { code: 0 };
+      },
+    },
+    assertCurrent() {},
+    log() {},
+  });
+  try {
+    await fs.symlink(
+      parent,
+      alias,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    for (const key of Object.keys(previous)) process.env[key] = alias;
+    await exchange.turn(1, null, new AbortController().signal);
+    assert.equal(path.dirname(directory), parent);
+    await exchange.close();
+    await assert.rejects(fs.access(directory));
+  } finally {
+    for (const [key, value] of Object.entries(previous))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    await exchange.close();
+    await fs.unlink(alias);
+    assert.equal(path.dirname(root), parent);
+    await fs.rmdir(root);
+  }
+});
 test('all four providers complete the same scoped file exchange without requiring a registry/network tool', async () => {
   for (const providerId of [
     'codex-cli',
