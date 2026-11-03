@@ -175,6 +175,21 @@ export class ProjectHomeService {
     await p.session.suspend();
     return p.session.openShared(id);
   }
+  async verifyLocationAccess(id: string) {
+    const p = this.ports,
+      entry = p.registry.get(id);
+    if (entry.kind !== 'shared' || !p.registry.hasSharedSession(id))
+      throw Error('이 PC에 프로젝트 참여 자격이 없습니다.');
+    const lifecycle = await p.shared.lifecycle(id, 'lifecycle');
+    if (
+      lifecycle.projectId !== entry.projectId ||
+      lifecycle.status !== 'active'
+    )
+      throw Error('프로젝트에 접근할 수 없습니다. 휴지통 상태를 확인해주세요.');
+    // Authenticated online read; no cache fallback, including for revoked members.
+    if (p.shared.locationItems) return p.shared.locationItems(id);
+    await p.shared.metadata(id);
+  }
   chooseParent() {
     return this.ports.chooseParent();
   }

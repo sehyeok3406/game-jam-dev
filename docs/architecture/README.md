@@ -34,6 +34,8 @@
 
 ## 변경 영역별로 읽을 문서
 
+외부 앱에서 공유 프로젝트의 문서·그림·텍스트·HTML 또는 특정 문단을 여는 기능은 [공유 위치 링크](location-links.md)와 [ADR 0007](decisions/0007-shared-location-links.md)을 따른다. 기존 참여 자격·프로젝트 열기·저장 큐·세션을 재사용하며 URL은 권한을 부여하지 않는다.
+
 7단계는 현재 사용자에게 제공되는 Codex 실제 계정과 공통 기능 검증을 완료했다. Claude/Gemini/Grok의 실제 계정·모델 응답·품질 검증은 보류하며 모의 실행 결과와 구분한다. [7단계 기록](../audits/2026-11-03-game-build-stage7.md)에 실제 시나리오·발견/수정·남은 제약을 남긴다.
 
 게임 원본을 이어서 수정하거나 새 버전·문서 갱신·전체 기록 복원을 변경할 때는 [게임 원본 수정](game-build-editing.md)을 추가로 읽는다. 5단계는 수정용 source 사본, 정확한 lock 유지, 명시적 문서 target과 관련 index baseline을 구현한다. HTML 내보내기·재가져오기·기준 문서 비교·원본 상태 안내는 [HTML 입출력](game-build-transfer.md)을 읽는다. 실제 AI 품질 종합 검증은 후속이다.

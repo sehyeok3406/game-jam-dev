@@ -2,6 +2,11 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
+  LocationAnchor,
+  ensureSelectionLocationAnchor,
+} from '../editor/location-anchor.ts';
+import { useLocationSharing } from '../locations/LocationSharingContext.ts';
+import {
   NodeResizer,
   NodeToolbar,
   Position,
@@ -45,6 +50,7 @@ export const TextDrawingNode = memo(function TextDrawingNode({
   object: TextObject;
 }) {
   const { api } = useRuntime();
+  const locationSharing = useLocationSharing();
   const [editing, setEditing] = useState(false),
     [error, setError] = useState('');
   const [geometry, setGeometry] = useState(object.geometry);
@@ -88,6 +94,7 @@ export const TextDrawingNode = memo(function TextDrawingNode({
         trailingNode: false,
       }),
       CanvasTextAlignment,
+      LocationAnchor,
     ],
     content: JSON.parse(object.geometry.document),
     editable: false,
@@ -429,6 +436,36 @@ export const TextDrawingNode = memo(function TextDrawingNode({
           aria-label="텍스트 서식"
           onPointerDown={(event) => event.stopPropagation()}
         >
+          {locationSharing?.anchors && (
+            <button
+              type="button"
+              aria-label="문단 위치 링크 복사"
+              title="커서가 있는 문단의 위치 링크 복사"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                if (!editor) return;
+                try {
+                  const blockId = ensureSelectionLocationAnchor(
+                    editor,
+                    !data.locked,
+                  );
+                  locationSharing.copy({
+                    kind: 'drawing',
+                    id: object.id,
+                    blockId,
+                  });
+                } catch (failure) {
+                  setError(
+                    failure instanceof Error
+                      ? failure.message
+                      : String(failure),
+                  );
+                }
+              }}
+            >
+              문단 링크
+            </button>
+          )}
           <select
             aria-label="글꼴"
             value={geometry.fontFamily}

@@ -10,6 +10,17 @@ import {
   type DocumentLinkRuntime,
 } from './document-link-node.ts';
 import { parseDocumentLink } from './document-links.ts';
+import { parseLocationLink } from './core/projects/location-links.ts';
+import { LocationAnchor } from './ui/editor/location-anchor.ts';
+
+const isLocation = (href: string) => {
+  try {
+    parseLocationLink(href);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const SpaceRule = HorizontalRule.extend({
   addInputRules() {
@@ -55,11 +66,12 @@ export function markdownExtensions(runtime?: DocumentLinkRuntime) {
         protocols: ['gamejam'],
         isAllowedUri: (href, context) =>
           /^gamejam:/i.test(href)
-            ? !!parseDocumentLink(href)
+            ? !!parseDocumentLink(href) || isLocation(href)
             : context.defaultValidate(href),
       },
     }),
     documentLinkNode(runtime),
+    LocationAnchor,
     SpaceRule,
     TaskList,
     SpaceTask.configure({

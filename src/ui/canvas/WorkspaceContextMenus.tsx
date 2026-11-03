@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Copy,
+  Link2,
   FolderOpen,
   Frame,
   History,
@@ -33,6 +34,9 @@ import {
   type SectionContextMenuState,
 } from '../workspace/workspace-types.ts';
 interface Props {
+  copyLocation?: (
+    target: import('../../contracts/location-links.ts').LocationTarget,
+  ) => void;
   copyToProject?: (paths: string[]) => void;
   previewContextMenu: PreviewContextMenuState | null;
   canvasSheets: CanvasSheets;
@@ -118,6 +122,7 @@ interface Props {
   }>;
 }
 export function WorkspaceContextMenus({
+  copyLocation,
   copyToProject,
   previewContextMenu,
   canvasSheets,
@@ -186,6 +191,26 @@ export function WorkspaceContextMenus({
           aria-label="HTML 결과 메뉴"
         >
           {copyButton(previewContextMenu.preview.relativePath)}
+          {copyLocation && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() =>
+                copyLocation({
+                  kind: previewContextMenu.preview.sourceId ? 'html' : 'file',
+                  id:
+                    previewContextMenu.preview.sourceId ??
+                    previewContextMenu.preview.relativePath,
+                })
+              }
+            >
+              <Link2 size={16} />
+              <span>
+                <strong>위치 링크 복사</strong>
+                <small>프로젝트 참여자에게 이 위치 공유</small>
+              </span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -285,6 +310,30 @@ export function WorkspaceContextMenus({
           role="menu"
         >
           {copyButton(documentContextMenu.document.relativePath)}
+          {copyLocation && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() =>
+                copyLocation({
+                  kind:
+                    documentContextMenu.document.identitySource === 'path'
+                      ? 'file'
+                      : 'document',
+                  id:
+                    documentContextMenu.document.identitySource === 'path'
+                      ? documentContextMenu.document.relativePath
+                      : documentContextMenu.document.id,
+                })
+              }
+            >
+              <Link2 size={16} />
+              <span>
+                <strong>위치 링크 복사</strong>
+                <small>프로젝트 참여자에게 이 위치 공유</small>
+              </span>
+            </button>
+          )}
           <div className="context-menu-title">
             {documentContextMenu.document.title}
           </div>

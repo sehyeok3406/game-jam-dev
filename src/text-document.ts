@@ -1,4 +1,5 @@
 import type { TextObject } from './contracts/drawing-types.ts';
+import { validLocationAnchor } from './core/projects/location-anchors.ts';
 
 export const EMPTY_TEXT_DOCUMENT = JSON.stringify({
   type: 'doc',
@@ -66,13 +67,23 @@ export function validateTextDocument(raw: unknown): void {
     const allowed: Record<string, string[]> = {
       root: ['doc'],
       doc: ['paragraph', 'bulletList', 'orderedList'],
-      paragraph: ['text', 'hardBreak'],
+      paragraph: ['text', 'hardBreak', 'locationAnchor'],
       bulletList: ['listItem'],
       orderedList: ['listItem'],
       listItem: ['paragraph', 'bulletList', 'orderedList'],
     };
     if (!allowed[parent]?.includes(n.type)) fail();
-    if (n.type === 'text') {
+    if (n.type === 'locationAnchor') {
+      if (
+        n.text !== undefined ||
+        n.content !== undefined ||
+        n.marks !== undefined ||
+        !n.attrs ||
+        Object.keys(n.attrs).length !== 1 ||
+        !validLocationAnchor(n.attrs.id)
+      )
+        fail();
+    } else if (n.type === 'text') {
       if (typeof n.text !== 'string' || !n.text.length || n.content || n.attrs)
         fail();
       if (

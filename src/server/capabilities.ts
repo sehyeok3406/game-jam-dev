@@ -4,6 +4,7 @@ export function serverCapabilities(
   storagePolicy?: import('../contracts/game-build.ts').ProjectStoragePolicy,
 ) {
   return {
+    locationAnchorVersion: 1,
     gameBuildVersion: 1,
     gameBuildEditingVersion: 1,
     gameBuildStorageVersion: 1,

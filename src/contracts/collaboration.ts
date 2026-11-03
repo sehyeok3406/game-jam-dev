@@ -6,6 +6,7 @@ import type { FileAuthorshipMap } from './documents.ts';
 import type { DrawingDelta } from './drawing-types.ts';
 export type CollaborationRole = 'admin' | 'editor' | 'viewer';
 export type CollaborationState = {
+  locationAnchorVersion?: number;
   gameBuildVersion?: number;
   gameBuildEditingVersion?: number;
   gameBuildStorageVersion?: number;
@@ -110,6 +111,7 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationCommand = {
+  locationAnchorVersion?: number;
   gameBuildVersion?: number;
   gameBuildEditingVersion?: number;
   gameBuildStorageVersion?: number;

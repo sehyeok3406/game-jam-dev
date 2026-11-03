@@ -1,4 +1,8 @@
 import { WorkspaceDock } from '../shell/WorkspaceDock';
+import { useLocationNavigation } from '../canvas/useLocationNavigation.ts';
+import { useLocationLinks } from '../locations/useLocationLinks.ts';
+import { LocationLinkControls } from '../locations/LocationLinkControls.tsx';
+import type { LocationTarget } from '../../contracts/location-links.ts';
 import { WorkspaceChrome } from '../shell/WorkspaceChrome';
 import { useCanvasRegions } from '../CanvasChrome';
 import type { EraserMode } from '../../drawing-types';
@@ -372,6 +376,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const switchingCanvasRef = useRef(false);
   const pendingCanvasJump = useRef<string | null>(null);
   const firstCanvasView = useRef<string | null>(null);
+  const viewportIntent = useRef(0);
   const navigateCanvasItem = useRef<((id: string) => void) | null>(null);
   const [documents, setDocuments] = useState<CanvasDocument[]>([]);
   const linkDocumentsRef = useRef(documents);
@@ -379,7 +384,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   linkScopeRef.current = workspace.root;
   const openingLink = useRef(false);
   const openLinkRef = useRef<(href: string) => Promise<void>>(async () => {});
+  const openSharedLinkRef = useRef<(href: string) => void>(() => {});
   const dispatchDocumentLink = useCallback((href: string) => {
+    if (/^gamejam:\/\/open\/?\?/.test(href)) {
+      openSharedLinkRef.current(href);
+      return;
+    }
     void openLinkRef
       .current(href)
       .catch((error) =>
@@ -1567,6 +1577,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const reloadWorkspaceRef = useRef<() => void>(() => {});
   const workspaceData = useWorkspaceData(() => reloadWorkspaceRef.current());
   const { loadProject } = useProjectLoading(() => ({
+    viewportIntent,
     workspaceData,
     setWorkspace,
     setDocuments,
@@ -2376,10 +2387,76 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   };
   navigateCanvasItem.current = jumpTo;
   openLinkRef.current = openDocumentLink;
+  const locationNavigation = useLocationNavigation(() => ({
+    session: workspace.session,
+    activeCanvas,
+    nodes,
+    flow: flowRef.current,
+    switchCanvas: switchCanvasTo,
+    revealDocument: (id) =>
+      setTemporaryDocuments((current) => [...new Set([...current, id])]),
+    select: (id) => {
+      const section = sections.find((item) =>
+        item.members.some(
+          (member) => member.id === id || `preview:${member.path}` === id,
+        ),
+      );
+      if (section)
+        setTemporarySections((current) => [
+          ...new Set([...current, section.id]),
+        ]);
+      setTool('select');
+      setSelectedIds(documents.some((doc) => doc.id === id) ? [id] : []);
+      setSelectedSectionIds([]);
+      setNodes((current) =>
+        current.map((node) =>
+          node.selected === (node.id === id)
+            ? node
+            : { ...node, selected: node.id === id },
+        ),
+      );
+    },
+    report: setNotice,
+    beforeNavigate: () => {
+      viewportIntent.current++;
+      firstCanvasView.current = null;
+      pendingCanvasJump.current = null;
+    },
+  }));
+  const locationLinks = useLocationLinks(() => ({
+    api,
+    workspace,
+    ready: !loading,
+    flush: () => flushEditors(),
+    composing: () => linkComposing.current,
+    report: setNotice,
+    enter: async () => {
+      setCollaboration(await api.collaboration.getCollaboration());
+      await loadProject(false, true);
+      setHome(false);
+    },
+    navigate: (result) => {
+      firstCanvasView.current = null;
+      pendingCanvasJump.current = null;
+      locationNavigation.navigate(result);
+    },
+  }));
+  openSharedLinkRef.current = (href) => {
+    void locationLinks.openHref(href);
+  };
+  const copyLocation =
+    collaboration.active && locationLinks.available
+      ? (target: LocationTarget) => {
+          closeContextMenus();
+          void locationLinks.copy(target);
+        }
+      : undefined;
   useEffect(() => {
     if (firstCanvasView.current !== activeCanvas || !nodes.length) return;
     firstCanvasView.current = null;
+    const intent = viewportIntent.current;
     requestAnimationFrame(() => {
+      if (intent !== viewportIntent.current) return;
       void flowRef.current?.fitView({
         nodes: flowRef.current
           ?.getNodes()
@@ -3229,10 +3306,25 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     [preview, loading, documents, sections, previews, setNodes],
   );
   const uiDebug = (
-    <UiDebugConsole
-      scope={home || (!workspace.root && !loading) ? 'home' : 'project'}
-      theme={theme}
-    />
+    <>
+      <UiDebugConsole
+        scope={home || (!workspace.root && !loading) ? 'home' : 'project'}
+        theme={theme}
+      />
+      <LocationLinkControls state={locationLinks} />
+      {locationNavigation.highlight && (
+        <div
+          className="location-link-highlight"
+          aria-hidden="true"
+          style={{
+            left: locationNavigation.highlight.x,
+            top: locationNavigation.highlight.y,
+            width: locationNavigation.highlight.width,
+            height: locationNavigation.highlight.height,
+          }}
+        />
+      )}
+    </>
   );
   const workspacePanelProps: Omit<WorkspacePanelsProps, 'workspace'> = {
     state: panelState,
@@ -3635,6 +3727,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           dropFiles,
           compactChrome,
           materialItems,
+          locationSharing: copyLocation
+            ? {
+                copy: copyLocation,
+                anchors: collaboration.locationAnchorVersion === 1,
+              }
+            : undefined,
+          viewportIntent,
           dockPanel,
           eraserMode,
           eraserPreview,
@@ -3789,6 +3888,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceContextMenus
         {...{
+          copyLocation,
           copyToProject,
           previewContextMenu,
           canvasSheets,
@@ -3849,6 +3949,31 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           }
           canMove={canvasSheets.canvases.length > 1}
           canCopy={!!api.desktop}
+          onCopyLocation={
+            copyLocation && selectionContextMenu.targets.count === 1
+              ? () => {
+                  const targets = selectionContextMenu.targets;
+                  const doc = targets.documents[0],
+                    html = targets.previews[0],
+                    object = targets.drawings[0];
+                  if (doc)
+                    copyLocation({
+                      kind: doc.identitySource === 'path' ? 'file' : 'document',
+                      id:
+                        doc.identitySource === 'path'
+                          ? doc.relativePath
+                          : doc.id,
+                    });
+                  else if (html)
+                    copyLocation({
+                      kind: html.sourceId ? 'html' : 'file',
+                      id: html.sourceId ?? html.relativePath,
+                    });
+                  else if (object)
+                    copyLocation({ kind: 'drawing', id: object.id });
+                }
+              : undefined
+          }
           onCopy={() => beginProjectCopy(selectionContextMenu.targets)}
           onMove={() => {
             const targets = selectionContextMenu.targets;

@@ -14,6 +14,7 @@ import { ProjectImage } from './ProjectImage';
 import { useDocumentEditing } from './useDocumentEditing';
 import { readingBlockFocus } from './markdown-title';
 import type { DocumentCanvasNode } from './types';
+import { useLocationSharing } from '../locations/LocationSharingContext.ts';
 export type { DocumentCanvasNode, DocumentNodeData } from './types';
 
 const DocumentCardContent = memo(function DocumentCardContent({
@@ -21,7 +22,19 @@ const DocumentCardContent = memo(function DocumentCardContent({
   selected,
 }: Pick<NodeProps<DocumentCanvasNode>, 'data' | 'selected'>) {
   const { api, capabilities } = useRuntime();
+  const locationSharing = useLocationSharing();
   const { document } = data;
+  const copyBlock = locationSharing?.anchors
+    ? (blockId: string) =>
+        locationSharing.copy({
+          kind: document.identitySource === 'path' ? 'file' : 'document',
+          id:
+            document.identitySource === 'path'
+              ? document.relativePath
+              : document.id,
+          blockId,
+        })
+    : undefined;
   const {
     cardRef,
     titleRef,
@@ -212,6 +225,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 onKeyDown={handleEditorKeyDown}
               >
                 <MarkdownEditor
+                  onCopyBlock={copyBlock}
                   currentCanvas={document.canvasId}
                   value={body}
                   onCompositionChange={setComposing}
@@ -370,6 +384,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 )}
                 <div className="markdown-body nowheel">
                   <DocumentMarkdown
+                    copyBlock={copyBlock}
                     body={document.body}
                     title={document.title}
                     disabled={

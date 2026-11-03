@@ -1,4 +1,9 @@
 import { SelectedProjectRegistration } from './application/projects/selected-project.ts';
+import { LocationLinkService } from './application/projects/location-link-service.ts';
+import { locationIndex } from './adapters/markdown/location-index.ts';
+import { LocationLinkInbox } from './desktop/location-link-inbox.ts';
+import { installLocationLinkProtocol } from './desktop/location-link-protocol.ts';
+import { registerLocationLinksIpc } from './desktop/ipc/location-links.ts';
 import { relocateWorkspaceSettings } from './adapters/filesystem/workspace-settings.ts';
 import { sharedWorkspacePath } from './adapters/filesystem/shared-workspace-locations.ts';
 import {
@@ -267,6 +272,33 @@ if (testProfile) {
   app.setPath('sessionData', testProfile);
 }
 let testNickname: string | undefined;
+let mainWindow: BrowserWindow | null = null;
+if (
+  process.platform === 'win32' &&
+  app.isPackaged &&
+  !testProfile &&
+  process.argv.includes('--squirrel-uninstall')
+)
+  app.removeAsDefaultProtocolClient('gamejam');
+const locationLinkInbox = new LocationLinkInbox(() => {
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send('location-links:received');
+});
+// Electron scopes its singleton lock to userData, set above for isolated test users.
+const primaryLocationInstance = installLocationLinkProtocol({
+  app,
+  inbox: locationLinkInbox,
+  argv: process.argv,
+  register:
+    app.isPackaged && !testProfile && process.platform === 'win32' && !started,
+  focus: () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  },
+  invalid: () => locationLinkInbox.invalid(),
+});
 let testUserLauncher: TestUserLauncher | null = null;
 let appUpdates: AppUpdateController;
 const desktopBootstrap = new DesktopBootstrap(
@@ -481,8 +513,6 @@ let selfHost: import('./features/self-host/service').SelfHostService | null =
 let selfHostLifecycle:
   | import('./features/self-host/lifecycle').SelfHostLifecycle
   | null = null;
-
-let mainWindow: BrowserWindow | null = null;
 
 let clipboardContextId = randomUUID();
 let clipboardCopy: {
@@ -741,7 +771,8 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
   }
   if (
     channel === 'projects:copy-target' ||
-    channel === 'projects:copy-selection'
+    channel === 'projects:copy-selection' ||
+    channel === 'projects:location-create'
   )
     return;
   const context = args[0] as
@@ -2605,6 +2636,79 @@ const registerIpc = () => {
     if (!isUpdateSender(event))
       throw new Error('앱의 홈 화면에서 실행해주세요.');
   });
+  const locationService = new LocationLinkService({
+    projects: () =>
+      projectLibrary.list().map((entry) => ({
+        ...entry,
+        current:
+          entry.kind === 'shared' &&
+          entry.projectId === projectSessions.client?.credentials.projectId &&
+          (entry.id === projectSessions.client?.credentials.libraryId ||
+            projectLibrary.get(entry.id).credentials?.token ===
+              projectSessions.client?.credentials.token),
+      })),
+    hasSession: (id) => !!projectLibrary.get(id).credentials,
+    current: () => ({
+      projectId: projectSessions.client?.credentials.projectId,
+      key: projectSessions.ref?.sessionId ?? 'home',
+    }),
+    verify: async (id) => {
+      const items = await homeProjects.verifyLocationAccess(id);
+      const entry = projectLibrary.get(id),
+        client = projectSessions.client;
+      if (
+        client &&
+        entry.projectId === client.credentials.projectId &&
+        (entry.id === client.credentials.libraryId ||
+          entry.credentials?.token === client.credentials.token)
+      )
+        await client.refresh();
+      return items;
+    },
+    open: async (id) => {
+      await homeProjects.open(id);
+      if (
+        projectLibrary.get(id).credentials?.token !==
+        projectSessions.client?.credentials.token
+      )
+        throw Error(
+          '다른 서버의 같은 프로젝트가 열려 있습니다. 홈에서 사용할 프로젝트를 먼저 열어주세요.',
+        );
+      await projectSessions.client?.refresh();
+      return workspaceState();
+    },
+    workspace: workspaceState,
+    items: () => locationIndex(projectSessions.client?.files ?? {}),
+    assertReady: () => {
+      const client = projectSessions.client;
+      if (
+        !client ||
+        !client.state.connected ||
+        client.state.accessDenied ||
+        client.state.projectDeleted ||
+        client.state.awaitingResume
+      )
+        throw Error(
+          '서버에 연결해 프로젝트 접근 권한을 확인한 뒤 다시 시도해주세요.',
+        );
+      if (client.offline || client.outgoing)
+        throw Error('미동기화 작업을 반영한 뒤 위치 링크를 사용해주세요.');
+    },
+  });
+  registerLocationLinksIpc(
+    handle,
+    (channel, listener) => {
+      ipcMain.handle(channel, listener);
+      return listener;
+    },
+    locationService,
+    locationLinkInbox,
+    (event) => {
+      if (!isUpdateSender(event))
+        throw Error('앱의 기본 화면에서 위치 링크를 사용해주세요.');
+    },
+    () => projectSessions.ref,
+  );
   const projectLayoutService = (event: Electron.IpcMainInvokeEvent) => {
     const root = requireWorkspace(),
       ref = projectSessions.ref,
@@ -3071,6 +3175,7 @@ const createWindow = async () => {
 };
 
 app.whenReady().then(async () => {
+  if (!primaryLocationInstance || started) return;
   if (process.platform === 'win32' && app.isPackaged && !testProfile) {
     await repairWindowsBranding(
       process.execPath,

@@ -1,4 +1,6 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { remarkLocationAnchors } from './locations/remark-location-anchors.ts';
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -13,6 +15,16 @@ import {
   linkStatusText,
 } from '../document-links';
 import { useDocumentLinks } from './DocumentLinksContext';
+import { parseLocationLink } from '../core/projects/location-links.ts';
+
+const isSharedLocationLink = (url: string) => {
+  try {
+    parseLocationLink(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const MarkdownLink: NonNullable<Components['a']> = ({
   href,
@@ -24,6 +36,20 @@ const MarkdownLink: NonNullable<Components['a']> = ({
   if (!href?.startsWith('gamejam:'))
     return (
       <a href={href} title={title}>
+        {children}
+      </a>
+    );
+  if (isSharedLocationLink(href))
+    return (
+      <a
+        href={href}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          links.open(href);
+        }}
+      >
         {children}
       </a>
     );
@@ -133,34 +159,90 @@ function TaskInput({
 }
 
 export function DocumentMarkdown({
+  copyBlock,
   body,
   title,
   disabled,
   onToggle,
   image,
 }: {
+  copyBlock?: (id: string) => void;
   body: string;
   title?: string;
   disabled: boolean;
   onToggle: (offset: number, checked: boolean) => void;
   image: RenderSettings['image'];
 }) {
+  const [blockMenu, setBlockMenu] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
   return (
     <RenderContext.Provider value={{ disabled, onToggle, image }}>
-      <ReactMarkdown
-        urlTransform={(url) =>
-          parseDocumentLink(url) ? url : defaultUrlTransform(url)
-        }
-        remarkPlugins={[
-          remarkGfm,
-          remarkBreaks,
-          remarkLineBreaks,
-          [remarkDocumentTitle, { title }],
-        ]}
-        components={components}
+      <div
+        onContextMenu={(event) => {
+          if (!copyBlock) return;
+          const paragraph = (event.target as Element).closest(
+            'p,h1,h2,h3,h4,h5,h6,td,li',
+          );
+          const anchors = paragraph?.querySelectorAll<HTMLElement>(
+            '[data-location-block]',
+          );
+          if (anchors?.length !== 1) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setBlockMenu({
+            id: anchors[0].dataset.locationBlock!,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
       >
-        {body}
-      </ReactMarkdown>
+        <ReactMarkdown
+          urlTransform={(url) =>
+            parseDocumentLink(url) || isSharedLocationLink(url)
+              ? url
+              : defaultUrlTransform(url)
+          }
+          remarkPlugins={[
+            remarkGfm,
+            remarkBreaks,
+            remarkLineBreaks,
+            remarkLocationAnchors,
+            [remarkDocumentTitle, { title }],
+          ]}
+          components={components}
+        >
+          {body}
+        </ReactMarkdown>
+      </div>
+      {blockMenu &&
+        copyBlock &&
+        createPortal(
+          <button
+            type="button"
+            className="location-block-menu floating-surface"
+            autoFocus
+            onBlur={() => setBlockMenu(null)}
+            style={{
+              position: 'fixed',
+              left: Math.min(blockMenu.x, window.innerWidth - 200),
+              top: Math.min(blockMenu.y, window.innerHeight - 50),
+              zIndex: 150,
+              padding: 12,
+            }}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation();
+              copyBlock(blockMenu.id);
+              setBlockMenu(null);
+            }}
+          >
+            문단 위치 링크 복사
+          </button>,
+          document.body,
+        )}
     </RenderContext.Provider>
   );
 }

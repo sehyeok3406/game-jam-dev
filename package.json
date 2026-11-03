@@ -1,7 +1,7 @@
 {
   "name": "game-canvas",
   "productName": "Game Jam!",
-  "version": "0.43.0",
+  "version": "0.44.0",
   "private": true,
   "description": "A local-first Markdown canvas for turning game ideas into HTML prototypes.",
   "keywords": [],
@@ -28,6 +28,9 @@
     "test:text:packaged": "node tests/text-packaged.mjs",
     "test:autosave:ui": "node tests/run-real-save-ui.mjs",
     "test:document-links:ui": "node tests/run-document-links-ui.mjs",
+    "test:location-links:ui": "node tests/run-location-links-ui.mjs",
+    "test:location-links:main": "node tests/run-location-links-main.mjs",
+    "test:location-links:packaged": "node tests/location-links-packaged.mjs",
     "test:html-preview:ui": "node tests/run-html-preview-ui.mjs",
     "test:updates:desktop": "node scripts/test-update-ui.mjs",
     "test:ui-debug": "node tests/run-ui-debug.mjs --built",

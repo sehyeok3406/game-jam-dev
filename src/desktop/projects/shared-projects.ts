@@ -18,6 +18,7 @@ import fs from 'node:fs/promises';
 import { writeClientCache } from '../../client-cache.ts';
 import { hasModernLayout } from '../../adapters/filesystem/project-location.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
+import { locationIndex } from '../../adapters/markdown/location-index.ts';
 
 /** Strip encrypted session material before passing a registry entry to application code. */
 export function homeProjectRegistry(
@@ -104,12 +105,24 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
       {
         drawingTextVersion: 1,
         drawingTextAlignmentVersion: 1,
+        locationAnchorVersion: 1,
         drawingEraseVersion: 1,
         ...(metadataOnly ? { metadataOnly: true } : {}),
       },
       saved.token,
     );
   return {
+    async locationItems(id) {
+      const saved = await credentials(id);
+      const result = (await readState(saved)) as CollaborationEnvelope;
+      if (
+        result.state.projectId !== saved.projectId ||
+        result.state.accessDenied ||
+        result.state.projectDeleted
+      )
+        throw Error('프로젝트에 접근할 수 없습니다.');
+      return locationIndex(result.files);
+    },
     async directory(id) {
       const assertSession = options.beginReveal?.() ?? (() => {});
       const entry = library.get(id);

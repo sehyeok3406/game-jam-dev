@@ -1,5 +1,9 @@
 # 편집 명령 연결과 검증 범위
 
+## 문단 위치 링크 · 2026-11-03
+
+[ADR 0007](decisions/0007-shared-location-links.md)의 `locationAnchor`는 문단 링크를 처음 만들 때 기존 본문 저장/그림 편집으로 추가한다. Markdown 주석과 캔버스 텍스트 JSON으로 왕복 저장하며 별도 저장 큐나 히스토리를 만들지 않는다. 같은 문서 내 복제에서는 원본 ID를 보존하고 사본의 ID를 새로 발급한다. 외부 편집으로 앵커가 사라졌거나 중복되면 유사 문장을 추측하지 않는다. 기존 앵커 추가·삭제·복원은 문서/그림의 Undo와 저장 실패·복구 경계를 그대로 따른다.
+
 ## Markdown·HTML 이름 확정과 일괄 통일 (2026-11-01)
 
 `renameDocument`/`documents:rename`, `renamePreview`/`preview:rename`, `inspectFileNames`, `unifyFileNames`/`files:unify-names`는 공통 이름 규칙과 application planner를 사용한다. 개인 프로젝트는 기존 Electron mutation/session/history와 `DocumentNameService`, 공동 프로젝트는 기존 SharedEditingService → client → 서버 reducer/명령 큐를 사용한다. ID·원래 내용/해시·영향 파일·세션을 확인하며 일괄 적용은 미리보기 snapshot 해시도 검사한다. 이름 입력 중에는 본문만 기존 큐로 저장하고 명시적 확정에서 파일명·표시 이름·참조를 함께 바꾼다.

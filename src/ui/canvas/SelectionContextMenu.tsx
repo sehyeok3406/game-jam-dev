@@ -1,4 +1,4 @@
-import { Copy, ArrowRight, Minimize2, Trash2 } from 'lucide-react';
+import { Copy, ArrowRight, Minimize2, Trash2, Link2 } from 'lucide-react';
 import { CardColorUnavailable } from './CardColorUnavailable';
 import type { SelectionMenuTargets } from './selection-menu-plan.ts';
 
@@ -10,6 +10,7 @@ export function SelectionContextMenu({
   canMove,
   canCopy,
   onCopy,
+  onCopyLocation,
   onMove,
   onCollapse,
   onDelete,
@@ -21,6 +22,7 @@ export function SelectionContextMenu({
   canMove: boolean;
   canCopy: boolean;
   onCopy(): void;
+  onCopyLocation?: () => void;
   onMove(): void;
   onCollapse(): void;
   onDelete(): void;
@@ -45,6 +47,15 @@ export function SelectionContextMenu({
       }}
     >
       <div className="context-menu-title">{targets.count}개 선택됨</div>
+      {onCopyLocation && (
+        <button type="button" role="menuitem" onClick={onCopyLocation}>
+          <Link2 size={16} />
+          <span>
+            <strong>위치 링크 복사</strong>
+            <small>프로젝트 참여자에게 이 위치 공유</small>
+          </span>
+        </button>
+      )}
       {colors.length > 0 && <CardColorUnavailable />}
       {canCopy && (
         <button

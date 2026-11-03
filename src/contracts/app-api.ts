@@ -85,6 +85,7 @@ import type {
 } from './drawing-types.ts';
 import type { GameUiCommand, GameUiFrame } from './game-ui-types.ts';
 export type GameCanvasApi = {
+  locationLinks?: import('./location-links.ts').LocationLinksApi;
   discordApproval?: {
     openHelp(page: 'portal' | 'permissions' | 'ids'): Promise<void>;
     sendTest(): Promise<{ message: string }>;
@@ -427,6 +428,7 @@ export type GameCanvasApi = {
 
 /** Complete mapping of the legacy bridge, including optional nested APIs. */
 export const APP_API_GROUPS = {
+  locationLinks: 'desktop',
   discordApproval: 'desktop',
   multiplayer: 'preview',
   getDocumentStatuses: 'editor',

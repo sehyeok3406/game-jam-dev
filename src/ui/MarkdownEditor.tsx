@@ -4,6 +4,8 @@ import { previewState } from './debug/uiDebugPreviewState';
 import type { MarkdownEditFocus } from './documents/markdown-title';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { getMarkRange } from '@tiptap/core';
+import { parseLocationLink } from '../core/projects/location-links.ts';
+import { ensureSelectionLocationAnchor } from './editor/location-anchor.ts';
 import {
   documentLinkHref,
   documentLinkMarkdown,
@@ -42,6 +44,7 @@ import {
 } from '../editor-ux';
 
 type Props = {
+  onCopyBlock?: (id: string) => void;
   value: string;
   onChange: (value: string) => void;
   locked: boolean;
@@ -56,6 +59,7 @@ type Props = {
   currentCanvas?: string;
 };
 export function MarkdownEditor({
+  onCopyBlock,
   value,
   onChange,
   locked,
@@ -70,6 +74,7 @@ export function MarkdownEditor({
   currentCanvas,
 }: Props) {
   const links = useDocumentLinks();
+  const [blockLinkError, setBlockLinkError] = useState('');
   const linksRef = useRef(links);
   linksRef.current = links;
   type LinkRange = {
@@ -149,7 +154,14 @@ export function MarkdownEditor({
       ) => {
         const anchor = (event.target as Element)?.closest('a[href]');
         const href = anchor?.getAttribute('href') ?? '';
-        if (!parseDocumentLink(href)) return false;
+        let location = false;
+        try {
+          parseLocationLink(href);
+          location = true;
+        } catch {
+          /* Other Markdown links. */
+        }
+        if (!parseDocumentLink(href) && !location) return false;
         event.preventDefault();
         if (event.ctrlKey || event.metaKey) {
           event.stopPropagation();
@@ -907,6 +919,28 @@ export function MarkdownEditor({
           ]?.focus();
         }}
       >
+        {onCopyBlock && !source && (
+          <button
+            type="button"
+            aria-label="문단 위치 링크 복사"
+            title="커서가 있는 문단의 위치 링크 복사"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (!editor) return;
+              try {
+                const id = ensureSelectionLocationAnchor(editor, !locked);
+                setBlockLinkError('');
+                onCopyBlock(id);
+              } catch (error) {
+                setBlockLinkError(
+                  error instanceof Error ? error.message : String(error),
+                );
+              }
+            }}
+          >
+            <Link2 size={16} />
+          </button>
+        )}
         {!source && (
           <button
             type="button"
@@ -1327,6 +1361,11 @@ export function MarkdownEditor({
   );
   return (
     <div ref={anchorRef} className="markdown-editor-anchor">
+      {blockLinkError && (
+        <p role="status" className="markdown-editor-warning">
+          {blockLinkError}
+        </p>
+      )}
       {focused ? (
         <div className="editor-focus-placeholder">
           <Maximize2 size={20} />

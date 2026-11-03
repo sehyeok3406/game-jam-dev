@@ -18,6 +18,20 @@ async function playInvoke(channel: string, input?: unknown) {
 }
 
 const api: GameCanvasApi = {
+  locationLinks: {
+    create: (target, session) =>
+      ipcRenderer.invoke('projects:location-create', target, session),
+    open: (href, session, entryId) =>
+      ipcRenderer.invoke('projects:location-open', href, session, entryId),
+    pending: () => ipcRenderer.invoke('location-links:pending'),
+    acknowledge: (id) => ipcRenderer.invoke('location-links:acknowledge', id),
+    onReceived: (listener) => {
+      const wrapped = () => listener();
+      ipcRenderer.on('location-links:received', wrapped);
+      return () =>
+        ipcRenderer.removeListener('location-links:received', wrapped);
+    },
+  },
   discordApproval: {
     openHelp: (page) => ipcRenderer.invoke('discord-approval:help', page),
     status: () => ipcRenderer.invoke('discord-approval:status'),

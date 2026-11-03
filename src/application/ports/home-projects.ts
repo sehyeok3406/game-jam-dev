@@ -50,6 +50,9 @@ export type SharedLifecycleAction =
   | 'trash-restore'
   | 'trash-purge';
 export interface HomeSharedProjects {
+  locationItems?(
+    id: string,
+  ): Promise<import('../../contracts/location-links.ts').LocationItem[]>;
   directory?(id: string): Promise<{ root: string; offline: boolean }>;
   cache(
     id: string,

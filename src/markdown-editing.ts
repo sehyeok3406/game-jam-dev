@@ -1,6 +1,7 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import { validLocationAnchor } from './core/projects/location-anchors.ts';
 
 const parser = unified().use(remarkParse).use(remarkGfm);
 const supported = new Set([
@@ -23,6 +24,7 @@ const supported = new Set([
   'link',
   'image',
   'break',
+  'locationAnchor',
 ]);
 
 /** Compare meaning, not bullet characters, indentation or blank lines. */
@@ -31,6 +33,13 @@ export function markdownMeaning(body: string): string | null {
   const tree = parser.parse(body);
   const result = JSON.stringify(tree, (key, value) => {
     if (key === 'position' || key === 'spread') return undefined;
+    if (value?.type === 'html') {
+      const match = /^<!--gamejam:block:([a-f0-9-]{36})-->$/.exec(
+        value.value ?? '',
+      );
+      if (match && validLocationAnchor(match[1]))
+        return { type: 'locationAnchor', id: match[1] };
+    }
     if (key === 'type' && !supported.has(value)) safe = false;
     if (key === 'meta' && value) safe = false;
     return value;

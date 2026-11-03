@@ -526,6 +526,7 @@ test('shared adapter keeps credentials private and uses current internal server 
     metadataOnly: true,
     drawingTextVersion: 1,
     drawingTextAlignmentVersion: 1,
+    locationAnchorVersion: 1,
     drawingEraseVersion: 1,
   });
   let seen;

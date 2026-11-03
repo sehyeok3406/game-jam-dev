@@ -23,6 +23,8 @@ export const app = Object.assign(new EventEmitter(), {
   getAppPath: () => process.cwd(),
   isPackaged: false,
   whenReady: () => Promise.resolve(),
+  requestSingleInstanceLock: () => true,
+  setAsDefaultProtocolClient: () => true,
   getPath: () => root,
   quit: () => {},
 });

@@ -5,10 +5,12 @@ import { ApiError } from './errors.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import { assertGameBuildStorageSupport } from './game-build-capabilities.ts';
 import { FILE_NAMES_PATH } from '../../contracts/document-names.ts';
+import { locationAnchorIds } from '../../core/projects/location-anchors.ts';
 /** Older clients cannot safely display or mutate partially erased strokes. */
 export function assertEraseSupport(
   files: Snapshot,
   input: {
+    locationAnchorVersion?: unknown;
     drawingEraseVersion?: unknown;
     gameBuildStorageVersion?: unknown;
     projectLayoutVersion?: unknown;
@@ -17,6 +19,18 @@ export function assertEraseSupport(
     drawingTextAlignmentVersion?: unknown;
   },
 ) {
+  if (
+    input.locationAnchorVersion !== 1 &&
+    Object.entries(files).some(
+      ([path, raw]) =>
+        (path.endsWith('.md') && locationAnchorIds(raw).length > 0) ||
+        (isDrawingPath(path) && raw.includes('"locationAnchor"')),
+    )
+  )
+    throw new ApiError(
+      '문단 위치 링크가 있는 프로젝트입니다. 앱을 업데이트해주세요.',
+      409,
+    );
   assertGameBuildStorageSupport(files, input);
   if (files[FILE_NAMES_PATH] && input.documentNamesVersion !== 1)
     throw new ApiError(

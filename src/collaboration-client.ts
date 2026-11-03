@@ -178,6 +178,7 @@ export class CollaborationClient {
         files,
         drawingTextVersion: 1,
         drawingTextAlignmentVersion: 1,
+        locationAnchorVersion: 1,
         drawingEraseVersion: 1,
       },
       '',
@@ -254,6 +255,7 @@ export class CollaborationClient {
       nickname,
       drawingTextVersion: 1,
       drawingTextAlignmentVersion: 1,
+      locationAnchorVersion: 1,
       drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string };
     return {
@@ -305,6 +307,7 @@ export class CollaborationClient {
         : {}),
       drawingTextVersion: 1,
       drawingTextAlignmentVersion: 1,
+      locationAnchorVersion: 1,
       drawingEraseVersion: 1,
     })) as CollaborationEnvelope & { token: string; recoveryKey: string };
     return {
@@ -586,6 +589,7 @@ export class CollaborationClient {
         drawingsVersion: 1,
         drawingTextVersion: 1,
         drawingTextAlignmentVersion: 1,
+        locationAnchorVersion: 1,
         drawingEraseVersion: 1,
         gameUiVersion: 2,
         documentStatusesVersion: 1,

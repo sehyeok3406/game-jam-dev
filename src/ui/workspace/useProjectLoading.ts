@@ -142,6 +142,7 @@ interface Ports {
   >;
   setNotice: import('react').Dispatch<import('react').SetStateAction<string>>;
   flowRef: import('react').RefObject<ReactFlowInstance<CanvasNode> | null>;
+  viewportIntent?: import('react').RefObject<number>;
   showError: (error: unknown) => void;
 }
 export function useProjectLoading(ports: () => Ports) {
@@ -193,6 +194,8 @@ export function useProjectLoading(ports: () => Ports) {
       showError,
     } = current.current();
 
+    const intent = current.current().viewportIntent?.current;
+    const canFit = () => intent === current.current().viewportIntent?.current;
     const load = workspaceData.begin();
     try {
       const state = await load.workspace();
@@ -468,6 +471,7 @@ export function useProjectLoading(ports: () => Ports) {
       if (fit && !hasSavedViewport)
         setTimeout(
           () =>
+            canFit() &&
             void flowRef.current?.fitView({
               nodes: flowRef.current
                 ?.getNodes()
@@ -487,6 +491,7 @@ export function useProjectLoading(ports: () => Ports) {
       )
         setTimeout(
           () =>
+            canFit() &&
             void flowRef.current?.fitView({
               nodes: nextPreviews
                 .filter(
