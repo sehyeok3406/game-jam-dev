@@ -1,0 +1,94 @@
+{
+  "date": "2026-11-03",
+  "version": "0.43.0",
+  "sourceCommit": "371c5ad87c5b2f304f226598915733da6e7c5280",
+  "tag": "v0.43.0",
+  "release": "https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.43.0",
+  "ci": {
+    "run": 41590180849,
+    "url": "https://github.com/sehyeok3406/game-jam-dev/actions/runs/41590180849",
+    "jobs": {
+      "types": "success",
+      "lint": "success",
+      "windowsTests": "success",
+      "linuxServer": "success"
+    }
+  },
+  "checks": {
+    "unit": {
+      "total": 1146,
+      "passed": 1145,
+      "failed": 0,
+      "skipped": 1
+    },
+    "typecheck": "passed",
+    "contracts": "passed",
+    "core": "passed",
+    "architecture": "passed; no new exceptions",
+    "lint": "passed for committed release tree; unrelated untracked local plan excluded",
+    "integration": "passed",
+    "packagedGameFlow": "passed real bundled tools + mock CLI, local/shared creation/edit/restore/native export/reimport",
+    "gameBuildNameIntegration": "passed real packaged local/shared rename with unchanged artifact/build/manifest and current design selection",
+    "fileNamesUi": "passed packaged naming and explicit legacy upgrade",
+    "runtime": {
+      "passed": 14,
+      "failed": 0
+    },
+    "nativeExport": "passed",
+    "serverBundleAndBackup": "passed with fresh Windows synthetic fixture and packaged Node; Linux CI also passed",
+    "nupkgResourceComparison": "passed all 2046 resources"
+  },
+  "productInputs": {
+    "files": 657,
+    "sha256": "a4ba656e7160672f70a11cce004755386cad272eaa2274b196d4680cc7b8bf33"
+  },
+  "resources": {
+    "files": 2046,
+    "sha256": "1f1fa5682cce68bbe078929e8fcc5e79c55fdbe244545035050ce22d276a8ba2"
+  },
+  "appAsar": {
+    "bytes": 8620324,
+    "sha256": "c7e32ac1e278f683bc75a314c416a7576e48440448713877e4d06f1aa074c2c4"
+  },
+  "assets": [
+    {
+      "name": "Game.Jam-0.43.0.Setup.exe",
+      "size": 239824384,
+      "sha256": "626d2867f033259755d2d18a4f7a937591e5fa34d2141d4ea64512043457a431",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.43.0/Game.Jam-0.43.0.Setup.exe",
+      "publicStatus": 206
+    },
+    {
+      "name": "game_canvas-0.43.0-full.nupkg",
+      "size": 239816465,
+      "sha256": "d8d14daa621a2b54c8208c404f525d6337b78b4bd55ce88457dc189467686f00",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.43.0/game_canvas-0.43.0-full.nupkg",
+      "publicStatus": 206
+    },
+    {
+      "name": "RELEASES",
+      "size": 83,
+      "sha256": "bbb76713bc566d92ea456492247285c4acc36be8dc1cf9dbb0b06440621ff3d6",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.43.0/RELEASES",
+      "publicStatus": 206
+    }
+  ],
+  "squirrel": {
+    "sha1": "AF49B444351AA1FBBA0D12991E9AE362F0539626",
+    "package": "game_canvas-0.43.0-full.nupkg",
+    "size": 239816465
+  },
+  "updateFeed": {
+    "jsonStatus": 200,
+    "installer": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.43.0/Game.Jam-0.43.0.Setup.exe",
+    "packageFeedStatus": 200,
+    "packageLine": "AF49B444351AA1FBBA0D12991E9AE362F0539626 https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.43.0/game_canvas-0.43.0-full.nupkg 239816465",
+    "reflectsRelease": true
+  },
+  "scope": {
+    "realAi": "Codex stage 7 evidence retained; no additional paid AI call during release",
+    "otherProviderRealAccounts": "deferred",
+    "operatorServerRestarted": false,
+    "unrelatedLocalPlan": "docs/plans/2026-11-02-shared-location-links.md preserved outside commit"
+  }
+}
