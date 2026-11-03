@@ -12,6 +12,8 @@
 
 자동 검사·타입·린트·전체 통합 및 실제 Windows 패키지의 링크 수신·OS 전달·문단·HTML·텍스트·극대/극소/회전 대상과 기존 문서 링크 회귀를 검증했습니다. 실제 두 PC와 특정 메신저의 링크 인식, 사용자 설치 앱의 업데이트·제거 전체 수명은 검증 범위와 구분합니다. [구현·검증 기록](docs/audits/2026-11-03-shared-location-links.md).
 
+2026-11-03 [v0.44.0 정식 릴리스](https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.44.0)를 게시했습니다. 제품 소스·태그는 `59570d7125a7cf2602a7f15cef69cf418fefdc30`이며 [Windows/Linux CI](https://github.com/sehyeok3406/game-jam-dev/actions/runs/41624928356)가 모두 통과했습니다. 배포 소스의 자동 검사 1,159건 통과·실패 0·선택 검사 1건 제외, 검증한 package의 `make --from-package` 재사용과 nupkg 내부 리소스 2,046개의 크기·해시 일치를 확인했습니다. GitHub 자산 SHA-256·크기와 공개 다운로드 접근, RELEASES의 패키지 이름·SHA-1·크기를 대조했으며 **배포 파일 게시·검증과 자동 업데이트 피드 반영 완료**입니다. [Windows 설치 파일](https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.0/Game.Jam-0.44.0.Setup.exe). 운영 서버·터널 재시작과 사용자 앱의 실제 업데이트 설치는 수행하지 않았습니다. [배포 검증 기록](docs/audits/2026-11-03-v0.44.0-release.md).
+
 ## v0.43.0 소스 기반 게임 제작과 HTML 내보내기
 
 - 게임 제작에 필요한 라이브러리를 조사·준비하고 AI가 작성한 소스를 독립 HTML로 빌드합니다. 수정용 소스·이미지 연결·정확한 라이브러리 버전·기준 문서를 프로젝트와 함께 보관합니다.

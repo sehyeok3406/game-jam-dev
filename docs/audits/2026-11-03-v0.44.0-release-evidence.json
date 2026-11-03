@@ -1,0 +1,90 @@
+{
+  "date": "2026-11-03",
+  "version": "0.44.0",
+  "sourceCommit": "59570d7125a7cf2602a7f15cef69cf418fefdc30",
+  "tag": "v0.44.0",
+  "release": "https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.44.0",
+  "ci": {
+    "run": 41624928356,
+    "url": "https://github.com/sehyeok3406/game-jam-dev/actions/runs/41624928356",
+    "jobs": {
+      "types": "success",
+      "windows-tests": "success",
+      "lint": "success",
+      "linux-server": "success"
+    }
+  },
+  "checks": {
+    "unit": {
+      "total": 1160,
+      "passed": 1159,
+      "failed": 0,
+      "skipped": 1
+    },
+    "typecheck": "passed",
+    "contracts": "passed",
+    "core": "passed",
+    "architecture": "passed; no new exceptions",
+    "lint": "passed; existing no-this-alias mock warning retained",
+    "integration": "full native/IPC/canvas/save/IME integration passed during feature implementation; release changes version/notes only",
+    "packagedLocationLinks": "passed cold/warm, native Windows URL dispatch, paragraphs, HTML/text, huge/tiny/rotated shapes and images",
+    "packagedExistingDocumentLinks": "passed",
+    "serverBundleAndBackup": "passed packaged Node, isolated runtime, fresh synthetic Windows archive restore and load; Linux CI passed",
+    "nupkgResources": "all 2046 match"
+  },
+  "productInputs": {
+    "sha256": "6efe966fa59085b8465702ea1c26189a3e6f89fec969da30db6b7234767d2bf4",
+    "files": 672
+  },
+  "resources": {
+    "sha256": "01d925acca29caf421d496637d53d8b2b4b0c4aa6d8688657e8bec67a5cd912d",
+    "files": 2046
+  },
+  "appAsar": {
+    "sha256": "33a83564ed94f9ced709e692fc000dd8824bb27bb6d12f2b31979baf6ee19d79",
+    "size": 8650765
+  },
+  "serverSha256": "09641ad8763fd4b03541965b13002b13224515233d34a66047a9677625fe7d91",
+  "assets": [
+    {
+      "name": "Game.Jam-0.44.0.Setup.exe",
+      "size": 239834624,
+      "sha256": "1980ca2a9779acd6f143d3128bd1b624c76e3acbaca8f1f8e794f9661024d0fa",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.0/Game.Jam-0.44.0.Setup.exe",
+      "publicStatus": 206
+    },
+    {
+      "name": "game_canvas-0.44.0-full.nupkg",
+      "size": 239825643,
+      "sha256": "0f43298366f5fb6483a62a6968d88e7442ea340642b5c2e2007620a377aaa99c",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.0/game_canvas-0.44.0-full.nupkg",
+      "publicStatus": 206
+    },
+    {
+      "name": "RELEASES",
+      "size": 83,
+      "sha256": "9b7f1b3b458d694a5fe1e4d9d6b8346d81a7d9d40ddb5b1851bcb09ac9dc9bd5",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.0/RELEASES",
+      "publicStatus": 206
+    }
+  ],
+  "squirrel": {
+    "sha1": "3E6D6B07F21B5AD7BED5F6C33A2E6E860D1EF951",
+    "package": "game_canvas-0.44.0-full.nupkg",
+    "size": 239825643
+  },
+  "updateFeed": {
+    "jsonStatus": 200,
+    "installer": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.0/Game.Jam-0.44.0.Setup.exe",
+    "packageStatus": 200,
+    "packageLine": "3E6D6B07F21B5AD7BED5F6C33A2E6E860D1EF951 https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.0/game_canvas-0.44.0-full.nupkg 239825643",
+    "reflectsRelease": true
+  },
+  "scope": {
+    "separateOperatingServerRestarted": false,
+    "tunnelRestarted": false,
+    "userAppInstalledOrRestarted": false,
+    "actualTwoPcAndMessenger": "not performed",
+    "newArchitectureExceptions": 0
+  }
+}
