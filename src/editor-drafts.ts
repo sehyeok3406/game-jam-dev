@@ -48,7 +48,9 @@ export class EditorDraftStore {
           draft &&
           current?.sequence === sequence &&
           current.title === draft.title &&
-          current.body === draft.body
+          current.body === draft.body &&
+          current.relativePath === draft.relativePath &&
+          current.baseTitle === draft.baseTitle
         )
           return;
         await fs.mkdir(this.directory, { recursive: true });

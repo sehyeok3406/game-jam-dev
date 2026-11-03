@@ -6,6 +6,8 @@
 
 기존 게임 수정과 기준 게임에서 새 버전 만들기 모두 `htmlResult.basePath`로 기준을 선택한다. 새 원본 경로를 사용자가 입력하지 않는다. `gameBuildEditingInputs`가 그 HTML의 현재 index 항목과 manifest를 따라 현재 기준 문서·원본 아이디어·이미지를 작업 입력에 더한다. 다른 게임의 문서를 일괄로 넣지 않는다. 문서는 현재 path와 ID가 일치할 때 연결하며 삭제·다른 ID로 대체된 문서는 자동으로 다른 문서에 연결하지 않는다.
 
+v0.43.0 통합에서는 이름 registry가 같은 ID의 현재 경로를 알고 있으면 그 경로를 사용한다. HTML 개명은 기존 파일명 계획의 참조 remap에서 mutable build index만 이동하고 과거 manifest는 보존한다. 기준 문서 개명도 과거 path 대신 registry의 현재 path/ID로 자료와 상태를 찾는다. source 단계의 previousDocuments는 당시 path/hash와 별도 currentPath/currentSha256을 구분한다. 원본 개명 이력을 과거 revision에 덮어쓰지 않는다.
+
 실행 시작 snapshot에서 `AiRunService`가 전체 저장 묶음을 검증하고 기존 lock과 recipe를 읽는다. `previousSource`는 manifest의 entry/htmlTemplate/source 목록/asset 별칭과 원본 파일 내용이다. desktop은 이를 비공개 stage의 `source/`와 `source-plan.json`에 **수정 가능한 사본**으로 둔다. 원래 `.game-builds/<buildId>`는 읽기 전용이다. Grok의 파일 입력 JSON에도 이 수정용 사본을 전달한다. 네 공급자 모두 같은 동작을 사용한다.
 
 `previousDocuments`는 과거 path/ID/hash와 현재 입력의 hash/ID 일치 여부를 제공한다. hash 차이는 파일 내용이 달라졌다는 사실이며 구현 누락이나 요구 완료의 자동 판정이 아니다. manifest의 문서 hash는 AI가 소스 작성 시 읽은 파일의 사실이다. 반영 과정의 캔버스 좌표·출처 등 앱 metadata 정리 후 저장 문자열과 다를 수 있다. 이 값을 의미적 구현 완료 표시로 사용하지 않는다. 누락 문서 안내·변경 상태의 사용자 화면은 6단계다.

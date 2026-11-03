@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type KeyboardEvent } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
 import { useRuntime } from '../runtime/RuntimeProvider';
@@ -10,9 +10,9 @@ import { requireDesktopApi } from '../runtime/desktop-api';
 import { DocumentMarkdown } from '../DocumentMarkdown';
 import { resolveAssetLink } from '../../asset-links';
 import { DocumentBacklinks } from '../DocumentBacklinks';
-import { TYPE_LABELS } from './presentation';
 import { ProjectImage } from './ProjectImage';
 import { useDocumentEditing } from './useDocumentEditing';
+import { readingBlockFocus } from './markdown-title';
 import type { DocumentCanvasNode } from './types';
 export type { DocumentCanvasNode, DocumentNodeData } from './types';
 
@@ -29,6 +29,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
     title,
     body,
     saving,
+    nameSaving,
     startingEdit,
     editFocus,
     editorOwner,
@@ -41,6 +42,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
     updateTitle,
     updateBody,
     finishEdit,
+    cancelName,
     save,
     loadLatest,
     setTaskError,
@@ -49,6 +51,33 @@ const DocumentCardContent = memo(function DocumentCardContent({
     restoreDraft,
     finishing,
   } = useDocumentEditing(data);
+
+  const handleEditorKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.nativeEvent.isComposing || event.isPropagationStopped()) return;
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      event.preventDefault();
+      void (
+        event.target === titleRef.current ? cancelName() : finishEdit()
+      ).catch(() => undefined);
+    }
+    if (event.key === 'Enter' && event.target === titleRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      void finishEdit().catch(() => undefined);
+      return;
+    }
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      ['Enter', 's'].includes(event.key)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      void (event.key === 'Enter' ? finishEdit() : save()).catch(
+        () => undefined,
+      );
+    }
+  };
 
   return (
     <>
@@ -79,28 +108,68 @@ const DocumentCardContent = memo(function DocumentCardContent({
         data-card-color={cardColor(document.backgroundColor)}
         className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}`}
       >
-        <header className="document-card__header">
-          {data.aiUsage ? (
-            <span className="ai-material-badge nodrag" title={data.aiUsage}>
-              {data.aiUsage}
-            </span>
-          ) : (
-            <span className="document-type">{TYPE_LABELS[document.type]}</span>
-          )}
-          {document.collapsed && (
-            <strong className="document-card__collapsed-title">
-              {document.title}
-            </strong>
-          )}
+        <header className="document-card__header canvas-file-header">
+          <div className="canvas-file-header__name">
+            {editing ? (
+              <input
+                className="document-card__title canvas-file-header__title nodrag nowheel"
+                ref={titleRef}
+                onCompositionStart={() => setComposing(true)}
+                onCompositionEnd={() => setComposing(false)}
+                onKeyDown={handleEditorKeyDown}
+                aria-label="문서 제목"
+                aria-invalid={saveFailed || undefined}
+                title="Enter로 이름·파일명 변경 · Esc로 이름 변경 취소"
+                value={title}
+                readOnly={data.locked || nameSaving}
+                onChange={(event) => updateTitle(event.target.value)}
+              />
+            ) : document.collapsed ? (
+              <strong
+                className="document-card__title canvas-file-header__title"
+                title={document.title}
+              >
+                {document.title}
+              </strong>
+            ) : (
+              <button
+                type="button"
+                className="document-card__title canvas-file-header__title nodrag"
+                title={document.title}
+                aria-label={`문서 제목 편집: ${document.title}`}
+                aria-disabled={data.locked}
+                onKeyDown={(event) => {
+                  if (
+                    (event.key === 'Enter' || event.key === ' ') &&
+                    !event.ctrlKey &&
+                    !event.metaKey &&
+                    !event.altKey
+                  ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void startEdit({ title: true });
+                  }
+                }}
+                onClick={(event) => {
+                  if (event.shiftKey || event.ctrlKey || event.metaKey) return;
+                  void startEdit({ title: true });
+                }}
+              >
+                {document.title}
+              </button>
+            )}
+            {data.aiUsage && (
+              <span className="ai-material-badge nodrag" title={data.aiUsage}>
+                {data.aiUsage}
+              </span>
+            )}
+          </div>
 
           <div className="document-header-actions nodrag">
             {document.type !== 'ai-task' && (
               <FilePropertyBadges
                 document={document}
-                relativePath={document.relativePath}
-                authorshipKey={data.authorshipKey}
                 visibility={data.propertyVisibility}
-                details={data.onDetails}
                 statuses={data.statuses}
                 disabled={data.workflowDisabled}
                 reason={data.workflowReason}
@@ -140,38 +209,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
             {editing ? (
               <div
                 className="document-editor nodrag nowheel"
-                onKeyDown={(event) => {
-                  if (
-                    event.nativeEvent.isComposing ||
-                    event.isPropagationStopped()
-                  )
-                    return;
-                  if (event.key === 'Escape') {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    void finishEdit().catch(() => undefined);
-                  }
-                  if (
-                    (event.ctrlKey || event.metaKey) &&
-                    ['Enter', 's'].includes(event.key)
-                  ) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    void (event.key === 'Enter' ? finishEdit() : save()).catch(
-                      () => undefined,
-                    );
-                  }
-                }}
+                onKeyDown={handleEditorKeyDown}
               >
-                <input
-                  ref={titleRef}
-                  onCompositionStart={() => setComposing(true)}
-                  onCompositionEnd={() => setComposing(false)}
-                  aria-label="문서 제목"
-                  value={title}
-                  readOnly={data.locked}
-                  onChange={(event) => updateTitle(event.target.value)}
-                />
                 <MarkdownEditor
                   currentCanvas={document.canvasId}
                   value={body}
@@ -263,11 +302,15 @@ const DocumentCardContent = memo(function DocumentCardContent({
                   if (data.locked) data.onBlocked();
                   else
                     void startEdit({
-                      title: !!(
-                        event.target instanceof Element &&
-                        event.target.closest('.document-card__title')
-                      ),
+                      title: false,
                       point: { x: event.clientX, y: event.clientY },
+                      block:
+                        event.target instanceof Element
+                          ? readingBlockFocus(event.target, {
+                              x: event.clientX,
+                              y: event.clientY,
+                            })
+                          : undefined,
                     });
                 }}
                 title={
@@ -276,7 +319,6 @@ const DocumentCardContent = memo(function DocumentCardContent({
                     : '클릭해서 바로 편집'
                 }
               >
-                <h2 className="document-card__title">{document.title}</h2>
                 {document.asset && (
                   <div className="image-card-preview nowheel">
                     <ProjectImage
@@ -329,6 +371,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 <div className="markdown-body nowheel">
                   <DocumentMarkdown
                     body={document.body}
+                    title={document.title}
                     disabled={
                       data.locked || saving || startingEdit || !!data.editingBy
                     }
@@ -384,8 +427,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
               </details>
             )}
 
-            <div className="card-actions nodrag">
-              {document.type === 'ai-task' && (
+            {document.type === 'ai-task' && (
+              <div className="card-actions nodrag">
                 <button
                   type="button"
                   disabled={!capabilities.nativeClipboard}
@@ -393,11 +436,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 >
                   <Bot size={13} /> 작업 복사
                 </button>
-              )}
-              <button type="button" onClick={data.onDetails}>
-                <Info size={13} /> 상세 정보
-              </button>
-            </div>
+              </div>
+            )}
           </>
         )}
       </article>

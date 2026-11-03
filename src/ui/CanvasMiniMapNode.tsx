@@ -1,5 +1,4 @@
 import { useNodesData, type MiniMapNodeProps } from '@xyflow/react';
-import { cardColor } from '../card-colors';
 import type { CanvasDocument, CanvasSection, PreviewResult } from '../shared';
 
 export function CanvasMiniMapNode(props: MiniMapNodeProps) {
@@ -14,9 +13,6 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
         preview?: PreviewResult;
       }
     | undefined;
-  const color = cardColor(
-    data?.document?.backgroundColor ?? data?.preview?.backgroundColor,
-  );
   const kind = data?.kind ?? 'document';
   const visualKind =
     kind === 'document'
@@ -31,7 +27,7 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
     <rect
       className={`react-flow__minimap-node canvas-minimap-node canvas-minimap-node--${kind}${props.selected ? ' is-selected' : ''}`}
       data-node-id={props.id}
-      data-card-color={color}
+      data-card-color="default"
       data-minimap-kind={visualKind}
       x={props.x}
       y={props.y}
@@ -47,9 +43,7 @@ export function CanvasMiniMapNode(props: MiniMapNodeProps) {
         fill:
           kind === 'drawing'
             ? (data?.object?.style.stroke ?? 'var(--minimap-node-fill)')
-            : color !== 'default'
-              ? 'color-mix(in srgb, var(--swatch) 85%, var(--minimap-node-fill))'
-              : 'var(--minimap-node-fill)',
+            : 'var(--minimap-node-fill)',
         stroke: props.selected
           ? 'var(--minimap-selected)'
           : 'var(--minimap-node-stroke)',

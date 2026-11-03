@@ -141,6 +141,9 @@ export function createAccessPolicy(ports: AccessPorts) {
       if (
         member.role !== 'admin' &&
         relative.startsWith('.ai/tasks/') &&
+        !['documents:rename', 'preview:rename', 'files:unify-names'].includes(
+          command?.channel ?? '',
+        ) &&
         before[relative] !== undefined
       )
         throw new ApiError('AI 작업 문서는 관리자만 변경할 수 있습니다.', 403);

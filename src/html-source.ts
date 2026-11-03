@@ -7,7 +7,7 @@ import {
 } from './multiplayer/contract.ts';
 import { CanvasError } from './app-errors.ts';
 import { inspectHtml } from './html-document.ts';
-import { isPreviewPath, previewLabel } from './preview-output.ts';
+import { isPreviewPath } from './preview-output.ts';
 import { resultPreviousPaths } from './result-structure.ts';
 import type { Snapshot } from './project-store.ts';
 import type { PreviewResult } from './shared.ts';
@@ -15,6 +15,8 @@ import { cardColor } from './card-colors.ts';
 import { validateHtmlInputs } from './html-inputs.ts';
 import { gameBuildStatus } from './core/projects/game-build-status.ts';
 import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
+import { readFileNames } from './core/documents/name-registry.ts';
+import { previewVersion, resultLocation } from './preview-output.ts';
 
 export const MAX_HTML_BYTES = 8_000_000;
 
@@ -24,6 +26,10 @@ export const htmlSourceId = (relative: string) =>
   `html-${htmlHash(relative).slice(0, 24)}`;
 export const htmlSourcePath = (relative: string) =>
   `docs/html-sources/${htmlSourceId(relative)}.md`;
+export const previewIdentity = (files: Snapshot, relative: string) =>
+  readFileNames(files).entries.find(
+    (e) => e.kind === 'html' && e.path === relative,
+  )?.id ?? htmlSourceId(relative);
 
 /** Parse inertly, never evaluate scripts or fetch referenced resources. */
 export function inspectImportedHtml(content: string, name: string) {
@@ -55,6 +61,7 @@ export function sourceMetadata(
   relative: string,
   content: string,
   options: {
+    id?: string;
     title?: string;
     originalName?: string;
     x?: number;
@@ -62,12 +69,17 @@ export function sourceMetadata(
   } = {},
   now: () => number = Date.now,
 ) {
-  const id = htmlSourceId(relative);
+  const id = options.id ?? htmlSourceId(relative);
   return matter.stringify(
     '# HTML 원본 관리\n\n이 문서는 HTML 창의 고유 ID와 원본 정보를 관리합니다.\n',
     {
       id,
-      title: options.title ?? previewLabel(relative),
+      title:
+        options.title ??
+        relative
+          .split('/')
+          .at(-1)!
+          .replace(/\.html$/, ''),
       type: 'reference',
       status: 'imported',
       sources: [],
@@ -88,6 +100,15 @@ export function describePreview(
   relative: string,
 ): PreviewResult {
   const recordPath = htmlSourcePath(relative);
+  const nameEntry = readFileNames(files).entries.find(
+    (e) => e.kind === 'html' && e.path === relative,
+  );
+  const previousPaths = [
+    ...new Set([
+      ...resultPreviousPaths(files, relative),
+      ...(nameEntry?.previousPaths ?? []),
+    ]),
+  ];
   const data = files[recordPath] ? matter(files[recordPath]).data : {};
   const content = files[relative] ?? '';
   let warnings: string[] = [];
@@ -99,6 +120,17 @@ export function describePreview(
     }
   }
   return {
+    identityPath:
+      readFileNames(files).entries.find(
+        (e) => e.kind === 'html' && e.path === relative,
+      )?.originalPath ?? relative,
+    version: resultLocation(relative)
+      ? previewVersion(relative)
+      : previewVersion(
+          readFileNames(files).entries.find(
+            (e) => e.kind === 'html' && e.path === relative,
+          )?.originalPath ?? relative,
+        ),
     placementId:
       typeof data.canvas_placement_id === 'string'
         ? data.canvas_placement_id
@@ -118,11 +150,11 @@ export function describePreview(
       : undefined,
     exists: files[relative] !== undefined,
     relativePath: relative,
-    previousPaths: resultPreviousPaths(files, relative),
-    propertyPreviousIds: resultPreviousPaths(files, relative).map(htmlSourceId),
+    previousPaths,
+    propertyPreviousIds: previousPaths.map(htmlSourceId),
     content,
     backgroundColor: cardColor(data.background_color),
-    sourceId: htmlSourceId(relative),
+    sourceId: previewIdentity(files, relative),
     sourcePath: recordPath,
     title: typeof data.title === 'string' ? data.title : undefined,
     ...(data.html_source === relative
@@ -196,7 +228,7 @@ export function prepareHtmlSource(
     throw new CanvasError('GC-AI-007', '분석할 HTML 파일을 찾을 수 없습니다.');
   inspectImportedHtml(content, path);
   const recordPath = htmlSourcePath(path),
-    id = htmlSourceId(path);
+    id = previewIdentity(files, path);
   if (files[recordPath]) {
     const data = matter(files[recordPath]).data;
     if (data.id !== id || data.html_source !== path)
@@ -207,7 +239,7 @@ export function prepareHtmlSource(
   }
   const additions = files[recordPath]
     ? {}
-    : { [recordPath]: sourceMetadata(path, content) };
+    : { [recordPath]: sourceMetadata(path, content, { id }) };
   return {
     additions,
     recordPath,
@@ -235,7 +267,7 @@ export function validateHtmlAnalysis(
   if (
     !source ||
     !isPreviewPath(source.path) ||
-    source.id !== htmlSourceId(source.path) ||
+    source.id !== previewIdentity(files, source.path) ||
     typeof files[source.path] !== 'string' ||
     source.sha256 !== htmlHash(files[source.path]) ||
     !Array.isArray(data.inputs) ||

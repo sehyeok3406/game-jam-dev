@@ -12,6 +12,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { projectRelativeLocation } from './adapters/filesystem/project-location.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
+import { FILE_NAMES_PATH } from './contracts/document-names.ts';
 import type { HistoryEntry } from './shared';
 import { isPreviewPath } from './preview-output.ts';
 import { isAssetPath, encodeAsset, decodeAsset } from './file-assets.ts';
@@ -110,6 +111,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       isGameBuildPath(relative) ||
       relative.endsWith('.md') ||
       relative === PROJECT_LAYOUT_PATH ||
+      relative === FILE_NAMES_PATH ||
       isPreviewPath(relative) ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
@@ -131,6 +133,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     'docs/html-sources',
     'docs/text-sources',
     PROJECT_LAYOUT_PATH,
+    FILE_NAMES_PATH,
     RESULT_CATALOG_PATH,
     CANVAS_SHEETS_PATH,
     DOCUMENT_STATUSES_PATH,

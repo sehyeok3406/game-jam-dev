@@ -1,5 +1,9 @@
 # 공동 프로젝트 연결과 세션 보존
 
+## 문서·HTML 개명과 미전송 본문 · 2026-11-01
+
+`documentNamesVersion:1`과 [ADR 0005](decisions/0005-document-file-names.md)의 ID 이력을 사용한다. 개명은 온라인 서버 확정으로 처리하며 미전송 변경·편집 잠금·AI 실행/예약·구버전 쓰기를 거절한다. 오프라인 본문 저장은 유지한다. 재접속은 기존 durable receipt를 먼저 재생한 뒤 ID별 현재 경로로 base/local snapshot을 재연결한다. 단순 옛 경로 체인으로 파일을 선택하지 않으며, 사용자가 수정하지 않은 이름만 서버의 현재 이름을 채택한다. 저장 큐와 초안은 원래 경로·base 제목을 보관해 늦은 입력도 검증된 같은 문서로 이어진다. 다른 ID/모호한 과거 경로는 충돌로 보존한다.
+
 ## 이름 사전 확인과 경로 · 2026-10-31
 
 [ADR 0004](decisions/0004-project-names-and-shared-folders.md)의 projectNamesVersion:1을 협상한다. join-inspect는 멤버를 만들지 않고 ID·이름·버전만 반환한다. PC 이름 검사 후 암호화 pending-joins 요청 ID/토큰으로 참여하며 최종 이름 버전을 서버가 다시 확인한다. 이미 보관한 유효 자격은 새 멤버 없이 재사용하며 정지 전 원래 로컬 복귀 위치를 유지한다. 복구도 inspectOnly 인증 조회와 PC 검사 뒤 키 교체를 실행한다. 받은 자격은 활성화 전에 ProjectLibrary에 보관한다. 기존 복구 키 교체 응답 유실의 한계는 ADR에 명시한다.

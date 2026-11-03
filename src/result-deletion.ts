@@ -1,11 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isGameBuildPath } from './core/projects/game-build.ts';
+import { previewIdentity } from './html-source.ts';
 import { projectPath, type Snapshot } from './project-store.ts';
 import {
   isPreviewPath,
   previewDeletionTarget,
   previewWindowPath,
+  managedPreviewPaths,
 } from './preview-output.ts';
 
 /** Validate every target before moving any file or owned result folder to trash. */
@@ -27,12 +29,21 @@ export async function trashDeletedFiles(
       if (target.startsWith(`${directory}/`)) targets.delete(target);
     targets.add(directory);
   }
+  const survivors = new Set(
+    managedPreviewPaths(after).map((p) => previewIdentity(after, p)),
+  );
   for (const relative of removed.filter(isPreviewPath)) {
+    // A renamed result still owns this folder and its personal window settings.
+    if (survivors.has(previewIdentity(before, relative))) {
+      targets.delete(relative);
+      continue;
+    }
     const target = previewDeletionTarget(relative);
     for (const key of targets)
       if (key.startsWith(`${target}/`)) targets.delete(key);
     targets.add(target);
     targets.add(previewWindowPath(relative));
+    targets.add(`.canvas/previews/${previewIdentity(before, relative)}.json`);
   }
   const absoluteTargets: string[] = [];
   for (const relative of targets) {

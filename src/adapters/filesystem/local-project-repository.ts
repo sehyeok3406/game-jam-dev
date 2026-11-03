@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import type { LocalProjectRepository } from '../../application/ports/local-project-repository.ts';
 import {
   captureProject,
-  applyChanges,
   listHistory,
   readHistoryFile,
   restoreHistory,
@@ -11,6 +10,10 @@ import {
   projectPath,
 } from '../../project-store.ts';
 import { isAssetPath, encodeAsset } from '../../file-assets.ts';
+import {
+  applyDocumentNames,
+  recoverDocumentNames,
+} from './document-name-transaction.ts';
 
 /** Keep the existing recovery journal, atomic apply and external modification checks. */
 export function filesystemProjectRepository(
@@ -41,10 +44,13 @@ export function filesystemProjectRepository(
     },
     apply: (before, changes, cancelled) => {
       assertCurrent();
-      return applyChanges(root, before, changes, () => {
-        assertCurrent();
-        return cancelled?.() ?? false;
-      });
+      return applyDocumentNames(
+        root,
+        before,
+        changes,
+        assertCurrent,
+        cancelled,
+      );
     },
     history: () => {
       assertCurrent();
@@ -62,6 +68,9 @@ export function filesystemProjectRepository(
       assertCurrent();
       return saveHistory(root, before, after, entry);
     },
-    recover: () => recoverInterruptedHistory(root),
+    recover: async () => {
+      await recoverDocumentNames(root, assertCurrent);
+      return recoverInterruptedHistory(root);
+    },
   };
 }

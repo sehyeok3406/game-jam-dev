@@ -1,4 +1,5 @@
 .document-card {
+  container: canvas-file-card / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -32,30 +33,6 @@
   height: 100%;
   padding-block: 0;
   border-bottom: 0;
-}
-
-.document-card__collapsed-title {
-  min-width: 0;
-  margin: 0 10px;
-  overflow: hidden;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.document-card--ai-task {
-  border-color: rgba(139, 124, 255, 0.48);
-  background: color-mix(in srgb, var(--card) 88%, #7c68ee 12%);
-}
-
-.document-card--overview {
-  border-color: rgba(51, 177, 121, 0.45);
-  background: color-mix(in srgb, var(--card) 90%, #33b179 10%);
-}
-
-.document-card--question {
-  border-color: rgba(224, 165, 54, 0.5);
-  background: color-mix(in srgb, var(--card) 89%, #e0a536 11%);
 }
 
 .document-card__header {
@@ -100,16 +77,67 @@
   background: color-mix(in srgb, var(--card) 95%, var(--selection) 5%);
 }
 
-.document-card__title {
-  margin: -14px -15px 18px;
-  padding: 18px 16px;
-  color: var(--document-title-text);
-  background: var(--document-title-background);
-  font-size: 28px;
-  font-weight: 750;
-  line-height: 1.35;
-  letter-spacing: -0.025em;
-  overflow-wrap: anywhere;
+.document-card > .canvas-file-header,
+.preview-card > .canvas-file-header {
+  min-height: 38px;
+  padding: 0 12px;
+  gap: 8px;
+  letter-spacing: 0;
+}
+.canvas-file-header__name {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.canvas-file-header .canvas-file-header__title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--card-text);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.canvas-file-header button.canvas-file-header__title {
+  cursor: text;
+}
+.canvas-file-header input.canvas-file-header__title {
+  width: 100%;
+}
+.canvas-file-header .canvas-file-header__title:focus-visible {
+  outline: 2px solid var(--selection);
+  outline-offset: 2px;
+}
+.canvas-file-header .ai-material-badge {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container canvas-file-card (max-width: 480px) {
+  .canvas-file-header .file-property-badges {
+    display: none;
+  }
+  .canvas-file-header .preview-card__status {
+    display: none;
+  }
+  .canvas-file-header .ai-material-badge {
+    max-width: 48px;
+  }
 }
 
 .edit-hint {
@@ -314,14 +342,13 @@
 
 .document-editor {
   display: grid;
-  grid-template-rows: auto minmax(70px, 1fr) auto;
+  grid-template-rows: minmax(70px, 1fr) auto;
   align-content: stretch;
   gap: 8px;
   min-height: 0;
   padding: 12px;
 }
 
-.document-editor > input,
 .document-editor textarea {
   width: 100%;
   border: 1px solid var(--card-line);
@@ -331,15 +358,9 @@
   outline: none;
 }
 
-.document-editor > input:focus,
 .document-editor textarea:focus {
   border-color: var(--selection);
   box-shadow: 0 0 0 2px var(--selection-soft);
-}
-
-.document-editor > input {
-  padding: 8px 9px;
-  font-weight: 700;
 }
 
 .document-editor textarea {
@@ -412,4 +433,56 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.72;
+}
+
+.file-name-dialog.import-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+.file-name-rows {
+  display: grid;
+  gap: 12px;
+  max-height: 46vh;
+  overflow: auto;
+  margin: 16px 0;
+}
+.file-name-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.file-name-dialog .file-name-row > label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.file-name-dialog .file-name-row input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.file-name-row > label > span,
+.file-name-row small {
+  overflow-wrap: anywhere;
+}
+.file-name-row input:not([type='checkbox']) {
+  flex: 1;
+  min-width: 0;
+}
+.file-name-dialog [role='alert'] {
+  color: var(--error, #c53d3d);
+  font-size: 12px;
+}
+.file-name-message {
+  font-size: 11px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

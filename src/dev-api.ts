@@ -1,4 +1,5 @@
 import { createMemoryPreferences } from './ui/runtime/preferences';
+import { documentNamePath } from './core/documents/file-name';
 import { isAiProvider } from './core/ai/catalog.ts';
 import { createProjectFixture } from './ui/fixtures/project';
 import {
@@ -1400,6 +1401,79 @@ export function createDevGameCanvasApi(
       sections = [...sections, section];
       notify();
       return structuredClone(section);
+    },
+    renamePreview: async (input) => {
+      const old = previews.find((p) => p.relativePath === input.relativePath);
+      if (!old) throw Error('HTML 결과를 찾을 수 없습니다.');
+      const name = documentNamePath('docs/name.md', input.name, []).name;
+      const to =
+        old.relativePath.slice(0, old.relativePath.lastIndexOf('/') + 1) +
+        name +
+        '.html';
+      if (
+        previews.some(
+          (p) => p !== old && p.relativePath.toLowerCase() === to.toLowerCase(),
+        )
+      )
+        throw Error('같은 이름의 파일이 있습니다.');
+      const updated = {
+        ...old,
+        title: name,
+        relativePath: to,
+        identityPath: old.identityPath ?? old.relativePath,
+      };
+      previews = previews.map((p) => (p === old ? updated : p));
+      const state = previewWindows.get(old.relativePath);
+      if (state) previewWindows.set(to, state);
+      notify();
+      return {
+        preview: updated,
+        change: {
+          objectId: old.sourceId ?? old.relativePath,
+          from: old.relativePath,
+          to,
+          name,
+        },
+        affectedPaths: [old.relativePath, to],
+      };
+    },
+    inspectFileNames: async (scope) => ({
+      scope,
+      baseline: 'preview',
+      proposals: [],
+      affectedPaths: [],
+      needsLayoutUpgrade: false,
+    }),
+    unifyFileNames: async () => [],
+    renameDocument: async (input) => {
+      const current = documents.find(
+        (d) => d.relativePath === input.relativePath,
+      );
+      if (
+        !current ||
+        current.id !== input.objectId ||
+        current.title !== input.expectedTitle ||
+        current.body !== input.expectedBody
+      )
+        throw Error('문서가 변경되었습니다.');
+      const { name, to } = documentNamePath(
+        current.relativePath,
+        input.name,
+        documents.map((d) => d.relativePath),
+      );
+      const updated = {
+        ...current,
+        title: name,
+        relativePath: to,
+        modifiedAt: Date.now(),
+      };
+      documents = documents.map((d) => (d.id === current.id ? updated : d));
+      notify();
+      return {
+        document: structuredClone(updated),
+        change: { objectId: current.id, from: current.relativePath, to, name },
+        affectedPaths: [current.relativePath, to],
+      };
     },
     saveDocument: async (input) => {
       const { relativePath } = input;

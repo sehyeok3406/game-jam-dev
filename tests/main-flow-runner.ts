@@ -784,7 +784,7 @@ try {
     await fs.readFile(path.join(root, versionTask.relativePath), 'utf8'),
   ).data;
   const versionPath = versionSpec.expected_outputs[0];
-  assert.equal(versionPath, 'output/inbox/untitled/v001/index.html');
+  assert.equal(versionPath, 'output/inbox/untitled/v001/새 게임.html');
   assert.equal(versionSpec.base_html, 'output/index.html');
   assert.equal(versionSpec.html_output_mode, 'new');
   assert.equal((await generatedPreviews()).length, 1);
@@ -802,7 +802,7 @@ try {
   assert.ok(versionHtml.includes('fixture-version-new'));
   assert.deepEqual(
     await fs.readdir(path.dirname(path.join(root, versionPath))),
-    ['index.html'],
+    [path.basename(versionPath)],
   );
   await call('path:reveal', versionPath);
   assert.equal(revealedPaths.at(-1), path.join(root, versionPath));
@@ -1172,7 +1172,9 @@ try {
       );
       assert.deepEqual(
         docs.map((doc: any) => doc.title).sort(),
-        customTemplates.map((doc) => doc.title).sort(),
+        spec.expected_outputs
+          .map((relative: string) => path.basename(relative, '.md'))
+          .sort(),
       );
       assert.ok(
         docs.every((doc: any) => doc.outputKey && doc.outputInstructions),
@@ -1789,7 +1791,7 @@ try {
   await call('path:reveal', outputPath);
   assert.equal(revealedPaths.at(-1), path.join(sharedWorkspace, outputPath));
   assert.deepEqual(await fs.readdir(path.dirname(revealedPaths.at(-1)!)), [
-    'index.html',
+    path.basename(outputPath),
   ]);
   assert.equal(
     await fs.readFile(revealedPaths.at(-1)!, 'utf8'),

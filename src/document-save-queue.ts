@@ -24,7 +24,16 @@ export type DocumentSaveStorage = {
   flush: (scope?: string, key?: string) => Promise<void>;
 };
 export type DocumentSaveAdapter = {
-  resolvePath?: (relativePath: string) => string | Promise<string>;
+  remapDraft?: (
+    value: EditorDraft,
+    from: string,
+    to: string,
+    id: string,
+  ) => EditorDraft | Promise<EditorDraft>;
+  resolvePath?: (
+    relativePath: string,
+    documentId?: string,
+  ) => string | Promise<string>;
   session?: import('./contracts/project-session.ts').ProjectSessionRef;
   scope: string;
   isCurrent: () => boolean;
@@ -132,16 +141,51 @@ export class DocumentSaveQueue {
       throw new Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
     const adapter = this.adapter;
     if (adapter.resolvePath) {
+      const previousPath = request.relativePath;
       request = {
         ...request,
-        relativePath: await adapter.resolvePath(request.relativePath),
+        relativePath: await adapter.resolvePath(
+          request.relativePath,
+          request.documentId,
+        ),
       };
+      if (previousPath !== request.relativePath) {
+        const relocated = await this.remapDrafts(
+          adapter,
+          previousPath,
+          request.relativePath,
+          request.documentId,
+          request.base,
+          request,
+        );
+        request = { ...request, ...relocated.local, base: relocated.base };
+      }
       if (!adapter.isCurrent() || this.adapter !== adapter)
         throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
     }
     const key = identity(request.scope, request.key);
     let entry = this.entries.get(key);
     if (entry) await this.relocate(entry, adapter);
+    if (
+      entry &&
+      entry.phase === 'saved' &&
+      entry.request.documentId === request.documentId &&
+      entry.request.relativePath !== request.relativePath
+    ) {
+      const moved = await adapter.read(request.relativePath);
+      if (!adapter.isCurrent() || this.adapter !== adapter)
+        throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+      if (
+        moved?.id === request.documentId &&
+        editorDraftMatches(moved, request.base)
+      ) {
+        entry.request = {
+          ...entry.request,
+          relativePath: request.relativePath,
+        };
+        entry.adoptBase = draft(request.base);
+      }
+    }
     if (
       entry &&
       (entry.request.documentId !== request.documentId ||
@@ -195,18 +239,81 @@ export class DocumentSaveQueue {
     adapter: DocumentSaveAdapter,
   ) {
     if (!adapter.resolvePath) return;
-    const relative = await adapter.resolvePath(entry.request.relativePath);
+    const relative = await adapter.resolvePath(
+      entry.request.relativePath,
+      entry.request.documentId,
+    );
     if (!adapter.isCurrent() || this.adapter !== adapter)
       throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
     if (relative !== entry.request.relativePath) {
-      entry.request = { ...entry.request, relativePath: relative };
+      const from = entry.request.relativePath,
+        previousBase = { ...entry.base };
+      const relocated = await this.remapDrafts(
+        adapter,
+        from,
+        relative,
+        entry.request.documentId,
+        entry.base,
+        entry.request,
+      );
+      entry.base = relocated.base;
+      entry.request = {
+        ...entry.request,
+        ...relocated.local,
+        base: relocated.base,
+        relativePath: relative,
+      };
+      if (entry.attempt) {
+        const attempt = await this.remapDrafts(
+          adapter,
+          from,
+          relative,
+          entry.request.documentId,
+          previousBase,
+          entry.attempt,
+        );
+        entry.attempt = { ...entry.attempt, ...attempt.local };
+      }
       const key = identity(entry.request.scope, entry.request.key);
       const document = this.documents.get(key);
       if (document)
-        this.documents.set(key, { ...document, relativePath: relative });
+        this.documents.set(key, {
+          ...document,
+          title: entry.base.title,
+          relativePath: relative,
+        });
       await this.storage.put(structuredClone(entry));
       this.emit(entry, undefined, adapter.session);
     }
+  }
+  private async remapDrafts(
+    adapter: DocumentSaveAdapter,
+    from: string,
+    to: string,
+    id: string,
+    base: EditorDraft,
+    local: EditorDraft,
+  ) {
+    const moved = await adapter.read(to);
+    if (!adapter.isCurrent() || this.adapter !== adapter)
+      throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+    if (!moved || moved.id !== id)
+      throw new SaveConflict(
+        '문서가 이동되거나 삭제되었습니다. 초안은 이 PC에 보관됩니다.',
+      );
+    const nextBase = adapter.remapDraft
+      ? await adapter.remapDraft(base, from, to, id)
+      : { ...base };
+    const nextLocal = adapter.remapDraft
+      ? await adapter.remapDraft(local, from, to, id)
+      : { ...local };
+    if (!adapter.isCurrent() || this.adapter !== adapter)
+      throw Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
+    if (base.title === local.title) {
+      nextBase.title = moved.title;
+      nextLocal.title = moved.title;
+    }
+    return { base: nextBase, local: nextLocal };
   }
   wake() {
     if (this.disposed) return;

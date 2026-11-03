@@ -10,6 +10,10 @@ import type { EditJournal } from '../../edit-journal.ts';
 import { COMMAND_LABELS } from '../../contracts/commands.ts';
 
 type Ports = {
+  inspectNames?: (
+    files: Snapshot,
+    scope: string,
+  ) => import('../../contracts/document-names.ts').FileNamePlan;
   project: SharedEditingProject;
   reader: SharedWorkspaceReader;
   journal: Pick<EditJournal, 'push' | 'peek' | 'finish'>;
@@ -41,7 +45,15 @@ export class SharedEditingService {
     const receipt = await p.project.command(channel, input);
     p.assertCurrent();
     const after = p.project.read().files;
-    if (channel === 'results:move' || channel === 'results:organize')
+    if (
+      [
+        'results:move',
+        'results:organize',
+        'documents:rename',
+        'preview:rename',
+        'files:unify-names',
+      ].includes(channel)
+    )
       await p.sync(after);
     if (
       channel === 'documents:delete' ||
@@ -55,6 +67,30 @@ export class SharedEditingService {
     p.changed();
     if (channel === 'documents:save')
       return this.reader.document((input as SaveDocumentInput).relativePath);
+    if (channel === 'documents:rename') {
+      const change =
+        receipt.result as import('../../contracts/document-names.ts').DocumentNameChange;
+      return {
+        document: this.reader.document(change.to),
+        change,
+        affectedPaths: Object.keys({ ...before, ...after }).filter(
+          (path) => before[path] !== after[path],
+        ),
+      };
+    }
+    if (channel === 'preview:rename') {
+      const change =
+        receipt.result as import('../../contracts/document-names.ts').DocumentNameChange;
+      return {
+        preview: this.reader
+          .previews()
+          .find((p) => p.relativePath === change.to),
+        change,
+        affectedPaths: Object.keys({ ...before, ...after }).filter(
+          (path) => before[path] !== after[path],
+        ),
+      };
+    }
     if (channel === 'drawings:apply') return this.reader.drawings();
     if (channel === 'game-ui:apply') return this.reader.gameUi();
     return receipt.result;
@@ -67,6 +103,12 @@ export class SharedEditingService {
     p.journal.finish(direction, item.id);
     p.assertCurrent();
     p.changed();
+  }
+  inspectNames(scope: string) {
+    this.ports.assertCurrent();
+    if (!this.ports.inspectNames)
+      throw Error('파일 이름 통일을 사용할 수 없습니다.');
+    return this.ports.inspectNames(this.ports.project.read().files, scope);
   }
   setCollapsed(input: SetDocumentCollapsedInput) {
     this.ports.assertCurrent();

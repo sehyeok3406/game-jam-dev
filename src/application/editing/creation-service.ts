@@ -15,8 +15,10 @@ import type { CreateTaskInput } from '../../contracts/ai.ts';
 import { LocalCommandService } from './command-service.ts';
 import { assertCanvas, canvasId } from '../../canvas-sheets.ts';
 import { createTaskFiles } from '../../task-plan.ts';
-import { readProjectLayout } from '../../core/projects/project-layout.ts';
-import { allocateDocumentPath } from '../../core/projects/document-path.ts';
+import {
+  allocateNamedDocumentPath,
+  documentPathTitle,
+} from '../../core/projects/document-path.ts';
 
 export type LocalCreationPorts = {
   project: LocalProjectRepository;
@@ -60,17 +62,10 @@ export class LocalCreationService {
         throw Error(`복사할 문서를 확인할 수 없습니다: ${member.path}`);
       const parsed = markdown.parse(current.raw);
       const suffix = environment.id().slice(0, 8);
-      const segments = source.relativePath.split('/');
-      const filename = segments.pop()!;
-      const directory =
-        source.relativePath === 'project.md' ? 'docs' : segments.join('/');
-      const relative = readProjectLayout(before)
-        ? allocateDocumentPath(
-            `${source.title} 복사본`,
-            Object.keys({ ...before, ...changes }),
-            suffix,
-          )
-        : `${directory}/${filename.slice(0, -3)}-copy-${suffix}.md`;
+      const relative = allocateNamedDocumentPath(
+        `${source.title} 복사본`,
+        Object.keys({ ...before, ...changes }),
+      );
       if (
         Object.keys({ ...before, ...changes }).some(
           (path) => path.toLowerCase() === relative.toLowerCase(),
@@ -84,7 +79,7 @@ export class LocalCreationService {
             ? assertCanvas(before, input.canvasId)
             : canvasId(parsed.data.canvas_id),
         id: `${source.id}-copy-${suffix}`,
-        title: `${source.title} 복사본`,
+        title: documentPathTitle(relative),
         creation_origin: 'duplicate',
         x: Math.round(source.x + offsetX),
         y: Math.round(source.y + offsetY),

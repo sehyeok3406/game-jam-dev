@@ -43,4 +43,4 @@
 - 96MB 예약은 body 처리량 제어이며 전체 RSS·디스크 사용량 상한이 아니다. 자체 서버의 선택 정책도 현재 snapshot 문자열 누적량 기준이다. 사용자별 GB 구매·합산·분배, 히스토리를 포함한 디스크 quota와 GB 전송은 후속이다.
 - 이번 검증은 Windows 한 PC의 앱/내장 서버와 임시 서버다. 실제 여러 PC·운영 서버 부하·유료 AI 4개 공급자의 실제 생성은 후속 통합 검증이다.
 
-자세한 형식·현재/미래 기능 구분은 [게임 제작 계약](../architecture/game-builds.md), 결정 이유는 [ADR 0005](../architecture/decisions/0005-game-builds-and-standalone-html.md), 전체 진행 상태는 [1차 계획](../plans/2026-11-01-game-build-phase1.md)을 따른다.
+자세한 형식·현재/미래 기능 구분은 [게임 제작 계약](../architecture/game-builds.md), 결정 이유는 [ADR 0006](../architecture/decisions/0006-game-builds-and-standalone-html.md), 전체 진행 상태는 [1차 계획](../plans/2026-11-01-game-build-phase1.md)을 따른다.

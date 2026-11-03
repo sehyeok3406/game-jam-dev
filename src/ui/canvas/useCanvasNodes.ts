@@ -479,12 +479,12 @@ export function useCanvasNodes(
           collapsed: false,
         };
         return {
-          id: previewNodeId(preview.relativePath),
+          id: previewNodeId(preview),
           type: 'preview',
           selectable: !sectionHidden,
           className: sectionHidden
             ? 'section-member-hidden'
-            : newFileNodes.has(previewNodeId(preview.relativePath))
+            : newFileNodes.has(previewNodeId(preview))
               ? 'new-file-node'
               : undefined,
           position: {
@@ -505,8 +505,7 @@ export function useCanvasNodes(
               preview.propertyPreviousIds ?? [],
             ),
             authorshipKey: `${personalScope}:${preview.sourceId}:${preview.revision ?? preview.content}`,
-            onDetails: () =>
-              setInspectorId(previewNodeId(preview.relativePath)),
+            onDetails: () => setInspectorId(previewNodeId(preview)),
             sectionHidden,
             statuses: statusSettings.value,
             workflowDisabled:

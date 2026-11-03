@@ -5,6 +5,9 @@ import type { DocumentSaveState } from '../../contracts/document-save-queue';
 import { editorDraftMatches } from '../../editor-ux';
 import { setMarkdownTaskChecked } from '../../markdown-editing';
 import type { DocumentNodeData } from './types';
+import type { MarkdownEditFocus } from './markdown-title';
+import { documentName } from '../../core/documents/file-name';
+import type { CanvasDocument } from '../../contracts/documents';
 
 export type DocumentEditingInput = Pick<
   DocumentNodeData,
@@ -44,14 +47,14 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   const [title, setTitle] = useState(document.title);
   const [body, setBody] = useState(document.body);
   const [saving, setSaving] = useState(false);
+  const [nameSaving, setNameSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [queueState, setQueueState] = useState<DocumentSaveState | null>(null);
   const lastSaveState = useRef<DocumentSaveState | null>(null);
   const [startingEdit, setStartingEdit] = useState(false);
-  const [editFocus, setEditFocus] = useState<{
-    title: boolean;
-    point?: { x: number; y: number };
-  }>({ title: false });
+  const [editFocus, setEditFocus] = useState<MarkdownEditFocus>({
+    title: false,
+  });
   const editorOwner = useId();
   const titleRef = useRef<HTMLInputElement>(null);
   const dataRef = useRef(data);
@@ -59,7 +62,18 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   const latestRef = useRef({ title, body });
   latestRef.current = { title, body };
   const savedRef = useRef({ title: document.title, body: document.body });
-  const archivedDraft = useRef<{ title: string; body: string } | null>(null);
+  const renamedDocument = useRef<CanvasDocument | null>(null);
+  const editingPath = useRef(document.relativePath);
+  const currentDocument = () =>
+    renamedDocument.current?.id === dataRef.current.document.id
+      ? renamedDocument.current
+      : dataRef.current.document;
+  const archivedDraft = useRef<{
+    title: string;
+    body: string;
+    relativePath?: string;
+    baseTitle?: string;
+  } | null>(null);
   const updateTitle = (next: string) => {
     draftSequence.current++;
     latestRef.current = { ...latestRef.current, title: next };
@@ -73,6 +87,8 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   const [cachedDraft, setCachedDraft] = useState<{
     title: string;
     body: string;
+    relativePath?: string;
+    baseTitle?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -109,7 +125,12 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     if (!editorDraftMatches(current, savedRef.current)) {
       await api.saves.setEditorDraft(
         dataRef.current.draftKey,
-        { ...current, sequence },
+        {
+          ...current,
+          sequence,
+          relativePath: editingPath.current,
+          baseTitle: savedRef.current.title,
+        },
         sequence,
       );
     }
@@ -133,12 +154,24 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     )
       return;
     lastSaveState.current = state;
+    // Discard acknowledges the completed pre-rename queue entry. Its old path
+    // and body must never rebase the editor that has already adopted the name.
     if (state.phase === 'discarded') {
       lastSaveState.current = null;
       setQueueState(null);
       setSaving(false);
       setSaveFailed(false);
       return;
+    }
+    if (
+      editingPath.current !== state.relativePath &&
+      state.sequence >= draftSequence.current
+    ) {
+      editingPath.current = state.relativePath;
+      if (latestRef.current.body !== state.latest.body) {
+        latestRef.current = { ...latestRef.current, body: state.latest.body };
+        setBody(state.latest.body);
+      }
     }
     setQueueState((previous) =>
       previous &&
@@ -155,6 +188,14 @@ export function useDocumentEditing(data: DocumentEditingInput) {
       state.savedSequence >= acknowledgedSequence.current
     ) {
       acknowledgedSequence.current = state.savedSequence;
+      const previousTitle = savedRef.current.title;
+      if (
+        latestRef.current.title === previousTitle &&
+        state.saved.title !== previousTitle
+      ) {
+        latestRef.current = { ...latestRef.current, title: state.saved.title };
+        setTitle(state.saved.title);
+      }
       savedRef.current = state.saved;
     }
     if (
@@ -199,11 +240,17 @@ export function useDocumentEditing(data: DocumentEditingInput) {
 
   useEffect(() => {
     if (!editing) {
+      editingPath.current = document.relativePath;
+      renamedDocument.current = null;
       setTitle(document.title);
       setBody(document.body);
       savedRef.current = { title: document.title, body: document.body };
     }
-  }, [document.body, document.title, editing]);
+  }, [document.body, document.title, document.relativePath, editing]);
+  useEffect(() => {
+    if (renamedDocument.current?.relativePath === document.relativePath)
+      renamedDocument.current = null;
+  }, [document.relativePath]);
 
   const persist = useCallback(
     async (finish: boolean, retry = false) => {
@@ -211,9 +258,11 @@ export function useDocumentEditing(data: DocumentEditingInput) {
         await savingRef.current;
         return;
       }
+      while (savingRef.current) await savingRef.current;
       if (finish) finishingRef.current = true;
       const operation = (async () => {
         setSaveFailed(false);
+        if (finish || retry) setTaskError('');
         try {
           let submitted: number;
           let released = false;
@@ -224,15 +273,30 @@ export function useDocumentEditing(data: DocumentEditingInput) {
               );
             await backupDraft();
             const current = dataRef.current;
+            const doc = currentDocument();
+            const requested = { ...latestRef.current };
+            const nameChanged = requested.title !== savedRef.current.title;
+            const commitName = nameChanged && (finish || retry);
+            if (commitName) {
+              documentName(requested.title);
+              setNameSaving(true);
+            }
+            if (
+              nameChanged &&
+              !(finish || retry) &&
+              requested.body === savedRef.current.body
+            )
+              return;
             submitted = draftSequence.current;
             const state = await api.saves.enqueueDocumentSave({
               scope: current.saveScope,
               key: current.draftKey,
               documentId: current.document.id,
-              relativePath: current.document.relativePath,
+              relativePath: editingPath.current,
               sequence: submitted,
               sessionId: editSession.current,
-              ...latestRef.current,
+              title: nameChanged ? savedRef.current.title : requested.title,
+              body: requested.body,
               base: { ...savedRef.current },
             });
             acceptSave(state);
@@ -243,14 +307,63 @@ export function useDocumentEditing(data: DocumentEditingInput) {
               );
               for (const ack of states) acceptSave(ack);
             }
+            if (commitName) {
+              // Flush acknowledged body writes first. Rename is one explicit structural operation.
+              await api.saves.flushDocumentSaves(current.saveScope);
+              const base = await api.editor.getDocument(doc.relativePath);
+              if (!base || base.id !== doc.id)
+                throw Error(
+                  '문서가 이동되거나 삭제되었습니다. 입력한 이름은 유지됩니다.',
+                );
+              const result = await api.editor.renameDocument({
+                scope: current.saveScope,
+                objectId: base.id,
+                relativePath: base.relativePath,
+                expectedTitle: base.title,
+                expectedBody: base.body,
+                name: requested.title,
+              });
+              renamedDocument.current = result.document;
+              editingPath.current = result.document.relativePath;
+              await api.saves.discardDocumentSave(
+                current.saveScope,
+                current.draftKey,
+                submitted,
+              );
+              savedRef.current = {
+                title: result.document.title,
+                body: result.document.body,
+              };
+              acknowledgedSequence.current = 0;
+              lastSaveState.current = null;
+              if (latestRef.current.title === requested.title) {
+                latestRef.current = {
+                  ...latestRef.current,
+                  title: result.document.title,
+                };
+                setTitle(result.document.title);
+              }
+              if (editorDraftMatches(latestRef.current, savedRef.current)) {
+                await api.saves.setEditorDraft(
+                  current.draftKey,
+                  null,
+                  submitted,
+                );
+                setCachedDraft(archivedDraft.current);
+              }
+              if (current.collaborative) {
+                await current.endEdit(base);
+                await current.beginEdit(result.document);
+              }
+            }
             if (
               finish &&
               !composingRef.current &&
               submitted === draftSequence.current
             ) {
-              await dataRef.current.endEdit(dataRef.current.document);
+              await dataRef.current.endEdit(currentDocument());
               if (composingRef.current || submitted !== draftSequence.current)
-                await dataRef.current.beginEdit(dataRef.current.document);
+                await dataRef.current.beginEdit(currentDocument());
               else released = true;
             }
           } while (finish && !released);
@@ -272,6 +385,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
       try {
         await operation;
       } finally {
+        setNameSaving(false);
         if (savingRef.current === operation) savingRef.current = null;
         if (finish) finishingRef.current = false;
       }
@@ -280,6 +394,10 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   );
   const save = useCallback(() => persist(false, true), [persist]);
   const finishEdit = useCallback(() => persist(true), [persist]);
+  const cancelName = useCallback(() => {
+    updateTitle(savedRef.current.title);
+    return persist(true);
+  }, [persist]);
   const flushRegistered = useCallback(
     (finish = true) => persist(finish, !finish),
     [persist],
@@ -320,8 +438,12 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   const dirty =
     editing && !editorDraftMatches({ title, body }, savedRef.current);
   useEffect(() => {
-    data.reportEdit(document.id, { dirty, saving, failed: saveFailed });
-  }, [data.reportEdit, document.id, dirty, saving, saveFailed]);
+    data.reportEdit(document.id, {
+      dirty,
+      saving: saving || nameSaving,
+      failed: saveFailed,
+    });
+  }, [data.reportEdit, document.id, dirty, saving, nameSaving, saveFailed]);
   const toggleTask = async (offset: number, checked: boolean) => {
     if (taskBusy.current || startingEdit || editing) return;
     if (data.locked) {
@@ -334,6 +456,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     let acquired = false;
     try {
       await data.beginEdit(document);
+      editingPath.current = document.relativePath;
       acquired = true;
       const current = (await api.editor.listDocuments()).find(
         (item) => item.relativePath === document.relativePath,
@@ -417,6 +540,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     try {
       await data.beginEdit(document);
       editSession.current = crypto.randomUUID();
+      editingPath.current = document.relativePath;
       draftSequence.current++;
       if (!lastSaveState.current || lastSaveState.current.phase === 'saved')
         savedRef.current = { title: document.title, body: document.body };
@@ -474,28 +598,46 @@ export function useDocumentEditing(data: DocumentEditingInput) {
         ? '이 PC에 보관됨 · 연결 후 전송'
         : saveFailed
           ? '저장 실패 · 초안 보관됨'
-          : saving
-            ? '저장 중…'
-            : dirty
-              ? '자동 저장 대기…'
-              : data.collaborative
-                ? '서버에 저장됨'
-                : '저장됨';
+          : nameSaving
+            ? '파일 이름 변경 중…'
+            : saving
+              ? '저장 중…'
+              : title !== savedRef.current.title
+                ? '이름 변경 대기 · Enter 또는 Ctrl+S로 확정'
+                : dirty
+                  ? '자동 저장 대기…'
+                  : data.collaborative
+                    ? '서버에 저장됨'
+                    : '저장됨';
 
   const restoreDraft = () => {
     if (!cachedDraft) return;
 
     draftSequence.current++;
-    setTitle(cachedDraft.title);
+    const restoredTitle =
+      cachedDraft.baseTitle === cachedDraft.title
+        ? document.title
+        : cachedDraft.title;
+    editingPath.current = cachedDraft.relativePath ?? document.relativePath;
+    setTitle(restoredTitle);
     setBody(cachedDraft.body);
     latestRef.current = {
-      title: cachedDraft.title,
+      title: restoredTitle,
       body: cachedDraft.body,
     };
     archivedDraft.current = null;
     const sequence = draftSequence.current;
     void api.saves
-      .setEditorDraft(data.draftKey, { ...cachedDraft, sequence }, sequence)
+      .setEditorDraft(
+        data.draftKey,
+        {
+          ...cachedDraft,
+          title: restoredTitle,
+          baseTitle: savedRef.current.title,
+          sequence,
+        },
+        sequence,
+      )
       .then(() =>
         api.saves.setEditorDraft(`${data.draftKey}:conflict`, null, sequence),
       )
@@ -510,6 +652,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     title,
     body,
     saving,
+    nameSaving,
     startingEdit,
     editFocus,
     editorOwner,
@@ -522,6 +665,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     updateTitle,
     updateBody,
     finishEdit,
+    cancelName,
     save,
     loadLatest,
     setTaskError,

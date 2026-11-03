@@ -6,6 +6,10 @@ const pathFields = new Set([
   'baseDir',
   'taskPath',
   'sourcePath',
+  'html_source',
+  'htmlSource',
+  'basePath',
+  'resultPath',
 ]);
 const pathArrays = new Set([
   'inputs',
@@ -13,6 +17,7 @@ const pathArrays = new Set([
   'inputPaths',
   'paths',
   'workflow_steps',
+  'outputs',
 ]);
 /** Only typed path fields and path-keyed indices change; arbitrary prose is untouched. */
 export function remapLayoutReferences(

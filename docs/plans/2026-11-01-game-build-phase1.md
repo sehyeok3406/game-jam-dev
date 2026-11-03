@@ -32,7 +32,7 @@
 
 ## 0단계 산출물
 
-- [ADR 0005](../architecture/decisions/0005-game-builds-and-standalone-html.md): 결정·대안·이행 경계.
+- [ADR 0006](../architecture/decisions/0006-game-builds-and-standalone-html.md): 결정·대안·이행 경계.
 - [구현 계약](../architecture/game-builds.md): 논리/실제 경로, DTO, 버전 협상, source revision, 정확한 출력과 저장 정책.
 - [검증 보고서](../audits/2026-11-01-game-build-stage0.md)와 [측정 JSON](../audits/2026-11-01-game-build-stage0-evidence.json).
 - `tools/game-build-stage0/`: 재실행 가능한 별도 spike. production 코드에서 import하지 않는다.

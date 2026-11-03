@@ -117,7 +117,7 @@ test('frame is standalone; description is opt-in and reused; names and user desc
   files = applyGameUi(files, command(f, 'add', { items: [a] }));
   assert.equal(get(files, f).descriptionPath, null);
   files = applyGameUi(files, command(f, 'describe'));
-  const doc = `docs/ui/${f.id}.md`;
+  const doc = get(files, f).descriptionPath;
   assert.match(files[doc], /체력.*현재 체력/);
   const parsed = matter(files[doc]);
   files[doc] = matter.stringify(
@@ -269,7 +269,10 @@ test('snapshot, history, canvas deletion and AI original protection include plug
     expected: raw,
   });
   assert.equal(get(moved, f).canvasId, 'other');
-  assert.equal(matter(moved[`docs/ui/${f.id}.md`]).data.canvas_id, 'other');
+  assert.equal(
+    matter(moved[get(moved, f).descriptionPath]).data.canvas_id,
+    'other',
+  );
   checkSnapshot(moved);
   assert.throws(() => validateArtifacts(files, {}, ['docs/out.md']), /그림/);
   const after = reduceCollaboration(
@@ -366,7 +369,7 @@ test('real server supports independent same-widget edits, request retry, descrip
   assert.equal(get(owner.files, f).items[0].borderColor, '#ff0000');
   assert.equal(get(owner.files, f).items[0].backgroundColor, '#000000');
   await owner.command('game-ui:apply', command(f, 'describe'));
-  assert.match(owner.files[`docs/ui/${f.id}.md`], /체력/);
+  assert.match(owner.files[get(owner.files, f).descriptionPath], /체력/);
   const history = owner.lastCommandHistoryId;
   await owner.changeHistory(history, 'undo');
   assert.equal(get(owner.files, f).descriptionPath, null);

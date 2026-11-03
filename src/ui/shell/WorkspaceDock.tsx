@@ -6,6 +6,7 @@ import { WorkspaceHeader } from '../shell/WorkspaceHeader';
 import { WorkspaceHistoryPanels } from '../history/WorkspaceHistoryPanels';
 import { WorkspaceSettings } from '../shell/WorkspaceSettings';
 import { ProjectLayoutControl } from './ProjectLayoutControl.tsx';
+import { FileNameControl } from './FileNameControl';
 import { WorkspaceAiPanels } from '../ai/WorkspaceAiPanels';
 import { WorkspaceInspector } from '../shell/WorkspaceInspector';
 import { WorkspaceCanvas } from '../canvas/WorkspaceCanvas';
@@ -23,6 +24,7 @@ import { AiQueuePanel } from '../AiQueuePanel';
 import { CanvasPanel } from '../CanvasChrome';
 import {
   Keyboard,
+  ArrowLeft,
   Columns2,
   AlertCircle,
   Bot,
@@ -54,8 +56,6 @@ import { CODEX_STATUS_LABELS } from '../workspace/workspace-types';
 import { getAiModelLabel } from '../ai/presentation';
 import { previewNodeId } from '../workspace/workspace-types';
 import { sectionNodeId } from '../workspace/workspace-types';
-import { TYPE_LABELS } from '../documents/presentation';
-import { statusLabel } from '../documents/presentation';
 import { requireDesktopApi } from '../runtime/desktop-api';
 
 type Props = Pick<
@@ -465,8 +465,7 @@ export function WorkspaceDock({
                                 paths.includes(preview.relativePath),
                               )
                               .at(-1);
-                            if (result)
-                              jumpTo(previewNodeId(result.relativePath));
+                            if (result) jumpTo(previewNodeId(result));
                             else {
                               const ids = documents
                                 .filter((doc) =>
@@ -775,8 +774,7 @@ export function WorkspaceDock({
                       (section) => sectionNodeId(section.id) === inspectorId,
                     ),
                     preview = previews.find(
-                      (preview) =>
-                        previewNodeId(preview.relativePath) === inspectorId,
+                      (preview) => previewNodeId(preview) === inspectorId,
                     );
                   if (!item) return null;
                   return (
@@ -787,53 +785,34 @@ export function WorkspaceDock({
                       <header>
                         <strong>상세 정보</strong>
                         <button
-                          className="icon-button"
-                          title="상세 정보 닫기"
-                          onClick={() => setInspectorId(null)}
+                          type="button"
+                          className="inspector-back-button"
+                          aria-label="속성 선택 화면으로 돌아가기"
+                          onClick={(event) => {
+                            const tab = event.currentTarget
+                              .closest('.canvas-dock')
+                              ?.querySelector<HTMLButtonElement>(
+                                'nav button[aria-pressed=true]',
+                              );
+                            setInspectorId(null);
+                            requestAnimationFrame(() => {
+                              if (tab?.isConnected) tab.focus();
+                            });
+                          }}
                         >
-                          <X size={16} />
+                          <ArrowLeft size={14} /> 뒤로
                         </button>
                       </header>
                       <h3>{item.title}</h3>
-                      <dl>
-                        <dt>파일</dt>
-                        <dd>
-                          <code>{item.path}</code>
-                        </dd>
-                        {(doc || section || preview?.sourceId) && (
-                          <>
-                            <dt>ID</dt>
-                            <dd>
-                              <code>
-                                {doc?.id ?? section?.id ?? preview?.sourceId}
-                              </code>
-                            </dd>
-                          </>
-                        )}
-                        {doc && (
-                          <>
-                            <dt>문서 유형</dt>
-                            <dd>
-                              {TYPE_LABELS[doc.type]} ·{' '}
-                              {statusLabel(doc.status)}
-                            </dd>
-                            <dt>위치 · 크기</dt>
-                            <dd>
-                              {doc.x}, {doc.y} · {doc.width} × {doc.height}
-                            </dd>
-                            <dt>최근 변경</dt>
-                            <dd>
-                              {new Date(doc.modifiedAt).toLocaleString('ko-KR')}
-                            </dd>
-                            <dt>소속 섹션</dt>
-                            <dd>{item.parent ?? '섹션 없음'}</dd>
-                          </>
-                        )}
-                      </dl>
-                      {((doc && doc.type !== 'ai-task') || preview) && (
+                      {(doc || preview) && (
                         <FilePropertiesEditor
                           key={doc?.id ?? preview!.sourceId}
                           document={doc ?? preview!}
+                          metadata={{
+                            type: doc?.type ?? 'html',
+                            phase: doc?.status,
+                            modifiedAt: doc?.modifiedAt,
+                          }}
                           statuses={statusSettings.value}
                           authorship={
                             inspectorAuthorship?.path === item.path
@@ -892,7 +871,34 @@ export function WorkspaceDock({
                           manage={() => setStatusManagerOpen(true)}
                         />
                       )}
-                      {!((doc && doc.type !== 'ai-task') || preview) && (
+                      <h4 className="inspector-section-title">파일 정보</h4>
+                      <dl>
+                        <dt>파일</dt>
+                        <dd>
+                          <code>{item.path}</code>
+                        </dd>
+                        {(doc || section || preview?.sourceId) && (
+                          <>
+                            <dt>ID</dt>
+                            <dd>
+                              <code>
+                                {doc?.id ?? section?.id ?? preview?.sourceId}
+                              </code>
+                            </dd>
+                          </>
+                        )}
+                        {doc && (
+                          <>
+                            <dt>위치 · 크기</dt>
+                            <dd>
+                              {doc.x}, {doc.y} · {doc.width} × {doc.height}
+                            </dd>
+                            <dt>소속 섹션</dt>
+                            <dd>{item.parent ?? '섹션 없음'}</dd>
+                          </>
+                        )}
+                      </dl>
+                      {!(doc || preview) && (
                         <dl className="inspector-authorship">
                           <dt>생성한 사람</dt>
                           <dd>
@@ -1178,6 +1184,12 @@ export function WorkspaceDock({
                 <FolderOpen size={16} /> 프로젝트 폴더 열기
               </button>
               <ProjectLayoutControl
+                api={api}
+                prepare={prepareLayout}
+                disabled={locked || editBusy || movingResults}
+                refresh={() => loadProject(false, true)}
+              />
+              <FileNameControl
                 api={api}
                 prepare={prepareLayout}
                 disabled={locked || editBusy || movingResults}

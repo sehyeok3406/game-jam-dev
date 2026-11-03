@@ -14,6 +14,8 @@ export const RESULT_CATEGORIES = {
 } as const;
 export type PreviewResult = {
   build?: import('./game-build-status.ts').GameBuildStatus;
+  identityPath?: string;
+  version?: number;
   propertyPreviousIds?: string[];
   statusPropertyEnabled?: boolean;
   placementId?: string;

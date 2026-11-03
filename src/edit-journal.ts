@@ -4,6 +4,7 @@ import { remapLayoutSnapshot } from './adapters/markdown/layout-snapshot.ts';
 import { mergeProperties } from './sync-properties.ts';
 import type { Snapshot } from './project-store.ts';
 import { assertRemovedImagesUnreferenced } from './asset-reference-safety.ts';
+import { FILE_NAMES_PATH } from './contracts/document-names.ts';
 
 export type EditRecord = { id: string; label: string };
 
@@ -53,8 +54,9 @@ export function invertEdit(
 ): Snapshot {
   if (direction !== 'undo' && direction !== 'redo')
     throw new Error('올바르지 않은 편집 방향입니다.');
-  before = remapLayoutSnapshot(current, before);
-  after = remapLayoutSnapshot(current, after);
+  const mapNames = before[FILE_NAMES_PATH] === after[FILE_NAMES_PATH];
+  before = remapLayoutSnapshot(current, before, mapNames);
+  after = remapLayoutSnapshot(current, after, mapNames);
   const expected = direction === 'undo' ? after : before;
   const desired = direction === 'undo' ? before : after;
   const touched = Object.keys({ ...before, ...after }).filter(

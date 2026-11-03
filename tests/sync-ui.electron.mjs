@@ -54,12 +54,36 @@ async function run() {
       `${titleElement}.closest('.react-flow__node').getAttribute('data-id')`,
     );
     const files = await js('window.gameCanvas.listDocuments()');
-    const doc = files.find((item) => item.id === relative);
+    let doc = files.find((item) => item.id === relative);
     assert.ok(doc);
+    const bodyElement = `document.querySelector('[aria-label="문서 내용"]')`;
+    const appendBody = async (text) =>
+      js(
+        `{const e=${bodyElement};e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(false);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(r);document.execCommand('insertText',false,${JSON.stringify(text)});}`,
+      );
+    const confirmName = async (name) => {
+      await js(
+        `${titleElement}.focus();${titleElement}.dispatchEvent(new KeyboardEvent('keydown',{key:'s',ctrlKey:true,bubbles:true}))`,
+      );
+      await wait(
+        `window.gameCanvas.listDocuments().then(ds=>ds.some(d=>d.id===${JSON.stringify(relative)}&&d.title===${JSON.stringify(name)}&&d.relativePath.endsWith('/'+${JSON.stringify(name)}+'.md')))`,
+      );
+      await wait(`${titleElement} && !${titleElement}.readOnly`);
+      doc = (await js('window.gameCanvas.listDocuments()')).find(
+        (d) => d.id === relative,
+      );
+    };
     for (const delay of [200, 500, 1500]) {
       await js(`window.qa.delay=${delay}`);
       const starts = await js('window.qa.starts');
       await type('저장할 사본 ' + delay);
+      await sleep(400);
+      assert.equal(
+        await js('window.qa.starts'),
+        starts,
+        'unconfirmed names must not rename or save a separate display title',
+      );
+      await appendBody(' 지연 저장 본문 ' + delay);
       await wait(`window.qa.starts>${starts}`);
       const latest = '저장 중 계속 입력 ' + delay;
       await type(latest);
@@ -70,11 +94,14 @@ async function run() {
       await sleep(delay + 250);
       assert.equal(await js(`${titleElement}.value`), latest);
       assert.equal(await js(`document.activeElement===${titleElement}`), focus);
-      await wait(
-        `window.gameCanvas.getDocument(${JSON.stringify(doc.relativePath)}).then(doc=>doc.title===${JSON.stringify(latest)})`,
+      assert.equal(
+        await js(
+          `window.gameCanvas.getDocument(${JSON.stringify(doc.relativePath)}).then(doc=>doc.title)`,
+        ),
+        doc.title,
       );
+      await confirmName(latest);
     }
-    const bodyElement = `document.querySelector('[aria-label="문서 내용"]')`;
     await wait('window.qa.starts===window.qa.acknowledgements');
     await js(
       `{const e=${bodyElement};e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(false);const s=window.getSelection();s.removeAllRanges();s.addRange(r);}`,
@@ -119,9 +146,7 @@ async function run() {
       `document.querySelector('[aria-label="문서 제목"]').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'한글'}))`,
     );
     await type('한글 조합 확정');
-    await wait(
-      `window.gameCanvas.getDocument(${JSON.stringify(doc.relativePath)}).then(doc=>doc.title==='한글 조합 확정')`,
-    );
+    await confirmName('한글 조합 확정');
 
     await js(
       `${titleElement}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
@@ -130,7 +155,7 @@ async function run() {
     await js('window.qa.delay=1500');
     const nodeSelector = `[data-id="${relative}"]`;
     const rect = await js(
-      `(()=>{const r=document.querySelector(${JSON.stringify(nodeSelector)}).querySelector('.document-card__header').getBoundingClientRect();return {x:r.left+25,y:r.top+14};})()`,
+      `(()=>{const r=document.querySelector(${JSON.stringify(nodeSelector)}).querySelector('.document-card__header').getBoundingClientRect();return {x:r.left+3,y:r.top+14};})()`,
     );
     const drag = async (start, dx, dy) => {
       win.webContents.sendInputEvent({
@@ -166,7 +191,7 @@ async function run() {
     await drag(rect, 35, 30);
     await wait('window.qa.layoutStarts>0');
     const nextRect = await js(
-      `(()=>{const r=document.querySelector(${JSON.stringify(nodeSelector)}).querySelector('.document-card__header').getBoundingClientRect();return {x:r.left+25,y:r.top+14};})()`,
+      `(()=>{const r=document.querySelector(${JSON.stringify(nodeSelector)}).querySelector('.document-card__header').getBoundingClientRect();return {x:r.left+3,y:r.top+14};})()`,
     );
     await drag(nextRect, 35, 30);
     await wait('window.qa.layoutStarts>1');
@@ -204,8 +229,9 @@ async function run() {
     // Saving with Ctrl+S must leave the active editor in place.
     win.webContents.focus();
     await js(
-      `window.ctrlSaveEditor=${titleElement};window.ctrlSaveEditor.focus();window.ctrlSaveEditor.dispatchEvent(new KeyboardEvent('keydown',{key:'s',ctrlKey:true,bubbles:true}))`,
+      `window.ctrlSaveEditor=${titleElement};window.ctrlSaveEditor.focus()`,
     );
+    await confirmName('반응 측정 19');
     await wait('window.qa.starts===window.qa.acknowledgements');
     assert.equal(
       await js(
@@ -249,6 +275,7 @@ async function run() {
     await js(`${card}.querySelector('.document-card__content').click()`);
     await wait(`!!${titleElement}`);
     await type('충돌 초안');
+    await appendBody(' 충돌 검사 본문');
     await js(
       `window.gameCanvas.saveDocument({relativePath:${JSON.stringify(doc.relativePath)},title:'외부 변경',body:'server text'})`,
     );
@@ -265,6 +292,7 @@ async function run() {
     await wait(`!!${titleElement} && !!(${restoreButton})`);
     await js(`(${restoreButton}).click()`);
     await wait(`${titleElement}.value==='충돌 초안'`);
+    await confirmName('충돌 초안');
     await js(
       `${titleElement}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
     );

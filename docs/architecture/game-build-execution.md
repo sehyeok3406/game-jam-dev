@@ -1,6 +1,6 @@
 # 소스 기반 게임 제작 실행
 
-2026-11-02. 4단계에서 연결한 실제 제작 흐름이다. 저장 계약은 [game-builds](game-builds.md), 의존성 준비는 [dependency-preparation](dependency-preparation.md), 결정 근거는 [ADR 0005](decisions/0005-game-builds-and-standalone-html.md)를 따른다.
+2026-11-02. 4단계에서 연결한 실제 제작 흐름이다. 저장 계약은 [game-builds](game-builds.md), 의존성 준비는 [dependency-preparation](dependency-preparation.md), 결정 근거는 [ADR 0006](decisions/0006-game-builds-and-standalone-html.md)를 따른다.
 
 ## 시작과 호환성
 

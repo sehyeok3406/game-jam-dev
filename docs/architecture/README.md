@@ -16,7 +16,7 @@
 
 ## 책임과 의존 방향
 
-게임 제작 확장은 [ADR 0005](decisions/0005-game-builds-and-standalone-html.md)와 [게임 제작 계약](game-builds.md)을 따른다. [0단계](../audits/2026-11-01-game-build-stage0.md)에서 실행 가능성을, [1단계](../audits/2026-11-01-game-build-stage1.md)에서 원본 저장·복구를, [2단계](task-instructions.md)에서 지침 판 구분·원본 요구 전달·설계 문서 연결을 구현했다. [3단계](dependency-preparation.md)의 공통 준비 서비스·독립 도구를 [4단계 제작 실행](game-build-execution.md)에 연결했다. 새 gamejam HTML 요청은 workflow v2의 source/bundle을 사용하며 과거 v1 명세는 기존 실행을 유지한다. 5단계의 [원본 수정·버전·복원](game-build-editing.md)과 6단계의 [HTML 입출력·상태 안내](game-build-transfer.md)를 연결했다. [7단계](../audits/2026-11-03-game-build-stage7.md)는 합의한 Codex 실제 제작·공통 기능 검증을 완료했고 다른 AI 3종의 실제 계정 검증은 보류했다.
+게임 제작 확장은 [ADR 0006](decisions/0006-game-builds-and-standalone-html.md)와 [게임 제작 계약](game-builds.md)을 따른다. [0단계](../audits/2026-11-01-game-build-stage0.md)에서 실행 가능성을, [1단계](../audits/2026-11-01-game-build-stage1.md)에서 원본 저장·복구를, [2단계](task-instructions.md)에서 지침 판 구분·원본 요구 전달·설계 문서 연결을 구현했다. [3단계](dependency-preparation.md)의 공통 준비 서비스·독립 도구를 [4단계 제작 실행](game-build-execution.md)에 연결했다. 새 gamejam HTML 요청은 workflow v2의 source/bundle을 사용하며 과거 v1 명세는 기존 실행을 유지한다. 5단계의 [원본 수정·버전·복원](game-build-editing.md)과 6단계의 [HTML 입출력·상태 안내](game-build-transfer.md)를 연결했다. [7단계](../audits/2026-11-03-game-build-stage7.md)는 합의한 Codex 실제 제작·공통 기능 검증을 완료했고 다른 AI 3종의 실제 계정 검증은 보류했다.
 
 | 위치                   | 소유하는 책임                              | 새 코드의 의존 기준                                                   |
 | ---------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
@@ -37,6 +37,7 @@
 7단계는 현재 사용자에게 제공되는 Codex 실제 계정과 공통 기능 검증을 완료했다. Claude/Gemini/Grok의 실제 계정·모델 응답·품질 검증은 보류하며 모의 실행 결과와 구분한다. [7단계 기록](../audits/2026-11-03-game-build-stage7.md)에 실제 시나리오·발견/수정·남은 제약을 남긴다.
 
 게임 원본을 이어서 수정하거나 새 버전·문서 갱신·전체 기록 복원을 변경할 때는 [게임 원본 수정](game-build-editing.md)을 추가로 읽는다. 5단계는 수정용 source 사본, 정확한 lock 유지, 명시적 문서 target과 관련 index baseline을 구현한다. HTML 내보내기·재가져오기·기준 문서 비교·원본 상태 안내는 [HTML 입출력](game-build-transfer.md)을 읽는다. 실제 AI 품질 종합 검증은 후속이다.
+사용자 Markdown·HTML의 이름 확정, 기존 파일의 명시적 일괄 통일, 협업 재연결과 생성 경로는 [ADR 0005](decisions/0005-document-file-names.md)를 따른다. 표시 제목과 실제 이름을 함께 확정하며 기존 파일은 열기만으로 개명하지 않는다.
 
 [프로젝트 이름과 공유 폴더 정책](decisions/0004-project-names-and-shared-folders.md)은 PC·서버 이름 중복 검사와 사본 root/journal 경계를 정의한다.
 

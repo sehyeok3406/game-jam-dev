@@ -469,6 +469,17 @@ test('Ctrl+F ranges handle Korean, inline Markdown boundaries, repeated hits and
   assert.equal(matches[0].range.toString(), '아이디어');
   assert.equal(findTextRanges(root, '[a+b]', 'memo').length, 1);
   assert.equal(findTextRanges(root, '', 'memo').length, 0);
+  const title = root.ownerDocument.createElement('button');
+  title.innerHTML =
+    '헤더 <strong>아이디어</strong><span aria-hidden="true">숨김</span>';
+  assert.equal(
+    findTextRanges(title, '아이디어', 'memo')[0].range.toString(),
+    '아이디어',
+  );
+  assert.equal(findTextRanges(title, '숨김', 'memo').length, 0);
+  root.appendChild(title);
+  assert.equal(findTextRanges(root, '아이디어', 'memo').length, matches.length);
+  title.remove();
   assert.equal(root.innerHTML, before);
 });
 

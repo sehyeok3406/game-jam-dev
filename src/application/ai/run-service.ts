@@ -1,3 +1,4 @@
+import { documentPathTitle } from '../../core/projects/document-path.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import type { HistoryEntry } from '../../contracts/history.ts';
@@ -36,7 +37,10 @@ import {
   taskDocumentUpdates,
   assertDocumentUpdateBaseline,
 } from '../../core/ai/task-document-updates.ts';
-import { assertGameBuildEditingLock } from '../../core/projects/game-build-editing.ts';
+import {
+  assertGameBuildEditingLock,
+  currentGameBuildDocumentPath,
+} from '../../core/projects/game-build-editing.ts';
 import type {
   AiExecutor,
   PreparedAiRun,
@@ -147,16 +151,20 @@ export class AiRunService {
         specification: raw,
         inputs: scoped,
         previousLock: previous?.lock,
-        previousDocuments: previous?.manifest.documents.map((d) => ({
-          ...d,
-          currentSha256:
-            scoped[d.path] === undefined
-              ? null
-              : options.codec.digest(scoped[d.path]),
-          identityMatches:
-            scoped[d.path] !== undefined &&
-            matter(scoped[d.path]).data.id === d.id,
-        })),
+        previousDocuments: previous?.manifest.documents.map((d) => {
+          const currentPath = currentGameBuildDocumentPath(files, d);
+          return {
+            ...d,
+            currentPath,
+            currentSha256:
+              scoped[currentPath] === undefined
+                ? null
+                : options.codec.digest(scoped[currentPath]),
+            identityMatches:
+              scoped[currentPath] !== undefined &&
+              matter(scoped[currentPath]).data.id === d.id,
+          };
+        }),
         previousSource: previous?.manifest.htmlTemplate
           ? {
               plan: {
@@ -427,6 +435,10 @@ export class AiRunService {
           matter.stringify(parsed.content, {
             ...parsed.data,
             ...grouping,
+            ...(relative.startsWith('docs/') &&
+            !/^docs\/(?:html-sources|text-sources)\//.test(relative)
+              ? { title: documentPathTitle(relative) }
+              : {}),
             creation_origin: 'ai',
             ai_task_path: this.taskPath,
           }),

@@ -17,6 +17,7 @@ export type GameBuildExecutionInput = {
   previousSource?: GeneratedGameSource;
   previousDocuments?: {
     path: string;
+    currentPath?: string;
     id: string;
     sha256: string;
     currentSha256: string | null;

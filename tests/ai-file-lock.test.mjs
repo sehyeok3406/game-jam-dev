@@ -305,7 +305,7 @@ test('server leases allow unrelated active editors, concurrent creates/edits/del
     0,
     'Mixed layout must be atomic',
   );
-  const output = 'output/systems/combat/v002/index.html';
+  const output = 'output/systems/combat/v002/combat.html';
   await owner.finishAi('completed', {
     [output]: '<html><body>AI output</body></html>',
   });

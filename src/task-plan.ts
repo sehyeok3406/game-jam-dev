@@ -7,7 +7,11 @@ import {
 import matter from './markdown.ts';
 import { CanvasError } from './app-errors.ts';
 import { reservePaths, resolveDocumentOutputs } from './document-output.ts';
-import { isPreviewPath, resolvePreviewOutput } from './preview-output.ts';
+import {
+  isPreviewPath,
+  managedPreviewPaths,
+  resolvePreviewOutput,
+} from './preview-output.ts';
 import { createTaskSpecification } from './task-specification.ts';
 import { expectedArtifacts } from './ai-artifacts.ts';
 import {
@@ -21,7 +25,11 @@ import { prepareTextSources } from './gamejam-text-sources.ts';
 import { isTextMaterial } from './canvas-text-materials.ts';
 import type { CreateTaskInput } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
-import { prepareHtmlSource, htmlSourcePath } from './html-source.ts';
+import {
+  prepareHtmlSource,
+  htmlSourcePath,
+  describePreview,
+} from './html-source.ts';
 import { describeHtmlInput } from './html-inputs.ts';
 import { gameBuildEditingInputs } from './core/projects/game-build-editing.ts';
 import {
@@ -304,7 +312,7 @@ export function createTaskPlan(
       '기준 HTML 결과 파일을 찾을 수 없습니다. 다시 선택해주세요.',
     );
   const resolved = resolvePreviewOutput(
-    Object.keys(files).filter(
+    managedPreviewPaths(files).filter(
       (relative) =>
         !files[htmlSourcePath(relative)] ||
         !matter(files[htmlSourcePath(relative)]).data.imported_from,
@@ -312,6 +320,12 @@ export function createTaskPlan(
     reserved,
     choice,
     htmlInput.resultName,
+    Object.fromEntries(
+      managedPreviewPaths(files).map((p) => [
+        p,
+        describePreview(files, p).version ?? 1,
+      ]),
+    ),
   );
   const htmlTarget = resolved.path;
   if (implementing && input.gameBuildVersion === 1) {

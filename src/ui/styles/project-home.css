@@ -728,10 +728,7 @@
   --card-background: #ebedf0;
 }
 .document-card[data-card-color] {
-  background: var(--card-background);
-}
-.document-card[data-card-color]:not([data-card-color='default']) {
-  --card: var(--card-background);
+  background: var(--card);
 }
 .home-nav {
   font-size: 12px;
@@ -742,7 +739,7 @@
   white-space: nowrap;
 }
 .preview-card[data-card-color] > header {
-  background: var(--card-background);
+  background: var(--card);
 }
 .card-color-picker {
   display: flex;
@@ -923,4 +920,27 @@
 }
 .project-create-dialog .home-error {
   color: #d65050;
+}
+
+.card-color-unavailable {
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.card-color-unavailable small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.inspector-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: 12px;
 }

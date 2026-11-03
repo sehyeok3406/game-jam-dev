@@ -4,6 +4,19 @@ import type {
   GameBuildIndexV1,
 } from '../../contracts/game-build.ts';
 import { readGameBuildIndex } from './game-build.ts';
+import { readFileNames } from '../documents/name-registry.ts';
+
+/** Historical manifests stay immutable; the current name registry owns renamed paths. */
+export function currentGameBuildDocumentPath(
+  files: Snapshot,
+  document: { path: string; id: string },
+) {
+  return (
+    readFileNames(files).entries.find(
+      (e) => e.kind === 'markdown' && e.id === document.id,
+    )?.path ?? document.path
+  );
+}
 
 /** Follow only this result's durable references, never every project's document. */
 export function gameBuildEditingInputs(
@@ -23,9 +36,12 @@ export function gameBuildEditingInputs(
     ...new Set([
       path,
       ...manifest.assets.map((a) => a.path),
-      ...manifest.documents.flatMap((d) =>
-        files[d.path] && read(files[d.path]).data.id === d.id ? [d.path] : [],
-      ),
+      ...manifest.documents.flatMap((d) => {
+        const current = currentGameBuildDocumentPath(files, d);
+        return files[current] && read(files[current]).data.id === d.id
+          ? [current]
+          : [];
+      }),
     ]),
   ];
 }

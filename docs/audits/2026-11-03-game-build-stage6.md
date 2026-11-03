@@ -25,7 +25,7 @@
 - 안내 영역은 접을 수 있고 최대 180px다. 카드의 나머지는 게임 화면이 사용한다. 실제 화면 확인에서 발견한 불필요한 빈 영역을 수정하고 접기/펼치기·경고·최소화·크기별 높이 검사를 추가했다.
 - 실제 Windows 패키지에서 확인한 history rename EPERM에는 기존 내용 확인을 유지한 제한적 재시도를 추가했다. EPERM/EBUSY/EACCES만 최대 5회, 매번 baseline/세션을 검사한다. 대상 삭제 fallback은 없으며 다른 파일 오류와 영구 잠금은 실패로 남긴다.
 
-자세한 책임·계약은 [HTML 입출력 설계](../architecture/game-build-transfer.md), 결정 근거는 [ADR 0005](../architecture/decisions/0005-game-builds-and-standalone-html.md)를 따른다. 아키텍처 예외나 허용 규칙을 추가·완화하지 않았다.
+자세한 책임·계약은 [HTML 입출력 설계](../architecture/game-build-transfer.md), 결정 근거는 [ADR 0006](../architecture/decisions/0006-game-builds-and-standalone-html.md)를 따른다. 아키텍처 예외나 허용 규칙을 추가·완화하지 않았다.
 
 ## 검증 결과
 

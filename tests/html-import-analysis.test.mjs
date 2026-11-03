@@ -102,7 +102,7 @@ test('HTML imports preserve exact bytes, own stable source metadata and canvas p
   assert.match(previewLabel(html), /미분류/);
   assert.equal(
     nextPreviewPath(Object.keys(files)),
-    'output/inbox/untitled/v001/index.html',
+    'output/inbox/untitled/v001/새 게임.html',
   );
   const record = snapshotDocuments(files).find((doc) => doc.htmlSource);
   assert.equal(record.id, htmlSourceId(html));
@@ -116,12 +116,7 @@ test('HTML imports preserve exact bytes, own stable source metadata and canvas p
   assert.deepEqual(preview.warnings, []);
   const again = buildFileImports(batch);
   assert.ok(Object.keys(again).every((key) => files[key] === undefined));
-  for (const unsafe of [
-    'output/imported/../index.html',
-    'output/imported/index.html',
-    'output/imported/IMPORT-a.html',
-    'file:///game.html',
-  ])
+  for (const unsafe of ['output/imported/../index.html', 'file:///game.html'])
     assert.equal(isPreviewPath(unsafe), false);
 });
 

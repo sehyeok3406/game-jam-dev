@@ -553,13 +553,13 @@ test('administrators execute four-provider AI with a single authoritative lease;
       y: 0,
     });
     await editor.finishAi('completed', {
-      'output/inbox/untitled/v001/index.html':
+      'output/inbox/untitled/v001/새 게임.html':
         '<html><body>' + providerId + '</body></html>',
     });
     await owner.refresh();
     assert.ok(owner.files[concurrent.relativePath]);
     assert.match(
-      owner.files['output/inbox/untitled/v001/index.html'],
+      owner.files['output/inbox/untitled/v001/새 게임.html'],
       new RegExp(providerId),
     );
     const history = (await owner.history()).find(
@@ -631,7 +631,7 @@ test('administrators execute four-provider AI with a single authoritative lease;
   await assert.rejects(editor.request('ai-cancel'), /뷰어/);
   await owner.refresh();
   assert.match(
-    owner.files['output/inbox/untitled/v001/index.html'],
+    owner.files['output/inbox/untitled/v001/새 게임.html'],
     /grok-cli/,
   );
   await other.refresh();
@@ -857,10 +857,14 @@ test('AI leases protect related inputs, publish only assigned outputs, preserve 
     /허용된/,
   );
   await owner.finishAi('completed', {
-    'output/inbox/untitled/v001/index.html': '<html><body>버전1</body></html>',
+    'output/inbox/untitled/v001/새 게임.html':
+      '<html><body>버전1</body></html>',
   });
   await editor.refresh();
-  assert.match(editor.files['output/inbox/untitled/v001/index.html'], /버전1/);
+  assert.match(
+    editor.files['output/inbox/untitled/v001/새 게임.html'],
+    /버전1/,
+  );
   const v2 = await owner.command('tasks:create', {
     kind: 'implement',
     inputPaths: ['ideas/a.md'],
@@ -868,7 +872,7 @@ test('AI leases protect related inputs, publish only assigned outputs, preserve 
     y: 0,
     htmlResult: {
       mode: 'new',
-      basePath: 'output/inbox/untitled/v001/index.html',
+      basePath: 'output/inbox/untitled/v001/새 게임.html',
     },
   });
   await owner.beginAi(v2.relativePath);
@@ -879,20 +883,27 @@ test('AI leases protect related inputs, publish only assigned outputs, preserve 
       lease: oldLease,
       status: 'completed',
       artifacts: {
-        'output/inbox/untitled/v002/index.html':
+        'output/inbox/untitled/v002/untitled.html':
           '<html><body>遅延</body></html>',
       },
     }),
     /만료/,
   );
   await owner.refresh();
-  assert.equal(owner.files['output/inbox/untitled/v002/index.html'], undefined);
+  assert.equal(
+    owner.files['output/inbox/untitled/v002/untitled.html'],
+    undefined,
+  );
   await owner.beginAi(v2.relativePath);
   await owner.finishAi('completed', {
-    'output/inbox/untitled/v002/index.html': '<html><body>버전2</body></html>',
+    'output/inbox/untitled/v002/untitled.html':
+      '<html><body>버전2</body></html>',
   });
-  assert.match(owner.files['output/inbox/untitled/v001/index.html'], /버전1/);
-  assert.match(owner.files['output/inbox/untitled/v002/index.html'], /버전2/);
+  assert.match(owner.files['output/inbox/untitled/v001/새 게임.html'], /버전1/);
+  assert.match(
+    owner.files['output/inbox/untitled/v002/untitled.html'],
+    /버전2/,
+  );
 });
 
 test('recovery rotates owner credentials and restart fails an orphan AI lease without publishing', async (t) => {

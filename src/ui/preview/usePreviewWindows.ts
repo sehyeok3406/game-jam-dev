@@ -12,6 +12,7 @@ import {
   type CanvasNode,
 } from '../workspace/workspace-types.ts';
 interface Ports {
+  previews?: import('../../contracts/preview.ts').PreviewResult[];
   setPreviewWindows: import('react').Dispatch<
     import('react').SetStateAction<Record<string, PreviewWindowState>>
   >;
@@ -106,7 +107,13 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
       () =>
         isCurrent() &&
         void flowRef.current?.fitView({
-          nodes: [{ id: previewNodeId(a) }, { id: previewNodeId(b) }],
+          nodes: [a, b].map((relative) => ({
+            id: previewNodeId(
+              live
+                .current()
+                .previews?.find((p) => p.relativePath === relative) ?? relative,
+            ),
+          })),
           padding: 0.16,
           duration: 300,
         }),

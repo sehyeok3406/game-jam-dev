@@ -12,7 +12,7 @@ import {
   Ungroup,
   Upload,
 } from 'lucide-react';
-import { CARD_COLORS, cardColor } from '../../card-colors.ts';
+import { CardColorUnavailable } from './CardColorUnavailable';
 import type { DrawingObject } from '../../drawing-types.ts';
 import { drawingName } from '../../drawing-types.ts';
 import { previewLabel } from '../../preview-output.ts';
@@ -20,7 +20,6 @@ import type {
   CanvasDocument,
   CanvasSection,
   CanvasSheets,
-  CollaborationState,
   HistoryEntry,
   PreviewResult,
 } from '../../shared.ts';
@@ -48,9 +47,7 @@ interface Props {
   setPreviewContextMenu: import('react').Dispatch<
     import('react').SetStateAction<PreviewContextMenuState | null>
   >;
-  collaboration: CollaborationState;
   api: import('../../contracts/app-api.ts').AppApi;
-  loadProject: (fit?: boolean, throwOnError?: boolean) => Promise<void>;
   showError: (error: unknown) => void;
   openHistory: (
     relative?: string | null,
@@ -63,7 +60,6 @@ interface Props {
     >,
   ) => void;
   documentContextMenu: DocumentContextMenuState | null;
-  flushEditors: (finish?: boolean) => Promise<void>;
   setDocumentContextMenu: import('react').Dispatch<
     import('react').SetStateAction<DocumentContextMenuState | null>
   >;
@@ -132,14 +128,11 @@ export function WorkspaceContextMenus({
   movingResults,
   setResultFolderPrompt,
   setPreviewContextMenu,
-  collaboration,
   api,
-  loadProject,
   showError,
   openHistory,
   setDeletePrompt,
   documentContextMenu,
-  flushEditors,
   setDocumentContextMenu,
   toggleDocumentCollapsed,
   onBlocked,
@@ -226,43 +219,7 @@ export function WorkspaceContextMenus({
               <small>시스템 · UI·UX · 콘텐츠 · 통합 시제품</small>
             </span>
           </button>
-          <div
-            className="card-color-picker"
-            role="group"
-            aria-label="HTML 창 배경색"
-          >
-            <span>배경색</span>
-            {CARD_COLORS.map((color) => (
-              <button
-                key={color.id}
-                title={color.label}
-                aria-label={`${color.label} 배경색`}
-                aria-pressed={
-                  cardColor(previewContextMenu.preview.backgroundColor) ===
-                  color.id
-                }
-                data-card-color={color.id}
-                disabled={
-                  pathLocked(previewContextMenu.preview.relativePath) ||
-                  (collaboration.active &&
-                    (!collaboration.connected ||
-                      !!collaboration.pendingChanges))
-                }
-                onClick={() => {
-                  void api.editor
-                    .setDocumentColor({
-                      relativePath: previewContextMenu.preview.relativePath,
-                      color: color.id,
-                    })
-                    .then(() => {
-                      setPreviewContextMenu(null);
-                      return loadProject();
-                    })
-                    .catch(showError);
-                }}
-              />
-            ))}
-          </div>
+          <CardColorUnavailable />
           <div className="context-menu-title">
             {previewContextMenu.preview.title ||
               previewLabel(previewContextMenu.preview.relativePath)}
@@ -368,41 +325,7 @@ export function WorkspaceContextMenus({
               <small>파일 경로를 유지하며 이동</small>
             </span>
           </button>
-          <div
-            className="card-color-picker"
-            role="group"
-            aria-label="카드 배경색"
-          >
-            <span>배경색</span>
-            {CARD_COLORS.map((color) => (
-              <button
-                key={color.id}
-                title={color.label}
-                aria-label={`${color.label} 배경색`}
-                aria-pressed={
-                  cardColor(documentContextMenu.document.backgroundColor) ===
-                  color.id
-                }
-                data-card-color={color.id}
-                disabled={pathLocked(documentContextMenu.document.relativePath)}
-                onClick={() => {
-                  void flushEditors()
-                    .then(() =>
-                      api.editor.setDocumentColor({
-                        relativePath: documentContextMenu.document.relativePath,
-                        revision: documentContextMenu.document.revision,
-                        color: color.id,
-                      }),
-                    )
-                    .then(() => {
-                      setDocumentContextMenu(null);
-                      return loadProject();
-                    })
-                    .catch(showError);
-                }}
-              />
-            ))}
-          </div>
+          <CardColorUnavailable />
           <button
             type="button"
             role="menuitem"

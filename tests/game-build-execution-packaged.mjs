@@ -323,7 +323,7 @@ async function nativeExport(
     for (let n = 0; n < 160; n++) {
       if (
         await js(
-          `!![...document.querySelectorAll('.preview-card strong[title]')].find(e=>e.title===${JSON.stringify(relativePath)})?.closest('.preview-card').querySelector('[aria-label="게임 HTML 내보내기"]')`,
+          `!![...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(relativePath)}))?.closest('.preview-card').querySelector('[aria-label="게임 HTML 내보내기"]')`,
         )
       )
         break;
@@ -331,7 +331,7 @@ async function nativeExport(
     }
   const pending = click
     ? js(
-        `(()=>{const title=[...document.querySelectorAll('.preview-card strong[title]')].find(e=>e.title===${JSON.stringify(relativePath)});if(!title)throw Error('preview missing');const button=title.closest('.preview-card').querySelector('[aria-label="게임 HTML 내보내기"]');if(!button)throw Error('export action missing');button.click();return true;})()`,
+        `(()=>{const title=[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(relativePath)}));if(!title)throw Error('preview missing');const button=title.closest('.preview-card').querySelector('[aria-label="게임 HTML 내보내기"]');if(!button)throw Error('export action missing');button.click();return true;})()`,
       )
     : call('exportPreviewHtml', relativePath);
   const process = spawn(
@@ -389,14 +389,14 @@ async function roundTrip(previous, label) {
   assert.equal(original.build.kind, 'source');
   assert.ok(original.build.documents.some((d) => d.state === 'unchanged'));
   const visibleFacts = await js(
-    `(()=>{const title=[...document.querySelectorAll('.preview-card strong[title]')].find(e=>e.title===${JSON.stringify(previous.artifact.path)});const panel=title.closest('.preview-card').querySelector('.game-build-summary');if(!panel.open)panel.querySelector('summary').click();return panel.textContent;})()`,
+    `(()=>{const title=[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(previous.artifact.path)}));const panel=title.closest('.preview-card').querySelector('.game-build-summary');if(!panel.open)panel.querySelector('summary').click();return panel.textContent;})()`,
   );
   assert.match(visibleFacts, /수정용 원본 보관됨/);
   assert.match(visibleFacts, /제작 당시 내용과 같음/);
   if (original.build.libraries.length)
     assert.ok(visibleFacts.includes(original.build.libraries[0].version));
   await js(
-    `(()=>{const title=[...document.querySelectorAll('.preview-card strong[title]')].find(e=>e.title===${JSON.stringify(previous.artifact.path)});title.closest('.react-flow__node').click();document.querySelector('.canvas-zoom-menu summary').click();[...document.querySelectorAll('.canvas-zoom-menu button')].find(e=>e.textContent==='선택 항목 맞춤').click();})()`,
+    `(()=>{const title=[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(previous.artifact.path)}));title.closest('.react-flow__node').click();document.querySelector('.canvas-zoom-menu summary').click();[...document.querySelectorAll('.canvas-zoom-menu button')].find(e=>e.textContent==='선택 항목 맞춤').click();})()`,
   );
   await new Promise((resolve) => setTimeout(resolve, 400));
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });

@@ -13,6 +13,7 @@ export type CollaborationState = {
   gameBuildStorageLimits?: typeof import('./game-build.ts').GameBuildLimits;
   projectStoragePolicy?: import('./game-build.ts').ProjectStoragePolicy;
   projectNamesVersion?: number;
+  documentNamesVersion?: number;
   projectLayoutVersion?: number;
   fileLayoutVersion?: number;
   projectModeVersion?: number;
@@ -112,6 +113,7 @@ export type CollaborationCommand = {
   gameBuildVersion?: number;
   gameBuildEditingVersion?: number;
   gameBuildStorageVersion?: number;
+  documentNamesVersion?: number;
   projectLayoutVersion?: number;
   drawingTextVersion?: number;
   drawingTextAlignmentVersion?: number;

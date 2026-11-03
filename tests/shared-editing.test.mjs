@@ -117,7 +117,7 @@ const invoke = async (f, channel, input) => {
 };
 
 test('shared editing matrix covers every public reducer command exactly once', () => {
-  assert.equal(commands.length, 27);
+  assert.equal(commands.length, 30);
   assert.deepEqual(
     commands.map((c) => c.channel).sort(),
     Object.keys(COMMAND_LABELS).sort(),
@@ -141,6 +141,15 @@ for (const spec of commands) {
       assert.equal(sharedResult.body, '한글 수정 본문');
       assert.equal(sharedResult.contentRevision, 3);
       assert.equal(sharedResult.workflowRevision, 2);
+    } else if (
+      spec.channel === 'documents:rename' ||
+      spec.channel === 'preview:rename'
+    ) {
+      assert.deepEqual(sharedResult.change, localResult);
+      assert.equal(
+        sharedResult.document?.title ?? sharedResult.preview?.title,
+        input.name,
+      );
     } else if (spec.channel === 'drawings:apply')
       assert.deepEqual(sharedResult, snapshotDrawings(local.files));
     else assert.deepEqual(sharedResult, localResult);
@@ -163,6 +172,7 @@ for (const spec of commands) {
         'canvas:batch',
         'results:move',
         'results:organize',
+        'preview:rename',
       ].includes(spec.channel)
     )
       assert.equal(f.state.files[htmlPath], html);

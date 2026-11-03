@@ -4,6 +4,7 @@ import { textDocumentHasAlignment } from '../../text-document.ts';
 import { ApiError } from './errors.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import { assertGameBuildStorageSupport } from './game-build-capabilities.ts';
+import { FILE_NAMES_PATH } from '../../contracts/document-names.ts';
 /** Older clients cannot safely display or mutate partially erased strokes. */
 export function assertEraseSupport(
   files: Snapshot,
@@ -11,11 +12,17 @@ export function assertEraseSupport(
     drawingEraseVersion?: unknown;
     gameBuildStorageVersion?: unknown;
     projectLayoutVersion?: unknown;
+    documentNamesVersion?: unknown;
     drawingTextVersion?: unknown;
     drawingTextAlignmentVersion?: unknown;
   },
 ) {
   assertGameBuildStorageSupport(files, input);
+  if (files[FILE_NAMES_PATH] && input.documentNamesVersion !== 1)
+    throw new ApiError(
+      '이름이 통일된 프로젝트를 편집하려면 앱을 업데이트해주세요.',
+      409,
+    );
   if (files[PROJECT_LAYOUT_PATH] && input.projectLayoutVersion !== 2)
     throw new ApiError(
       '새 파일 구조를 사용하는 프로젝트입니다. 앱을 업데이트해주세요.',

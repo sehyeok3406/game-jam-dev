@@ -8,8 +8,18 @@ import {
 } from './core/projects/game-build.ts';
 import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
+import { FILE_NAMES_PATH } from './contracts/document-names.ts';
+import { readFileNames } from './core/documents/name-registry.ts';
+import { planDocumentName } from './application/editing/document-name-plan.ts';
+import { remapLayoutMarkdown } from './adapters/markdown/layout-links.ts';
+import { previewNameCodec } from './adapters/markdown/preview-names.ts';
+import { planPreviewName } from './application/editing/preview-name-plan.ts';
+import { applyFileNamePlan } from './application/editing/file-name-plan.ts';
 import { readProjectLayout } from './core/projects/project-layout.ts';
-import { allocateDocumentPath } from './core/projects/document-path.ts';
+import {
+  allocateNamedDocumentPath,
+  documentPathTitle,
+} from './core/projects/document-path.ts';
 import { importProjectCopy } from './project-copy.ts';
 import { layoutValues } from './core/editing/layout.ts';
 import type { CommandEnvironment } from './core/editing/environment.ts';
@@ -79,7 +89,11 @@ import type {
 } from './shared.ts';
 import { isPreviewPath, previewDeletionTarget } from './preview-output.ts';
 import type { Snapshot } from './project-store.ts';
-import { htmlSourceId, htmlSourcePath, sourceMetadata } from './html-source.ts';
+import {
+  htmlSourcePath,
+  sourceMetadata,
+  previewIdentity,
+} from './html-source.ts';
 import { cardColor, CARD_COLORS } from './card-colors.ts';
 import {
   relocateResults,
@@ -104,6 +118,7 @@ export function collaborationPath(relative: unknown): string {
       isGameBuildPath(relative) ||
       relative === 'output/README.md' ||
       relative === PROJECT_LAYOUT_PATH ||
+      relative === FILE_NAMES_PATH ||
       relative === RESULT_CATALOG_PATH ||
       relative === CANVAS_SHEETS_PATH ||
       relative === DOCUMENT_STATUSES_PATH ||
@@ -127,6 +142,7 @@ export function collaborationPath(relative: unknown): string {
               ([
                 RESULT_CATALOG_PATH,
                 PROJECT_LAYOUT_PATH,
+                FILE_NAMES_PATH,
                 CANVAS_SHEETS_PATH,
                 DOCUMENT_STATUSES_PATH,
                 KANBAN_VIEW_PATH,
@@ -147,6 +163,7 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
     throw new Error('문서 목록이 올바르지 않습니다.');
   readProjectLayout(files as Snapshot);
   validateGameBuilds(files as Snapshot, gameBuildCodec);
+  readFileNames(files as Snapshot);
   if ((files as Snapshot)[DOCUMENT_STATUSES_PATH])
     readStatuses((files as Snapshot)[DOCUMENT_STATUSES_PATH]);
   validateCanvasMembership(files as Snapshot);
@@ -232,7 +249,7 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         key.startsWith('docs/html-sources/') &&
         (!isPreviewPath(parsed.data.html_source) ||
           key !== htmlSourcePath(parsed.data.html_source) ||
-          id !== htmlSourceId(parsed.data.html_source) ||
+          id !== previewIdentity(files as Snapshot, parsed.data.html_source) ||
           typeof (files as Snapshot)[parsed.data.html_source] !== 'string')
       )
         throw new CanvasError(
@@ -419,6 +436,47 @@ export function reduceCollaboration(
     throw new Error('허용되지 않은 공동 작업입니다.');
   let next = { ...files };
   const input = record(value);
+  if (channel === 'preview:rename') {
+    const plan = planPreviewName(
+      files,
+      value as import('./contracts/document-names.ts').RenamePreviewInput,
+      {
+        parse: matter,
+        stringify: (body, data) => matter.stringify(body, data),
+      },
+      remapLayoutMarkdown,
+      previewNameCodec,
+    );
+    checkSnapshot(plan.files);
+    return { files: plan.files, result: plan.change };
+  }
+  if (channel === 'files:unify-names') {
+    const plan = applyFileNamePlan(
+      files,
+      value as import('./contracts/document-names.ts').ApplyFileNamesInput,
+      {
+        parse: matter,
+        stringify: (body, data) => matter.stringify(body, data),
+      },
+      remapLayoutMarkdown,
+      previewNameCodec,
+    );
+    checkSnapshot(plan.files);
+    return { files: plan.files, result: plan.affectedPaths };
+  }
+  if (channel === 'documents:rename') {
+    const plan = planDocumentName(
+      files,
+      value as import('./contracts/document-names.ts').RenameDocumentInput,
+      {
+        parse: matter,
+        stringify: (body, data) => matter.stringify(body, data),
+      },
+      remapLayoutMarkdown,
+    );
+    checkSnapshot(plan.files);
+    return { files: plan.files, result: plan.change };
+  }
   if (channel === 'projects:import-copy') {
     const copied = importProjectCopy(
       files,
@@ -637,9 +695,7 @@ export function reduceCollaboration(
   let result: unknown;
   if (channel === 'documents:create-idea') {
     const id = `idea-${environment.id().slice(0, 8)}`,
-      relative = readProjectLayout(files)
-        ? allocateDocumentPath('새 아이디어', Object.keys(next), id)
-        : `ideas/${id}.md`;
+      relative = allocateNamedDocumentPath('새 아이디어', Object.keys(next));
     const explicit = input.width !== undefined || input.height !== undefined;
     const bounds = explicit
       ? {
@@ -664,7 +720,7 @@ export function reduceCollaboration(
       {
         id,
         canvas_id: canvasId(input.canvasId),
-        title: '새 아이디어',
+        title: documentPathTitle(relative),
         creation_origin: 'manual',
         type: 'idea',
         status: 'draft',
@@ -746,15 +802,10 @@ export function reduceCollaboration(
       const member = record(item),
         parsed = read(member.path),
         suffix = environment.id().slice(0, 8);
-      const relative = readProjectLayout(files)
-        ? allocateDocumentPath(
-            `${parsed.data.title ?? '문서'} 복사본`,
-            Object.keys(next),
-            suffix,
-          )
-        : parsed.relative === 'project.md'
-          ? `docs/project-copy-${suffix}.md`
-          : parsed.relative.replace(/\.md$/, `-copy-${suffix}.md`);
+      const relative = allocateNamedDocumentPath(
+        `${parsed.data.title ?? '문서'} 복사본`,
+        Object.keys(next),
+      );
       write(
         relative,
         {
@@ -767,7 +818,7 @@ export function reduceCollaboration(
           creation_origin: 'duplicate',
           status_property_enabled:
             parsed.data.status_property_enabled !== false,
-          title: `${parsed.data.title ?? '문서'} 복사본`,
+          title: documentPathTitle(relative),
           x: number(parsed.data.x ?? 120) + number(input.offsetX),
           y: number(parsed.data.y ?? 120) + number(input.offsetY),
         },

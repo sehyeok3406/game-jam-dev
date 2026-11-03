@@ -170,7 +170,7 @@ export function WorkspaceAiPanels({
                     const result = previews
                       .filter((preview) => paths.includes(preview.relativePath))
                       .at(-1);
-                    if (result) jumpTo(previewNodeId(result.relativePath));
+                    if (result) jumpTo(previewNodeId(result));
                     else {
                       const ids = documents
                         .filter((doc) => paths.includes(doc.relativePath))

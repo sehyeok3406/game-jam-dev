@@ -10,6 +10,7 @@ export function serverCapabilities(
     gameBuildStorageLimits: GameBuildLimits,
     projectStoragePolicy: storagePolicy ?? {},
     projectNamesVersion: 1,
+    documentNamesVersion: 1,
     projectLayoutVersion: 2,
     projectCopyVersion: 1,
     projectModeVersion: 1,

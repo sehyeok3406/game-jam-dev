@@ -1,5 +1,11 @@
 # 편집 명령 연결과 검증 범위
 
+## Markdown·HTML 이름 확정과 일괄 통일 (2026-11-01)
+
+`renameDocument`/`documents:rename`, `renamePreview`/`preview:rename`, `inspectFileNames`, `unifyFileNames`/`files:unify-names`는 공통 이름 규칙과 application planner를 사용한다. 개인 프로젝트는 기존 Electron mutation/session/history와 `DocumentNameService`, 공동 프로젝트는 기존 SharedEditingService → client → 서버 reducer/명령 큐를 사용한다. ID·원래 내용/해시·영향 파일·세션을 확인하며 일괄 적용은 미리보기 snapshot 해시도 검사한다. 이름 입력 중에는 본문만 기존 큐로 저장하고 명시적 확정에서 파일명·표시 이름·참조를 함께 바꾼다.
+
+공동 개명은 `documentNamesVersion:1`을 지원하는 서버에서 온라인·동기화 유휴·AI 실행/예약 없음·영향 잠금/권한 검증 후 확정한다. 과거 이름의 미전송 본문은 ID와 로컬 base를 검증해 최신 경로·이름·파싱된 링크로 재연결한다. filename 이력을 포함하는 명시적 개명과 일반 본문/HTML 과거 기록을 구분해 Undo/복원한다. 파일 adapter는 다중 변경 journal을 사용하며 외부 변경은 보존한다. 상세 정책은 [ADR 0005](decisions/0005-document-file-names.md)를 따른다.
+
 ## 캔버스 외부 입력과 빈 텍스트 정리 (2026-10-29)
 
 외부 파일 드롭은 브라우저 `File`을 이름·`Uint8Array` DTO로 읽어 기존 `files:import`를 사용한다. 드롭 입력에는 시작 saveScope/clipboardContextId를 전달하고 IPC 진입과 mutation 큐 안에서 다시 검증한다. desktop의 `readImportSources`가 선택창·드롭·클립보드 파일의 확장자/크기/UTF-8/이미지 검사를 함께 수행하고 `FileImportService`가 기존 `files:import-batch`로 게시한다. renderer가 전달한 파일 목록에서 로컬 경로를 받지 않는다. 폴더·미지원 파일·검증 실패가 포함되면 배치 전체를 반영하지 않는다. 파일 수 20개·총 12MB·MD 2MB·HTML 8MB·이미지 5MB 제한과 단일 HTML 가져오기 정책을 유지한다.

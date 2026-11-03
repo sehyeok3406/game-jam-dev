@@ -5,6 +5,7 @@ import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import { allocateDocumentPath } from '../../core/projects/document-path.ts';
 import { remapLayoutReferences } from '../../core/projects/layout-references.ts';
 import { remapTaskReferences } from '../../core/ai/task-references.ts';
+import { moveGameBuilds } from '../../core/projects/game-build.ts';
 
 export type LayoutMarkdownLinks = (
   body: string,
@@ -105,5 +106,8 @@ export function remapProjectFiles(
           : JSON.stringify(mapped);
     } else next[target] = raw;
   }
-  return next;
+  return moveGameBuilds(
+    next,
+    Object.entries(aliases).map(([from, to]) => ({ from, to })),
+  );
 }

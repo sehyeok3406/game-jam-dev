@@ -22,6 +22,8 @@ Grok 공급자 검증은 `tests/grok-provider.test.mjs`, 기존 run-service/coor
 
 프로젝트 이름과 공유 사본은 `tests/project-names.test.mjs`에서 PC·서버 이름 경쟁, 참여 전 검사와 응답 유실 재시도, 기존 중복 보존, 전체 디렉터리 이동·중단 복구·대소문자 개명을 검사한다. `project-trash.test.mjs`는 복원 이름 충돌의 무부작용을 확인하고 `projects-packaged.mjs`는 실제 홈 메뉴 이동·초안·중복 거절·재시작 경로를 확인한다. [ADR 0004](decisions/0004-project-names-and-shared-folders.md)를 따른다.
 
+문서·HTML 이름 통일은 `document-names.test.mjs`, `file-names-integration.test.mjs`, `file-names-server.test.mjs`, `document-save-queue.test.mjs`와 최종 패키지의 `document-names-packaged.mjs`·`unified-file-names-packaged.mjs`로 확인한다. 실제 임시 서버/두 클라이언트·디렉터리·격리 프로필을 사용하며 구버전·권한·잠금·오프라인·재시도·복원·일괄 적용을 포함한다. [ADR 0005](decisions/0005-document-file-names.md)를 따른다.
+
 현재 동작을 고정하는 회귀 목록이다. 명령이 존재한다는 사실은 통과를 뜻하지 않는다. 실행 결과는 실행 계획서 작업 기록을 확인한다.
 
 | 보존할 동작                                        | 검사                                                                                                                                             | 데이터/환경                                                                |

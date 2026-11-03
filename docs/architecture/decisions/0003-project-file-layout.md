@@ -10,6 +10,8 @@
 
 ## 결정
 
+2026-11-01 보완: 아래 1번의 제목 편집 정책은 사용자 Markdown·관리 HTML의 명시적 이름 확정에 대해 [ADR 0005](0005-document-file-names.md)로 대체한다. 개인·공동·생성/가져오기·일괄 통일에 이름 규칙을 연결하며 본문 자동 저장과 내부 관리 파일의 고정 식별 경로는 유지한다.
+
 1. 새 프로젝트는 레이아웃 v2와 독립 이름 metadata로 시작하고 기본 Markdown 문서를 생성하지 않는다. v2 사용자 문서는 모두 docs 바로 아래에 저장한다. 종류·출처·묶음은 frontmatter로 관리한다. 제목은 초기 파일명에 사용하고 충돌은 짧은 ID로 해소한다. 제목 편집만으로 파일을 이동하지 않는다.
 2. 실제 파일은 docs, assets, output, .gamejam으로 구분한다. .gamejam/project에는 캔버스·섹션·HTML 관리·작업 명세, .gamejam/local에는 개인 미리보기·로컬 히스토리·동기화·이전 기록을 둔다. 인증 자료는 기존 OS 암호화 저장소에 유지한다.
 3. 서버 snapshot과 AI 명세의 내부 식별 경로(.canvas, .ai/tasks, sections, docs/html-sources 등)는 유지하고 filesystem adapter가 실제 .gamejam 경로로 변환한다. 사용자 문서 경로는 실제 docs 위치와 동일하다. 이 구분은 내부 UI에 새 개념으로 노출하지 않는다. AI의 격리 stage와 불변 history snapshot은 기존 식별 경로를 그대로 기록한다.

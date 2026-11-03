@@ -119,7 +119,6 @@
         "compatibility-import|src/ui/DiscordApprovalDialog.tsx|src/shared.ts": 1,
         "compatibility-import|src/ui/DiscordApprovalSettings.tsx|src/shared.ts": 1,
         "compatibility-import|src/ui/DocumentLinksContext.tsx|src/shared.ts": 1,
-        "compatibility-import|src/ui/FileProperties.tsx|src/shared.ts": 1,
         "compatibility-import|src/ui/GamejamRequestInbox.tsx|src/shared.ts": 3,
         "compatibility-import|src/ui/HomeOrganizationControls.tsx|src/shared.ts": 1,
         "compatibility-import|src/ui/MultiplayerLobby.tsx|src/shared.ts": 1,

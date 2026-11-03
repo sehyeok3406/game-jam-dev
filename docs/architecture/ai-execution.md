@@ -1,6 +1,6 @@
 # 개인 AI 실행의 경계
 
-게임 제작 v2는 [게임 제작 계약](game-builds.md)과 [ADR 0005](decisions/0005-game-builds-and-standalone-html.md)를 따른다. 0~3단계의 저장·지침·준비 서비스를 [4단계 source 제작 실행](game-build-execution.md)에 연결했다. 새 gamejam HTML 요청은 preparation → source → 고정 빌드를 사용하고, 기존 v1 명세의 1~2회 CLI·stage·반영은 유지한다. 생성 capability `gameBuildVersion:1`을 저장·지침 지원과 구분한다.
+게임 제작 v2는 [게임 제작 계약](game-builds.md)과 [ADR 0006](decisions/0006-game-builds-and-standalone-html.md)를 따른다. 0~3단계의 저장·지침·준비 서비스를 [4단계 source 제작 실행](game-build-execution.md)에 연결했다. 새 gamejam HTML 요청은 preparation → source → 고정 빌드를 사용하고, 기존 v1 명세의 1~2회 CLI·stage·반영은 유지한다. 생성 capability `gameBuildVersion:1`을 저장·지침 지원과 구분한다.
 
 파일 구조 v2에서는 사용자 Markdown을 docs 바로 아래에 생성하고 문서 묶음·역할은 속성으로 식별한다. 실제 작업 명세와 실행 기록은 .gamejam 아래에 있지만 snapshot의 .ai/tasks·.history 식별 경로는 유지한다. 격리 stage와 불변 입력은 이 식별 경로를 그대로 materialize한다. 따라서 CLI 지시의 파일 접근 범위를 넓히지 않는다. 새 결과에는 생성 출처와 작업 참조를 기록한다. 자세한 경로·기존 작업/복구 호환은 [ADR 0003](decisions/0003-project-file-layout.md)을 따른다.
 

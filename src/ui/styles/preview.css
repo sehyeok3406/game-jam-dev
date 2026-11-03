@@ -1,4 +1,5 @@
 .preview-card {
+  container: canvas-file-card / inline-size;
   display: flex;
   flex-direction: column;
   width: 100%;

@@ -1,5 +1,6 @@
 import type { Snapshot } from '../../contracts/project.ts';
 import type { GameBuildStatus } from '../../contracts/game-build-status.ts';
+import { currentGameBuildDocumentPath } from './game-build-editing.ts';
 import {
   readGameBuild,
   readGameBuildIndex,
@@ -83,10 +84,11 @@ export function gameBuildStatus(
         return p ? [{ name, version: p.version }] : [];
       }),
       documents: saved.manifest.documents.map((d) => {
-        const raw = files[d.path],
+        const path = currentGameBuildDocumentPath(files, d),
+          raw = files[path],
           current = raw === undefined ? undefined : parse(raw);
         return {
-          path: d.path,
+          path,
           title:
             typeof current?.data.title === 'string'
               ? current.data.title

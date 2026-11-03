@@ -395,32 +395,36 @@ async function run() {
     const defaultMapColor = await js(
       `getComputedStyle(document.querySelector('[data-node-id="'+${JSON.stringify(first.id)}+'"]')).fill`,
     );
+    const defaultCardColor = await js(
+      `getComputedStyle(document.querySelector('[data-find-document="'+${JSON.stringify(first.id)}+'"]')).backgroundColor`,
+    );
     await js(
       `window.gameCanvas.setDocumentColor({relativePath:${JSON.stringify(first.relativePath)},color:'pink'})`,
     );
     await wait(
-      '!!document.querySelector(".canvas-minimap-node[data-card-color=pink]")',
+      '!!document.querySelector(".document-card[data-card-color=pink]")',
     );
     const mapColor = await js(
-      "getComputedStyle(document.querySelector('.canvas-minimap-node[data-card-color=pink]')).fill",
+      `getComputedStyle(document.querySelector('[data-node-id="'+${JSON.stringify(first.id)}+'"]')).fill`,
     );
     const cardColor = await js(
       "getComputedStyle(document.querySelector('.document-card[data-card-color=pink]')).backgroundColor",
     );
-    assert.notEqual(
+    assert.equal(
       mapColor,
       defaultMapColor,
-      'minimap reflects the selected card color',
-    );
-    assert.notEqual(
-      mapColor,
-      cardColor,
-      'minimap retains its existing stronger, independent palette',
+      'minimap uses the neutral card presentation',
     );
     assert.equal(
       cardColor,
-      'rgb(251, 229, 239)',
-      'changing the minimap must preserve the pink document background',
+      defaultCardColor,
+      'legacy color is retained without coloring the document',
+    );
+    assert.equal(
+      (await js('window.gameCanvas.listDocuments()')).find(
+        (d) => d.id === first.id,
+      ).backgroundColor,
+      'pink',
     );
     assert(
       await js('!!document.querySelector(".canvas-minimap-node--section")'),
@@ -431,10 +435,13 @@ async function run() {
     await js(
       `{const card=document.querySelector('.document-card');const r=card.getBoundingClientRect();card.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:r.x+50,clientY:r.y+30}));}`,
     );
-    await wait('!!document.querySelector(".card-color-picker button")');
-    const swatch = await bounds('.card-color-picker button');
-    assert.equal(swatch.width, swatch.height);
-    assert.equal(swatch.width, 20);
+    await wait('!!document.querySelector(".card-color-unavailable button")');
+    assert.equal(
+      await js(
+        'document.querySelector(".card-color-unavailable button").disabled',
+      ),
+      true,
+    );
     await key('ESC');
     await js('qaReview.emit("review-run-1")');
     await wait('!!document.querySelector(".ai-completion-toast")');

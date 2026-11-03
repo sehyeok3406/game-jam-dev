@@ -14,7 +14,6 @@ import type {
   PreviewResult,
 } from '../../shared.ts';
 import type { CanvasItem } from '../CanvasOverlays';
-import { TYPE_LABELS, statusLabel } from '../documents/presentation.ts';
 import { FilePropertiesEditor } from '../FileProperties';
 import { requireDesktopApi } from '../runtime/desktop-api.ts';
 import {
@@ -120,7 +119,7 @@ export function WorkspaceInspector({
               (section) => sectionNodeId(section.id) === inspectorId,
             ),
             preview = previews.find(
-              (preview) => previewNodeId(preview.relativePath) === inspectorId,
+              (preview) => previewNodeId(preview) === inspectorId,
             );
           if (!item) return null;
           return (
@@ -139,40 +138,15 @@ export function WorkspaceInspector({
                 </button>
               </header>
               <h3>{item.title}</h3>
-              <dl>
-                <dt>파일</dt>
-                <dd>
-                  <code>{item.path}</code>
-                </dd>
-                {(doc || section || preview?.sourceId) && (
-                  <>
-                    <dt>ID</dt>
-                    <dd>
-                      <code>{doc?.id ?? section?.id ?? preview?.sourceId}</code>
-                    </dd>
-                  </>
-                )}
-                {doc && (
-                  <>
-                    <dt>문서 유형</dt>
-                    <dd>
-                      {TYPE_LABELS[doc.type]} · {statusLabel(doc.status)}
-                    </dd>
-                    <dt>위치 · 크기</dt>
-                    <dd>
-                      {doc.x}, {doc.y} · {doc.width} × {doc.height}
-                    </dd>
-                    <dt>최근 변경</dt>
-                    <dd>{new Date(doc.modifiedAt).toLocaleString('ko-KR')}</dd>
-                    <dt>소속 섹션</dt>
-                    <dd>{item.parent ?? '섹션 없음'}</dd>
-                  </>
-                )}
-              </dl>
-              {((doc && doc.type !== 'ai-task') || preview) && (
+              {(doc || preview) && (
                 <FilePropertiesEditor
                   key={doc?.id ?? preview!.sourceId}
                   document={doc ?? preview!}
+                  metadata={{
+                    type: doc?.type ?? 'html',
+                    phase: doc?.status,
+                    modifiedAt: doc?.modifiedAt,
+                  }}
                   statuses={statusSettings.value}
                   authorship={
                     inspectorAuthorship?.path === item.path
@@ -228,7 +202,32 @@ export function WorkspaceInspector({
                   manage={() => setStatusManagerOpen(true)}
                 />
               )}
-              {!((doc && doc.type !== 'ai-task') || preview) && (
+              <h4 className="inspector-section-title">파일 정보</h4>
+              <dl>
+                <dt>파일</dt>
+                <dd>
+                  <code>{item.path}</code>
+                </dd>
+                {(doc || section || preview?.sourceId) && (
+                  <>
+                    <dt>ID</dt>
+                    <dd>
+                      <code>{doc?.id ?? section?.id ?? preview?.sourceId}</code>
+                    </dd>
+                  </>
+                )}
+                {doc && (
+                  <>
+                    <dt>위치 · 크기</dt>
+                    <dd>
+                      {doc.x}, {doc.y} · {doc.width} × {doc.height}
+                    </dd>
+                    <dt>소속 섹션</dt>
+                    <dd>{item.parent ?? '섹션 없음'}</dd>
+                  </>
+                )}
+              </dl>
+              {!(doc || preview) && (
                 <dl className="inspector-authorship">
                   <dt>생성한 사람</dt>
                   <dd>

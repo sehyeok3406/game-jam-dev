@@ -1,9 +1,13 @@
 import { createServer } from 'vite';
 import { spawn } from 'node:child_process';
 import electron from 'electron';
+import path from 'node:path';
 const server = await createServer({
   configFile: 'vite.renderer.config.mts',
   cacheDir: 'out/sync-ui/vite-cache',
+  resolve: {
+    alias: { 'node:crypto': path.resolve('tests/mocks/browser-crypto.ts') },
+  },
   server: {
     host: '127.0.0.1',
     port: 0,

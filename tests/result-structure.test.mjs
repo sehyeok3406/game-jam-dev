@@ -99,19 +99,19 @@ test('restoring old HTML history keeps the current folder and immutable original
 test('structured paths validate categories, safe features and versions; reservations are per feature', () => {
   assert.equal(
     nextPreviewPath([], 'combat'),
-    'output/inbox/combat/v001/index.html',
+    'output/inbox/combat/v001/combat.html',
   );
   assert.equal(
     nextPreviewPath(['output/inbox/combat/v001/index.html'], 'combat'),
-    'output/inbox/combat/v002/index.html',
+    'output/inbox/combat/v002/combat.html',
   );
   assert.equal(
     nextPreviewPath(['output/inbox/combat/v099/index.html'], 'hud'),
-    'output/inbox/hud/v001/index.html',
+    'output/inbox/hud/v001/hud.html',
   );
   assert.equal(
     nextPreviewPath([to], undefined, to),
-    'output/systems/combat/v003/index.html',
+    'output/systems/combat/v003/combat.html',
   );
   for (const value of [
     'output/systems/con/v001/index.html',

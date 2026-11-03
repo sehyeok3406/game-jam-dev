@@ -1,4 +1,4 @@
-# 0005 · 게임 제작 원본 보존과 단일 HTML 배포
+# 0006 · 게임 제작 원본 보존과 단일 HTML 배포
 
 - 날짜: 2026-11-01
 - 상태: 채택 — 0단계 기술 검증·1단계 원본 저장·2단계 지침/제작 기준·3단계 독립 준비 서비스/도구·4단계 실제 source/build 및 반영 연결 완료. 수정·입출력·전체 통합은 5~7단계다.
@@ -70,6 +70,8 @@
 - 원본 저장 구현은 contracts/core/adapters와 기존 조립·업무 경계를 사용하며 architecture 예외를 추가하지 않았다.
 
 ## 검증·재검토 조건
+
+2026-11-03 배포 통합에서 원격의 문서 파일명 ADR 0005를 보존하기 위해 이 결정을 0006으로 정리했다. 이름 변경은 mutable build index와 현재 이름 registry를 연결하고 immutable source/manifest는 유지한다. 과거 문서 baseline은 ID를 통해 현재 경로를 찾으며 실제 입력의 hash와 별도 currentPath를 전달한다. 개명 전후 제작·수정·상태 검사를 추가한다.
 
 6단계는 현재 저장된 플레이용 HTML을 바이트 그대로 외부에 저장한다. HTML에 source 묶음을 새로 삽입하거나 가져온 metadata로 기존 artifact를 자동 복원하는 대안은 배제했다. 기본 HTML 하나 전달이라는 합의와 가져온 문서의 새 identity·원본 보호를 유지하기 위해서다. 외부 파일만 받은 사용자는 HTML을 참고해 새 source를 제작하며 기존 프로젝트의 수정 recipe가 복구됐다고 표시하지 않는다. export는 별도 desktop API/application 서비스/파일 adapter로 조립하고 세션·HTML 재확인과 프로젝트 내부 경로 보호를 수행한다. 문서 상태 비교에는 전체 입력 hash 외의 선택적 의미 비교 hash를 추가한다. 예전 revision과 복사 remap 뒤에는 비교 정보 부족을 unknown으로 표현하고 과거 원본을 재작성하지 않는다. 실제 Windows 잠금 때문에 atomic rename을 제한적으로 재시도하되 매번 대상 baseline·세션을 재확인하고 삭제 fallback은 사용하지 않는다. 현재 계약은 [HTML 입출력](../game-build-transfer.md), 검증 결과는 [6단계 보고서](../../audits/2026-11-03-game-build-stage6.md)를 따른다.
 

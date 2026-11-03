@@ -1,5 +1,5 @@
 import { Copy, ArrowRight, Minimize2, Trash2 } from 'lucide-react';
-import { CARD_COLORS, cardColor } from '../../card-colors.ts';
+import { CardColorUnavailable } from './CardColorUnavailable';
 import type { SelectionMenuTargets } from './selection-menu-plan.ts';
 
 export function SelectionContextMenu({
@@ -9,7 +9,6 @@ export function SelectionContextMenu({
   locked,
   canMove,
   canCopy,
-  onColor,
   onCopy,
   onMove,
   onCollapse,
@@ -21,16 +20,12 @@ export function SelectionContextMenu({
   locked: boolean;
   canMove: boolean;
   canCopy: boolean;
-  onColor(color: string): void;
   onCopy(): void;
   onMove(): void;
   onCollapse(): void;
   onDelete(): void;
 }) {
   const colors = [...targets.documents, ...targets.previews];
-  const current = new Set(
-    colors.map((item) => cardColor(item.backgroundColor)),
-  );
   const supported =
     targets.documents.length +
     targets.sections.length +
@@ -50,29 +45,7 @@ export function SelectionContextMenu({
       }}
     >
       <div className="context-menu-title">{targets.count}개 선택됨</div>
-      {colors.length > 0 && (
-        <div
-          className="card-color-picker"
-          role="group"
-          aria-label={`선택 카드 ${colors.length}개 배경색`}
-        >
-          <span>배경색 · {colors.length}개</span>
-          {CARD_COLORS.map((color) => (
-            <button
-              key={color.id}
-              title={color.label}
-              aria-label={`${color.label} 배경색`}
-              aria-pressed={current.size === 1 && current.has(color.id)}
-              data-card-color={color.id}
-              disabled={locked}
-              onClick={() => onColor(color.id)}
-            />
-          ))}
-        </div>
-      )}
-      {colors.length > 0 && colors.length !== targets.count && (
-        <small>배경색 제외 {targets.count - colors.length}개</small>
-      )}
+      {colors.length > 0 && <CardColorUnavailable />}
       {canCopy && (
         <button
           type="button"

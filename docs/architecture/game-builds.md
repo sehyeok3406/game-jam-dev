@@ -1,6 +1,6 @@
 # 게임 제작 원본·준비·독립 HTML 구현 계약
 
-2026-11-03. [ADR 0005](decisions/0005-game-builds-and-standalone-html.md)에 따른 1차 구현 계약이다. **1~3단계 저장·지침·준비를 4단계 source/workflow v2/독립 HTML 빌드에 연결했다.** 새 gamejam HTML 요청은 [제작 실행](game-build-execution.md)을 사용한다. 5단계의 [원본 수정·버전·복원](game-build-editing.md)과 6단계의 [HTML 입출력·상태 UI](game-build-transfer.md)를 구현했다. [7단계](../audits/2026-11-03-game-build-stage7.md)는 합의한 Codex 실제 제작·공통 기능 검증을 완료했고 다른 AI 3종의 실제 계정 검증은 보류했다. 현재 AI 실행은 [AI 실행](ai-execution.md), 지침 구현은 [요청 지침](task-instructions.md), 현재 준비 서비스는 [의존성 준비](dependency-preparation.md)를 따른다. 단계별 실제 검증 범위는 각 보고서와 [1차 계획](../plans/2026-11-01-game-build-phase1.md)을 따른다.
+2026-11-03. [ADR 0006](decisions/0006-game-builds-and-standalone-html.md)에 따른 1차 구현 계약이다. **1~3단계 저장·지침·준비를 4단계 source/workflow v2/독립 HTML 빌드에 연결했다.** 새 gamejam HTML 요청은 [제작 실행](game-build-execution.md)을 사용한다. 5단계의 [원본 수정·버전·복원](game-build-editing.md)과 6단계의 [HTML 입출력·상태 UI](game-build-transfer.md)를 구현했다. [7단계](../audits/2026-11-03-game-build-stage7.md)는 합의한 Codex 실제 제작·공통 기능 검증을 완료했고 다른 AI 3종의 실제 계정 검증은 보류했다. 현재 AI 실행은 [AI 실행](ai-execution.md), 지침 구현은 [요청 지침](task-instructions.md), 현재 준비 서비스는 [의존성 준비](dependency-preparation.md)를 따른다. 단계별 실제 검증 범위는 각 보고서와 [1차 계획](../plans/2026-11-01-game-build-phase1.md)을 따른다.
 
 ## 현재 구현한 저장 기능
 

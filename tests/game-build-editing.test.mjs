@@ -323,7 +323,7 @@ test('new HTML version retains the selected source/lock and keeps the old game i
     base.artifact,
   );
   const fresh = artifacts.find((a) => a.path !== base.artifact.path);
-  assert.equal(fresh.path, 'output/inbox/game/v002/index.html');
+  assert.equal(fresh.path, 'output/inbox/game/v002/game.html');
   assert.notEqual(fresh.artifactId, base.artifact.artifactId);
   assert.deepEqual(f.seen[0].previousLock, emptyLock);
   assert.equal(f.current()[base.artifact.path], base.result.html);

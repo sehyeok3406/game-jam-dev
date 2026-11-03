@@ -1,6 +1,6 @@
 # 게임 라이브러리 공통 준비
 
-2026-11-02. 3단계에서 구현한 준비 서비스의 현재 경계다. 전체 제작·저장 계약은 [game-builds](game-builds.md), 결정 근거는 [ADR 0005](decisions/0005-game-builds-and-standalone-html.md)를 따른다.
+2026-11-02. 3단계에서 구현한 준비 서비스의 현재 경계다. 전체 제작·저장 계약은 [game-builds](game-builds.md), 결정 근거는 [ADR 0006](decisions/0006-game-builds-and-standalone-html.md)를 따른다.
 
 ## 현재 제공하는 동작
 
