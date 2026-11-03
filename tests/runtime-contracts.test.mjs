@@ -34,7 +34,8 @@ test('grouped bridge forwards arguments, binding, rejection and unsubscribe with
     },
   };
   const api = groupBridge(bridge);
-  assert.equal(Object.keys(APP_API_GROUPS).length, 140);
+  assert.equal(Object.keys(APP_API_GROUPS).length, 141);
+  assert.equal(APP_API_GROUPS.exportPreviewHtml, 'desktop');
   assert.deepEqual(await api.projects.listProjects(true), ['bridge']);
   assert.deepEqual(events, [true]);
   const input = { relativePath: 'docs/test.md', title: '저장', body: '한글' };
@@ -146,8 +147,8 @@ test('wire v1 health and authenticated state keep feature values and persist an 
   client = new CollaborationClient(created.credentials, () => {});
   client.accept(created.result);
   for (const [key, value] of Object.entries(serverCapabilities())) {
-    assert.equal(health[key], value, key);
-    assert.equal(client.state[key], value, key);
+    assert.deepEqual(health[key], value, key);
+    assert.deepEqual(client.state[key], value, key);
   }
   await client.lock('docs/test.md');
   await client.command('documents:save', {

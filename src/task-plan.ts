@@ -10,7 +10,12 @@ import { reservePaths, resolveDocumentOutputs } from './document-output.ts';
 import { isPreviewPath, resolvePreviewOutput } from './preview-output.ts';
 import { createTaskSpecification } from './task-specification.ts';
 import { expectedArtifacts } from './ai-artifacts.ts';
-import { taskInstructions } from './task-instructions.ts';
+import {
+  taskInstructions,
+  defaultTaskInstructions,
+} from './task-instructions.ts';
+import type { TaskDesignContextV1 } from './contracts/task-instructions.ts';
+import { taskInstructionContract } from './task-instruction-contract.ts';
 import { gamejamSnapshotFromInput } from './gamejam-history.ts';
 import { prepareTextSources } from './gamejam-text-sources.ts';
 import { isTextMaterial } from './canvas-text-materials.ts';
@@ -18,6 +23,11 @@ import type { CreateTaskInput } from './shared.ts';
 import type { Snapshot } from './project-store.ts';
 import { prepareHtmlSource, htmlSourcePath } from './html-source.ts';
 import { describeHtmlInput } from './html-inputs.ts';
+import { gameBuildEditingInputs } from './core/projects/game-build-editing.ts';
+import {
+  taskDocumentUpdates,
+  assertDocumentUpdateBaseline,
+} from './core/ai/task-document-updates.ts';
 import {
   documentTemplates,
   taskDocumentFormat,
@@ -59,6 +69,17 @@ export function createTaskPlan(
   id: string,
   files: Snapshot,
 ) {
+  if (input.gameBuildVersion !== undefined && input.gameBuildVersion !== 1)
+    throw new CanvasError('GC-AI-004', '지원하지 않는 게임 제작 버전입니다.');
+  if (
+    !['organize', 'implement'].includes(input.kind) ||
+    (input.thenImplement !== undefined &&
+      (input.kind !== 'organize' ||
+        !input.thenImplement ||
+        typeof input.thenImplement !== 'object' ||
+        Array.isArray(input.thenImplement)))
+  )
+    throw new CanvasError('GC-AI-001', 'AI 작업 종류가 올바르지 않습니다.');
   const htmlChoice = input.thenImplement ?? input;
   const baseline =
     htmlChoice.htmlResult?.basePath ??
@@ -92,6 +113,43 @@ export function createTaskPlan(
       : {}),
   };
   input = { ...input, requestSnapshot: gamejamSnapshotFromInput(input) };
+  for (const kind of [
+    input.kind,
+    ...(input.thenImplement ? ['implement' as const] : []),
+  ]) {
+    const value =
+      kind === input.kind
+        ? input.instructions
+        : input.thenImplement?.instructions;
+    const effective = taskInstructions(
+      kind,
+      value ?? defaultTaskInstructions(kind, input.sourceMode),
+    );
+    if (
+      effective !==
+      taskInstructions(kind, input.requestSnapshot!.request.instructions[kind])
+    )
+      throw new CanvasError(
+        'GC-AI-004',
+        '원본 요청과 실행 지시가 일치하지 않습니다. 내용을 확인해 새 요청을 만들어주세요.',
+      );
+  }
+  input = {
+    ...input,
+    instructionOrigin:
+      input.instructionOrigin ??
+      input.requestSnapshot!.request.instructionOrigins?.[input.kind],
+    ...(input.thenImplement
+      ? {
+          thenImplement: {
+            ...input.thenImplement,
+            instructionOrigin:
+              input.thenImplement.instructionOrigin ??
+              input.requestSnapshot!.request.instructionOrigins?.implement,
+          },
+        }
+      : {}),
+  };
   if (
     input.sourceMode !== undefined &&
     !['html', 'html-compose'].includes(input.sourceMode)
@@ -135,15 +193,6 @@ export function createTaskPlan(
       ],
     };
   }
-  if (
-    !['organize', 'implement'].includes(input.kind) ||
-    (input.thenImplement !== undefined &&
-      (input.kind !== 'organize' ||
-        !input.thenImplement ||
-        typeof input.thenImplement !== 'object' ||
-        Array.isArray(input.thenImplement)))
-  )
-    throw new CanvasError('GC-AI-001', 'AI 작업 종류가 올바르지 않습니다.');
   const reserved = reservePaths(
     files,
     (raw) => matter(raw).data.expected_outputs,
@@ -265,6 +314,22 @@ export function createTaskPlan(
     htmlInput.resultName,
   );
   const htmlTarget = resolved.path;
+  if (implementing && input.gameBuildVersion === 1) {
+    input = {
+      ...input,
+      inputPaths: [
+        ...new Set([
+          ...input.inputPaths,
+          ...gameBuildEditingInputs(
+            files,
+            resolved.choice.basePath ??
+              (choice.mode === 'update' ? htmlTarget : undefined),
+            matter,
+          ).filter((p) => p !== htmlTarget),
+        ]),
+      ],
+    };
+  }
   if (
     source &&
     (input.thenImplement || input.kind === 'implement') &&
@@ -275,11 +340,64 @@ export function createTaskPlan(
       '분석 대상 원본 HTML은 덮어쓸 수 없습니다. 새 HTML 버전을 선택해주세요.',
     );
   const outputs = documents ? docOutputs : [htmlTarget];
-  if (outputs.some((path) => input.inputPaths.includes(path)))
+  const documentUpdates =
+    documents && docChoice?.mode === 'update'
+      ? (() => {
+          const targets = docOutputs
+            .filter((p) => files[p] !== undefined)
+            .map((path) => ({ path, id: matter(files[path]).data.id }));
+          const value = targets.length
+            ? taskDocumentUpdates(
+                { version: 1, targets },
+                input.inputPaths,
+                outputs,
+              )
+            : undefined;
+          assertDocumentUpdateBaseline(value, files, matter);
+          return value;
+        })()
+      : undefined;
+  if (
+    outputs.some(
+      (path) =>
+        input.inputPaths.includes(path) &&
+        !documentUpdates?.targets.some((t) => t.path === path),
+    )
+  )
     throw new CanvasError(
       'GC-AI-004',
       '입력 문서를 동시에 덮어쓸 수 없습니다. 새 문서 버전을 선택해주세요.',
     );
+  const context: TaskDesignContextV1 = {
+    version: 1,
+    originalInputs: [...input.inputPaths],
+    originalInstructions: {
+      [input.kind]: taskInstructions(
+        input.kind,
+        input.instructions ??
+          defaultTaskInstructions(input.kind, input.sourceMode),
+      ),
+      ...(input.thenImplement
+        ? {
+            implement: taskInstructions(
+              'implement',
+              input.thenImplement.instructions,
+            ),
+          }
+        : {}),
+    },
+    designDocuments: [
+      ...new Set([
+        ...input.inputPaths.filter(
+          (path) =>
+            path.endsWith('.md') &&
+            files[path] &&
+            ['system', 'overview'].includes(matter(files[path]).data.type),
+        ),
+        ...(documents ? docOutputs : []),
+      ]),
+    ],
+  };
   const first = createTaskSpecification(
     documents ? input : { ...input, htmlResult: resolved.choice },
     id,
@@ -288,21 +406,21 @@ export function createTaskPlan(
     htmlInputs,
     documentBundle,
     documentFormat,
+    context,
+    documentUpdates,
   );
   taskDocumentFormat(first);
   if (!input.thenImplement) return first;
-  const imageInputs = input.inputPaths.filter(
-    (path) => files[path] && matter(files[path]).data.type === 'image',
-  );
   const second = createTaskSpecification(
     {
       kind: 'implement',
+      gameBuildVersion: input.gameBuildVersion,
       multiplayer: resolvedMultiplayer,
       canvasId: input.canvasId,
       inputPaths: [
         ...new Set([
           ...docOutputs,
-          ...imageInputs,
+          ...input.inputPaths,
           ...(source?.descriptors.map((source) => source.path) ?? []),
           ...(source?.recordPaths ?? []),
           ...(htmlInputs?.flatMap((source) =>
@@ -314,6 +432,7 @@ export function createTaskPlan(
       x: input.x,
       y: input.y,
       instructions: input.thenImplement.instructions,
+      instructionOrigin: input.thenImplement.instructionOrigin,
       resultName: input.thenImplement.resultName,
       htmlResult: resolved.choice,
     },
@@ -321,6 +440,9 @@ export function createTaskPlan(
     [htmlTarget],
     undefined,
     htmlInputs,
+    undefined,
+    undefined,
+    context,
   );
   const parsed = matter(first);
   const secondData = matter(second).data;
@@ -338,7 +460,8 @@ export function createTaskPlan(
       ...(secondData.multiplayer !== undefined
         ? { multiplayer: secondData.multiplayer }
         : {}),
-      gamejam_workflow_version: 1,
+      gamejam_workflow_version: input.gameBuildVersion === 1 ? 2 : 1,
+      ...(input.gameBuildVersion === 1 ? { game_build_version: 1 } : {}),
       workflow_steps: [first, second],
     },
   );
@@ -346,10 +469,40 @@ export function createTaskPlan(
 
 export function workflowStages(raw: string): string[] {
   const data = matter(raw).data;
-  if (data.gamejam_workflow_version === undefined) return [];
+  const sourceBuild = gameBuildTask(raw);
+  if (sourceBuild || data.document_updates !== undefined) {
+    const updates = taskDocumentUpdates(
+      data.document_updates,
+      data.inputs ?? [],
+      expectedArtifacts(raw),
+    );
+    if (
+      data.workflow_steps &&
+      JSON.stringify(updates) !==
+        JSON.stringify(matter(data.workflow_steps[0]).data.document_updates)
+    )
+      throw new CanvasError(
+        'GC-AI-004',
+        '단계별 시스템 문서 갱신 대상이 일치하지 않습니다.',
+      );
+  }
+  if (sourceBuild && data.workflow_steps === undefined) {
+    taskInstructionContract(raw);
+    const outputs = expectedArtifacts(raw);
+    if (outputs.length !== 1 || !isPreviewPath(outputs[0]))
+      throw new CanvasError(
+        'GC-AI-004',
+        '게임 제작 출력 범위가 올바르지 않습니다.',
+      );
+    return [];
+  }
+  if (data.gamejam_workflow_version === undefined) {
+    taskInstructionContract(raw);
+    return [];
+  }
   const stages = data.workflow_steps;
   if (
-    data.gamejam_workflow_version !== 1 ||
+    ![1, 2].includes(data.gamejam_workflow_version) ||
     !Array.isArray(stages) ||
     stages.length !== 2 ||
     stages.some((stage) => typeof stage !== 'string')
@@ -358,12 +511,53 @@ export function workflowStages(raw: string): string[] {
       'GC-AI-004',
       'gamejam! 단계 명세가 올바르지 않습니다. 새 작업을 만들어주세요.',
     );
+  if (sourceBuild !== gameBuildTask(stages[1]) || gameBuildTask(stages[0]))
+    throw new CanvasError(
+      'GC-AI-004',
+      '단계별 게임 제작 버전이 일치하지 않습니다.',
+    );
   const first = expectedArtifacts(stages[0]),
     second = expectedArtifacts(stages[1]);
   const all = expectedArtifacts(raw);
   const original = data.inputs,
     firstInputs = matter(stages[0]).data.inputs,
     secondInputs = matter(stages[1]).data.inputs;
+  const firstContract = taskInstructionContract(stages[0]);
+  const secondContract = taskInstructionContract(stages[1]);
+  if (
+    data.task_context ||
+    firstContract ||
+    secondContract ||
+    data.instruction_template_version === 2
+  ) {
+    if (
+      !firstContract ||
+      !secondContract ||
+      firstContract.effective.kind !== 'organize' ||
+      secondContract.effective.kind !== 'implement' ||
+      JSON.stringify(data.effective_instructions) !==
+        JSON.stringify(firstContract.effective) ||
+      JSON.stringify(data.task_context) !==
+        JSON.stringify(firstContract.context) ||
+      JSON.stringify(firstContract.context) !==
+        JSON.stringify(secondContract.context) ||
+      !Array.isArray(original) ||
+      JSON.stringify(firstContract.context.originalInputs) !==
+        JSON.stringify(original) ||
+      original.some(
+        (path) => !Array.isArray(secondInputs) || !secondInputs.includes(path),
+      ) ||
+      firstContract.context.originalInstructions.implement !==
+        secondContract.effective.effectiveText ||
+      first.some(
+        (path) => !firstContract.context.designDocuments.includes(path),
+      )
+    )
+      throw new CanvasError(
+        'GC-AI-004',
+        '단계별 원본 요구와 제작 기준이 일치하지 않습니다. 새 요청을 만들어주세요.',
+      );
+  }
   const bundle = documentBundleContract(raw);
   const format = taskDocumentFormat(raw);
   if (JSON.stringify(format) !== JSON.stringify(taskDocumentFormat(stages[0])))
@@ -412,6 +606,22 @@ export function workflowStages(raw: string): string[] {
       'gamejam!의 정리 문서와 HTML 출력 범위가 일치하지 않습니다.',
     );
   return stages;
+}
+
+/** A generation capability, independent of storage and instruction versions. */
+export function gameBuildTask(raw: string): boolean {
+  const data = matter(raw).data;
+  if (
+    data.game_build_version === undefined &&
+    data.gamejam_workflow_version !== 2
+  )
+    return false;
+  if (data.game_build_version !== 1 || data.gamejam_workflow_version !== 2)
+    throw new CanvasError(
+      'GC-AI-004',
+      '지원하지 않는 게임 제작 명세입니다. 앱과 서버를 업데이트해주세요.',
+    );
+  return true;
 }
 
 export function newOutputsAlreadyExist(raw: string, files: Snapshot) {

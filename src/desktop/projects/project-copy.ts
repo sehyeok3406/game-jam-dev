@@ -1,4 +1,5 @@
 import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
+import { hasGameBuilds } from '../../core/projects/game-build.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectCopyService } from '../../application/projects/project-copy-service.ts';
@@ -167,6 +168,13 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
       },
       close: () => client.stop(),
       async publish(input) {
+        if (
+          hasGameBuilds(input.bundle.files) &&
+          client.state.gameBuildStorageVersion !== 1
+        )
+          throw Error(
+            '게임 제작 원본을 보관할 수 있는 협업 서버로 업데이트해주세요.',
+          );
         // command() keeps authenticated server receipts and retries the same creation ID.
         const result = (await client.command(
           'projects:import-copy',

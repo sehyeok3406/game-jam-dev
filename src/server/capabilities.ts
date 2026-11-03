@@ -1,11 +1,20 @@
+import { GameBuildLimits } from '../contracts/game-build.ts';
 /** Wire v1 fields shared by health and authenticated state. */
-export function serverCapabilities() {
+export function serverCapabilities(
+  storagePolicy?: import('../contracts/game-build.ts').ProjectStoragePolicy,
+) {
   return {
+    gameBuildVersion: 1,
+    gameBuildEditingVersion: 1,
+    gameBuildStorageVersion: 1,
+    gameBuildStorageLimits: GameBuildLimits,
+    projectStoragePolicy: storagePolicy ?? {},
     projectNamesVersion: 1,
     projectLayoutVersion: 2,
     projectCopyVersion: 1,
     projectModeVersion: 1,
     taskInstructionsEditable: true,
+    taskInstructionsVersion: 2,
     taskResultNaming: true,
     gamejamWorkflow: true,
     documentBundles: true,

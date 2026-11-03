@@ -144,6 +144,11 @@ test('shared named tasks carry identical AI naming instructions and reserve outp
         input,
         parsed.data.id,
         parsed.data.expected_outputs,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        parsed.data.task_context,
       ),
     );
     assert.equal(parsed.content.trim(), local.content.trim());

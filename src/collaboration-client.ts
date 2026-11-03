@@ -7,6 +7,9 @@ import { collaborationTransport } from './adapters/http/collaboration-transport.
 import { remapPendingLayout } from './adapters/markdown/layout-snapshot.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
 import { requireProjectLayoutSupport } from './adapters/http/project-layout-support.ts';
+import { requireGameBuildStorageSupport } from './adapters/http/game-build-support.ts';
+import { hasGameBuilds } from './core/projects/game-build.ts';
+import { gameBuildTask } from './task-plan.ts';
 import { supportsSharedAiProvider } from './core/ai/catalog.ts';
 import {
   objectId,
@@ -161,6 +164,8 @@ export class CollaborationClient {
     files: Snapshot,
   ) {
     await requireProjectNamesSupport(serverAddress(serverUrl));
+    if (hasGameBuilds(files))
+      await requireGameBuildStorageSupport(serverAddress(serverUrl));
     if (files[PROJECT_LAYOUT_PATH])
       await requireProjectLayoutSupport(serverAddress(serverUrl));
     const result = (await this.fetch(
@@ -269,7 +274,13 @@ export class CollaborationClient {
     return this.transport(
       serverUrl,
       endpoint,
-      { projectLayoutVersion: 2, ...(input as object) },
+      {
+        projectLayoutVersion: 2,
+        gameBuildStorageVersion: 1,
+        gameBuildVersion: 1,
+        gameBuildEditingVersion: 1,
+        ...(input as object),
+      },
       token,
       key,
     );
@@ -538,6 +549,22 @@ export class CollaborationClient {
     });
   }
   async request(action: string, input: unknown = {}) {
+    const request = input as { taskPath?: string; taskId?: string };
+    const task =
+      request.taskPath ??
+      this.state.aiQueue?.find((t) => t.taskId === request.taskId)?.taskPath;
+    if (
+      (this.state.gameBuildVersion !== 1 ||
+        this.state.gameBuildEditingVersion !== 1) &&
+      (action === 'requests-start' ||
+        (['ai-start', 'ai-claim'].includes(action) &&
+          task &&
+          this.files[task] &&
+          gameBuildTask(this.files[task])))
+    )
+      throw Error(
+        '소스 기반 게임 제작을 사용하려면 협업 서버를 업데이트해주세요.',
+      );
     return CollaborationClient.fetch(
       this.credentials.serverUrl,
       `/projects/${this.credentials.projectId}/${action}`,
@@ -1104,6 +1131,26 @@ export class CollaborationClient {
         throw new CanvasError(
           'GC-AI-004',
           '문서 출력 구성을 편집하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+        );
+      if (
+        channel === 'tasks:create' &&
+        (input as CreateTaskInput)?.gameBuildVersion === 1 &&
+        (this.state.gameBuildVersion !== 1 ||
+          this.state.gameBuildEditingVersion !== 1)
+      )
+        throw new CanvasError(
+          'GC-AI-004',
+          '소스 기반 게임 제작을 사용하려면 협업 서버를 업데이트해주세요.',
+        );
+      if (
+        channel === 'tasks:create' &&
+        ((input as CreateTaskInput)?.instructionOrigin ||
+          (input as CreateTaskInput)?.thenImplement?.instructionOrigin) &&
+        this.state.taskInstructionsVersion !== 2
+      )
+        throw new CanvasError(
+          'GC-AI-004',
+          '원본 요구와 최신 지침을 보존하려면 협업 서버를 업데이트해주세요.',
         );
       if (
         channel === 'tasks:create' &&
@@ -1679,6 +1726,23 @@ export class CollaborationClient {
     action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: import('./gamejam-approval.ts').ApprovalMutation,
   ) {
+    if (
+      'request' in input &&
+      input.request?.implement &&
+      (this.state.gameBuildVersion !== 1 ||
+        this.state.gameBuildEditingVersion !== 1)
+    )
+      throw Error(
+        '소스 기반 게임 요청을 사용하려면 협업 서버를 업데이트해주세요.',
+      );
+    if (
+      'request' in input &&
+      input.request?.instructionOrigins &&
+      this.state.taskInstructionsVersion !== 2
+    )
+      throw new Error(
+        '원본 요구와 최신 지침을 보존하려면 협업 서버를 업데이트해주세요.',
+      );
     if (action === 'delete' && this.state.requestDeletionVersion !== 1)
       throw new Error('요청 삭제를 사용하려면 협업 서버를 업데이트해주세요.');
     if (

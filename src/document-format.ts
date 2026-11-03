@@ -25,7 +25,14 @@ export function defaultDocumentTemplates(): DocumentOutputTemplate[] {
       title: '핵심 플레이',
       type: 'system',
       instructions:
-        '조작, 목표, 시작·플레이·종료 흐름, 점수·승패 조건과 핵심 게임 루프를 정리한다.',
+        '조작, 목표, 시작·플레이·종료 흐름, 점수·승패 조건, 상태·수치와 시스템 연결을 정리한다. 원본의 명시적 요구, AI 제안, 미정을 구분하고 예시와 근거를 포함한다.',
+    },
+    {
+      key: 'd4',
+      title: '비주얼 설계',
+      type: 'system',
+      instructions:
+        '아트 방향·캐릭터·배경, 색과 형태, 화면·카메라, HUD·메뉴, 피드백·이펙트와 선택 이유를 정리한다. 사용자 지정/AI 제안/미정을 구분하고 제공된 이미지의 역할과 추가로 필요한 자료를 명시한다.',
     },
     {
       key: 'd3',

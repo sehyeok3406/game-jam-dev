@@ -17,6 +17,7 @@ import {
   type GamejamSavedRequest,
 } from '../../gamejam-history';
 import type { GamejamPage } from '../../gamejam-wizard';
+import { prepareRequestInstructions } from '../../core/ai/task-instructions.ts';
 
 type RequestScope = {
   project: string | null;
@@ -163,7 +164,8 @@ export function useGamejamRequest({
       : selectedAiReasoning;
     const page = draft?.page ?? 1;
     const instructionPage = draft?.instructionPage ?? 'organize';
-    const restored = structuredClone(request);
+    const prepared = prepareRequestInstructions(request, !draft && !editing);
+    const restored = structuredClone(prepared.request);
     if (!canvases.some((sheet) => sheet.id === restored.canvasId))
       restored.canvasId = activeCanvas;
     aiRequestProjectRef.current = noticeProject;
@@ -181,9 +183,13 @@ export function useGamejamRequest({
     });
     setSavedAiDraft(loadGamejamDraft(preferences, draftScope) ?? null);
     setAiDraftStatus(
-      saved
-        ? '이전 요청을 불러왔습니다. 입력 자료와 결과 설정을 확인해주세요.'
-        : '변경한 작성 내용은 이 기기에 자동 저장됩니다.',
+      prepared.review.length
+        ? '수정 여부를 확인할 수 없는 이전 지시는 그대로 보존했습니다. 요청 내용에서 최신 기본 지침과 비교해주세요.'
+        : prepared.updated.length
+          ? '새 요청에 최신 기본 지침을 적용했습니다. 사용자 편집 내용과 이전 기록은 보존했습니다.'
+          : saved
+            ? '이전 요청을 불러왔습니다. 입력 자료와 결과 설정을 확인해주세요.'
+            : '변경한 작성 내용은 이 기기에 자동 저장됩니다.',
     );
     setAiRequestRetryOf(saved?.retryOf);
     setAiRequestPage(page);

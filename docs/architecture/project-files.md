@@ -1,5 +1,13 @@
 # 공동 파일 사본과 로컬 편집 반영
 
+## 게임 제작 원본 보관 · 2026-11-01
+
+[게임 제작 계약](game-builds.md)의 `.game-builds/index.json`과 revision별 UTF-8 source·lock·notices·manifest를 기존 capture/materialize/apply/mirror/history에 포함한다. v2 실제 위치는 `.gamejam/project/builds`다. 명시적 구조 전환·raw stage/history의 기존 정책을 유지한다. node_modules·캐시를 프로젝트 데이터에 포함하지 않는다.
+
+결과 이동은 현재 연결 index만 바꾸고 immutable 원본은 보존한다. 복사는 선택 결과의 모든 보존 revision과 추적 asset만 포함하고 artifact/build ID와 파일 연결을 새로 발급한다. 결과 삭제는 해당 원본 revision을 함께 제거하고 기존 히스토리에 보관한다. 원본이 포함된 기록은 HTML과 전체 기록으로 복원한다. 중단 복구는 capture에서 부분 파일을 읽은 뒤 before/after 외부 변경 검사와 원자 rollback을 재사용한다. 개인 캐시·인증·임시 파일은 복사하지 않는다.
+
+원본 writer와 서버는 hash·목록·경로를 검사한다. capture 단독 호출을 완성 검증으로 간주하지 않는다. 공동 Undo는 기존처럼 서버를 먼저 변경하며 다음 mirror 준비에서 PC 파일을 맞춘다. 감시기는 두 layout의 build namespace를 감시한다. 검증은 `game-build-storage.test.mjs`, `game-build-server.test.mjs`, 실제 Windows `game-build-packaged.mjs`를 사용한다.
+
 ## 공유 사본 root · 2026-10-31
 
 [ADR 0004](decisions/0004-project-names-and-shared-folders.md)의 sharedRoot는 mirror 전체 위치다. 새 사본은 이름 폴더, 기존 사본은 저장된 root 또는 기존 UUID 경로를 사용한다. FilesystemSharedWorkspaces와 desktop 조립만 root를 결정하며 다른 호출부는 이름/ID로 경로를 재구성하지 않는다. 이름 정리는 내용 필터 복사가 아닌 전체 디렉터리 rename이다. 추적되지 않은 파일·숨김 자료·서버 캐시·개인 상태·히스토리를 보존하고 journal이 남으면 일반 열기를 통해 옛 root를 재생성하지 않는다. docs 구조 전환과 root 이름 정리는 서로 다른 명시적 동작이다.

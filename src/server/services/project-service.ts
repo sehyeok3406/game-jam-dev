@@ -93,6 +93,7 @@ export function createProjectService(ports: Ports) {
           throw new ApiError('같은 생성 작업의 정보가 바뀌었습니다.', 409);
         ports.assertActive(prior);
         const actor = ports.authenticate(prior, identity.token);
+        assertEraseSupport(prior.files, input);
         return {
           ...ports.envelope(prior, actor),
           token: identity.token,
@@ -192,6 +193,7 @@ export function createProjectService(ports: Ports) {
     return ports.queue(found.id, async () => {
       const project = structuredClone(ports.projects.get(found.id)!);
       ports.assertActive(project);
+      assertEraseSupport(project.files, input);
       const identity = input.joinIdentity as
         | { id: string; token: string }
         | undefined;

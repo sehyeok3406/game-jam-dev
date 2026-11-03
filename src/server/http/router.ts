@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ApiError, replyError } from './errors.ts';
+import { createRequestAdmission } from './request.ts';
 
 export type HttpRoute = (
   request: IncomingMessage,
@@ -18,10 +19,30 @@ export function createHttpHandler(
   options: {
     accepting?: () => boolean;
     observe?: (request: IncomingMessage, response: ServerResponse) => void;
+    requestBudget?: { bytes?: number; concurrent?: number };
   } = {},
 ) {
+  const admit = createRequestAdmission(options.requestBudget);
   return async (request: IncomingMessage, response: ServerResponse) => {
+    let release: (() => void) | undefined;
+    let workDone = false,
+      responseDone = false,
+      released = false;
+    const finish = () => {
+      if (!workDone || !responseDone || released) return;
+      released = true;
+      release?.();
+      response.removeListener('finish', responseFinished);
+      response.removeListener('close', responseFinished);
+    };
+    const responseFinished = () => {
+      responseDone = true;
+      finish();
+    };
     try {
+      release = admit(request);
+      response.once('finish', responseFinished);
+      response.once('close', responseFinished);
       options.observe?.(request, response);
       // Desktop transport only, including form POSTs. Proxy headers confer no trust.
       if (request.headers.origin)
@@ -44,6 +65,10 @@ export function createHttpHandler(
       await fallback(request, response, url);
     } catch (error) {
       replyError(response, error);
+    } finally {
+      workDone = true;
+      responseDone ||= response.writableFinished || response.destroyed;
+      finish();
     }
   };
 }

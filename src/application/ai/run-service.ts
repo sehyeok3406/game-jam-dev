@@ -14,6 +14,7 @@ import {
   assertStageInputs,
   newOutputsAlreadyExist,
   workflowStages,
+  gameBuildTask,
 } from '../../task-plan.ts';
 import { validateHtmlAnalysis } from '../../html-source.ts';
 import { isPreviewPath } from '../../preview-output.ts';
@@ -25,6 +26,33 @@ import {
 } from '../../ai-file-lock.ts';
 import { layoutNewDocuments } from '../../new-document-layout.ts';
 import { initializeWorkflows } from '../../document-workflow.ts';
+import {
+  validateTaskDesignContext,
+  taskDesignContextRules,
+} from '../../core/ai/task-context.ts';
+import type { GameBuildExecutionPort } from './game-build-execution.ts';
+import { gameDesignDigest } from '../../core/projects/game-build-status.ts';
+import {
+  taskDocumentUpdates,
+  assertDocumentUpdateBaseline,
+} from '../../core/ai/task-document-updates.ts';
+import { assertGameBuildEditingLock } from '../../core/projects/game-build-editing.ts';
+import type {
+  AiExecutor,
+  PreparedAiRun,
+  AiProcessEvent,
+  AiExecutionResult,
+} from './ai-executor.ts';
+import {
+  appendGameBuild,
+  readGameBuild,
+  readGameBuildIndex,
+  type GameBuildCodec,
+} from '../../core/projects/game-build.ts';
+import {
+  createGameBuildRevision,
+  gameBuildPublicationPaths,
+} from '../../core/projects/game-build-publication.ts';
 
 export type AiPublication = {
   history: Omit<HistoryEntry, 'files'>;
@@ -50,6 +78,18 @@ export class AiRunService {
     relative: string,
   ) => Promise<unknown>;
   private readonly now: () => number;
+  private buildSnapshot: Snapshot = {};
+  private buildOptions?: {
+    execution: GameBuildExecutionPort;
+    executor: AiExecutor;
+    codec: GameBuildCodec;
+    id(): string;
+  };
+  executePhase?: (
+    prepared: PreparedAiRun,
+    signal: AbortSignal,
+    emit: (event: AiProcessEvent) => void,
+  ) => Promise<AiExecutionResult>;
   constructor(
     baseline: Snapshot,
     taskPath: string,
@@ -57,6 +97,12 @@ export class AiRunService {
     repository: LocalProjectRepository,
     validateHtml: (raw: string, relative: string) => Promise<unknown>,
     now: () => number = Date.now,
+    build?: {
+      execution: GameBuildExecutionPort;
+      executor: AiExecutor;
+      codec: GameBuildCodec;
+      id(): string;
+    },
   ) {
     this.baseline = baseline;
     this.taskPath = taskPath;
@@ -66,9 +112,151 @@ export class AiRunService {
     this.now = now;
     this.stages = workflowStages(baseline[taskPath]);
     this.phaseBaseline = baseline;
+    if (gameBuildTask(baseline[taskPath])) {
+      if (!build)
+        throw Error('게임 소스 제작 도구를 지원하는 앱으로 업데이트해주세요.');
+      this.buildOptions = build;
+      this.executePhase = (prepared, signal, emit) =>
+        this.executeBuildPhase(prepared, signal, emit);
+    }
+  }
+  private async executeBuildPhase(
+    prepared: PreparedAiRun,
+    signal: AbortSignal,
+    emit: (event: AiProcessEvent) => void,
+  ): Promise<AiExecutionResult> {
+    const options = this.buildOptions!,
+      raw = this.stages.length
+        ? this.stages[this.stageIndex]
+        : this.baseline[this.taskPath];
+    if (!gameBuildTask(raw))
+      return options.executor.run(prepared, signal, emit);
+    const files = await this.workspace.capture(),
+      data = matter(raw).data,
+      output = expectedArtifacts(raw)[0];
+    const prior = readGameBuildIndex(files).artifacts.find(
+      (a) => a.path === (data.base_html ?? output),
+    );
+    const previous = prior
+      ? readGameBuild(files, prior.buildId, options.codec)
+      : undefined;
+    const scoped = aiLockedSnapshot(files, taskFileLock(files, this.taskPath));
+    const built = await options.execution.execute(
+      {
+        prepared,
+        specification: raw,
+        inputs: scoped,
+        previousLock: previous?.lock,
+        previousDocuments: previous?.manifest.documents.map((d) => ({
+          ...d,
+          currentSha256:
+            scoped[d.path] === undefined
+              ? null
+              : options.codec.digest(scoped[d.path]),
+          identityMatches:
+            scoped[d.path] !== undefined &&
+            matter(scoped[d.path]).data.id === d.id,
+        })),
+        previousSource: previous?.manifest.htmlTemplate
+          ? {
+              plan: {
+                version: 1,
+                entry: previous.manifest.entry,
+                html: previous.manifest.htmlTemplate,
+                files: previous.manifest.sources.map((s) => s.path),
+                assets: previous.manifest.assets.map(({ key, path }) => ({
+                  key,
+                  path,
+                })),
+              },
+              sources: previous.sources,
+            }
+          : undefined,
+      },
+      signal,
+      emit,
+    );
+    signal.throwIfAborted();
+    const current = readGameBuildIndex(files).artifacts.find(
+        (a) => a.path === output,
+      ),
+      buildId = options.id(),
+      artifactId = current?.artifactId ?? options.id();
+    const documents = Object.entries(scoped)
+      .filter(([p]) => /^(?:project\.md|(?:docs|ideas)\/.+\.md)$/.test(p))
+      .flatMap(([path, text]) => {
+        const id = matter(text).data.id;
+        return typeof id === 'string'
+          ? [
+              {
+                path,
+                id,
+                sha256: options.codec.digest(text),
+                designSha256: gameDesignDigest(
+                  text,
+                  matter,
+                  options.codec.digest,
+                ),
+              },
+            ]
+          : [];
+      });
+    const revision = createGameBuildRevision(
+      {
+        built,
+        artifactId,
+        buildId,
+        output,
+        documents,
+        instructionsVersion: `2:${options.codec.digest(JSON.stringify(data.effective_instructions ?? raw))}`,
+        assetHashes: Object.fromEntries(
+          built.plan.assets.map((a) => [
+            a.path,
+            options.codec.digest(files[a.path]),
+          ]),
+        ),
+      },
+      options.codec,
+    );
+    const bundle = {
+      ...Object.fromEntries(
+        Object.entries(built.sources).map(([p, text]) => [
+          `${revision.prefix}/source/${p}`,
+          text,
+        ]),
+      ),
+      [`${revision.prefix}/manifest.json`]: JSON.stringify(revision.manifest),
+      [`${revision.prefix}/dependencies.lock.json`]: revision.lock,
+      [`${revision.prefix}/notices.json`]: revision.notices,
+    };
+    const candidate = appendGameBuild(
+      { ...files, [output]: this.baseline[output] ?? '' },
+      bundle,
+      { artifactId, buildId, path: output },
+      built.html,
+      options.codec,
+    );
+    this.buildSnapshot = Object.fromEntries(
+      gameBuildPublicationPaths(files, candidate, [output], options.codec).map(
+        (p) => [p, candidate[p]],
+      ),
+    );
+    await this.workspace.write(output, built.html);
+    return { code: 0 };
   }
   inspectInput() {
     const specification = this.baseline[this.taskPath];
+    const data = matter(specification).data;
+    if (this.buildOptions || data.document_updates !== undefined)
+      assertDocumentUpdateBaseline(
+        taskDocumentUpdates(
+          data.document_updates,
+          data.inputs ?? [],
+          expectedArtifacts(specification),
+        ),
+        this.baseline,
+        matter,
+      );
     assertCanvas(this.baseline, matter(specification).data.canvas_id);
     const outputs = expectedArtifacts(specification);
     validateHtmlAnalysis(specification, this.baseline);
@@ -89,6 +277,13 @@ export class AiRunService {
     return aiLockedSnapshot(files, taskFileLock(files, this.taskPath));
   }
   async embedAssets(provider: AiProviderId) {
+    if (
+      this.buildOptions &&
+      gameBuildTask(
+        this.stages[this.stageIndex] ?? this.baseline[this.taskPath],
+      )
+    )
+      return;
     if (provider === 'codex-cli') return;
     const specification = this.stages.length
       ? this.stages[this.stageIndex]
@@ -119,8 +314,22 @@ export class AiRunService {
     validateHtmlAnalysis(this.stages[0], staged, docOutputs);
     const next = matter(this.stages[1]);
     next.data.inputs = [...new Set([...next.data.inputs, ...docOutputs])];
+    if (next.data.task_context) {
+      next.data.task_context = validateTaskDesignContext(
+        {
+          ...next.data.task_context,
+          designDocuments: [
+            ...new Set([
+              ...next.data.task_context.designDocuments,
+              ...docOutputs,
+            ]),
+          ],
+        },
+        [...next.data.inputs, ...next.data.expected_outputs],
+      );
+    }
     this.stages[1] = matter.stringify(
-      `${next.content}\n## 이번에 생성한 문서 전체\n\n${docOutputs.map((path) => `- \`${path}\``).join('\n')}\n`,
+      `${next.content}\n## 이번에 생성한 문서 전체\n\n${docOutputs.map((path) => `- \`${path}\``).join('\n')}\n${next.data.task_context ? `\n## 이번 단계의 제작 기준\n\n${taskDesignContextRules(next.data.task_context)}\n` : ''}`,
       next.data,
     );
   }
@@ -152,10 +361,27 @@ export class AiRunService {
     phase('html-validation');
     for (const relative of outputs.filter(isPreviewPath))
       await this.validateHtml(staged[relative], relative);
+    if (this.buildOptions) {
+      staged = { ...staged, ...this.buildSnapshot };
+      const data = matter(this.baseline[this.taskPath]).data;
+      assertGameBuildEditingLock(
+        this.baseline,
+        staged,
+        data.base_html ?? outputs.find(isPreviewPath),
+        outputs.find(isPreviewPath)!,
+      );
+      gameBuildPublicationPaths(
+        this.baseline,
+        staged,
+        outputs,
+        this.buildOptions.codec,
+      );
+    }
     return { staged, outputs };
   }
   async publish(staged: Snapshot, outputs: string[], input: AiPublication) {
     const current = await this.repository.capture();
+    const publicationBaseline = this.buildOptions ? current : this.baseline;
     input.phase('input-conflict');
     const external = changedAiFile(input.lockBaseline, current, input.fileLock);
     if (external)
@@ -164,7 +390,21 @@ export class AiRunService {
         `작업 중 외부 변경을 발견했습니다. 결과를 보류합니다: ${external}`,
       );
     const taskData = matter(this.baseline[this.taskPath]).data;
-    const artifacts = Object.fromEntries(
+    if (this.buildOptions) {
+      const basePath = taskData.base_html ?? outputs.find(isPreviewPath);
+      const prior = readGameBuildIndex(this.baseline).artifacts.find(
+        (a) => a.path === basePath,
+      );
+      const currentBase = readGameBuildIndex(current).artifacts.find(
+        (a) => a.path === basePath,
+      );
+      if (JSON.stringify(prior) !== JSON.stringify(currentBase))
+        throw new CanvasError(
+          'GC-SYNC-001',
+          '기준 게임의 제작 버전이 변경되었습니다. 최신 상태에서 다시 실행해주세요.',
+        );
+    }
+    let artifacts = Object.fromEntries(
       outputs.map((relative) => {
         if (!relative.startsWith('docs/') || !relative.endsWith('.md'))
           return [relative, staged[relative]];
@@ -193,6 +433,33 @@ export class AiRunService {
         ];
       }),
     );
+    if (this.buildOptions) {
+      const paths = gameBuildPublicationPaths(
+        this.baseline,
+        staged,
+        outputs,
+        this.buildOptions.codec,
+      );
+      const artifact = readGameBuildIndex(staged).artifacts.find((a) =>
+        outputs.includes(a.path),
+      )!;
+      const bundle = Object.fromEntries(
+        paths
+          .filter((p) => p !== '.game-builds/index.json')
+          .map((p) => [p, staged[p]]),
+      );
+      const merged = appendGameBuild(
+        current,
+        bundle,
+        artifact,
+        staged[artifact.path],
+        this.buildOptions.codec,
+      );
+      artifacts = {
+        ...artifacts,
+        ...Object.fromEntries(paths.map((p) => [p, merged[p]])),
+      };
+    }
     let changes = input.shared
       ? artifacts
       : layoutNewDocuments(current, artifacts, {
@@ -211,8 +478,8 @@ export class AiRunService {
     validateArtifacts(current, { ...current, ...changes }, outputs);
     const previous = Object.fromEntries(
       Object.keys(changes)
-        .filter((relative) => this.baseline[relative] !== undefined)
-        .map((relative) => [relative, this.baseline[relative]]),
+        .filter((relative) => publicationBaseline[relative] !== undefined)
+        .map((relative) => [relative, publicationBaseline[relative]]),
     );
     input.phase('publish');
     if (input.shared) {
@@ -226,7 +493,11 @@ export class AiRunService {
         ...input.history,
         status: 'validating',
       });
-      await this.repository.apply(this.baseline, changes, input.cancelled);
+      await this.repository.apply(
+        publicationBaseline,
+        changes,
+        input.cancelled,
+      );
       try {
         if (input.cancelled()) throw new Error('결과 반영을 중지했습니다.');
         await this.repository.saveHistory(previous, changes, {
@@ -240,7 +511,7 @@ export class AiRunService {
           Object.fromEntries(
             Object.keys(changes).map((relative) => [
               relative,
-              this.baseline[relative] ?? null,
+              publicationBaseline[relative] ?? null,
             ]),
           ),
         );

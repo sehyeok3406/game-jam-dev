@@ -25,6 +25,15 @@ import { isImportedPreviewPath } from './preview-output.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
 import { historyTaskPath } from './ai-task-records.ts';
 import { remapResultChanges, RESULT_CATALOG_PATH } from './result-structure.ts';
+import { GAME_BUILDS_DIRECTORY } from './contracts/game-build.ts';
+import { rebaseGameBuildRestoration } from './core/projects/game-build-editing.ts';
+import { replaceFileWithRetry } from './adapters/filesystem/atomic-replace.ts';
+import {
+  hasGameBuilds,
+  isGameBuildPath,
+  validateGameBuilds,
+} from './core/projects/game-build.ts';
+import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
 async function readSnapshotFile(absolute: string, relative: string) {
   return isAssetPath(relative)
     ? encodeAsset(relative, await fs.readFile(absolute))
@@ -88,6 +97,17 @@ export async function captureProject(root: string): Promise<Snapshot> {
       for (const entry of await fs.readdir(absolute))
         await walk(`${relative}/${entry}`);
     } else if (
+      relative.startsWith(`${GAME_BUILDS_DIRECTORY}/`) &&
+      /\.[a-f0-9-]{36}\.tmp$/.test(relative)
+    ) {
+      // Atomic writer scratch files can briefly be visible to the project watcher.
+    } else if (
+      relative.startsWith(`${GAME_BUILDS_DIRECTORY}/`) &&
+      !isGameBuildPath(relative)
+    ) {
+      throw new Error(`게임 제작 원본에 허용되지 않은 파일입니다: ${relative}`);
+    } else if (
+      isGameBuildPath(relative) ||
       relative.endsWith('.md') ||
       relative === PROJECT_LAYOUT_PATH ||
       isPreviewPath(relative) ||
@@ -119,6 +139,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
     GAME_UI_DIRECTORY,
     'output',
     'assets/images',
+    GAME_BUILDS_DIRECTORY,
   ])
     await walk(relative);
   return snapshot;
@@ -128,6 +149,7 @@ export async function materialize(
   snapshot: Snapshot,
   raw = false,
 ) {
+  if (!raw) validateGameBuilds(snapshot, gameBuildCodec);
   if (!raw && snapshot[PROJECT_LAYOUT_PATH]) {
     const marker = await projectPath(root, PROJECT_LAYOUT_PATH);
     await fs.mkdir(path.dirname(marker), { recursive: true });
@@ -261,9 +283,18 @@ async function writeHistoryEntry(root: string, entry: HistoryEntry) {
   validateId(entry.id);
   const absolute = await projectPath(root, `.history/${entry.id}/entry.json`);
   const temporary = `${absolute}.${randomUUID()}.tmp`;
+  const read = () =>
+    fs.readFile(absolute, 'utf8').catch((error) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    });
+  const previous = await read();
   try {
     await fs.writeFile(temporary, JSON.stringify(entry, null, 2));
-    await fs.rename(temporary, absolute);
+    await replaceFileWithRetry(temporary, absolute, async () => {
+      if ((await read()) !== previous)
+        throw Error('작업 기록이 변경되어 저장을 보류합니다.');
+    });
   } finally {
     await fs.rm(temporary, { force: true });
   }
@@ -396,6 +427,19 @@ export async function applyChanges(
   changes: Record<string, string | null>,
   shouldCancel = () => false,
 ) {
+  if (
+    hasGameBuilds(baseline) ||
+    Object.keys(changes).some((key) =>
+      key.startsWith(`${GAME_BUILDS_DIRECTORY}/`),
+    )
+  ) {
+    const candidate = { ...baseline };
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) delete candidate[key];
+      else candidate[key] = value;
+    }
+    validateGameBuilds(candidate, gameBuildCodec);
+  }
   // Check every target before writing, and restore already-written targets if a write fails.
   for (const relative of Object.keys(changes)) {
     const absolute = await projectPath(root, relative);
@@ -493,6 +537,11 @@ export async function restoreHistory(
     throw new Error('완료된 기록만 복원할 수 있습니다.');
   if (relative?.startsWith('sections/'))
     throw new Error('섹션은 연결된 파일과 함께 전체 기록으로 복원해주세요.');
+  if (
+    relative &&
+    entry.files.some((file) => isGameBuildPath(file.relativePath))
+  )
+    throw new Error('게임 제작 원본과 HTML은 전체 기록으로 함께 복원해주세요.');
   if (relative && entry.files.some((file) => isAssetPath(file.relativePath)))
     throw new Error(
       '이미지가 포함된 기록은 설명 문서와 원본 파일을 함께 전체 기록으로 복원해주세요.',
@@ -511,6 +560,23 @@ export async function restoreHistory(
   const before = await captureProject(root);
   const changes: Record<string, string | null> = {};
   const restoreBefore = entry.files.some((file) => !file.after);
+  const versions: Record<'before' | 'after', Snapshot> = {
+    before: {},
+    after: {},
+  };
+  if (
+    entry.files.some((file) => file.relativePath === '.game-builds/index.json')
+  ) {
+    for (const version of ['before', 'after'] as const) {
+      const raw = await readHistoryFile(
+        root,
+        id,
+        '.game-builds/index.json',
+        version,
+      );
+      if (raw !== null) versions[version]['.game-builds/index.json'] = raw;
+    }
+  }
   for (const file of files) {
     // For a deletion, restore the last content. For other changes restore the selected version.
     const version = requestedVersion ?? (restoreBefore ? 'before' : 'after');
@@ -521,7 +587,12 @@ export async function restoreHistory(
       version,
     );
   }
-  const remapped = remapResultChanges(before, changes);
+  const remapped = rebaseGameBuildRestoration(
+    before,
+    remapResultChanges(before, changes),
+    versions.before,
+    versions.after,
+  );
   const after = { ...before };
   for (const [key, value] of Object.entries(remapped)) {
     if (value === null) delete after[key];

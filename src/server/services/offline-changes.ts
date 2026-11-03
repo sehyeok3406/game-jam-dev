@@ -5,6 +5,7 @@ import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import { collaborationPath, checkSnapshot } from '../../collaboration-model.ts';
 import { workflowOnlyChange } from '../../sync-properties.ts';
 import { ApiError } from './errors.ts';
+import { isGameBuildPath } from '../../core/projects/game-build.ts';
 
 /** Prepare a snapshot without changing input files or publishing a partial batch. */
 export function planOfflineChanges(
@@ -35,6 +36,7 @@ export function planOfflineChanges(
         409,
       );
     if (
+      isGameBuildPath(relative) ||
       relative === CANVAS_SHEETS_PATH ||
       relative === PROJECT_LAYOUT_PATH ||
       relative.startsWith('.ai/tasks/') ||

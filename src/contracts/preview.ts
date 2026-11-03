@@ -13,6 +13,7 @@ export const RESULT_CATEGORIES = {
   inbox: '미분류',
 } as const;
 export type PreviewResult = {
+  build?: import('./game-build-status.ts').GameBuildStatus;
   propertyPreviousIds?: string[];
   statusPropertyEnabled?: boolean;
   placementId?: string;

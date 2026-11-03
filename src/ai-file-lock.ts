@@ -9,6 +9,8 @@ import {
 import type { Snapshot } from './project-store.ts';
 import type { AiFileLock } from './shared.ts';
 import { documentBundleContract } from './document-bundle.ts';
+import { readGameBuildIndex } from './core/projects/game-build.ts';
+import { gameBuildEditingInputs } from './core/projects/game-build-editing.ts';
 
 export const AI_FILE_LOCK_MESSAGE =
   '현재 AI 작업에 사용 중인 파일은 수정·삭제·이동할 수 없습니다. 관련 없는 문서는 계속 편집할 수 있습니다.';
@@ -103,6 +105,12 @@ export function taskFileLock(files: Snapshot, taskPath: string): AiFileLock {
   // Sections and image cards are references to real input files, not copies.
   for (const relative of paths) {
     if (isPreviewPath(relative)) {
+      for (const path of gameBuildEditingInputs(files, relative, matter))
+        paths.add(path);
+      const build = readGameBuildIndex(files).artifacts.find(
+        (a) => a.path === relative,
+      );
+      if (build) folders.add(`.game-builds/${build.buildId}`);
       paths.add(previewWindowPath(relative));
       for (const [source, raw] of Object.entries(files))
         if (
@@ -212,12 +220,25 @@ export function assertAiMutation(
 
 /** Hash/compare only the frozen inputs and reserved outputs; edits elsewhere survive. */
 export function aiLockedSnapshot(files: Snapshot, lock: AiFileLock): Snapshot {
-  return Object.fromEntries(
+  const scoped = Object.fromEntries(
     Object.keys(files)
       .filter((path) => isAiFileLocked(lock, path))
       .sort()
       .map((path) => [path, files[path]]),
   );
+  const bindings = lockedGameBuildBindings(files, lock);
+  if (bindings.length)
+    scoped['.game-builds/index.json'] = JSON.stringify({
+      version: 1,
+      artifacts: bindings,
+    });
+  return scoped;
+}
+
+function lockedGameBuildBindings(files: Snapshot, lock: AiFileLock) {
+  return readGameBuildIndex(files)
+    .artifacts.filter((a) => isAiFileLocked(lock, a.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 export function changedAiFile(
@@ -225,7 +246,13 @@ export function changedAiFile(
   after: Snapshot,
   lock: AiFileLock,
 ) {
-  return Object.keys({ ...before, ...after }).find(
-    (path) => isAiFileLocked(lock, path) && before[path] !== after[path],
+  return (
+    Object.keys({ ...before, ...after }).find(
+      (path) => isAiFileLocked(lock, path) && before[path] !== after[path],
+    ) ??
+    (JSON.stringify(lockedGameBuildBindings(before, lock)) !==
+    JSON.stringify(lockedGameBuildBindings(after, lock))
+      ? '.game-builds/index.json'
+      : undefined)
   );
 }

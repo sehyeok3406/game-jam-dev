@@ -13,5 +13,11 @@ export type GamejamRequest = {
   htmlResult?: HtmlResultChoice;
   documentResult?: DocumentResultChoice;
   instructions: Record<'organize' | 'implement', string>;
+  instructionOrigins?: Partial<
+    Record<
+      'organize' | 'implement',
+      import('./task-instructions.ts').TaskInstructionOriginV1
+    >
+  >;
   resultName: string;
 };

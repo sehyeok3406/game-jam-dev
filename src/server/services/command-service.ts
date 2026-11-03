@@ -1,4 +1,5 @@
 import { assertEraseSupport } from './drawing-capabilities.ts';
+import { assertGameBuildMutation } from '../../core/projects/game-build.ts';
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { CollaborationCommand } from '../../contracts/collaboration.ts';
 import type { Snapshot } from '../../contracts/project.ts';
@@ -63,6 +64,16 @@ export function createCommandService<
 >(ports: CommandPorts<P, M, E>) {
   async function execute(project: P, member: M, command: CollaborationCommand) {
     if (command.channel === 'tasks:create') ports.admin(member);
+    if (
+      command.channel === 'tasks:create' &&
+      (command.input as { gameBuildVersion?: unknown })?.gameBuildVersion ===
+        1 &&
+      (command.gameBuildVersion !== 1 || command.gameBuildEditingVersion !== 1)
+    )
+      throw new ApiError(
+        '게임 제작 v2 작성을 지원하는 앱으로 업데이트해주세요.',
+        409,
+      );
     if (typeof command.id !== 'string' || !/^[a-f0-9-]{36}$/.test(command.id))
       throw new ApiError('작업 ID가 올바르지 않습니다.', 400);
     const applied = project.applied.find(
@@ -126,6 +137,7 @@ export function createCommandService<
       throw new ApiError('오래된 수정 요청입니다. 최신 변경을 유지합니다.');
     const reduced = ports.reduce(project.files, command.channel, command.input);
     assertEraseSupport(reduced.files, command);
+    assertGameBuildMutation(project.files, reduced.files);
     if (
       project.job &&
       command.channel === 'tasks:create' &&

@@ -65,7 +65,15 @@ export const describeCodexJsonEvent = (value: unknown) => {
   if (type === 'thread.started') return 'Codex 세션을 시작했습니다.';
   if (type === 'turn.started') return '작업 내용을 분석하고 있습니다.';
   if (type === 'turn.completed') return 'Codex 실행이 완료되었습니다.';
-  if (type === 'turn.failed') return 'Codex 실행이 실패했습니다.';
+  if (type === 'turn.failed') {
+    const failure =
+      event.error && typeof event.error === 'object'
+        ? (event.error as Record<string, unknown>)
+        : null;
+    return typeof failure?.message === 'string' && failure.message.trim()
+      ? failure.message
+      : 'Codex 실행이 실패했습니다.';
+  }
   if (type.startsWith('item.'))
     return itemType ? `${itemType.replaceAll('_', ' ')} 처리 중` : null;
   if (type === 'error') {

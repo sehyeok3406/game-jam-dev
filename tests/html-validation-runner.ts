@@ -18,6 +18,21 @@ app.whenReady().then(async () => {
       '<!doctype html><html><body><button>play</button><script>document.body.dataset.ready="yes";</script></body></html>',
     );
     console.log('PASS: valid HTML loads');
+    await validateHtml(
+      '<!doctype html><html><head><style>/*' +
+        'x'.repeat(7_500_000) +
+        '*/</style></head><body><canvas></canvas><script>document.body.dataset.ready="large";</script></body></html>',
+    );
+    console.log(
+      'PASS: 7.5MB HTML crosses renderer IPC without a large navigation URL',
+    );
+    await assert.rejects(
+      validateHtml(
+        '<html><body><img src="data:image/png;base64,broken"></body></html>',
+      ),
+      /리소스|HTML 초기 실행 오류/,
+    );
+    console.log('PASS: resource decode failure is rejected');
     for (const source of [
       'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
       'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA',

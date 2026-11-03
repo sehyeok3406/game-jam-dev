@@ -14,6 +14,7 @@ import {
   clearApprovalOperation,
 } from '../src/gamejam-approval.ts';
 import { gamejamDraftScope } from '../src/gamejam-history.ts';
+import { withGameBuildResult } from './helpers/game-build-result.mjs';
 
 const request = (patch = {}) => ({
   organize: false,
@@ -215,9 +216,12 @@ test('approval versus deletion has one winner and completed deletion retains out
     );
     const output = matter(owner.files[current.taskPath]).data
       .expected_outputs[0];
-    await owner.finishAi('completed', {
-      [output]: '<html><body>보존할 결과</body></html>',
-    });
+    await owner.finishAi(
+      'completed',
+      withGameBuildResult(owner.files, current.taskPath, {
+        [output]: '<html><body>보존할 결과</body></html>',
+      }),
+    );
     const completed = (await owner.readApproval(item.id)).item;
     const removed = await owner.mutateApproval('delete', {
       commandId: randomUUID(),
@@ -309,6 +313,8 @@ test('request validation needs content and membership but no AI login, free slot
     gamejamIssues(request(), {
       intent: 'request',
       collaboration: {
+        gameBuildVersion: 1,
+        gameBuildEditingVersion: 1,
         active: true,
         connected: true,
         role: 'editor',
@@ -548,9 +554,12 @@ test('two administrators racing approve once, retries reuse the lease, and appro
     /시작/,
   );
   const outputs = matter(winner.files[task]).data.expected_outputs;
-  await winner.finishAi('completed', {
-    [outputs[0]]: '<html><body>승인된 게임</body></html>',
-  });
+  await winner.finishAi(
+    'completed',
+    withGameBuildResult(winner.files, task, {
+      [outputs[0]]: '<html><body>승인된 게임</body></html>',
+    }),
+  );
   const finished = (await editor.readApproval(item.id)).item;
   assert.equal(finished.status, 'completed');
   assert.equal(finished.approvedRevision, 1);

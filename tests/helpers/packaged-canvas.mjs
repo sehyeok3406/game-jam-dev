@@ -40,7 +40,7 @@ async function port() {
 }
 const pause = () => new Promise((r) => setTimeout(r, 100));
 let child, ws, js, send;
-async function boot() {
+async function boot(openDefault = true, env = process.env) {
   const debugPort = await port();
   child = spawn(
     path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
@@ -48,7 +48,7 @@ async function boot() {
       `--game-canvas-test-profile=${profileId}`,
       `--remote-debugging-port=${debugPort}`,
     ],
-    { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
+    { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env },
   );
   let diagnostic = '';
   child.stderr.on(
@@ -112,11 +112,22 @@ async function boot() {
   await wait(
     '!!document.querySelector(".home-project-open") || !!document.querySelector("[data-plugin-launcher]")',
   );
-  await js('document.querySelector(".home-project-open")?.click()');
-  await wait(
-    `window.gameCanvas.getWorkspace().then(w=>w.root===${JSON.stringify(game)})`,
-  );
-  await wait('!!document.querySelector("[data-plugin-launcher]")');
+  if (openDefault) {
+    if (
+      !(await js(
+        `window.gameCanvas.getWorkspace().then(w=>w.root===${JSON.stringify(game)})`,
+      ))
+    ) {
+      await wait(
+        '!!document.querySelector(".home-project-open:not(:disabled)")',
+      );
+      await js('document.querySelector(".home-project-open")?.click()');
+    }
+    await wait(
+      `window.gameCanvas.getWorkspace().then(w=>w.root===${JSON.stringify(game)})`,
+    );
+    await wait('!!document.querySelector("[data-plugin-launcher]")');
+  }
 }
 async function wait(code) {
   for (let n = 0; n < 160; n++) {
@@ -175,4 +186,18 @@ const key = async (key, code, virtual, modifiers = 0) => {
   await pause();
 };
 
-export { root, profile, game, boot, stop, wait, js, send, mouse, key, pause };
+const appProcessId = () => child?.pid;
+export {
+  root,
+  profile,
+  game,
+  boot,
+  stop,
+  wait,
+  js,
+  send,
+  mouse,
+  key,
+  pause,
+  appProcessId,
+};

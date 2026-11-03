@@ -21,6 +21,11 @@ import { CanvasError, failureInfo, errorText } from '../../app-errors.ts';
 import { taskHistoryRecord } from '../../ai-task-history.ts';
 
 export interface AiRunWorkflow {
+  executePhase?: (
+    prepared: PreparedAiRun,
+    signal: AbortSignal,
+    emit: (event: import('./ai-executor.ts').AiProcessEvent) => void,
+  ) => Promise<AiExecutionResult>;
   stages: string[];
   stageIndex: number;
   preparePhase(): Promise<void>;
@@ -193,18 +198,18 @@ export class AiRunCoordinator {
           if (this.providerId === 'grok-cli' && !prepared.inputFiles)
             throw Error('Grok 실행 입력 사본을 준비하지 못했습니다.');
           p.assertCurrent();
-          result = await p.executor.run(
-            prepared,
-            this.controller.signal,
-            (event) => {
-              if (
-                !this.finished &&
-                this.acceptingOutput &&
-                phaseSequence === this.phaseSequence
-              )
-                p.output.consume(event);
-            },
-          );
+          result = await (
+            workflow.executePhase
+              ? workflow.executePhase.bind(workflow)
+              : p.executor.run.bind(p.executor)
+          )(prepared, this.controller.signal, (event) => {
+            if (
+              !this.finished &&
+              this.acceptingOutput &&
+              phaseSequence === this.phaseSequence
+            )
+              p.output.consume(event);
+          });
         } catch (error) {
           result = {
             code: null,

@@ -1,5 +1,11 @@
 # R07 첫 기능 단위: HTTP 경계와 이벤트 연결 수명
 
+## 원본 저장 v1 전송 확장 · 2026-11-01
+
+`gameBuildStorageVersion:1`은 [게임 원본 저장](game-builds.md) 지원만 광고한다. `gameBuildVersion`/workflow v2 지원은 후속이다. legacy body는 22MB, `X-Game-Build-Storage-Version:1` body는 72MB이며 완성 snapshot은 원본 marker가 있는 경우에만 64MB(총 500개 파일)를 허용한다. HTML은 8MB를 유지한다. health와 인증 state에 같은 기술 한도·자체 서버 정책을 광고한다.
+
+`createHttpHandler`가 서버별 POST admission을 소유하고 `body`가 선언 크기와 실제 chunk 크기를 검사한다. 최대 4개·예약 body 총 96MB다. JSON 파싱·업무 큐·commit과 응답 전송까지 예약을 유지한다. 연결이 먼저 끊어져도 진행 중인 업무가 끝나기 전에는 반환하지 않는다. 크기 초과는 413, 용량 경쟁은 `REQUEST_CAPACITY` 503과 Retry-After다. 이 예약량은 전체 RSS 상한이 아니다. health GET은 admission으로 막지 않는다. 실제 socket/연결 중단 회귀는 `game-build-server.test.mjs`, 60MB HTTP/DB/백업 검증은 `node tests/game-build-large.mjs`를 사용한다.
+
 2026-10-21. 서버 전체를 한 번에 분리하지 않고 HTTP 전송과 SSE 연결 관리부터 추출했다. 외부 `createCollaborationServer(options)` 호출과 반환의 `server/port/close`, 기존 파일·SQLite·인증·명령 형식을 유지한다.
 
 ## 책임

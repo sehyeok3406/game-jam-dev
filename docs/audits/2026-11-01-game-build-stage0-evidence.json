@@ -1,0 +1,1341 @@
+{
+  "schema": 1,
+  "date": "2026-11-01",
+  "sourceCommit": "03d938c",
+  "scope": "Stage-0 synthetic feasibility only; production sources and package dependencies unchanged",
+  "rawReport": "out/game-build-stage0/verification.json",
+  "rawReportSha256": "0b9403d9c8f9b6a4b2592a9399e8e900204a54a225a31f97b388b6f78f688fb8",
+  "startedAt": "2026-11-01T09:04:33.678Z",
+  "finishedAt": "2026-11-01T09:05:41.360Z",
+  "inputs": [
+    {
+      "path": "tools/game-build-stage0/run.mjs",
+      "sha256": "1213697fc0b84eda367fa28e7b4c57ee93007c45071b06853d7a78f2e1d1913a"
+    },
+    {
+      "path": "tools/game-build-stage0/process.mjs",
+      "sha256": "8692edbb05da2b3eef23573057685385a2cb16b609f86095c2acc18754984d03"
+    },
+    {
+      "path": "tools/game-build-stage0/fixtures.mjs",
+      "sha256": "200253ad9d5fa03b820fe72842bdd7f6e70d5631e7fe11ac91198baa68fc37ce"
+    },
+    {
+      "path": "tools/game-build-stage0/electron.mjs",
+      "sha256": "a7eb89898810f5f2236eff23948e2cfceaa003a03167c320c2e37a269e6adbb1"
+    },
+    {
+      "path": "tools/game-build-stage0/runtime.mjs",
+      "sha256": "6ec009da2bda8acb44a9c6d5918e71e485fb199212bdb4bc953a563c5ed3dfa1"
+    },
+    {
+      "path": "tools/game-build-stage0/toolset.mjs",
+      "sha256": "14ceda629b8ae859400647a7828aa52c37f45466cc4749aa648a78fc98a68fda"
+    },
+    {
+      "path": "tools/game-build-stage0/summarize.mjs",
+      "sha256": "d2e52e0181f1033ba78653fe5a63fe1364be7fad1d6f8c47d43948c9f07a3ab6"
+    },
+    {
+      "path": "src/html-validation.ts",
+      "sha256": "e7e0fd1913a9f517120df173be9c020d4fdf461d858f61255839d7a90bdc284b"
+    },
+    {
+      "path": "src/multiplayer/window-manager.ts",
+      "sha256": "179b8098a1cc133e28b0ecef75fb55fb81c11750129020ddf7417a6fbb2c4902"
+    },
+    {
+      "path": "src/preview-permissions.ts",
+      "sha256": "1f994707f68185d3d6f7cca339b29643011115bafe7420fba964af705a966ce8"
+    },
+    {
+      "path": "src/multiplayer/sdk.ts",
+      "sha256": "1e3ef893a8bb2ade0885e926e34a9a7671c4cb03ac5e4d0ceb2ef3171362f852"
+    },
+    {
+      "path": "src/html-references.ts",
+      "sha256": "4b9ae98b17b4c9f1497e991898c939ea66df06d1c23c60c7ea00b2bdd014f793"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "1a5658e9578f96198d027f767a0120db93db9334c9f0b1656c6c1caa90eaef52"
+    }
+  ],
+  "runtime": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64",
+    "rolldown": "1.2.12"
+  },
+  "electron": "44.5.1",
+  "dependencies": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64",
+    "versions": {
+      "pixi.js": "8.22.0",
+      "three": "0.187.0"
+    },
+    "lockHash": "3698ed52d5d060d174168d859b2815c611e0d0cf88a1623d203c68c6ad0b3c7b",
+    "treeHash": "673c01cd26a240b62e8481f50131f52020350d512f77443626d30a57d028b8ce",
+    "files": 5191,
+    "bytes": 105029940,
+    "cacheReused": true
+  },
+  "packages": [
+    {
+      "name": "pixi.js",
+      "version": "8.22.0",
+      "license": "MIT",
+      "tarball": "https://registry.npmjs.org/pixi.js/-/pixi.js-8.22.0.tgz",
+      "integrity": "sha512-QbTANHMZ751MIjLiLSUSM8a7LNMWwMIf0KbRCqlW+SPS9hNLfSVS+cl1O2SEp9g1K/wyLzj/OJHv+1TUfiPr/w==",
+      "compressedBytes": 15831071,
+      "unpackedBytes": 76274721
+    },
+    {
+      "name": "three",
+      "version": "0.187.0",
+      "license": "MIT",
+      "tarball": "https://registry.npmjs.org/three/-/three-0.187.0.tgz",
+      "integrity": "sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==",
+      "compressedBytes": 4795351,
+      "unpackedBytes": 21030536
+    }
+  ],
+  "lockedPackages": [
+    {
+      "path": "node_modules/@pixi/colord",
+      "version": "2.9.6",
+      "resolved": "https://registry.npmjs.org/@pixi/colord/-/colord-2.9.6.tgz",
+      "integrity": "sha512-nezytU2pw587fQstUu1AsJZDVEynjskwOL+kibwcdxsMBFqPsFFNA7xl0ii/gXuDi6M0xj3mfRJj8pBSc2jCfA==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/@types/earcut",
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/@types/earcut/-/earcut-3.0.0.tgz",
+      "integrity": "sha512-k/9fOUGO39yd2sCjrbAJvGDEQvRwRnQIZlBz43roGwUZo5SHAmyVvSFyaVVZkicRVCaDXPKlbxrUcBuJoSWunQ==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/@webgpu/types",
+      "version": "0.1.74",
+      "resolved": "https://registry.npmjs.org/@webgpu/types/-/types-0.1.74.tgz",
+      "integrity": "sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/@xmldom/xmldom",
+      "version": "0.8.15",
+      "resolved": "https://registry.npmjs.org/@xmldom/xmldom/-/xmldom-0.8.15.tgz",
+      "integrity": "sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/earcut",
+      "version": "3.2.4",
+      "resolved": "https://registry.npmjs.org/earcut/-/earcut-3.2.4.tgz",
+      "integrity": "sha512-FHc6yNpnTORB0tM5kmZ03iD2mDuNakDE2lvf4Hw1XkfxtEHIGVi01B/GqUSwx+NcC1WGjidAfpTXzeALtPtfpg==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/eventemitter3",
+      "version": "5.0.4",
+      "resolved": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-5.0.4.tgz",
+      "integrity": "sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/gifuct-js",
+      "version": "2.1.2",
+      "resolved": "https://registry.npmjs.org/gifuct-js/-/gifuct-js-2.1.2.tgz",
+      "integrity": "sha512-rI2asw77u0mGgwhV3qA+OEgYqaDn5UNqgs+Bx0FGwSpuqfYn+Ir6RQY5ENNQ8SbIiG/m5gVa7CD5RriO4f4Lsg==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/ismobilejs",
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/ismobilejs/-/ismobilejs-1.1.1.tgz",
+      "integrity": "sha512-VaFW53yt8QO61k2WJui0dHf4SlL8lxBofUuUmwBo0ljPk0Drz2TiuDW4jo3wDcv41qy/SxrJ+VAzJ/qYqsmzRw==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/js-binary-schema-parser",
+      "version": "2.0.3",
+      "resolved": "https://registry.npmjs.org/js-binary-schema-parser/-/js-binary-schema-parser-2.0.3.tgz",
+      "integrity": "sha512-xezGJmOb4lk/M1ZZLTR/jaBHQ4gG/lqQnJqdIv4721DMggsa1bDVlHXNeHYogaIEHD9vCRv0fcL4hMA+Coarkg==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/parse-svg-path",
+      "version": "0.2.0",
+      "resolved": "https://registry.npmjs.org/parse-svg-path/-/parse-svg-path-0.2.0.tgz",
+      "integrity": "sha512-Tf7FFIrguPKQwzD4pWnYkR2VOv3raoHeKED80Bm+BYHI3KxC8KsgsGC5+fSMzAGDA6UEk4bHvmi+RsjmL3khpg==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/pixi.js",
+      "version": "8.22.0",
+      "resolved": "https://registry.npmjs.org/pixi.js/-/pixi.js-8.22.0.tgz",
+      "integrity": "sha512-QbTANHMZ751MIjLiLSUSM8a7LNMWwMIf0KbRCqlW+SPS9hNLfSVS+cl1O2SEp9g1K/wyLzj/OJHv+1TUfiPr/w==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/three",
+      "version": "0.187.0",
+      "resolved": "https://registry.npmjs.org/three/-/three-0.187.0.tgz",
+      "integrity": "sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==",
+      "hasInstallScript": false
+    },
+    {
+      "path": "node_modules/tiny-lru",
+      "version": "11.4.7",
+      "resolved": "https://registry.npmjs.org/tiny-lru/-/tiny-lru-11.4.7.tgz",
+      "integrity": "sha512-w/Te7uMUVeH0CR8vZIjr+XiN41V+30lkDdK+NRIDCUYKKuL9VcmaUEmaPISuwGhLlrTGh5yu18lENtR9axSxYw==",
+      "hasInstallScript": false
+    }
+  ],
+  "licenseNotices": [
+    {
+      "name": "@pixi/colord",
+      "version": "2.9.6",
+      "license": "MIT",
+      "noticeBytes": 0
+    },
+    {
+      "name": "@types/earcut",
+      "version": "3.0.0",
+      "license": "MIT",
+      "noticeBytes": 1141
+    },
+    {
+      "name": "@webgpu/types",
+      "version": "0.1.74",
+      "license": "BSD-3-Clause",
+      "noticeBytes": 1500
+    },
+    {
+      "name": "@xmldom/xmldom",
+      "version": "0.8.15",
+      "license": "MIT",
+      "noticeBytes": 1298
+    },
+    {
+      "name": "earcut",
+      "version": "3.2.4",
+      "license": "ISC",
+      "noticeBytes": 738
+    },
+    {
+      "name": "eventemitter3",
+      "version": "5.0.4",
+      "license": "MIT",
+      "noticeBytes": 1082
+    },
+    {
+      "name": "gifuct-js",
+      "version": "2.1.2",
+      "license": "MIT",
+      "noticeBytes": 1098
+    },
+    {
+      "name": "ismobilejs",
+      "version": "1.1.1",
+      "license": "MIT",
+      "noticeBytes": 1067
+    },
+    {
+      "name": "js-binary-schema-parser",
+      "version": "2.0.3",
+      "license": "MIT",
+      "noticeBytes": 1098
+    },
+    {
+      "name": "parse-svg-path",
+      "version": "0.2.0",
+      "license": "MIT",
+      "noticeBytes": 1093
+    },
+    {
+      "name": "pixi.js",
+      "version": "8.22.0",
+      "license": "MIT",
+      "noticeBytes": 1092
+    },
+    {
+      "name": "three",
+      "version": "0.187.0",
+      "license": "MIT",
+      "noticeBytes": 1081
+    },
+    {
+      "name": "tiny-lru",
+      "version": "11.4.7",
+      "license": "BSD-3-Clause",
+      "noticeBytes": 1480
+    }
+  ],
+  "cases": [
+    {
+      "id": "canvas-image",
+      "supported": true,
+      "requiresAppSdk": false,
+      "sha256": "51efb4f48468746672aef7cdfcaff7a67c993e7f3fc9f84a0342d0b545703743",
+      "htmlBytes": 16898,
+      "jsBytes": 972,
+      "jsSha256": "879e9b9e708777dcc4371c2354a3aa8ea657aa6903a6cb2fc734c993938665b5",
+      "buildMs": 14,
+      "heapDeltaBytes": 673376,
+      "rssBytes": 126722048,
+      "modules": 1,
+      "sourceSha256": "724c868085ca4c2a3d397043723f1e5972c3e472c2dcb71b5e70b9693e2959f4",
+      "runtimeImports": [],
+      "chunkDynamicImports": [],
+      "inputAssetBytes": 253
+    },
+    {
+      "id": "pixi-image",
+      "supported": true,
+      "requiresAppSdk": false,
+      "sha256": "ed3210893f5c2ada585da2ea47cecc102483a5087a5e7cba6e2ef997fd634d21",
+      "htmlBytes": 555043,
+      "jsBytes": 539121,
+      "jsSha256": "7c935669cf5dbbff57711e1a94f634baf1b2de7c64c22d21cd2194f68ca052e4",
+      "buildMs": 287,
+      "heapDeltaBytes": 41617016,
+      "rssBytes": 245575680,
+      "modules": 401,
+      "sourceSha256": "86671ead93ef0b14bfd028421eda4550b626534d2c49cd3346c18a501cddd61d",
+      "runtimeImports": [],
+      "chunkDynamicImports": ["main.js"],
+      "inputAssetBytes": 253
+    },
+    {
+      "id": "three-image",
+      "supported": true,
+      "requiresAppSdk": false,
+      "sha256": "8ed69dd877eb0e73a5ab7a236b3e73b2d02c9f6650b1acd2ced7824e5b3425d7",
+      "htmlBytes": 545447,
+      "jsBytes": 529523,
+      "jsSha256": "91033f77a0739fa550696a8de378ee34200af1b15f2298d2d25fd4f7fcf1539b",
+      "buildMs": 140,
+      "heapDeltaBytes": -21577960,
+      "rssBytes": 300961792,
+      "modules": 3,
+      "sourceSha256": "747454876ff3f0f30999e10b80315f48ef2411395b65c45bd96713ae26318ec8",
+      "runtimeImports": [],
+      "chunkDynamicImports": [],
+      "inputAssetBytes": 253
+    },
+    {
+      "id": "coop-pixi",
+      "supported": true,
+      "requiresAppSdk": true,
+      "sha256": "11bdd0a792b34dafcfb9a9b56d7ee0304f63792a655a4c49d6e65ff6a433a0c1",
+      "htmlBytes": 554790,
+      "jsBytes": 538698,
+      "jsSha256": "4996ebaccce51b31278334336570f2df6aaab8a1ec96c0fcbf611da92d754857",
+      "buildMs": 236,
+      "heapDeltaBytes": 31637608,
+      "rssBytes": 357203968,
+      "modules": 401,
+      "sourceSha256": "3f1bca5c21bb4fff890d4544564ae5bbc330c24815fd920cf116b1c1e75eb06c",
+      "runtimeImports": [],
+      "chunkDynamicImports": ["main.js"],
+      "inputAssetBytes": 0
+    },
+    {
+      "id": "blob-image",
+      "supported": true,
+      "requiresAppSdk": false,
+      "sha256": "b267d7e679fe994107ddf280b7104e8af71bc9bcfa358cf7926291c31838cb82",
+      "htmlBytes": 16613,
+      "jsBytes": 691,
+      "jsSha256": "d2bde4c928622cb920a1c697cc731a7513fc829c1cab8f3cc7a7b7d4c98c68c1",
+      "buildMs": 5,
+      "heapDeltaBytes": 171152,
+      "rssBytes": 357441536,
+      "modules": 1,
+      "sourceSha256": "590a8d8a41c76a3aa51b1d60a916c96fce430d86c3d75ad126ab9dfe8af85dc6",
+      "runtimeImports": [],
+      "chunkDynamicImports": [],
+      "inputAssetBytes": 253
+    },
+    {
+      "id": "blob-worker",
+      "supported": false,
+      "limitation": "Player CSP does not permit blob workers",
+      "requiresAppSdk": false,
+      "sha256": "035ed93e209e6b5a4e502e8df8185d695c725b027e179439faa4e97e3a74a425",
+      "htmlBytes": 16196,
+      "jsBytes": 272,
+      "jsSha256": "928d6b939afa58759a8b1b78082d751553e2d716bc4815afc75a25d040aa9e75",
+      "buildMs": 3,
+      "heapDeltaBytes": 132960,
+      "rssBytes": 357515264,
+      "modules": 1,
+      "sourceSha256": "0125d8f3884ef4f7c5f70eaf1045522feb98e817b11e158bb52e194589697300",
+      "runtimeImports": [],
+      "chunkDynamicImports": [],
+      "inputAssetBytes": 0
+    },
+    {
+      "id": "wasm-inline",
+      "supported": false,
+      "limitation": "Player CSP does not permit WebAssembly compilation",
+      "requiresAppSdk": false,
+      "sha256": "e0fbfc28fa6d9c4ed8f7f57ec3c2ffaffa8e1f9cb44351ef0cc2315bfbcb7fa6",
+      "htmlBytes": 16118,
+      "jsBytes": 194,
+      "jsSha256": "5a9ed9f7c8d30a1a70e5d1f768c86fd66ea2d95f33ef224e609c384b26ad6c03",
+      "buildMs": 4,
+      "heapDeltaBytes": 123672,
+      "rssBytes": 357646336,
+      "modules": 1,
+      "sourceSha256": "078221ceb58708fe1832e6f10588a146b8c6830ac09d05a4216e42a92791e2d5",
+      "runtimeImports": [],
+      "chunkDynamicImports": [],
+      "inputAssetBytes": 0
+    },
+    {
+      "id": "dynamic-import",
+      "supported": true,
+      "requiresAppSdk": false,
+      "sha256": "54b55cdeb2deb75a3fbea7def0f2df6b35c094a7c50509466915d33f28fcc2a4",
+      "htmlBytes": 16368,
+      "jsBytes": 438,
+      "jsSha256": "354ba3de69dc8dcc14c775ed30aa999699920449f7fe84889943837498cb3c66",
+      "buildMs": 4,
+      "heapDeltaBytes": 153640,
+      "rssBytes": 357761024,
+      "modules": 3,
+      "sourceSha256": "217b0718424ff128b6ab9ef44aa6efc5618cd37dca3ef35543231b59d4639e3a",
+      "runtimeImports": [],
+      "chunkDynamicImports": ["main.js"],
+      "inputAssetBytes": 0
+    },
+    {
+      "id": "pixi-default-csp",
+      "supported": false,
+      "limitation": "Default code generation requires a CSP-compatible library entry point",
+      "requiresAppSdk": false,
+      "sha256": "212f558463795189cb0d749e04f6568331be65bf2ee92819f659bfe76bc60900",
+      "htmlBytes": 541991,
+      "jsBytes": 526057,
+      "jsSha256": "f780e237729229d28b424ad25c7ef5662a86ce2d1b679a340150e91317c6c8dd",
+      "buildMs": 240,
+      "heapDeltaBytes": -5561352,
+      "rssBytes": 437145600,
+      "modules": 390,
+      "sourceSha256": "f18a641b0fd8f3fc035e7a1ffccee6f37cede650e505b0423a0fa06cde8b192d",
+      "runtimeImports": [],
+      "chunkDynamicImports": ["main.js"],
+      "inputAssetBytes": 253
+    },
+    {
+      "id": "large-image",
+      "supported": false,
+      "limitation": "Production data URL navigation size limit",
+      "requiresAppSdk": false,
+      "sha256": "952439aef1a4d05bbf7cd1a1a2fbcde6cf1a13a1e12f4c6dbcbe0907989893aa",
+      "htmlBytes": 2850536,
+      "jsBytes": 2834612,
+      "jsSha256": "a870702b21cf93f06ac173d995392179937170ba2111b4a503df951956fbdf65",
+      "buildMs": 31,
+      "heapDeltaBytes": 8684064,
+      "rssBytes": 454873088,
+      "modules": 1,
+      "sourceSha256": "c637260c4b9e3b33ce7663dbf66b4e0bd88713cb98f3aef585992eada672cd00",
+      "runtimeImports": [],
+      "chunkDynamicImports": [],
+      "inputAssetBytes": 2125483
+    },
+    {
+      "id": "legacy-reference",
+      "supported": true,
+      "requiresAppSdk": true,
+      "sha256": "33a3465587ec88d7c4dd45c16bd4fb29036429f706070346f2d62137990d2f76",
+      "htmlBytes": 2460,
+      "jsBytes": null,
+      "buildMs": 0
+    }
+  ],
+  "largeAsset": {
+    "path": "assets/icon.png",
+    "bytes": 2125483,
+    "sha256": "954b04063c5723d459a935e53fcbb51392911504af194c49214dd7df16104362"
+  },
+  "policy": [
+    {
+      "id": "canvas-image",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 11,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "canvas-image",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "canvas-image",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "pixi-image",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 135,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "pixi-image",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "colors": 9,
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "pixi-image",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "colors": 9,
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "three-image",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 67,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "three-image",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "colors": 435,
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "three-image",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "colors": 435,
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "coop-pixi",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 66,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "coop-pixi",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "coop-pixi",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "blob-image",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 1,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "blob-image",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "blob-image",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "blob-worker",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 1,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "blob-worker",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "blob-worker",
+      "mode": "player-policy",
+      "ok": false,
+      "ready": false,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": [
+        "Creating a worker from 'blob:null/[id]' violates the following Content Security Policy directive: \"script-src 'unsafe-inline'\". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocke",
+        "worker failed"
+      ]
+    },
+    {
+      "id": "wasm-inline",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 1,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "wasm-inline",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "wasm-inline",
+      "mode": "player-policy",
+      "ok": false,
+      "blocked": [],
+      "errors": [
+        "WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \""
+      ]
+    },
+    {
+      "id": "dynamic-import",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 1,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "dynamic-import",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "dynamic-import",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "pixi-default-csp",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 87,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "pixi-default-csp",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "colors": 9,
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "pixi-default-csp",
+      "mode": "player-policy",
+      "ok": false,
+      "blocked": [],
+      "errors": [
+        "Current environment does not allow unsafe-eval, please use pixi.js/unsafe-eval module to enable support."
+      ]
+    },
+    {
+      "id": "large-image",
+      "mode": "production-validator",
+      "ok": false,
+      "code": "GC-HTML-002",
+      "references": [],
+      "staticMs": 83,
+      "error": "HTML 초기 실행 오류: ERR_INVALID_URL (-300)",
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "large-image",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "large-image",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "render": {
+        "nonBlank": true
+      },
+      "features": {
+        "secureContext": false,
+        "webgpu": false,
+        "node": "undefined"
+      },
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "legacy-reference",
+      "mode": "production-validator",
+      "ok": true,
+      "references": [],
+      "staticMs": 3,
+      "multiplayerContract": {
+        "ok": true
+      }
+    },
+    {
+      "id": "legacy-reference",
+      "mode": "preview-policy",
+      "ok": true,
+      "ready": true,
+      "blocked": [],
+      "errors": []
+    },
+    {
+      "id": "legacy-reference",
+      "mode": "player-policy",
+      "ok": true,
+      "ready": true,
+      "blocked": [],
+      "errors": []
+    }
+  ],
+  "browsers": [
+    {
+      "name": "chrome",
+      "version": "Chrome/156.0.8078.76",
+      "offline": true,
+      "outcomes": [
+        {
+          "id": "canvas-image",
+          "ok": true,
+          "ready": true,
+          "moves": 1,
+          "render": {
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "pixi-image",
+          "ok": true,
+          "ready": true,
+          "moves": 1,
+          "render": {
+            "colors": 9,
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "three-image",
+          "ok": true,
+          "ready": true,
+          "moves": 1,
+          "render": {
+            "colors": 435,
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "coop-pixi",
+          "skipped": true,
+          "reason": "Existing app SDK contract; not an externally runnable online artifact"
+        },
+        {
+          "id": "blob-image",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "blob-worker",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "wasm-inline",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "dynamic-import",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "pixi-default-csp",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "render": {
+            "colors": 9,
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "large-image",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "render": {
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "legacy-reference",
+          "skipped": true,
+          "reason": "Existing app SDK contract; not an externally runnable online artifact"
+        }
+      ]
+    },
+    {
+      "name": "edge",
+      "version": "Edg/156.0.4314.58",
+      "offline": true,
+      "outcomes": [
+        {
+          "id": "canvas-image",
+          "ok": true,
+          "ready": true,
+          "moves": 1,
+          "render": {
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "pixi-image",
+          "ok": true,
+          "ready": true,
+          "moves": 1,
+          "render": {
+            "colors": 9,
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "three-image",
+          "ok": true,
+          "ready": true,
+          "moves": 1,
+          "render": {
+            "colors": 435,
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "coop-pixi",
+          "skipped": true,
+          "reason": "Existing app SDK contract; not an externally runnable online artifact"
+        },
+        {
+          "id": "blob-image",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "blob-worker",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "wasm-inline",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "dynamic-import",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "pixi-default-csp",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "render": {
+            "colors": 9,
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "large-image",
+          "ok": true,
+          "ready": true,
+          "moves": 0,
+          "render": {
+            "nonBlank": true
+          },
+          "features": {
+            "secureContext": true,
+            "webgpu": true,
+            "node": "undefined"
+          },
+          "httpRequests": []
+        },
+        {
+          "id": "legacy-reference",
+          "skipped": true,
+          "reason": "Existing app SDK contract; not an externally runnable online artifact"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    {
+      "requestedBytes": 7900000,
+      "actualBytes": 7900000,
+      "import": true,
+      "shared": true,
+      "rendererLoaded": false,
+      "srcdocLoaded": true,
+      "srcdocMs": 332,
+      "rendererMemoryKb": {
+        "workingSetSize": 124636,
+        "peakWorkingSetSize": 187556,
+        "privateBytes": 58320
+      },
+      "rendererError": "ERR_INVALID_URL (-300)"
+    },
+    {
+      "requestedBytes": 8100000,
+      "actualBytes": 8100000,
+      "import": false,
+      "importError": "limit.html: HTML은 UTF-8 텍스트, 최대 8MB여야 합니다.",
+      "shared": false,
+      "sharedError": "Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.",
+      "rendererLoaded": false,
+      "srcdocLoaded": true,
+      "srcdocMs": 269,
+      "rendererMemoryKb": {
+        "workingSetSize": 122744,
+        "peakWorkingSetSize": 186316,
+        "privateBytes": 55920
+      },
+      "rendererError": "ERR_INVALID_URL (-300)"
+    },
+    {
+      "requestedBytes": 16000000,
+      "actualBytes": 16000000,
+      "import": false,
+      "importError": "limit.html: HTML은 UTF-8 텍스트, 최대 8MB여야 합니다.",
+      "shared": false,
+      "sharedError": "Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.",
+      "rendererLoaded": false,
+      "srcdocLoaded": true,
+      "srcdocMs": 500,
+      "rendererMemoryKb": {
+        "workingSetSize": 153628,
+        "peakWorkingSetSize": 278104,
+        "privateBytes": 86680
+      },
+      "rendererError": "ERR_INVALID_URL (-300)"
+    }
+  ],
+  "offlineReplay": {
+    "treeHash": "673c01cd26a240b62e8481f50131f52020350d512f77443626d30a57d028b8ce",
+    "sameTree": true,
+    "network": "npm --offline"
+  },
+  "packagedRuntime": {
+    "node": "24.19.0",
+    "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+    "builds": [
+      {
+        "id": "pixi-image",
+        "jsBytes": 539121,
+        "sha256": "7c935669cf5dbbff57711e1a94f634baf1b2de7c64c22d21cd2194f68ca052e4",
+        "buildMs": 1345,
+        "sameJs": true
+      },
+      {
+        "id": "three-image",
+        "jsBytes": 529523,
+        "sha256": "91033f77a0739fa550696a8de378ee34200af1b15f2298d2d25fd4f7fcf1539b",
+        "buildMs": 194,
+        "sameJs": true
+      }
+    ],
+    "payloads": [
+      {
+        "bytes": 16000000,
+        "jsonBytes": 16000034,
+        "roundTrip": true,
+        "elapsedMs": 26,
+        "memory": {
+          "rss": 206938112,
+          "heapTotal": 75571200,
+          "heapUsed": 57899680,
+          "external": 2522790,
+          "arrayBuffers": 143651
+        },
+        "maxRssKb": 202092
+      },
+      {
+        "bytes": 32000000,
+        "jsonBytes": 32000034,
+        "roundTrip": true,
+        "elapsedMs": 50,
+        "memory": {
+          "rss": 287797248,
+          "heapTotal": 204824576,
+          "heapUsed": 136246392,
+          "external": 2522794,
+          "arrayBuffers": 143615
+        },
+        "maxRssKb": 281084
+      },
+      {
+        "bytes": 64000000,
+        "jsonBytes": 64000034,
+        "roundTrip": true,
+        "elapsedMs": 96,
+        "memory": {
+          "rss": 482271232,
+          "heapTotal": 463945728,
+          "heapUsed": 328265176,
+          "external": 2522794,
+          "arrayBuffers": 143615
+        },
+        "maxRssKb": 470968
+      }
+    ]
+  },
+  "portableToolset": {
+    "node": "24.19.0",
+    "npm": "11.17.0",
+    "rolldown": "1.2.12",
+    "bytes": 127511449,
+    "files": 1992,
+    "fingerprint": "a70c75b0c187755f3ec5fe42f16d4a3a2f123a51d31580c6ab565c62edc274db",
+    "packages": [
+      "rolldown",
+      "@oxc-project/types",
+      "@rolldown/pluginutils",
+      "@rolldown/binding-win32-x64-msvc"
+    ],
+    "pathEnvironmentEmpty": true,
+    "offlineInstall": true,
+    "builds": [
+      {
+        "id": "pixi-image",
+        "jsBytes": 539121,
+        "sha256": "7c935669cf5dbbff57711e1a94f634baf1b2de7c64c22d21cd2194f68ca052e4",
+        "buildMs": 146,
+        "sameJs": true
+      },
+      {
+        "id": "three-image",
+        "jsBytes": 529523,
+        "sha256": "91033f77a0739fa550696a8de378ee34200af1b15f2298d2d25fd4f7fcf1539b",
+        "buildMs": 91,
+        "sameJs": true
+      }
+    ]
+  },
+  "expectedSupportedFailures": [],
+  "limitations": [
+    "No paid AI calls or provider authentication tests",
+    "No production package feature integration or multi-PC/network-room test",
+    "Headless local browsers; GPU/browser/device performance is not generally certified",
+    "Preview/player policy harnesses use a test-only offline guard; player uses solo SDK rather than the full online shell",
+    "Size cases use synthetic comment payloads and JSON; no concurrent HTTP or SQLite durability load test",
+    "WebGPU presence is observed only; no WebGPU render test",
+    "External export files are retained in the task temporary directory"
+  ]
+}

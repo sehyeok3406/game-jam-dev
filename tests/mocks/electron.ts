@@ -20,6 +20,7 @@ export const ipcMain = Object.assign(new EventEmitter(), {
 });
 export const app = Object.assign(new EventEmitter(), {
   getVersion: () => '0.10.1',
+  getAppPath: () => process.cwd(),
   isPackaged: false,
   whenReady: () => Promise.resolve(),
   getPath: () => root,
@@ -37,7 +38,12 @@ export const autoUpdater = Object.assign(new EventEmitter(), {
   },
 });
 export const importSelections: string[] = [];
+export const exportSelections: string[] = [];
 export const dialog = {
+  showSaveDialog: async (..._args: unknown[]) => {
+    const filePath = exportSelections.shift();
+    return { canceled: !filePath, filePath };
+  },
   showOpenDialog: async (options?: { properties?: string[] }) => ({
     canceled: false,
     filePaths: options?.properties?.includes('multiSelections')

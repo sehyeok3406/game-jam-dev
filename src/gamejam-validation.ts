@@ -9,6 +9,7 @@ import type {
 import { resultName } from './result-name.ts';
 import { taskInstructions } from './task-instructions.ts';
 import { documentTemplates } from './document-format.ts';
+import { isImportedPreviewPath } from './preview-output.ts';
 import { reasoningError, supportsSharedAiProvider } from './core/ai/catalog.ts';
 
 export type GamejamField =
@@ -139,7 +140,28 @@ export function gamejamIssues(
       '재료로 선택한 원본 HTML은 덮어쓸 수 없습니다. 새 버전을 선택하거나 다른 결과를 업데이트해주세요.',
     );
   }
+  if (
+    request.implement &&
+    request.htmlResult?.mode === 'update' &&
+    request.htmlResult.basePath &&
+    isImportedPreviewPath(request.htmlResult.basePath)
+  )
+    if (!issues.some((i) => i.field === 'html-result'))
+      add(
+        'html-result',
+        '불러온 HTML은 원본을 유지합니다. 새 버전 만들기를 선택해주세요.',
+      );
   if (context.intent === 'content') return issues;
+  if (
+    request.implement &&
+    context.collaboration.active &&
+    (context.collaboration.gameBuildVersion !== 1 ||
+      context.collaboration.gameBuildEditingVersion !== 1)
+  )
+    add(
+      'connection',
+      '소스 기반 게임 제작을 사용하려면 앱과 협업 서버를 함께 업데이트해주세요.',
+    );
   if (context.intent === 'request') {
     const shared = context.collaboration;
     if (context.updateRestarting)
@@ -263,6 +285,11 @@ export function gamejamIssues(
       add(
         'connection',
         '작업 지시를 사용하려면 협업 서버 v0.7.5 이상으로 업데이트해주세요.',
+      );
+    if (request.instructionOrigins && shared.taskInstructionsVersion !== 2)
+      add(
+        'connection',
+        '원본 요구와 최신 지침을 보존하려면 협업 서버를 업데이트해주세요.',
       );
     if (!supportsSharedAiProvider(shared, context.provider))
       add(

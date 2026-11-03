@@ -369,6 +369,7 @@ export type GameCanvasApi = {
     name: string;
     data: string;
   }) => Promise<boolean>;
+  exportPreviewHtml: (relativePath: string) => Promise<boolean>;
   applyCanvasCommands: (input: {
     scope: string;
     clipboardContextId?: string;
@@ -527,6 +528,7 @@ export const APP_API_GROUPS = {
   listGameUi: 'editor',
   applyGameUiCommand: 'editor',
   exportGameUiPng: 'desktop',
+  exportPreviewHtml: 'desktop',
   applyCanvasCommands: 'editor',
   getDrawingChanges: 'editor',
   applyDrawingCommand: 'editor',

@@ -35,6 +35,7 @@ export function readProjectLayout(files: Snapshot): ProjectLayout | null {
 }
 
 const physicalPrefixes = [
+  ['.game-builds', '.gamejam/project/builds'],
   ['.canvas/layout.json', '.gamejam/project/layout.json'],
   ['.canvas/project.json', '.gamejam/project/metadata.json'],
   ['.canvas/authorship.json', '.gamejam/local/authorship.json'],

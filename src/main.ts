@@ -65,6 +65,8 @@ import {
   claimSharedAiRun,
 } from './application/ai/queue-service';
 import { AiRunService } from './application/ai/run-service';
+import { desktopGameBuildExecution } from './desktop/ai/game-build-execution.ts';
+import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
 import { aiRunPrompt } from './application/ai/run-prompt';
 import { fileStageWorkspace } from './desktop/ai/stage-workspace';
 import { NodeAiExecutor } from './desktop/ai/node-executor';
@@ -77,6 +79,10 @@ import { ProjectPreviewService } from './application/editing/preview-service';
 import { registerPreviewIpc } from './desktop/ipc/preview';
 import { registerDiscordApprovalIpc } from './desktop/ipc/discord-approval';
 import { exportGameUiPng } from './desktop/export-game-ui';
+import { savePreviewHtml } from './desktop/export-preview-html';
+import { PreviewExportService } from './application/editing/preview-export-service';
+import { assertPreviewPath } from './preview-output';
+import { inspectImportedHtml } from './html-source';
 import { LocalHistoryService } from './application/editing/history-service';
 import { registerHistoryIpc } from './desktop/ipc/history';
 import {
@@ -184,7 +190,7 @@ import { commandLabels, reduceCollaboration } from './collaboration-model';
 import matter from './markdown.ts';
 import { EditJournal } from './edit-journal';
 import { CanvasError, failureInfo, errorText } from './app-errors';
-import {} from './task-plan';
+import { gameBuildTask } from './task-plan';
 import { installPreviewPermissions } from './preview-permissions';
 import {
   CANVAS_CLIPBOARD_MIME,
@@ -942,6 +948,18 @@ const startWatcher = () => {
             .relative(watchRoot, target)
             .replaceAll('\\', '/');
           if (
+            relative === '.game-builds' ||
+            relative.startsWith('.game-builds/')
+          )
+            return false;
+          if (
+            relative === '.gamejam' ||
+            relative === '.gamejam/project' ||
+            relative === '.gamejam/project/builds' ||
+            relative.startsWith('.gamejam/project/builds/')
+          )
+            return false;
+          if (
             relative === '.canvas' ||
             relative === CANVAS_SHEETS_PATH ||
             relative === DOCUMENT_STATUSES_PATH
@@ -1149,6 +1167,30 @@ const startCodexRun = async (
     workspace,
     filesystemProjectRepository(root),
     validateHtml,
+    Date.now,
+    gameBuildTask(baseline[input.taskPath])
+      ? {
+          execution: desktopGameBuildExecution({
+            runtime: path.join(
+              app.isPackaged
+                ? process.resourcesPath
+                : path.join(app.getAppPath(), 'out'),
+              'game-build-runtime',
+            ),
+            cacheRoot: path.join(app.getPath('userData'), 'game-build-cache'),
+            executor: aiExecutorFor(input.providerId),
+            assertCurrent: () => {
+              projectSessions.assertCurrent(sessionRef);
+              if (client && client.lease !== lease)
+                throw Error('공동 AI 실행 권한이 만료되었습니다.');
+            },
+            progress: (message) => events.emit('running', 'status', message),
+          }),
+          executor: aiExecutorFor(input.providerId),
+          codec: gameBuildCodec,
+          id: randomUUID,
+        }
+      : undefined,
   );
   const outputs = service.inspectInput();
   const records = fileAiRunRecords(root, runId, input.taskPath, workspace);
@@ -2231,6 +2273,31 @@ const registerIpc = () => {
         assertAiFilesUnlocked(currentAiFileLock(), paths);
       },
     });
+  });
+  handle('preview:export-html', async (event, relative: string) => {
+    if (!isUpdateSender(event))
+      throw Error('허용되지 않은 내보내기 요청입니다.');
+    const root = requireWorkspace(),
+      session = projectSessions.ref;
+    const assertCurrent = () => projectSessions.assertCurrent(session);
+    return new PreviewExportService({
+      assertCurrent,
+      capture: async () => {
+        assertCurrent();
+        const client = projectSessions.client;
+        if (client) {
+          if (client.state.accessDenied || client.state.projectDeleted)
+            throw Error('프로젝트 접근 권한을 확인해주세요.');
+          return { ...client.files };
+        }
+        return captureProject(root);
+      },
+      validate: (path, content) => {
+        assertPreviewPath(path);
+        inspectImportedHtml(content, path);
+      },
+      save: (input, check) => savePreviewHtml(input, mainWindow!, root, check),
+    }).export(relative);
   });
   registerEditingIpc(handle, () => {
     const root = requireWorkspace(),

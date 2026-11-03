@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-02",
+  "toolset": {
+    "platform": "win32",
+    "arch": "x64",
+    "versions": {
+      "node": "24.19.0",
+      "npm": "11.17.0",
+      "rolldown": "1.2.12",
+      "binding": "1.2.12"
+    },
+    "sha256": "7e13a853f8b022f7005a4c56b6d748676bcb3d45bd78a1c7b6c422f27a831b3d",
+    "files": 1992,
+    "bytes": 127530734
+  },
+  "publicPackages": [
+    {
+      "name": "three",
+      "version": "0.187.0",
+      "packages": 1,
+      "notices": 1,
+      "documents": [
+        {
+          "source": "npm:three@0.187.0/README.md",
+          "bytes": 2969,
+          "truncated": false,
+          "sha256": "d553d824625a07d7690de93af6f8daf13d6aaed42700929d7ce4e725fa5ef10d",
+          "sourceSha256": "d553d824625a07d7690de93af6f8daf13d6aaed42700929d7ce4e725fa5ef10d"
+        }
+      ],
+      "lockSha256": "b3e069eb4252a3e301e1c0a5a4b09d49cfd8f83e05f522a32c42b9710e705160",
+      "toolsetSha256": "7e13a853f8b022f7005a4c56b6d748676bcb3d45bd78a1c7b6c422f27a831b3d",
+      "warnings": [],
+      "replayUnchanged": true
+    },
+    {
+      "name": "pixi.js",
+      "version": "8.22.0",
+      "error": {
+        "code": "LICENSE",
+        "message": "라이선스 고지 원문이 필요합니다: @pixi/colord@2.9.6"
+      }
+    },
+    {
+      "name": "matter-js",
+      "version": "0.20.0",
+      "packages": 1,
+      "notices": 1,
+      "documents": [
+        {
+          "source": "npm:matter-js@0.20.0/README.md",
+          "bytes": 9023,
+          "truncated": false,
+          "sha256": "d17d37655c45ca5ded135fb15ebc4271e268eb44ee4574b163dd147f75161da4",
+          "sourceSha256": "d17d37655c45ca5ded135fb15ebc4271e268eb44ee4574b163dd147f75161da4"
+        }
+      ],
+      "lockSha256": "64abce9b81e3aba59b53cf3493bd327330bc8d0b3794b376a8d8c0c58aaf057c",
+      "toolsetSha256": "7e13a853f8b022f7005a4c56b6d748676bcb3d45bd78a1c7b6c422f27a831b3d",
+      "warnings": [],
+      "replayUnchanged": true
+    }
+  ]
+}

@@ -264,6 +264,8 @@ const api: GameCanvasApi = {
   listGameUi: () => ipcRenderer.invoke('game-ui:list'),
   applyGameUiCommand: (input) => ipcRenderer.invoke('game-ui:apply', input),
   exportGameUiPng: (input) => ipcRenderer.invoke('game-ui:export-png', input),
+  exportPreviewHtml: (relativePath) =>
+    ipcRenderer.invoke('preview:export-html', relativePath),
   listSections: () => ipcRenderer.invoke('sections:list'),
   createIdea: (input) => ipcRenderer.invoke('documents:create-idea', input),
   createSection: (input) => ipcRenderer.invoke('sections:create', input),

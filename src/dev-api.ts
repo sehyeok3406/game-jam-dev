@@ -851,6 +851,7 @@ export function createDevGameCanvasApi(
         active: true,
         connected: true,
         taskInstructionsEditable: true,
+        taskInstructionsVersion: 2,
         taskResultNaming: true,
         gamejamWorkflow: true,
         documentBundles: true,
@@ -889,6 +890,7 @@ export function createDevGameCanvasApi(
         active: true,
         connected: true,
         taskInstructionsEditable: true,
+        taskInstructionsVersion: 2,
         taskResultNaming: true,
         gamejamWorkflow: true,
         documentBundles: true,
@@ -1253,6 +1255,7 @@ export function createDevGameCanvasApi(
     },
     listGameUi: async () => snapshotGameUi(gameUiFiles),
     exportGameUiPng: async () => true,
+    exportPreviewHtml: async () => false,
     applyGameUiCommand: async (input) => {
       if (collab.active && collab.role === 'viewer')
         throw new Error('보기 권한입니다.');

@@ -13,6 +13,8 @@ import type { Snapshot } from './project-store.ts';
 import type { PreviewResult } from './shared.ts';
 import { cardColor } from './card-colors.ts';
 import { validateHtmlInputs } from './html-inputs.ts';
+import { gameBuildStatus } from './core/projects/game-build-status.ts';
+import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
 
 export const MAX_HTML_BYTES = 8_000_000;
 
@@ -101,6 +103,7 @@ export function describePreview(
       typeof data.canvas_placement_id === 'string'
         ? data.canvas_placement_id
         : undefined,
+    build: gameBuildStatus(files, relative, gameBuildCodec, matter),
     canvasId: typeof data.canvas_id === 'string' ? data.canvas_id : 'default',
     statusPropertyEnabled:
       typeof data.status_property_enabled === 'boolean'

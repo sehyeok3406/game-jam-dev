@@ -579,7 +579,7 @@ async function run() {
     assert.equal(await js('qaValidation.runs'), 0);
     assert(
       await js(
-        'document.querySelector(".ai-output-hint").textContent.includes("문서 3개")',
+        'document.querySelector(".ai-output-hint").textContent.includes("문서 4개")',
       ),
     );
     await goTo(2);
@@ -587,7 +587,7 @@ async function run() {
       await js(
         'Array.from(document.querySelectorAll(".document-output-template input")).map(e=>e.value)',
       ),
-      ['게임 개요', '핵심 플레이', '모호한 점'],
+      ['게임 개요', '핵심 플레이', '비주얼 설계', '모호한 점'],
     );
     await js('qaValidation.shared({documentOutputFormats:false})');
     await goTo(5);
@@ -624,10 +624,10 @@ async function run() {
     await js(`document.querySelector('[aria-label="문서 3 제거"]').click()`);
     assert.equal(
       await js('document.querySelectorAll(".document-output-template").length'),
-      2,
+      3,
     );
     await js(
-      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('기본 문서 3개로 되돌리기')).click()`,
+      `Array.from(document.querySelectorAll('.document-output-presets button')).find(e=>e.textContent.includes('기본 문서 구성으로 되돌리기')).click()`,
     );
     await js(
       `Array.from(document.querySelectorAll('#ai-document-format > button')).find(e=>e.textContent.includes('문서 추가')).click()`,
@@ -644,8 +644,8 @@ async function run() {
       '포함할 내용',
       '## 카드 목록\nID/비용/효과를 표로 작성한다.',
     );
-    await setTemplate(4, '제목', '경제 분석');
-    await setTemplate(4, '포함할 내용', '가격표와 재화 순환을 정리한다.');
+    await setTemplate(5, '제목', '경제 분석');
+    await setTemplate(5, '포함할 내용', '가격표와 재화 순환을 정리한다.');
     await goTo(3);
     await goTo(2);
     assert.equal(
@@ -654,7 +654,7 @@ async function run() {
     );
     assert.equal(
       await js('document.querySelectorAll(".document-output-template").length'),
-      4,
+      5,
     );
     await goTo(5);
     assert(
@@ -679,14 +679,14 @@ async function run() {
     await clickRun();
     await wait('!document.querySelector(".ai-request-dialog")');
     await wait(
-      `(async()=> (await gameCanvas.listDocuments()).filter(d=>d.documentBundleId).length===4)()`,
+      `(async()=> (await gameCanvas.listDocuments()).filter(d=>d.documentBundleId).length===5)()`,
     );
     assert.equal(await js('qaValidation.runs'), 1);
     const bundleDocs = await js(
       '(async()=> (await gameCanvas.listDocuments()).filter(d=>d.documentBundleId))()',
     );
     assert.equal(bundleDocs.filter((doc) => doc.type === 'overview').length, 0);
-    assert.equal(bundleDocs.filter((doc) => doc.outputKey).length, 4);
+    assert.equal(bundleDocs.filter((doc) => doc.outputKey).length, 5);
     assert(
       bundleDocs.some(
         (doc) =>
@@ -696,7 +696,7 @@ async function run() {
     );
     assert.equal(
       bundleDocs.filter((doc) => doc.type === 'system' && doc.systemId).length,
-      3,
+      4,
     );
     win.setSize(1280, 900);
     await js(
@@ -741,7 +741,7 @@ async function run() {
       'PASS: ordinary text request inference reaches actual submit payload, workflow settings and saved request without library selection.',
     );
     console.log(
-      'PASS: editable three-document defaults, preset switches, add/remove, arbitrary titles/types/Markdown instructions, stage preservation, review, old-server guards and four custom document cards with IDs (mock AI, no paid calls).',
+      'PASS: editable visual-design defaults, preset switches, add/remove, arbitrary titles/types/Markdown instructions, stage preservation, review, old-server guards and five custom document cards with IDs (mock AI, no paid calls).',
     );
     console.log(
       'PASS: five-page wizard, separate instruction pages, previous/next preservation, single-task flow, searchable 32-folder preview, multiple selections without duplicates, checkbox/keyboard selection, individual/clear-all removal, preset and navigation preservation, reset on reopen, disabled application, review, validation routing, blocked submit, folded settings, role/sync reasons, light/dark narrow layout, server errors and preserved input; selected preview excluded from task and no AI calls.',

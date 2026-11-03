@@ -5,6 +5,8 @@ import { isAssetPath } from '../../file-assets.ts';
 import { isImportedPreviewPath } from '../../preview-output.ts';
 import { remapResultChanges } from '../../result-structure.ts';
 import { ApiError } from './errors.ts';
+import { isGameBuildPath } from '../../core/projects/game-build.ts';
+import { rebaseGameBuildRestoration } from '../../core/projects/game-build-editing.ts';
 /** Prepare a complete valid restoration without mutating current files. */
 export function planHistoryRestoration(
   current: Snapshot,
@@ -14,6 +16,13 @@ export function planHistoryRestoration(
   const single = input.relativePath
     ? collaborationPath(input.relativePath)
     : null;
+  if (
+    single &&
+    record.entry.files.some((file) => isGameBuildPath(file.relativePath))
+  )
+    throw new ApiError(
+      '게임 제작 원본과 HTML은 전체 기록으로 함께 복원해주세요.',
+    );
   if (
     single &&
     record.entry.files.some((file) => file.relativePath.startsWith('sections/'))
@@ -41,7 +50,12 @@ export function planHistoryRestoration(
     restoration[file.relativePath] = value ?? null;
   }
   for (const [key, value] of Object.entries(
-    remapResultChanges(current, restoration),
+    rebaseGameBuildRestoration(
+      current,
+      remapResultChanges(current, restoration),
+      record.before,
+      record.after,
+    ),
   )) {
     if (value === null) delete files[key];
     else files[key] = value;

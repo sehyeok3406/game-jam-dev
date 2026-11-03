@@ -5,6 +5,7 @@ import type { DocumentResultChoice } from './document-output.ts';
 import type { FailureInfo } from './errors.ts';
 import type { ApprovalStart } from './gamejam-approval.ts';
 export type CreateTaskInput = {
+  gameBuildVersion?: 1;
   queueVersion?: 1;
   multiplayer?: MultiplayerSettings | null;
   requestSnapshot?: GamejamSavedRequest;
@@ -17,11 +18,13 @@ export type CreateTaskInput = {
   htmlResult?: HtmlResultChoice;
   documentResult?: DocumentResultChoice;
   instructions?: string;
+  instructionOrigin?: import('./task-instructions.ts').TaskInstructionOriginV1;
   resultName?: string;
   thenImplement?: {
     multiplayer?: MultiplayerSettings | null;
     htmlResult?: HtmlResultChoice;
     instructions?: string;
+    instructionOrigin?: import('./task-instructions.ts').TaskInstructionOriginV1;
     resultName?: string;
   };
 };

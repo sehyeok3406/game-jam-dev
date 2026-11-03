@@ -51,3 +51,9 @@ property-sync 명령은 기존 `sequences` map에 참여자/세션 전체 요청
 측정에서 이력은 300개로 유지해도 추가 저장마다 hash 캐시의 본문이 남는 현상을 확인했다. **후속 최적화는 bounded cache와 참조 없는 blob 정리 정책을 먼저 설계하고, lazy loading/이력 조회 분리는 별도 성능 변경으로 검증한다.** 이번 R08에서 저장 모델이나 캐시 정책을 함께 바꾸지 않는다. 백업·외부 저장소·Windows→Linux 이전은 R09, readiness/draining·프록시 rate limit·Linux/Render 실행은 R10이다.
 
 최종 검사 수·실제 패키지 기록·측정값은 실행 계획 40절을 참조한다. 인공 SQLite 오류와 프로세스 종료 검사는 물리 디스크 장애나 전원 차단 검증을 뜻하지 않는다.
+
+## 원본 snapshot과 자체 서버 정책 · 2026-11-01
+
+게임 원본은 기존 snapshot 문자열과 content-addressed blob 저장 경로를 사용하며 별도 DB schema나 전용 동기화 경로를 추가하지 않는다. 현재/히스토리/체크포인트/검증된 백업에 source·lock·고지·manifest·index가 포함된다. 형식/기술 한도는 [게임 제작 계약](game-builds.md)을 따른다.
+
+`createProjectPersistence`는 선택적 `storagePolicy.maxProjectBytes`를 durable commit 전에 검사한다. CLI의 `GAMEJAM_MAX_PROJECT_BYTES`와 연결되며 기본은 별도 quota 없음이다. 기존 한도 초과 프로젝트도 읽기와 동일 크기/감소 변경을 허용하고 증가만 413 `PROJECT_STORAGE_LIMIT`로 거절한다. 현재 snapshot의 UTF-8 누적량 기준이며 디스크 전체/히스토리/사용자 결제 quota가 아니다. 로컬 repository에는 서비스 quota를 넣지 않는다. 기술 전송 상한과 독립된 정책이다.

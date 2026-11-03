@@ -1,4 +1,6 @@
 import { gamejamErrorId } from '../../gamejam-validation';
+import { editRequestInstructions } from '../../core/ai/task-instructions.ts';
+import { TASK_INSTRUCTION_TEMPLATE_VERSION } from '../../core/ai/instruction-templates.ts';
 import { isTextMaterial } from '../../canvas-text-materials';
 import type { Dispatch, SetStateAction } from 'react';
 import type * as C from '../../shared';
@@ -21,13 +23,18 @@ import {
 } from 'lucide-react';
 import { AI_PROVIDERS, reasoningLabel } from '../../core/ai/catalog.ts';
 import { AiReasoningSelect } from '../AiReasoningSelect';
-import { isPreviewPath, previewGameLabel } from '../../preview-output';
+import {
+  isPreviewPath,
+  previewGameLabel,
+  isImportedPreviewPath,
+} from '../../preview-output';
 import {
   defaultDocumentTemplates,
   MAX_FORMAT_DOCUMENTS,
   type DocumentOutputTemplate,
 } from '../../document-format';
 import { GamejamReview } from '../GamejamWizard';
+import { GameBuildSummary } from '../preview/GameBuildSummary';
 import { GameFeatureLibrary } from '../GameFeatureLibrary';
 import { GamejamFieldErrors } from '../GamejamValidation';
 import { MAX_RESULT_NAME } from '../../result-name';
@@ -115,6 +122,9 @@ export function GamejamRequestFields({
   checkingCodex,
   refreshCodexStatus,
 }: RequestFieldsProps) {
+  const editablePreviews = previews.filter(
+    (p) => !isImportedPreviewPath(p.relativePath),
+  );
   const aiFieldProps = (field: V.GamejamField) => ({
     'aria-invalid':
       aiRequestIssues.some((issue) => issue.field === field) || undefined,
@@ -454,6 +464,8 @@ export function GamejamRequestFields({
                   기존 문서를 수정하고 이전 내용은 기록에 남깁니다. 시스템별
                   문서 묶음은 새 시스템 문서를 추가할 수 있으며, 이전 세 문서
                   묶음은 기존 구성을 유지합니다.
+                  {aiRequest.implement &&
+                    ' 선택한 시스템 문서와 게임은 함께 성공한 경우에만 반영합니다. 원본 아이디어는 유지합니다.'}
                 </small>
               </label>
             ) : (
@@ -495,7 +507,7 @@ export function GamejamRequestFields({
                       })
                     }
                   >
-                    기본 문서 3개로 되돌리기
+                    기본 문서 구성으로 되돌리기
                   </button>
                   <button
                     type="button"
@@ -735,7 +747,7 @@ export function GamejamRequestFields({
               </button>
               <button
                 aria-pressed={aiRequest.htmlResult?.mode === 'update'}
-                disabled={creatingTask}
+                disabled={creatingTask || !editablePreviews.length}
                 onClick={() =>
                   setAiRequest({
                     ...aiRequest,
@@ -743,8 +755,10 @@ export function GamejamRequestFields({
                       ...aiRequest.htmlResult,
                       mode: 'update',
                       basePath:
-                        aiRequest.htmlResult?.basePath ??
-                        previews.at(-1)!.relativePath,
+                        aiRequest.htmlResult?.basePath &&
+                        !isImportedPreviewPath(aiRequest.htmlResult.basePath)
+                          ? aiRequest.htmlResult.basePath
+                          : editablePreviews.at(-1)?.relativePath,
                     },
                   })
                 }
@@ -784,6 +798,10 @@ export function GamejamRequestFields({
                   <option
                     value={preview.relativePath}
                     key={preview.relativePath}
+                    disabled={
+                      aiRequest.htmlResult?.mode === 'update' &&
+                      isImportedPreviewPath(preview.relativePath)
+                    }
                   >
                     {previewGameLabel(preview)}
                   </option>
@@ -797,6 +815,15 @@ export function GamejamRequestFields({
               )}
             </label>
             <GamejamFieldErrors field="html-result" issues={aiRequestIssues} />
+            {aiRequest.htmlResult?.basePath && (
+              <GameBuildSummary
+                build={
+                  previews.find(
+                    (p) => p.relativePath === aiRequest.htmlResult?.basePath,
+                  )?.build
+                }
+              />
+            )}
           </>
         )}
         <section className="ai-instructions-field">
@@ -887,21 +914,23 @@ export function GamejamRequestFields({
                   type="button"
                   disabled={
                     creatingTask ||
-                    aiRequest.instructions[kind] ===
-                      defaultTaskInstructions(kind, aiRequest.sourceMode)
+                    (aiRequest.instructions[kind] ===
+                      defaultTaskInstructions(kind, aiRequest.sourceMode) &&
+                      aiRequest.instructionOrigins?.[kind]?.source ===
+                        'default' &&
+                      aiRequest.instructionOrigins[kind]!.templateVersion ===
+                        TASK_INSTRUCTION_TEMPLATE_VERSION)
                   }
                   title="입력한 내용을 기본 작업 지시로 대체합니다"
                   onClick={() =>
-                    setAiRequest({
-                      ...aiRequest,
-                      instructions: {
-                        ...aiRequest.instructions,
-                        [kind]: defaultTaskInstructions(
-                          kind,
-                          aiRequest.sourceMode,
-                        ),
-                      },
-                    })
+                    setAiRequest(
+                      editRequestInstructions(
+                        aiRequest,
+                        kind,
+                        defaultTaskInstructions(kind, aiRequest.sourceMode),
+                        true,
+                      ),
+                    )
                   }
                 >
                   <RefreshCw size={13} /> 기본값으로 복원
@@ -922,13 +951,13 @@ export function GamejamRequestFields({
                 maxLength={MAX_TASK_INSTRUCTIONS}
                 rows={aiRequest.organize && aiRequest.implement ? 7 : 10}
                 onChange={(event) =>
-                  setAiRequest({
-                    ...aiRequest,
-                    instructions: {
-                      ...aiRequest.instructions,
-                      [kind]: event.target.value,
-                    },
-                  })
+                  setAiRequest(
+                    editRequestInstructions(
+                      aiRequest,
+                      kind,
+                      event.target.value,
+                    ),
+                  )
                 }
               />
               <div className="ai-instructions-meta">
@@ -942,6 +971,34 @@ export function GamejamRequestFields({
                 </small>
               </div>
               <GamejamFieldErrors field={kind} issues={aiRequestIssues} />
+              {aiRequest.instructionOrigins?.[kind]?.source === 'legacy' && (
+                <p className="ai-instructions-review" role="status">
+                  이전 입력의 편집 여부를 확인할 수 없어 내용을 그대로
+                  보존했습니다. 최신 기본 지침과 비교해 확인해주세요.
+                </p>
+              )}
+              {aiRequest.instructionOrigins?.[kind]?.source === 'default' &&
+                aiRequest.instructionOrigins[kind]!.templateVersion <
+                  TASK_INSTRUCTION_TEMPLATE_VERSION && (
+                  <p className="ai-instructions-review">
+                    이전 기본 지침을 사용한 초안입니다. 내용을 유지했으며, 최신
+                    지침을 적용하려면 기본값으로 복원하세요.
+                  </p>
+                )}
+              {(aiRequest.instructions[kind] !==
+                defaultTaskInstructions(kind, aiRequest.sourceMode) ||
+                aiRequest.instructionOrigins?.[kind]?.source === 'custom') && (
+                <details className="ai-instructions-default">
+                  <summary>최신 기본 지침 보기</summary>
+                  <p>
+                    입력한 내용은 그대로 유지됩니다. 기본값으로 복원을 누르면
+                    입력 내용을 대체합니다.
+                  </p>
+                  <pre>
+                    {defaultTaskInstructions(kind, aiRequest.sourceMode)}
+                  </pre>
+                </details>
+              )}
             </div>
           ))}
         <p className="ai-instructions-protection">

@@ -2,7 +2,7 @@ import type { GamejamRequest } from './contracts/gamejam-request.ts';
 export type { GamejamRequest } from './contracts/gamejam-request.ts';
 import { CanvasError } from './app-errors.ts';
 import { taskInstructions } from './task-instructions.ts';
-import type { CreateTaskInput } from './shared.ts';
+import type { CreateTaskInput } from './contracts/ai.ts';
 
 import type { GamejamSavedRequest } from './gamejam-history.ts';
 import { resolveMultiplayer } from './multiplayer/resolve.ts';
@@ -65,6 +65,7 @@ export function gamejamTaskInput(
         }
       : {}),
     kind,
+    ...(request.implement ? { gameBuildVersion: 1 as const } : {}),
     canvasId: request.canvasId,
     sourceMode:
       request.sourceMode === 'html' && kind === 'implement'
@@ -74,6 +75,7 @@ export function gamejamTaskInput(
     x: request.x,
     y: request.y,
     instructions: taskInstructions(kind, request.instructions[kind]),
+    instructionOrigin: request.instructionOrigins?.[kind],
     resultName: request.resultName,
     documentResult: request.organize ? request.documentResult : undefined,
     htmlResult: !request.organize ? request.htmlResult : undefined,
@@ -88,6 +90,7 @@ export function gamejamTaskInput(
               'implement',
               request.instructions.implement,
             ),
+            instructionOrigin: request.instructionOrigins?.implement,
           },
         }
       : {}),

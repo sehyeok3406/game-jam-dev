@@ -8,6 +8,9 @@ await build({
     alias: {
       electron: path.resolve('tests/mocks/electron.ts'),
       'node:child_process': path.resolve('tests/mocks/process.ts'),
+      './desktop/ai/game-build-execution.ts': path.resolve(
+        'tests/mocks/game-build-execution.ts',
+      ),
     },
   },
   define: {

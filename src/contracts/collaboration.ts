@@ -6,6 +6,12 @@ import type { FileAuthorshipMap } from './documents.ts';
 import type { DrawingDelta } from './drawing-types.ts';
 export type CollaborationRole = 'admin' | 'editor' | 'viewer';
 export type CollaborationState = {
+  gameBuildVersion?: number;
+  gameBuildEditingVersion?: number;
+  gameBuildStorageVersion?: number;
+  fileGameBuildStorageVersion?: number;
+  gameBuildStorageLimits?: typeof import('./game-build.ts').GameBuildLimits;
+  projectStoragePolicy?: import('./game-build.ts').ProjectStoragePolicy;
   projectNamesVersion?: number;
   projectLayoutVersion?: number;
   fileLayoutVersion?: number;
@@ -76,6 +82,7 @@ export type CollaborationState = {
   aiQueue?: AiQueueTask[];
   message?: string;
   taskInstructionsEditable?: boolean;
+  taskInstructionsVersion?: number;
   taskResultNaming?: boolean;
   gamejamWorkflow?: boolean;
   documentBundles?: boolean;
@@ -102,6 +109,9 @@ export type CollaborationMember = {
   online: boolean;
 };
 export type CollaborationCommand = {
+  gameBuildVersion?: number;
+  gameBuildEditingVersion?: number;
+  gameBuildStorageVersion?: number;
   projectLayoutVersion?: number;
   drawingTextVersion?: number;
   drawingTextAlignmentVersion?: number;

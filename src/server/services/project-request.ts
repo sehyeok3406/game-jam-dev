@@ -1,5 +1,6 @@
 import { detachStatus } from './project-mode-service.ts';
 import { assertEraseSupport } from './drawing-capabilities.ts';
+import { assertGameBuildStorageSupport } from './game-build-capabilities.ts';
 import type { Project, Member } from '../project-state.ts';
 import {
   assertLifecycleVersion,
@@ -39,6 +40,7 @@ export function createProjectRequest(ports: Ports) {
       if (!project) return ports.unavailable(id);
       if (action === 'detach-status') return detachStatus(project, input);
       const member = ports.authenticate(project, token);
+      assertGameBuildStorageSupport(project.files, input);
       if (action === 'lifecycle' || action.startsWith('trash'))
         return ports.lifecycle(project, member, action, input);
       ports.assertActive(project);

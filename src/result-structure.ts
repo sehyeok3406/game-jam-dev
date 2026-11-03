@@ -1,4 +1,8 @@
 import type { ResultMove } from './result-folder-plan.ts';
+import matter from './markdown.ts';
+import { GAME_BUILD_INDEX } from './contracts/game-build.ts';
+import { moveGameBuilds } from './core/projects/game-build.ts';
+import { remapTaskReferences } from './core/ai/task-references.ts';
 import { remapLayoutChanges } from './adapters/markdown/layout-snapshot.ts';
 export {
   moveDestination,
@@ -128,11 +132,19 @@ export function remapResultChanges(
       typeof value === 'string' && key === KANBAN_VIEW_PATH
         ? remapKanbanOrders(value, replacements)
         : typeof value === 'string' && key.endsWith('.md') && pattern
-          ? value.replace(
+          ? (remapTaskReferences(value, Object.fromEntries(replacements), {
+              parse: matter,
+              stringify: matter.stringify,
+            }) ??
+            value.replace(
               new RegExp(pattern, 'g'),
               (original) => replacements.get(original)!,
-            )
-          : value;
+            ))
+          : key === GAME_BUILD_INDEX && typeof value === 'string'
+            ? moveGameBuilds({ [GAME_BUILD_INDEX]: value }, aliases)[
+                GAME_BUILD_INDEX
+              ]
+            : value;
   }
   return remapped;
 }
@@ -210,10 +222,15 @@ export function relocateResults(
       .map(([from]) => from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .join('|');
     if (pattern)
-      next[key] = original.replace(
-        new RegExp(pattern, 'g'),
-        (value) => replacements.get(value)!,
-      );
+      next[key] =
+        remapTaskReferences(original, Object.fromEntries(replacements), {
+          parse: matter,
+          stringify: matter.stringify,
+        }) ??
+        original.replace(
+          new RegExp(pattern, 'g'),
+          (value) => replacements.get(value)!,
+        );
   }
   if (next[KANBAN_VIEW_PATH])
     next[KANBAN_VIEW_PATH] = remapKanbanOrders(
@@ -226,5 +243,5 @@ export function relocateResults(
       null,
       2,
     );
-  return next;
+  return moveGameBuilds(next, moves);
 }

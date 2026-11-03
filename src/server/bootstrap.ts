@@ -80,6 +80,7 @@ import { assertAiFilesUnlocked, assertAiMutation } from '../ai-file-lock.ts';
 import { type Snapshot } from '../project-store.ts';
 import { rebuildAuthorship } from '../file-authorship.ts';
 type Options = {
+  storagePolicy?: import('../contracts/game-build.ts').ProjectStoragePolicy;
   dataDirectory: string;
   host?: string;
   port?: number;
@@ -96,6 +97,12 @@ type Options = {
 };
 /** Durable transactions are independent of recovery checkpoint export. */
 export async function createCollaborationServer(options: Options) {
+  const storageLimit = options.storagePolicy?.maxProjectBytes;
+  if (
+    storageLimit !== undefined &&
+    (!Number.isSafeInteger(storageLimit) || storageLimit < 1)
+  )
+    throw Error('프로젝트 저장 한도는 양의 정수 바이트여야 합니다.');
   assertServiceMode(options.serviceMode ?? 'self-host', options.creationKey);
   const peer = createPeerIdentity(options.trustedProxies);
   let accepting = false;
@@ -172,6 +179,7 @@ export async function createCollaborationServer(options: Options) {
         projectQueue.run(id, operation);
       const announce = (id: string) => events.announce(id);
       const persistence = createProjectPersistence({
+        storagePolicy: options.storagePolicy,
         repository: store,
         projects,
         checkpoints,
@@ -280,6 +288,7 @@ export async function createCollaborationServer(options: Options) {
       );
       const envelope = (project: Project, member: Member) =>
         projectEnvelope(project, member, {
+          storagePolicy: options.storagePolicy,
           version: packageInfo.version,
           now: Date.now,
           online: (id, memberId) => online.get(id)?.get(memberId),
@@ -503,7 +512,7 @@ export async function createCollaborationServer(options: Options) {
       const server = http.createServer(
         createHttpHandler(
           [
-            healthRoute(packageInfo.version),
+            healthRoute(packageInfo.version, options.storagePolicy),
             readyRoute(() => accepting && !gate.blocked),
             eventsRoute(
               {

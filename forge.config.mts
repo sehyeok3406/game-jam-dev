@@ -12,6 +12,7 @@ import { releaseRepository } from './src/app-update';
 import { WINDOWS_EXECUTABLE_NAME } from './src/app-branding';
 import path from 'node:path';
 import { buildSelfHostRuntime } from './scripts/build-self-host-runtime.mjs';
+import { buildGameBuildRuntime } from './scripts/build-game-build-runtime.mjs';
 
 const repository = releaseRepository(updateConfig);
 
@@ -19,9 +20,11 @@ const config: ForgeConfig = {
   hooks: {
     preStart: async () => {
       await buildSelfHostRuntime();
+      await buildGameBuildRuntime();
     },
     generateAssets: async () => {
       await buildSelfHostRuntime();
+      await buildGameBuildRuntime();
     },
   },
   packagerConfig: {
@@ -33,6 +36,9 @@ const config: ForgeConfig = {
       path.resolve('assets/icon.ico'),
       path.resolve('assets/drawing-third-party-notices.txt'),
       path.resolve('tools/repair-windows-branding.ps1'),
+      ...(process.platform === 'win32'
+        ? [path.resolve('out/game-build-runtime')]
+        : []),
       ...(process.env.GAME_CANVAS_SELF_HOST !== '0' &&
       process.platform === 'win32'
         ? [path.resolve('out/self-host-runtime')]

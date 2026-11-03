@@ -2,6 +2,8 @@ import type { CollaborationProjectRepository } from '../../application/ports/col
 import type { Project } from '../project-state.ts';
 import type { createCheckpointStore } from './checkpoint-store.ts';
 import type { createLifecycleStore } from './lifecycle-store.ts';
+import type { ProjectStoragePolicy } from '../../contracts/game-build.ts';
+import { ApiError } from '../services/errors.ts';
 
 type Ports = {
   repository: CollaborationProjectRepository<Project>;
@@ -10,6 +12,7 @@ type Ports = {
   lifecycle: Awaited<ReturnType<typeof createLifecycleStore>>;
   committed: (id: string) => void;
   recoveryError: (id: string, phase: string) => void;
+  storagePolicy?: ProjectStoragePolicy;
 };
 /** Publish after commit. Recovery export errors cannot turn a durable success
  * into a failed command (or cause a caller to retry it with another ID).
@@ -47,6 +50,24 @@ export function createProjectPersistence(ports: Ports) {
   };
   return {
     async persist(project: Project) {
+      const limit = ports.storagePolicy?.maxProjectBytes;
+      if (limit !== undefined) {
+        const bytes = (files: Project['files']) =>
+          Object.values(files).reduce(
+            (sum, value) => sum + Buffer.byteLength(value),
+            0,
+          );
+        const size = bytes(project.files),
+          previous = ports.projects.get(project.id);
+        if (size > limit && (!previous || size > bytes(previous.files))) {
+          const error = new ApiError(
+            '자체 서버의 프로젝트 저장 한도를 초과했습니다. 자료를 줄이거나 서버 설정을 변경해주세요.',
+            413,
+          );
+          error.code = 'PROJECT_STORAGE_LIMIT';
+          throw error;
+        }
+      }
       await ports.repository.commit(project);
       ports.projects.set(project.id, project);
       if (project.lifecycle) {

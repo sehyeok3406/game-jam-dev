@@ -25,6 +25,9 @@ export async function fileStageWorkspace(
     },
     capture: () => captureProject(directory),
     async write(relative, content) {
+      await fs.mkdir(path.dirname(await projectPath(directory, relative)), {
+        recursive: true,
+      });
       await fs.writeFile(
         await projectPath(directory, relative),
         content,

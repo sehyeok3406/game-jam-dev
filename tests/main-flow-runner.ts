@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import { projectPath } from '../src/project-store.ts';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -7,13 +8,18 @@ import { createCollaborationServer } from '../src/collaboration-server';
 import { CollaborationClient } from '../src/collaboration-client';
 import { isImportedPreviewPath } from '../src/preview-output';
 import '../src/main';
-import { executionStarts, executionSpecs } from './mocks/process';
+import {
+  executionStarts,
+  executionSpecs,
+  holdMockExecution,
+} from './mocks/process';
 import { defaultDocumentTemplates } from '../src/document-format';
 import {
   handlers,
   events,
   root,
   importSelections,
+  exportSelections,
   createdWindows,
   revealedPaths,
   safeStorage,
@@ -143,7 +149,10 @@ try {
     }),
   );
   const originalProjectContent = await fs.readFile(newProjectFile, 'utf8');
-  await assert.rejects(call('projects:create', '홈 생성 검증'), /이미/);
+  await assert.rejects(
+    call('projects:create', '홈 생성 검증'),
+    /같은 이름의 프로젝트/,
+  );
   assert.equal(
     await fs.readFile(newProjectFile, 'utf8'),
     originalProjectContent,
@@ -589,6 +598,7 @@ try {
       'HTML-INSTRUCTION-IPC-PROBE',
     ),
   );
+  const releaseConcurrent = holdMockExecution('fixture-concurrent');
   const run = await call('codex:start', {
     taskPath: task.relativePath,
     providerId: 'codex-cli',
@@ -656,9 +666,26 @@ try {
     await call('codex:active'),
     'Concurrent mutations must happen while AI is still running',
   );
+  releaseConcurrent();
   assert.equal((await terminal(run.runId)).status, 'completed');
   const html = await fs.readFile(path.join(root, 'output/index.html'), 'utf8');
   assert.ok(html.includes('fixture-concurrent'));
+  const exportFolder = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'gamejam-export-ipc-'),
+  );
+  try {
+    assert.equal(await call('preview:export-html', 'output/index.html'), false);
+    const destination = path.join(exportFolder, 'game.html');
+    exportSelections.push(destination);
+    assert.equal(await call('preview:export-html', 'output/index.html'), true);
+    assert.deepEqual(await fs.readFile(destination), Buffer.from(html));
+    console.log(
+      'PASS: HTML export IPC uses the saved file bytes and handles native-dialog cancellation (mock dialog, real filesystem)',
+    );
+  } finally {
+    assert.equal(path.dirname(exportFolder), path.resolve(os.tmpdir()));
+    await fs.rm(exportFolder, { recursive: true, force: true, maxRetries: 3 });
+  }
   assert.match(
     await fs.readFile(path.join(root, concurrent.relativePath), 'utf8'),
     /AI와 무관한 새 메모/,
@@ -1057,13 +1084,19 @@ try {
     ),
     firstDocs,
   );
-  await assert.rejects(
-    call('tasks:create', {
-      ...organizeInput,
-      inputPaths: nextDocSpec.expected_outputs,
-      documentResult: { mode: 'update', baseDir },
-    }),
-    /GC-AI-004/,
+  const selectedDocUpdate = await call('tasks:create', {
+    ...organizeInput,
+    inputPaths: nextDocSpec.expected_outputs,
+    documentResult: { mode: 'update', baseDir },
+  });
+  const selectedUpdateSpec = matter(
+    await fs.readFile(path.join(root, selectedDocUpdate.relativePath), 'utf8'),
+  ).data;
+  assert.deepEqual(
+    selectedUpdateSpec.document_updates.targets.map(
+      (t: { path: string }) => t.path,
+    ),
+    nextDocSpec.expected_outputs,
   );
   const invalidTask = await createVersion();
   const invalidRun = await call('codex:start', {
@@ -1201,7 +1234,9 @@ try {
     (item) => item.model === 'fixture-format-workflow',
   );
   assert.equal(customExecutions.length, 2);
-  assert.deepEqual(customExecutions[1].inputs, customExecutions[0].outputs);
+  assert.deepEqual(customExecutions[1].inputs, [
+    ...new Set([...customExecutions[0].outputs, ...customExecutions[0].inputs]),
+  ]);
   assert.equal(
     (await call('history:list')).find(
       (entry: any) => entry.id === customWorkflowRun.runId,
@@ -1348,7 +1383,12 @@ try {
     if (expected === 'completed') {
       assert.equal(executions.length, 2);
       assert.equal(executions[0].outputs.length, 5);
-      assert.deepEqual(executions[1].inputs, executions[0].outputs);
+      assert.deepEqual(
+        [...executions[1].inputs].sort(),
+        [
+          ...new Set([...executions[0].outputs, ...executions[0].inputs]),
+        ].sort(),
+      );
       const history = (await call('history:list')).find(
         (entry: any) => entry.id === run.runId,
       );
@@ -1432,6 +1472,7 @@ try {
   assert.equal(specs.length, 2);
   assert.deepEqual(specs[1].inputs, [
     ...workflowData.expected_outputs.slice(0, 3),
+    idea.relativePath,
     importedImage.relativePath,
   ]);
   assert.ok(

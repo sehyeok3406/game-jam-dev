@@ -5,7 +5,11 @@ import { ApiError } from '../services/errors.ts';
 export { ApiError } from '../services/errors.ts';
 
 export function replyError(response: ServerResponse, error: unknown) {
-  if ((error as ApiError)?.code === 'SERVER_MAINTENANCE')
+  if (
+    ['SERVER_MAINTENANCE', 'REQUEST_CAPACITY'].includes(
+      (error as ApiError)?.code ?? '',
+    )
+  )
     response.setHeader('Retry-After', '2');
   const failure = failureInfo(error, 'GC-COLLAB-001');
   reply(response, error instanceof ApiError ? error.status : 400, {

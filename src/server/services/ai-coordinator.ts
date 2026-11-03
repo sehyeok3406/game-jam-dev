@@ -24,7 +24,11 @@ import {
   aiLockedSnapshot,
 } from '../../ai-file-lock.ts';
 import { validateHtmlAnalysis } from '../../html-source.ts';
-import { workflowStages, newOutputsAlreadyExist } from '../../task-plan.ts';
+import {
+  workflowStages,
+  newOutputsAlreadyExist,
+  gameBuildTask,
+} from '../../task-plan.ts';
 import { ApiError } from './errors.ts';
 import {
   prepareApprovalExecution,
@@ -63,6 +67,21 @@ export function createAiCoordinator(ports: Ports) {
     input: Record<string, unknown>,
   ) {
     ports.admin(member);
+    const replayTask =
+      project.job?.taskPath ??
+      (typeof input.taskPath === 'string'
+        ? input.taskPath
+        : project.aiQueue?.find((t) => t.taskId === input.taskId)?.taskPath);
+    if (
+      replayTask &&
+      project.files[replayTask] &&
+      gameBuildTask(project.files[replayTask]) &&
+      (input.gameBuildVersion !== 1 || input.gameBuildEditingVersion !== 1)
+    )
+      throw new ApiError(
+        '게임 제작 v2 실행을 지원하는 앱으로 업데이트해주세요.',
+        409,
+      );
     let claimed: import('../../ai-task-queue.ts').StoredAiQueueTask | undefined;
     if (action === 'ai-claim') {
       if (!/^[a-f0-9-]{36}$/.test(String(input.claimId)))
@@ -202,6 +221,14 @@ export function createAiCoordinator(ports: Ports) {
         '여러 캔버스의 AI 작업에는 앱 v0.11.0 이상이 필요합니다.',
       );
     const outputs = expectedArtifacts(workingFiles[taskPath]);
+    if (
+      gameBuildTask(workingFiles[taskPath]) &&
+      (input.gameBuildVersion !== 1 || input.gameBuildEditingVersion !== 1)
+    )
+      throw new ApiError(
+        '게임 제작 v2 실행을 지원하는 앱으로 업데이트해주세요.',
+        409,
+      );
     if (
       matter(workingFiles[taskPath]).data.multiplayer !== undefined &&
       input.multiplayerVersion !== 1

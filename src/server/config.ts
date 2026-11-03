@@ -24,9 +24,18 @@ export function serverEnvironment(env: NodeJS.ProcessEnv = process.env) {
   if (env.GAME_CANVAS_PUBLIC && !['0', '1'].includes(env.GAME_CANVAS_PUBLIC))
     throw new Error('GAME_CANVAS_PUBLIC은 0 또는 1이어야 합니다.');
   const timeout = env.GAMEJAM_SHUTDOWN_MS ?? '25000';
+  const storage = env.GAMEJAM_MAX_PROJECT_BYTES;
+  if (
+    storage !== undefined &&
+    (!/^\d+$/.test(storage) || !Number.isSafeInteger(+storage) || +storage < 1)
+  )
+    throw Error('GAMEJAM_MAX_PROJECT_BYTES는 양의 정수여야 합니다.');
   if (!/^\d+$/.test(timeout) || +timeout < 1000 || +timeout > 25000)
     throw new Error('GAMEJAM_SHUTDOWN_MS는 1000~25000이어야 합니다.');
   return {
+    ...(storage === undefined
+      ? {}
+      : { storagePolicy: { maxProjectBytes: +storage } }),
     host,
     port: +rawPort,
     dataDirectory: path.resolve(env.GAME_CANVAS_DATA ?? 'collaboration-data'),

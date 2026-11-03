@@ -11,6 +11,10 @@ import {
 import type { GamejamPage } from './gamejam-wizard.ts';
 import type { CreateTaskInput, HistoryEntry } from './shared.ts';
 import { isAiProvider, isReasoningEffort } from './core/ai/catalog.ts';
+import {
+  identifyInstructionOrigin,
+  readInstructionOrigin,
+} from './core/ai/task-instructions.ts';
 export type GamejamDraft = GamejamSavedRequest & {
   approval?: {
     id: string;
@@ -131,6 +135,18 @@ export function gamejamSnapshotFromInput(
               }
             : {}),
         },
+        ...(input.instructionOrigin || input.thenImplement?.instructionOrigin
+          ? {
+              instructionOrigins: {
+                ...(input.instructionOrigin
+                  ? { [input.kind]: input.instructionOrigin }
+                  : {}),
+                ...(input.thenImplement?.instructionOrigin
+                  ? { implement: input.thenImplement.instructionOrigin }
+                  : {}),
+              },
+            }
+          : {}),
       },
     }
   );
@@ -191,6 +207,37 @@ export function requestSnapshotFromTask(
         [organize ? 'organize' : 'implement']: primary,
         ...(second ? { implement: secondary } : {}),
       },
+      ...(stage.data.effective_instructions || html.data.effective_instructions
+        ? {
+            instructionOrigins: {
+              [organize ? 'organize' : 'implement']: identifyInstructionOrigin(
+                organize ? 'organize' : 'implement',
+                primary,
+                stage.data.effective_instructions
+                  ? (readInstructionOrigin({
+                      ...stage.data.effective_instructions,
+                      version: 1,
+                    }) ?? stage.data.effective_instructions)
+                  : undefined,
+                data.source_mode,
+              ),
+              ...(second
+                ? {
+                    implement: identifyInstructionOrigin(
+                      'implement',
+                      secondary!,
+                      html.data.effective_instructions
+                        ? (readInstructionOrigin({
+                            ...html.data.effective_instructions,
+                            version: 1,
+                          }) ?? html.data.effective_instructions)
+                        : undefined,
+                    ),
+                  }
+                : {}),
+            },
+          }
+        : {}),
       ...(organize
         ? {
             documentResult: {

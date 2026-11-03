@@ -4,6 +4,7 @@ import { serverCapabilities } from '../capabilities.ts';
 import { queueTaskView } from '../../ai-task-queue.ts';
 import { AI_PROVIDERS } from '../../core/ai/catalog.ts';
 import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
+import { hasGameBuilds } from '../../core/projects/game-build.ts';
 export const projectEnvelope = (
   project: Project,
   member: Member,
@@ -12,6 +13,7 @@ export const projectEnvelope = (
     now: () => number;
     online: (id: string, memberId: string) => number | undefined;
     locks: (id: string) => ReadonlyMap<string, Lock>;
+    storagePolicy?: import('../../contracts/game-build.ts').ProjectStoragePolicy;
   },
 ): CollaborationEnvelope => ({
   files: project.files,
@@ -28,8 +30,9 @@ export const projectEnvelope = (
           accepted: project.handover.accepted,
         }
       : undefined,
-    ...serverCapabilities(),
+    ...serverCapabilities(ports.storagePolicy),
     fileLayoutVersion: project.files[PROJECT_LAYOUT_PATH] ? 2 : 1,
+    fileGameBuildStorageVersion: hasGameBuilds(project.files) ? 1 : undefined,
     connected: true,
 
     lifecycleVersion: project.lifecycle?.version ?? 0,

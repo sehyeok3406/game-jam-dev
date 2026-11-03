@@ -2,12 +2,15 @@ import { serverCapabilities } from '../../capabilities.ts';
 import type { HttpRoute } from '../router.ts';
 import { reply } from '../response.ts';
 
-export function healthRoute(version: string): HttpRoute {
+export function healthRoute(
+  version: string,
+  storagePolicy?: import('../../../contracts/game-build.ts').ProjectStoragePolicy,
+): HttpRoute {
   return (request, response, url) => {
     if (request.method !== 'GET' || url.pathname !== '/health') return false;
     reply(response, 200, {
       name: 'Game Canvas Collaboration',
-      ...serverCapabilities(),
+      ...serverCapabilities(storagePolicy),
       protocol: 1,
       version,
     });

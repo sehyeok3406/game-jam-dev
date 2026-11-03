@@ -82,23 +82,52 @@ async function run() {
           );
           await sleep(130);
           const layout = await js(
-            `(()=>{const card=document.querySelector('.preview-card');const header=card.querySelector('header');const warning=card.querySelector('.preview-import-warning');const play=card.querySelector('.preview-card__play-area');const iframe=play.querySelector('iframe');return {card:card.clientHeight,header:header.offsetHeight,warning:warning?.offsetHeight??0,game:play.offsetHeight,iframe:iframe.clientHeight,rows:getComputedStyle(card).gridTemplateRows.split(' ').length,warningClass:card.classList.contains('preview-card--warning')};})()`,
+            `(()=>{const card=document.querySelector('.preview-card');const header=card.querySelector('header');const warning=card.querySelector('.preview-import-warning');const summary=card.querySelector('.game-build-summary');const play=card.querySelector('.preview-card__play-area');const iframe=play.querySelector('iframe');return {card:card.clientHeight,header:header.offsetHeight,warning:warning?.offsetHeight??0,summary:summary?.offsetHeight??0,game:play.offsetHeight,iframe:iframe.clientHeight,warningClass:card.classList.contains('preview-card--warning')};})()`,
           );
-          assert.equal(layout.rows, state === 'warning' ? 3 : 2);
           assert.equal(layout.warningClass, state === 'warning');
           assert.equal(layout.header, 38);
           assert.ok(layout.warning < 75, JSON.stringify(layout));
           assert.equal(
             layout.game,
-            layout.card - layout.header - layout.warning,
+            layout.card - layout.header - layout.warning - layout.summary,
           );
           assert.equal(layout.iframe, layout.game);
-          assert.ok(layout.game > height * 0.6);
+          assert.ok(
+            layout.game >= layout.card * 0.6,
+            JSON.stringify({ theme, state, width, height, ...layout }),
+          );
           results.push({ theme, state, width, height, ...layout });
           await fs.writeFile(
             path.join(output, `${theme}-${state}-${width}.png`),
             (await win.webContents.capturePage()).toPNG(),
           );
+          if (width === 720) {
+            await js(
+              'document.querySelector(".game-build-summary summary").click()',
+            );
+            await sleep(130);
+            const expanded = await js(
+              `(()=>{const card=document.querySelector('.preview-card');const panel=card.querySelector('.game-build-summary');return {open:panel.open,height:panel.offsetHeight,play:card.querySelector('.preview-card__play-area').offsetHeight};})()`,
+            );
+            assert.equal(expanded.open, true);
+            assert.ok(
+              expanded.height > layout.summary && expanded.height <= 180,
+              JSON.stringify(expanded),
+            );
+            assert.equal(
+              expanded.play,
+              layout.game - expanded.height + layout.summary,
+            );
+            assert.ok(expanded.play > 200);
+            results.push({ theme, state, expanded });
+            await fs.writeFile(
+              path.join(output, `${theme}-${state}-summary.png`),
+              (await win.webContents.capturePage()).toPNG(),
+            );
+            await js(
+              'document.querySelector(".game-build-summary summary").click()',
+            );
+          }
         }
         if (state === 'independent') {
           await js(
@@ -130,10 +159,11 @@ async function run() {
               'Array.from(document.querySelectorAll(".ai-request-dialog textarea")).some(input=>input.value.includes("규칙·화면·조작·콘텐츠를 유지"))',
             ),
           );
-          assert.ok(
+          assert.equal(
             await js(
-              'document.querySelector(".ai-request-dialog").textContent.includes("output/inbox/combat/v001/index.html")',
+              'document.querySelector(".ai-request-dialog #ai-html-result").value',
             ),
+            'output/inbox/combat/v001/index.html',
           );
           results.push({
             theme,
@@ -174,10 +204,12 @@ async function run() {
           await sleep(220);
           assert.equal(await js('!!document.fullscreenElement'), true);
           const layout = await js(
-            "(()=>{const c=document.fullscreenElement;const w=c.querySelector('.preview-import-warning');const p=c.querySelector('.preview-card__play-area');return {card:c.clientHeight,warning:w.offsetHeight,game:p.offsetHeight,rows:getComputedStyle(c).gridTemplateRows.split(' ').length};})()",
+            "(()=>{const c=document.fullscreenElement;const w=c.querySelector('.preview-import-warning');const p=c.querySelector('.preview-card__play-area');return {card:c.clientHeight,warning:w.offsetHeight,summary:c.querySelector('.game-build-summary').offsetHeight,game:p.offsetHeight};})()",
           );
-          assert.equal(layout.rows, 3);
-          assert.equal(layout.game, layout.card - 38 - layout.warning);
+          assert.equal(
+            layout.game,
+            layout.card - 38 - layout.warning - layout.summary,
+          );
           results.push({ theme, state: 'fullscreen-warning', ...layout });
           await fs.writeFile(
             path.join(output, `${theme}-fullscreen-warning.png`),

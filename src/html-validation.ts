@@ -6,6 +6,7 @@ import { CanvasError } from './app-errors';
 import { withMultiplayerSdk } from './multiplayer/sdk';
 import { readMultiplayerManifest } from './multiplayer/contract';
 import { validateMultiplayerRuntime } from './multiplayer/runtime-validation';
+import { loadValidationFrame } from './desktop/ai/validation-frame.ts';
 
 export async function validateHtml(content: string, relativePath?: string) {
   const normalized = withMultiplayerSdk(
@@ -76,9 +77,7 @@ export async function validateHtml(content: string, relativePath?: string) {
   try {
     await Promise.race([
       (async () => {
-        await validator.loadURL(
-          `data:text/html;charset=utf-8,${encodeURIComponent(instrumented)}`,
-        );
+        await loadValidationFrame(validator, instrumented, randomUUID());
         await new Promise((resolve) => setTimeout(resolve, 900));
         const gameCode = errors[0]?.message.match(/\[(GC-MP-\d{3})\]/)?.[1];
         if (isPlayCode(gameCode)) {

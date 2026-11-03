@@ -193,7 +193,9 @@ export function WorkspaceTransferDialogs({
             <small>
               HTML은 CSS·JavaScript가 내부에 포함된 단일 파일을 권장합니다. 별도
               이미지·JS·CSS 파일이나 폴더는 함께 가져오지 않습니다. 신뢰하는
-              게임 파일만 불러오세요.
+              게임 파일만 불러오세요. 내보낸 HTML을 다시 불러와도 원래
+              프로젝트의 수정용 원본·기획 문서와 자동 연결되지 않습니다. 새
+              게임으로 등록되며 새 버전으로 수정할 수 있습니다.
             </small>
             <small>
               공동 작업에서는 서버 사본에 공유됩니다. AI 작업 관련 파일만

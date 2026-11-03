@@ -15,6 +15,7 @@ export function createCollaborationTransport(ports: Ports) {
         redirect: 'error',
         headers: {
           'Content-Type': 'application/json',
+          'X-Game-Build-Storage-Version': '1',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(key ? { 'X-Server-Key': key } : {}),
         },

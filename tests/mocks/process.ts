@@ -254,8 +254,12 @@ export function spawn(
           }
           if (mode.startsWith('fixture-gamejam')) {
             const docs: string[] = [];
+            const originals: string[] = spec.task_context?.originalInputs ?? [];
+            if (originals.some((relative) => !spec.inputs.includes(relative)))
+              throw new Error('HTML phase lost an original input');
             for (const relative of spec.inputs) {
               if (
+                originals.includes(relative) ||
                 !relative.endsWith('.md') ||
                 relative.startsWith('docs/html-sources/')
               )

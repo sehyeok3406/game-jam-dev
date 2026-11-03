@@ -15,7 +15,16 @@ import matter from '../../markdown.ts';
 import { layoutNewDocuments } from '../../new-document-layout.ts';
 import { canvasId } from '../../canvas-sheets.ts';
 import { checkSnapshot } from '../../collaboration-model.ts';
+import { assertGameBuildMutation } from '../../core/projects/game-build.ts';
 import { ApiError } from './errors.ts';
+import { gameBuildTask } from '../../task-plan.ts';
+import { gameBuildPublicationPaths } from '../../core/projects/game-build-publication.ts';
+import { gameBuildCodec } from '../../adapters/node/game-build-codec.ts';
+import {
+  taskDocumentUpdates,
+  assertDocumentUpdateBaseline,
+} from '../../core/ai/task-document-updates.ts';
+import { assertGameBuildEditingLock } from '../../core/projects/game-build-editing.ts';
 /** Validate/prepare completion without mutating the project or persisting success. */
 export function planAiResult(
   project: Project,
@@ -25,6 +34,15 @@ export function planAiResult(
   hash: (value: string) => string,
 ) {
   const success = input.status === 'completed';
+  const build = gameBuildTask(project.files[job.taskPath]);
+  if (
+    build &&
+    (input.gameBuildVersion !== 1 || input.gameBuildEditingVersion !== 1)
+  )
+    throw new ApiError(
+      '게임 제작 v2 결과를 지원하는 앱으로 업데이트해주세요.',
+      409,
+    );
   if (
     job.baselineHash !==
     hash(
@@ -41,6 +59,18 @@ export function planAiResult(
     );
   let files = project.files;
   if (success) {
+    const data = matter(project.files[job.taskPath]).data;
+    if (build || data.document_updates !== undefined) {
+      assertDocumentUpdateBaseline(
+        taskDocumentUpdates(
+          data.document_updates,
+          data.inputs ?? [],
+          data.expected_outputs ?? [],
+        ),
+        project.files,
+        matter,
+      );
+    }
     const artifacts = input.artifacts;
     if (
       !artifacts ||
@@ -55,14 +85,34 @@ export function planAiResult(
       files,
       project.files,
     );
+    const allowed = build
+      ? [
+          ...outputs,
+          ...gameBuildPublicationPaths(
+            project.files,
+            files,
+            outputs,
+            gameBuildCodec,
+          ),
+        ]
+      : outputs;
     if (
-      Object.keys(artifacts).length !== outputs.length ||
-      Object.keys(artifacts).some((relative) => !outputs.includes(relative))
+      Object.keys(artifacts).length !== allowed.length ||
+      Object.keys(artifacts).some((relative) => !allowed.includes(relative))
     )
       throw new ApiError('허용된 AI 결과만 제출할 수 있습니다.');
     validateArtifacts(project.files, files, outputs);
     validateHtmlAnalysis(project.files[job.taskPath], files, outputs);
     const taskData = matter(project.files[job.taskPath]).data;
+    if (build) {
+      const output = outputs.find((p) => p.endsWith('.html'))!;
+      assertGameBuildEditingLock(
+        project.files,
+        files,
+        taskData.base_html ?? output,
+        output,
+      );
+    }
     files = {
       ...files,
       ...layoutNewDocuments(project.files, artifacts as Snapshot, {
@@ -72,6 +122,7 @@ export function planAiResult(
       }),
     };
     checkSnapshot(files);
+    assertGameBuildMutation(project.files, files);
   }
   const status: 'completed' | 'cancelled' | 'failed' = success
     ? 'completed'

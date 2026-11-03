@@ -1815,6 +1815,28 @@ kbd {
   font-size: 10px;
   color: var(--text-muted);
 }
+.ai-instructions-review,
+.ai-instructions-default {
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.ai-instructions-default summary {
+  cursor: pointer;
+  color: var(--text);
+}
+.ai-instructions-default pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
 .ai-instructions-field .ai-instructions-protection {
   font-size: 11px;
 }

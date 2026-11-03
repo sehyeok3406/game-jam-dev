@@ -71,11 +71,11 @@ function generated(raw, previous = {}) {
     ]),
   );
 }
-test('three documents are an editable default; arbitrary roles, counts and Markdown instructions reach the task', () => {
+test('readable visual design joins the editable defaults; arbitrary roles, counts and Markdown instructions reach the task', () => {
   const defaults = defaultDocumentTemplates();
   assert.deepEqual(
     defaults.map((doc) => doc.title),
-    ['게임 개요', '핵심 플레이', '모호한 점'],
+    ['게임 개요', '핵심 플레이', '비주얼 설계', '모호한 점'],
   );
   defaults[0].title = 'changed';
   assert.equal(defaultDocumentTemplates()[0].title, '게임 개요');
@@ -168,7 +168,7 @@ test('custom updates preserve paths/IDs, add documents and reject omission of ex
       ...doc,
       title: `${doc.title} 수정`,
     })),
-    { key: 'd4', title: '경제 시스템', type: 'system', instructions: '가격표' },
+    { key: 'd5', title: '경제 시스템', type: 'system', instructions: '가격표' },
   ];
   const updateInput = {
     ...input,
@@ -177,7 +177,10 @@ test('custom updates preserve paths/IDs, add documents and reject omission of ex
   const update = createTaskPlan(updateInput, 'update-format', before),
     artifacts = generated(update, produced);
   assert.equal(taskDocumentFormat(update).id, original.id);
-  assert.equal(resolveTaskArtifacts(update, artifacts, before).length, 4);
+  assert.equal(
+    resolveTaskArtifacts(update, artifacts, before).length,
+    documents.length,
+  );
   validateArtifacts(
     before,
     { ...before, ...artifacts },
@@ -200,7 +203,7 @@ test('custom updates preserve paths/IDs, add documents and reject omission of ex
   const changedArtifacts = generated(changedTypeTask, produced);
   assert.equal(
     resolveTaskArtifacts(changedTypeTask, changedArtifacts, before).length,
-    4,
+    documents.length,
   );
   assert.equal(
     matter(changedArtifacts[original.documents[1].path]).data.system_id,
@@ -240,7 +243,10 @@ test('custom one-document and multi-document workflows share the same frozen out
     );
     const stages = workflowStages(raw);
     assert.deepEqual(taskDocumentFormat(raw), taskDocumentFormat(stages[0]));
-    assert.equal(matter(stages[1]).data.inputs.length, count);
+    assert.deepEqual(matter(stages[1]).data.inputs, [
+      ...matter(stages[0]).data.expected_outputs,
+      ...input.inputPaths,
+    ]);
     assert.equal(matter(raw).data.expected_outputs.length, count + 1);
   }
 });

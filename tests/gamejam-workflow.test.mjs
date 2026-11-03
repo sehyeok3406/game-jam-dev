@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withGameBuildResult } from './helpers/game-build-result.mjs';
 import { test } from 'node:test';
 import matter from '../src/markdown.ts';
 import { gamejamTaskInput } from '../src/gamejam-request.ts';
@@ -94,14 +95,16 @@ test('gamejam checkboxes cover all combinations without discarding edited instru
   assert.deepEqual(edited, before);
 });
 
-test('local and server task plans reserve both outputs and pass only fresh documents and selected images to HTML', () => {
+test('local and server task plans reserve both outputs and preserve original requirements alongside fresh documents in HTML input', () => {
   const input = gamejamTaskInput(request);
   const raw = createTaskPlan(input, 'gamejam-fixture', files);
   const steps = workflowStages(raw).map(matter);
   assert.equal(steps[0].data.expected_outputs.length, 3);
   assert.deepEqual(steps[1].data.inputs, [
     ...steps[0].data.expected_outputs,
+    'ideas/a.md',
     'ideas/image.md',
+    'output/index.html',
   ]);
   assert.equal(steps[1].data.base_html, 'output/index.html');
   assert.equal(steps[1].data.result_name, '밤 카페');
@@ -218,6 +221,8 @@ test('older servers cannot silently drop the second workflow stage', async () =>
   client.state.taskInstructionsEditable = true;
   client.state.taskResultNaming = true;
   client.state.htmlResultFolders = true;
+  client.state.gameBuildVersion = 1; // This case isolates the historical two-step gate.
+  client.state.gameBuildEditingVersion = 1;
   let sent = false;
   client.request = async () => {
     sent = true;
@@ -301,7 +306,11 @@ test('workflow server gates old executors, enforces admins and one lease, and pu
             }),
       ]),
     );
-    await owner.finishAi('completed', artifacts, 'fixture');
+    await owner.finishAi(
+      'completed',
+      withGameBuildResult(owner.files, next.relativePath, artifacts),
+      'fixture',
+    );
     await editor.refresh();
     for (const relative of outputs) {
       if (relative.endsWith('.html')) {

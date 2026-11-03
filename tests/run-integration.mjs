@@ -42,6 +42,9 @@ async function run(executable, args) {
 await compile('tests/main-flow-runner.ts', 'main-flow-runner.mjs', {
   electron: path.resolve('tests/mocks/electron.ts'),
   'node:child_process': path.resolve('tests/mocks/process.ts'),
+  './desktop/ai/game-build-execution.ts': path.resolve(
+    'tests/mocks/game-build-execution.ts',
+  ),
 });
 await run(process.execPath, ['out/test-validation/main-flow-runner.mjs']);
 await build({

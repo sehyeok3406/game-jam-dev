@@ -6,6 +6,7 @@ import type { GamejamRequest } from '../../contracts/gamejam-request.ts';
 import { approvalEditable } from '../../gamejam-approval.ts';
 import { queueTaskView } from '../../ai-task-queue.ts';
 import { ApiError } from './errors.ts';
+import { gameBuildTask } from '../../task-plan.ts';
 
 export type ApprovalPlan = {
   files: Snapshot;
@@ -39,6 +40,16 @@ export function prepareApprovalExecution(
   const reserved = project.aiQueue?.find(
     (t) => t.taskPath === approval!.taskPath,
   );
+  if (
+    approval.taskPath &&
+    project.files[approval.taskPath] &&
+    gameBuildTask(project.files[approval.taskPath]) &&
+    (input.gameBuildVersion !== 1 || input.gameBuildEditingVersion !== 1)
+  )
+    throw new ApiError(
+      '게임 제작 v2 승인을 지원하는 앱으로 업데이트해주세요.',
+      409,
+    );
   if (
     input.queueVersion === 1 &&
     approval.approvalCommandId === input.commandId &&

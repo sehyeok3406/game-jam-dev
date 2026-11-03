@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { type Node, type NodeProps } from '@xyflow/react';
 import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
 import {
@@ -11,6 +11,7 @@ import {
   Maximize2,
   Minimize2,
   Info,
+  Download,
 } from 'lucide-react';
 import type { FilePropertyVisibility } from '../../file-properties';
 import type { DocumentStatuses } from '../../contracts/document-statuses';
@@ -24,13 +25,15 @@ import {
   selectPreviewPreset,
   fitPreviewViewport,
 } from '../../preview-window';
-import { previewLabel } from '../../preview-output';
+import { previewLabel, isImportedPreviewPath } from '../../preview-output';
 import { PREVIEW_SANDBOX } from '../../preview-permissions';
 import { FilePropertyBadges } from '../FileProperties';
 import { DocumentBacklinks } from '../DocumentBacklinks';
 import { useDocumentLinks } from '../DocumentLinksContext';
 import { MultiplayerLobby } from '../MultiplayerLobby';
 import { usePreviewPlayback } from './usePreviewPlayback';
+import { GameBuildSummary } from './GameBuildSummary';
+import { useRuntime } from '../runtime/RuntimeProvider';
 
 export type PreviewNodeData = {
   aiUsage?: string;
@@ -62,6 +65,37 @@ const PreviewCardContent = memo(function PreviewCardContent({
   selected,
 }: Pick<NodeProps<PreviewCanvasNode>, 'data' | 'selected'>) {
   const pageLinks = useDocumentLinks();
+  const { api } = useRuntime();
+  const [exporting, setExporting] = useState(false),
+    [exportMessage, setExportMessage] = useState('');
+  const exportEpoch = useRef(0);
+  useEffect(() => {
+    exportEpoch.current++;
+    setExporting(false);
+    setExportMessage('');
+    return () => {
+      exportEpoch.current++;
+    };
+  }, [data.preview.relativePath, data.preview.content]);
+  const exportHtml = async () => {
+    const epoch = exportEpoch.current;
+    setExporting(true);
+    setExportMessage('');
+    try {
+      const saved = await api.desktop?.exportPreviewHtml(
+        data.preview.relativePath,
+      );
+      if (epoch === exportEpoch.current)
+        setExportMessage(saved ? 'HTML 파일을 저장했습니다.' : '');
+    } catch (error) {
+      if (epoch === exportEpoch.current)
+        setExportMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+    } finally {
+      if (epoch === exportEpoch.current) setExporting(false);
+    }
+  };
   const linkedDocument = pageLinks.documents.find(
     (doc) => doc.htmlSource === data.preview.relativePath,
   );
@@ -131,6 +165,18 @@ const PreviewCardContent = memo(function PreviewCardContent({
                 : '실행 가능한 결과'}
           </span>
           <div className="preview-card__actions nodrag">
+            {api.desktop?.exportPreviewHtml && (
+              <button
+                type="button"
+                className="icon-button"
+                title="게임 HTML 내보내기"
+                aria-label="게임 HTML 내보내기"
+                disabled={exporting || fullscreen || !data.preview.exists}
+                onClick={() => void exportHtml()}
+              >
+                <Download size={14} />
+              </button>
+            )}
             <button
               type="button"
               className="icon-button"
@@ -286,6 +332,17 @@ const PreviewCardContent = memo(function PreviewCardContent({
         </div>
         {!collapsed && linkedDocument && (
           <DocumentBacklinks path={linkedDocument.relativePath} />
+        )}
+        {!collapsed && (
+          <GameBuildSummary
+            build={data.preview.build}
+            imported={isImportedPreviewPath(data.preview.relativePath)}
+          />
+        )}
+        {exportMessage && (
+          <div role="status" className="preview-export-message nodrag nowheel">
+            {exportMessage}
+          </div>
         )}
         {!collapsed && data.preview.warnings?.length ? (
           <div

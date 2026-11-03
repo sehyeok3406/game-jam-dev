@@ -12,7 +12,7 @@ export async function validateMultiplayerRuntime(
   const sources = Array.from({ length: count }, (_, i) =>
     withMultiplayerSdk(html, 'online', `validator-${i}`),
   );
-  const harness = `<!doctype html><html><body><script>
+  const harness = `
   const sources=${JSON.stringify(sources).replaceAll('<', '\\u003c')};
   const count=sources.length,players=Array.from({length:count},(_,i)=>({id:'p'+i,nickname:'Player '+i}));
   window.validation={error:null,registered:0,running:false};
@@ -33,10 +33,11 @@ export async function validateMultiplayerRuntime(
     };ch.port1.start();frame.contentWindow.postMessage({type:'gamejam:connect',id:'validator-'+i},'*',[ch.port2]);};frame.srcdoc=sources[i];
   }
   const endCheck=setInterval(()=>{if(!window.validation.running)return;clearInterval(endCheck);setTimeout(()=>{for(let i=0;i<count;i++)send(i,{type:'pause'});setTimeout(()=>{for(let i=0;i<count;i++)send(i,{type:'inspect',id:'end'});},80);},700);},50);
-  </script></body></html>`;
+  `;
   await window.loadURL(
-    `data:text/html;charset=utf-8,${encodeURIComponent(harness)}`,
+    'data:text/html;charset=utf-8,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3C%2Fbody%3E%3C%2Fhtml%3E',
   );
+  await window.webContents.executeJavaScript(harness);
   let registered = 0;
   for (let n = 0; n < 100; n++) {
     const result =

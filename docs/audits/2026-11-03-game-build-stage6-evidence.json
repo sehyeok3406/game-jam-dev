@@ -1,0 +1,544 @@
+{
+  "date": "2026-11-03",
+  "stage": 6,
+  "checks": {
+    "unit": {
+      "total": 1116,
+      "passed": 1115,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Existing optional Grok native CLI fixture"
+    },
+    "typecheck": "passed",
+    "contracts": "passed",
+    "core": "passed",
+    "architecture": "passed explicitly and as part of npm test; no new exceptions",
+    "integration": "passed full npm run test:integration",
+    "windowsPackage": "passed",
+    "nativeExport": "passed actual Windows save/cancel and project path protection",
+    "packagedRoundTrip": "passed local and shared; mock Claude source writer with actual npm/bundler/Electron/storage/server",
+    "previewUi": {
+      "passed": true,
+      "cases": 30,
+      "renderer": "final Windows app.asar",
+      "coverage": [
+        "light/dark",
+        "3 sizes",
+        "source summary closed/expanded",
+        "warning",
+        "collapse/expand",
+        "fullscreen",
+        "multiplayer repair base identity"
+      ]
+    },
+    "fullLint": "oxlint passed with existing Discord mock warning; formatting failed only in untouched docs/plans/2026-11-02-shared-location-links.md",
+    "diffCheck": "passed"
+  },
+  "toolset": {
+    "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+    "versions": {
+      "node": "24.19.0",
+      "npm": "11.17.0",
+      "rolldown": "1.2.12",
+      "binding": "1.2.12"
+    },
+    "files": 1994,
+    "bytes": 128196213,
+    "change": "unchanged from stage 5; no toolset rebuild or identical runtime test repeated"
+  },
+  "packageArtifact": {
+    "path": "out/Game Jam!-win32-x64/resources/app.asar",
+    "bytes": 8577360,
+    "sha256": "c2f696ed30787d7dae606a22ad48492ab61a5de8e61808b95b440eb152931f2c"
+  },
+  "outputs": [
+    {
+      "path": "out/game-build-stage6/export-local.html",
+      "bytes": 2854,
+      "sha256": "5f820b61392e4ce9da8ae21fcb549bf326c7e6ecc6f6dc38ce96d34c3b6474d3"
+    },
+    {
+      "path": "out/game-build-stage6/export-shared.html",
+      "bytes": 494251,
+      "sha256": "290462aa47d9c5943904aabe36d9257450084053b27a2aa4c94e960fe9d71e8c"
+    },
+    {
+      "path": "out/game-build-stage6/reimport-local.html",
+      "bytes": 2619,
+      "sha256": "27745445a5cc51e37acae6592cc2cdfdcd52a9b10f1cbe4731fcabf349850050"
+    },
+    {
+      "path": "out/game-build-stage6/reimport-shared.html",
+      "bytes": 2619,
+      "sha256": "27745445a5cc51e37acae6592cc2cdfdcd52a9b10f1cbe4731fcabf349850050"
+    }
+  ],
+  "package": {
+    "local": {
+      "version": 1,
+      "artifactId": "99d5f6c7-ef9c-4fd6-952a-85233ab9ca5f",
+      "buildId": "a823a673-cbe5-4dca-90c7-2d27c475ca73",
+      "entry": "main.js",
+      "htmlTemplate": "index.html",
+      "sources": [
+        {
+          "path": "index.html",
+          "bytes": 318,
+          "sha256": "01cca58b2c0926668bc6b2c6d3397d2cb4c0e290ce44224f98ccc292d3431cd2"
+        },
+        {
+          "path": "main.js",
+          "bytes": 531,
+          "sha256": "6766a7b29c64856231c236369b810ed71fbab7746c7450f24ba95252c02e96c7"
+        },
+        {
+          "path": "style.css",
+          "bytes": 174,
+          "sha256": "f1140fed288fa4bb0cd434e1c87f3cd8f15cb1776aa6e956ba672a4af670afdd"
+        }
+      ],
+      "assets": [
+        {
+          "key": "hero",
+          "path": "assets/images/hero.gif",
+          "sha256": "560a481d94b94be28e45a6ee498682f92b2eb99f8f6f5956c9aad969f61ee5e5"
+        }
+      ],
+      "documents": [
+        {
+          "path": "docs/숲의-이동-build-local-document-d1.md",
+          "id": "design-gamejam-2026-11-02T23-41-29-406Z-ff8f619b",
+          "sha256": "2e05e732f58e20c2e93e52bdbd5a7304b91965879ccc7ed0ca2f48c1a70d5a68",
+          "designSha256": "2643c1aa848cbc49c43a473c9c6d5575672af18741f4654bd7dc1df22560399e"
+        },
+        {
+          "path": "ideas/hero.md",
+          "id": "hero-card",
+          "sha256": "b92e8d52d592861b1e57c2b2a23c3f2f8da05974a0b51b326c011bee8efaf907",
+          "designSha256": "01ef1af7ba9fe82fad344381eae3ee8a77ae33de7f5136a1929d9c9c7e6516ed"
+        },
+        {
+          "path": "project.md",
+          "id": "project",
+          "sha256": "0cddeb0cd6f4a33d16796cf4d4efcf30787a60040a91758cd1236c92b57f6fb2",
+          "designSha256": "7c724f44ed5ded11bbd4c15aa891997ae8838ae46f52ffe84c402a838d2af75b"
+        }
+      ],
+      "dependenciesSha256": "83885b0003cc3172f6c4407fbb06c9b7d7486b285755fba2c04bb573558d7dc9",
+      "noticesSha256": "14e2f5d981502c6b821a133ebb44f8e9baffa3ba973e220c6141efe90b6d10db",
+      "output": {
+        "pathAtCreation": "output/inbox/숲의-이동-build-local/v001/index.html",
+        "bytes": 2724,
+        "sha256": "52fdd714ec1693c019900dd0b2a94a0b46c0513749f5938b42a9b54e33e404b2"
+      },
+      "instructionsVersion": "2:d142dad8511feb18a22ec140b0f41d667de07fa7a59f078078c217e80ec16f98",
+      "tool": {
+        "name": "gamejam-standalone-builder",
+        "version": "1",
+        "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+        "profile": "standalone-browser-v1"
+      }
+    },
+    "shared": {
+      "version": 1,
+      "artifactId": "4e9cb4bf-7f39-447c-b596-e1e2b33b06be",
+      "buildId": "19e2c2af-b970-4a29-bbce-8703e06f6898",
+      "entry": "main.js",
+      "htmlTemplate": "index.html",
+      "sources": [
+        {
+          "path": "index.html",
+          "bytes": 318,
+          "sha256": "01cca58b2c0926668bc6b2c6d3397d2cb4c0e290ce44224f98ccc292d3431cd2"
+        },
+        {
+          "path": "main.js",
+          "bytes": 650,
+          "sha256": "e070928c4fb0d26d82a168675802dc2465103600c2f84405eae9e853c636ea9b"
+        },
+        {
+          "path": "style.css",
+          "bytes": 174,
+          "sha256": "f1140fed288fa4bb0cd434e1c87f3cd8f15cb1776aa6e956ba672a4af670afdd"
+        }
+      ],
+      "assets": [
+        {
+          "key": "hero",
+          "path": "assets/images/hero.gif",
+          "sha256": "560a481d94b94be28e45a6ee498682f92b2eb99f8f6f5956c9aad969f61ee5e5"
+        }
+      ],
+      "documents": [
+        {
+          "path": "ideas/hero.md",
+          "id": "hero-card",
+          "sha256": "b92e8d52d592861b1e57c2b2a23c3f2f8da05974a0b51b326c011bee8efaf907",
+          "designSha256": "01ef1af7ba9fe82fad344381eae3ee8a77ae33de7f5136a1929d9c9c7e6516ed"
+        },
+        {
+          "path": "project.md",
+          "id": "project",
+          "sha256": "0cddeb0cd6f4a33d16796cf4d4efcf30787a60040a91758cd1236c92b57f6fb2",
+          "designSha256": "7c724f44ed5ded11bbd4c15aa891997ae8838ae46f52ffe84c402a838d2af75b"
+        }
+      ],
+      "dependenciesSha256": "b3e069eb4252a3e301e1c0a5a4b09d49cfd8f83e05f522a32c42b9710e705160",
+      "noticesSha256": "cd945ac74bc1e8d20ec58c92e78e87fe7848f459f92571783fc0602883731aee",
+      "output": {
+        "pathAtCreation": "output/inbox/숲의-이동-build-three/v001/index.html",
+        "bytes": 494121,
+        "sha256": "15255ea168b3f2d4a5e8c72189cb69554dcd0cd7f47434886a40bf61b5684201"
+      },
+      "instructionsVersion": "2:d142dad8511feb18a22ec140b0f41d667de07fa7a59f078078c217e80ec16f98",
+      "tool": {
+        "name": "gamejam-standalone-builder",
+        "version": "1",
+        "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+        "profile": "standalone-browser-v1"
+      }
+    },
+    "sharedLock": {
+      "version": 1,
+      "roots": {
+        "three": "node_modules/three"
+      },
+      "packages": [
+        {
+          "key": "node_modules/three",
+          "name": "three",
+          "version": "0.187.0",
+          "resolved": "https://registry.npmjs.org/three/-/three-0.187.0.tgz",
+          "integrity": "sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==",
+          "license": "MIT",
+          "dependencies": []
+        }
+      ]
+    },
+    "edits": {
+      "local": {
+        "version": 1,
+        "artifactId": "99d5f6c7-ef9c-4fd6-952a-85233ab9ca5f",
+        "buildId": "8d098763-cf52-4af3-9ffd-f4bccea7bc4d",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "index.html",
+            "bytes": 318,
+            "sha256": "01cca58b2c0926668bc6b2c6d3397d2cb4c0e290ce44224f98ccc292d3431cd2"
+          },
+          {
+            "path": "main.js",
+            "bytes": 654,
+            "sha256": "4f03c496e6ce83309e3919e1084c5530f9ea4f95ec6072763a133d39df657dd0"
+          },
+          {
+            "path": "style.css",
+            "bytes": 174,
+            "sha256": "f1140fed288fa4bb0cd434e1c87f3cd8f15cb1776aa6e956ba672a4af670afdd"
+          }
+        ],
+        "assets": [
+          {
+            "key": "hero",
+            "path": "assets/images/hero.gif",
+            "sha256": "560a481d94b94be28e45a6ee498682f92b2eb99f8f6f5956c9aad969f61ee5e5"
+          }
+        ],
+        "documents": [
+          {
+            "path": "docs/html-sources/html-04036fc27c87b215f1048c34.md",
+            "id": "html-04036fc27c87b215f1048c34",
+            "sha256": "b5a1da0969a7908d2e241f597b6f3d971f973c8df72c99044d80f7561457b210",
+            "designSha256": "a4c7a26506a4507e882a512178b93ee8684bfe5a49945c4279b2c4a2557d7227"
+          },
+          {
+            "path": "docs/숲의-이동-build-local-document-d1.md",
+            "id": "design-gamejam-2026-11-02T23-41-29-406Z-ff8f619b",
+            "sha256": "cf9dfec574d28a3e41bb709783f135fc0fe1a98a8625a3575e747488dea8144b",
+            "designSha256": "d084c6edc36633dd4327fbc71cdfe7299f2713883da3c4ef697ece357815a32d"
+          },
+          {
+            "path": "ideas/hero.md",
+            "id": "hero-card",
+            "sha256": "b92e8d52d592861b1e57c2b2a23c3f2f8da05974a0b51b326c011bee8efaf907",
+            "designSha256": "01ef1af7ba9fe82fad344381eae3ee8a77ae33de7f5136a1929d9c9c7e6516ed"
+          },
+          {
+            "path": "project.md",
+            "id": "project",
+            "sha256": "0cddeb0cd6f4a33d16796cf4d4efcf30787a60040a91758cd1236c92b57f6fb2",
+            "designSha256": "7c724f44ed5ded11bbd4c15aa891997ae8838ae46f52ffe84c402a838d2af75b"
+          }
+        ],
+        "dependenciesSha256": "83885b0003cc3172f6c4407fbb06c9b7d7486b285755fba2c04bb573558d7dc9",
+        "noticesSha256": "14e2f5d981502c6b821a133ebb44f8e9baffa3ba973e220c6141efe90b6d10db",
+        "output": {
+          "pathAtCreation": "output/inbox/숲의-이동-build-local/v001/index.html",
+          "bytes": 2854,
+          "sha256": "5f820b61392e4ce9da8ae21fcb549bf326c7e6ecc6f6dc38ce96d34c3b6474d3"
+        },
+        "instructionsVersion": "2:f9fa13c47f3c60f54dc01acf19b8d7ed0d0e9feddd15614d0656e0e8bbf45c51",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      },
+      "newVersion": {
+        "version": 1,
+        "artifactId": "5f4c6962-18e9-452c-bc32-a9c613950c6f",
+        "buildId": "2479c04a-83f2-4626-a028-842f3a4a10be",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "index.html",
+            "bytes": 318,
+            "sha256": "01cca58b2c0926668bc6b2c6d3397d2cb4c0e290ce44224f98ccc292d3431cd2"
+          },
+          {
+            "path": "main.js",
+            "bytes": 777,
+            "sha256": "a4a7706d61ffae7f68deb432fe69d72b7f9d090687fe7e8a579b29e1e7c68b76"
+          },
+          {
+            "path": "style.css",
+            "bytes": 174,
+            "sha256": "f1140fed288fa4bb0cd434e1c87f3cd8f15cb1776aa6e956ba672a4af670afdd"
+          }
+        ],
+        "assets": [
+          {
+            "key": "hero",
+            "path": "assets/images/hero.gif",
+            "sha256": "560a481d94b94be28e45a6ee498682f92b2eb99f8f6f5956c9aad969f61ee5e5"
+          }
+        ],
+        "documents": [
+          {
+            "path": "docs/html-sources/html-04036fc27c87b215f1048c34.md",
+            "id": "html-04036fc27c87b215f1048c34",
+            "sha256": "b5a1da0969a7908d2e241f597b6f3d971f973c8df72c99044d80f7561457b210",
+            "designSha256": "a4c7a26506a4507e882a512178b93ee8684bfe5a49945c4279b2c4a2557d7227"
+          },
+          {
+            "path": "docs/숲의-이동-build-local-document-d1.md",
+            "id": "design-gamejam-2026-11-02T23-41-29-406Z-ff8f619b",
+            "sha256": "f89926ac9f9f3c66fab032942cdcaa55100c43daff543032aff25e5e69fdda16",
+            "designSha256": "d084c6edc36633dd4327fbc71cdfe7299f2713883da3c4ef697ece357815a32d"
+          },
+          {
+            "path": "ideas/hero.md",
+            "id": "hero-card",
+            "sha256": "b92e8d52d592861b1e57c2b2a23c3f2f8da05974a0b51b326c011bee8efaf907",
+            "designSha256": "01ef1af7ba9fe82fad344381eae3ee8a77ae33de7f5136a1929d9c9c7e6516ed"
+          },
+          {
+            "path": "project.md",
+            "id": "project",
+            "sha256": "0cddeb0cd6f4a33d16796cf4d4efcf30787a60040a91758cd1236c92b57f6fb2",
+            "designSha256": "7c724f44ed5ded11bbd4c15aa891997ae8838ae46f52ffe84c402a838d2af75b"
+          }
+        ],
+        "dependenciesSha256": "83885b0003cc3172f6c4407fbb06c9b7d7486b285755fba2c04bb573558d7dc9",
+        "noticesSha256": "14e2f5d981502c6b821a133ebb44f8e9baffa3ba973e220c6141efe90b6d10db",
+        "output": {
+          "pathAtCreation": "output/inbox/숲의-이동-build-local/v002/index.html",
+          "bytes": 2984,
+          "sha256": "ff26f45ae51f63f115a3e788060cb07e548c81e6bc70b3103edfff6d4b956e96"
+        },
+        "instructionsVersion": "2:f9fa13c47f3c60f54dc01acf19b8d7ed0d0e9feddd15614d0656e0e8bbf45c51",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      },
+      "shared": {
+        "version": 1,
+        "artifactId": "4e9cb4bf-7f39-447c-b596-e1e2b33b06be",
+        "buildId": "3fc1dfb1-908b-4545-ad2c-acecbeef98ee",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "index.html",
+            "bytes": 318,
+            "sha256": "01cca58b2c0926668bc6b2c6d3397d2cb4c0e290ce44224f98ccc292d3431cd2"
+          },
+          {
+            "path": "main.js",
+            "bytes": 773,
+            "sha256": "2f1710a219a6b28dd2b607ec13c2eec9e833f484268223233758c5a0ae1d0059"
+          },
+          {
+            "path": "style.css",
+            "bytes": 174,
+            "sha256": "f1140fed288fa4bb0cd434e1c87f3cd8f15cb1776aa6e956ba672a4af670afdd"
+          }
+        ],
+        "assets": [
+          {
+            "key": "hero",
+            "path": "assets/images/hero.gif",
+            "sha256": "560a481d94b94be28e45a6ee498682f92b2eb99f8f6f5956c9aad969f61ee5e5"
+          }
+        ],
+        "documents": [
+          {
+            "path": "docs/html-sources/html-640b35c76722837e1085e43e.md",
+            "id": "html-640b35c76722837e1085e43e",
+            "sha256": "b2b464a0587415163db6af89b6b0efc12a23a319d93a05252ea3e9ef8254aa62",
+            "designSha256": "fc18b18e6bf250b26050a4c8234b3b892cc5e65d36dec3cab46dc1ae77bc447f"
+          },
+          {
+            "path": "ideas/hero.md",
+            "id": "hero-card",
+            "sha256": "b92e8d52d592861b1e57c2b2a23c3f2f8da05974a0b51b326c011bee8efaf907",
+            "designSha256": "01ef1af7ba9fe82fad344381eae3ee8a77ae33de7f5136a1929d9c9c7e6516ed"
+          },
+          {
+            "path": "project.md",
+            "id": "project",
+            "sha256": "0cddeb0cd6f4a33d16796cf4d4efcf30787a60040a91758cd1236c92b57f6fb2",
+            "designSha256": "7c724f44ed5ded11bbd4c15aa891997ae8838ae46f52ffe84c402a838d2af75b"
+          }
+        ],
+        "dependenciesSha256": "b3e069eb4252a3e301e1c0a5a4b09d49cfd8f83e05f522a32c42b9710e705160",
+        "noticesSha256": "cd945ac74bc1e8d20ec58c92e78e87fe7848f459f92571783fc0602883731aee",
+        "output": {
+          "pathAtCreation": "output/inbox/숲의-이동-build-three/v001/index.html",
+          "bytes": 494251,
+          "sha256": "290462aa47d9c5943904aabe36d9257450084053b27a2aa4c94e960fe9d71e8c"
+        },
+        "instructionsVersion": "2:f9fa13c47f3c60f54dc01acf19b8d7ed0d0e9feddd15614d0656e0e8bbf45c51",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      }
+    },
+    "transfers": [
+      {
+        "label": "local",
+        "exportedBytes": 2854,
+        "importedPath": "output/inbox/import-16705c56-10f7-45f9-9c5c-3098eb64fbed/v001/index.html",
+        "output": "output/inbox/재가져오기-local/v001/index.html",
+        "build": {
+          "kind": "source",
+          "buildId": "4c0f09eb-af86-41e2-b5c4-2c7a174ee6d3",
+          "libraries": [],
+          "documents": [
+            {
+              "path": "docs/html-sources/html-3743f192ac56ff627aa54122.md",
+              "title": "roundtrip-local",
+              "state": "unchanged"
+            }
+          ]
+        }
+      },
+      {
+        "label": "shared",
+        "exportedBytes": 494251,
+        "importedPath": "output/inbox/import-f3f23bcc-cb67-46f2-9df6-5ecbbc412108/v001/index.html",
+        "output": "output/inbox/재가져오기-shared/v001/index.html",
+        "build": {
+          "kind": "source",
+          "buildId": "6d063ae6-51de-4e43-9dad-4c8605366e56",
+          "libraries": [],
+          "documents": [
+            {
+              "path": "docs/html-sources/html-9620ef3066a079e91e05a033.md",
+              "title": "roundtrip-shared",
+              "state": "unchanged"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "browsers": {
+    "exported": [
+      {
+        "browser": "Chrome",
+        "file": "export-shared.html",
+        "state": {
+          "ready": "complete",
+          "lives": "9",
+          "image": 1,
+          "canvas": true
+        },
+        "externalRequests": 0,
+        "errors": 0,
+        "keyboardChangedCanvas": true
+      },
+      {
+        "browser": "Edge",
+        "file": "export-shared.html",
+        "state": {
+          "ready": "complete",
+          "lives": "9",
+          "image": 1,
+          "canvas": true
+        },
+        "externalRequests": 0,
+        "errors": 0,
+        "keyboardChangedCanvas": true
+      }
+    ],
+    "reimported": [
+      {
+        "browser": "Chrome",
+        "file": "reimport-shared.html",
+        "state": {
+          "ready": "complete",
+          "lives": "9",
+          "image": 1,
+          "canvas": true
+        },
+        "externalRequests": 0,
+        "errors": 0,
+        "keyboardChangedCanvas": true
+      },
+      {
+        "browser": "Edge",
+        "file": "reimport-shared.html",
+        "state": {
+          "ready": "complete",
+          "lives": "9",
+          "image": 1,
+          "canvas": true
+        },
+        "externalRequests": 0,
+        "errors": 0,
+        "keyboardChangedCanvas": true
+      }
+    ]
+  },
+  "logs": {
+    "unit": "out/game-build-stage6-tests.log",
+    "integration": "out/game-build-stage6-integration.log",
+    "package": "out/game-build-stage6-package.log",
+    "roundTrip": "out/game-build-stage6-packaged.log",
+    "native": "out/game-build-stage6-native-export.log",
+    "previewUi": "out/game-build-stage6-preview-ui.log",
+    "exportBrowser": "out/game-build-stage6-browser-export.log",
+    "reimportBrowser": "out/game-build-stage6-browser-reimport.log",
+    "lint": "out/game-build-stage6-lint.log"
+  },
+  "boundaries": {
+    "paidAiCalls": false,
+    "aiSource": "local fixture; packaged CLI is Claude",
+    "realNpmLibrary": "three@0.187.0",
+    "htmlByteLimit": 8000000,
+    "newArchitectureExceptions": 0,
+    "scope": "stage 6 complete; stage 7 pending",
+    "releasePublished": false
+  }
+}

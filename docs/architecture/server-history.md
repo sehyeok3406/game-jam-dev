@@ -2,6 +2,8 @@
 
 2026-10-22, 계획서 36절. R07의 첫 요청 단위다.
 
+2026-11-02 게임 원본 수정 5단계: source가 포함된 기록은 HTML 단독 복원을 거절하고 전체 기록으로 복원한다. 공통 `rebaseGameBuildRestoration`은 기록 전후에 달라진 artifact만 현재 index에 반영해 이후에 만든 다른 게임의 연결·원본을 유지한다. 최초 생성 이전 복원은 해당 게임의 후속 revision도 함께 제거한다. 기존 전체 후보 검증·관리자/revision·저장 경계는 유지하며 [게임 원본 수정](game-build-editing.md)을 따른다.
+
 - `history-query.ts`는 변경 전후 읽기와 최신순 목록을 제공한다. AI 지시서의 기록 시점 snapshot 우선·legacy 현재 파일 fallback을 기존 함수로 유지한다. 파일 내용이나 히스토리를 조회 과정에서 저장하지 않는다.
 - `history-restoration.ts`는 복원할 snapshot을 준비한다. 단일 파일 복원의 섹션·이미지·불러온 HTML 묶음 제한, 결과 경로 재연결과 최종 snapshot 검증을 유지한다. 원본 파일을 변경하거나 저장하지 않는다.
 - `history-service.ts`는 현재 권한·작업 ID/receipt·잠금·AI 보호·revision을 확인하고 후보/히스토리/receipt 저장과 응답을 조정한다. admin/editable·잠금 조회·AI 검증·사본/기록·persist/checkpoint/envelope를 주입하며 HTTP나 큐를 소유하지 않는다.

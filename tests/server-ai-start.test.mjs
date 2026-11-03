@@ -164,6 +164,8 @@ function fixture(options = {}) {
     modelId: null,
     aiReasoningVersion: 1,
     gamejamVersion: 1,
+    gameBuildVersion: 1,
+    gameBuildEditingVersion: 1,
     canvasSheetsVersion: 1,
     multiplayerVersion: 1,
     documentOutputFormatVersion: 1,
@@ -490,6 +492,59 @@ test('queued approval uses latest actor and request after another queued operati
     f.run('requests-start', f.approvalInput(f.current.approvals[a.id])),
     { status: 403 },
   );
+});
+
+test('source workflow capability is required before approval persistence and queued claim', async () => {
+  const f = fixture(),
+    a = f.approval(),
+    before = structuredClone(f.current);
+  await assert.rejects(
+    f.run(
+      'requests-start',
+      f.approvalInput(a, { queueVersion: 1, gameBuildVersion: undefined }),
+    ),
+    /v2.*업데이트/,
+  );
+  assert.deepEqual(f.current, before);
+  await assert.rejects(
+    f.run(
+      'requests-start',
+      f.approvalInput(a, {
+        queueVersion: 1,
+        gameBuildEditingVersion: undefined,
+      }),
+    ),
+    /v2.*업데이트/,
+  );
+  assert.deepEqual(f.current, before);
+  const reserved = await f.run(
+    'requests-start',
+    f.approvalInput(a, { queueVersion: 1 }),
+  );
+  await assert.rejects(
+    f.run(
+      'ai-claim',
+      f.input({
+        taskId: reserved.queuedTask.taskId,
+        claimId: randomUUID(),
+        gameBuildVersion: undefined,
+      }),
+    ),
+    /v2.*업데이트/,
+  );
+  assert.equal(f.current.job, null);
+  await assert.rejects(
+    f.run(
+      'ai-claim',
+      f.input({
+        taskId: reserved.queuedTask.taskId,
+        claimId: randomUUID(),
+        gameBuildEditingVersion: undefined,
+      }),
+    ),
+    /v2.*업데이트/,
+  );
+  assert.equal(f.current.job, null);
 });
 
 test('actual SQLite abort rolls back frozen approval/task/history/queue and replay survives reopen', async (t) => {

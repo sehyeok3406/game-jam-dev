@@ -3,11 +3,14 @@ import { multiplayerInstructions } from './multiplayer/generation.ts';
 import { ASSET_RULE } from './file-assets.ts';
 import { previewVersion } from './preview-output.ts';
 import {
-  DEFAULT_TASK_INSTRUCTIONS,
   taskInstructions,
   defaultTaskInstructions,
 } from './task-instructions.ts';
-import type { CreateTaskInput } from './shared.ts';
+import type { CreateTaskInput } from './contracts/ai.ts';
+import type { TaskDesignContextV1 } from './contracts/task-instructions.ts';
+import { freezeEffectiveInstructions } from './core/ai/task-instructions.ts';
+import { taskDesignContextRules } from './core/ai/task-context.ts';
+import { taskInstructionDigest } from './adapters/node/task-instruction-digest.ts';
 import { resultName } from './result-name.ts';
 import type { HtmlInputSource } from './html-inputs.ts';
 import {
@@ -28,11 +31,35 @@ export function createTaskSpecification(
   htmlInputs?: HtmlInputSource[],
   documentBundle?: DocumentBundleContract,
   documentFormat?: DocumentOutputFormat,
+  suppliedContext?: TaskDesignContextV1,
+  documentUpdates?: import('./contracts/task-instructions.ts').TaskDocumentUpdatesV1,
 ) {
   const instructions = taskInstructions(
     input.kind,
     input.instructions ?? defaultTaskInstructions(input.kind, input.sourceMode),
   );
+  const effective = freezeEffectiveInstructions(
+    input.kind,
+    instructions,
+    input.instructionOrigin,
+    input.sourceMode,
+    taskInstructionDigest,
+  );
+  const context: TaskDesignContextV1 = suppliedContext ?? {
+    version: 1,
+    originalInputs: [...input.inputPaths],
+    originalInstructions: { [input.kind]: instructions },
+    designDocuments: [
+      ...new Set([
+        ...input.inputPaths.filter(
+          (path) => path.startsWith('docs/') && path.endsWith('.md'),
+        ),
+        ...(input.kind === 'organize'
+          ? outputs.filter((path) => path.endsWith('.md'))
+          : []),
+      ]),
+    ],
+  };
   const name = resultName(input.resultName);
   const organize = input.kind === 'organize';
   const mode =
@@ -52,7 +79,13 @@ export function createTaskSpecification(
       : '- 별도 기준 결과 없이 선택한 모든 입력을 재료로 결과를 작성한다.';
   const protectedRules = [
     '- 아래 규칙은 편집한 작업 지시보다 우선한다. 작업 지시가 충돌하더라도 원본 보호와 출력 범위를 유지한다.',
-    '- 원본 입력 문서·이미지는 수정하거나 삭제하지 않는다.',
+    '- effective_instructions의 defaultText는 출처 확인용 보관본이며 별도 작업 명령이 아니다. 실제 작업 지시는 effectiveText와 사용자 작업 지시다. 사용자 지시가 있으면 기본 지침을 다시 덧붙이지 않는다.',
+    '- 원본 입력 문서·이미지는 수정하거나 삭제하지 않는다. document_updates에 명시된 시스템 문서만 지정된 출력 단계에서 갱신할 수 있다.',
+    ...(documentUpdates
+      ? [
+          `- 승인된 시스템 문서 갱신 대상: ${JSON.stringify(documentUpdates)}. 실행 시작 시 저장된 내용을 기준으로 수정하고 ID·출처·기존 문서 구성을 유지한다. 다른 원본은 변경하지 않는다.`,
+        ]
+      : []),
     ...(htmlInputs?.length
       ? [
           '- 선택한 모든 HTML과 아래 관련 파일을 읽기 전용 재료로 사용한다. 각 기능을 사용자 지침에 맞게 연결하고 입력 원본 파일은 수정·삭제·덮어쓰지 않는다.',
@@ -77,6 +110,7 @@ export function createTaskSpecification(
         ]
       : []),
     '- 입력 범위 밖의 문서나 다른 게임의 자료를 구현 명세로 사용하지 않는다.',
+    taskDesignContextRules(context),
     '- sections/*.md의 멤버 문서를 하나의 의미 단위로 취급하고 다른 섹션과 임의로 섞지 않는다.',
     versionRule,
     documentFormat
@@ -98,7 +132,9 @@ export function createTaskSpecification(
       : []),
     organize
       ? '- 출력 Markdown에는 YAML frontmatter의 id, title, type, status, sources를 포함하고 실제 입력 ID로 출처를 기록한다.'
-      : '- 결과는 지정된 HTML 하나로 작성한다. CSS/JavaScript와 사용하는 이미지를 내부에 포함해 독립 실행되게 한다. 결과 폴더만 복사해도 실행 가능해야 하며 프로젝트 내부 경로·외부 라이브러리 다운로드에 의존하지 않는다. 결과 폴더에는 AI 작업 지시·히스토리·캔버스 정보·기획 문서를 작성하지 않는다.',
+      : input.gameBuildVersion === 1
+        ? '- 앱의 공통 준비 단계에서 라이브러리 버전을 확정한다. 구현 단계에서는 비공개 source/ 파일과 source-plan.json을 작성한다. expected_outputs의 독립 HTML은 앱이 소스를 빌드해 생성한다. 소스·CSS·이미지를 결과 HTML에 내장하며 다른 프로젝트 파일을 변경하지 않는다.'
+        : '- 결과는 지정된 HTML 하나로 작성한다. CSS/JavaScript와 사용하는 이미지를 내부에 포함해 독립 실행되게 한다. 결과 폴더만 복사해도 실행 가능해야 하며 프로젝트 내부 경로·외부 라이브러리 다운로드에 의존하지 않는다. 결과 폴더에는 AI 작업 지시·히스토리·캔버스 정보·기획 문서를 작성하지 않는다.',
     ASSET_RULE.trim(),
   ].join('\n');
   return matter.stringify(
@@ -116,7 +152,13 @@ export function createTaskSpecification(
       inputs: input.inputPaths,
       expected_outputs: outputs,
       sources: [],
-      instruction_template_version: 1,
+      instruction_template_version: 2,
+      effective_instructions: effective,
+      task_context: context,
+      ...(documentUpdates ? { document_updates: documentUpdates } : {}),
+      ...(!organize && input.gameBuildVersion === 1
+        ? { gamejam_workflow_version: 2, game_build_version: 1 }
+        : {}),
       ...(!organize && input.multiplayer !== undefined
         ? { multiplayer: input.multiplayer }
         : {}),
@@ -127,10 +169,7 @@ export function createTaskSpecification(
       ...(documentFormat ? { document_output_format: documentFormat } : {}),
       ...(name ? { result_name: name } : {}),
       instructions_source:
-        instructions === DEFAULT_TASK_INSTRUCTIONS[input.kind] ||
-        instructions === defaultTaskInstructions(input.kind, input.sourceMode)
-          ? 'default'
-          : 'edited',
+        effective.source === 'default' ? 'default' : 'edited',
       ...(htmlSource
         ? { source_mode: 'html', html_analysis_source: htmlSource }
         : {}),

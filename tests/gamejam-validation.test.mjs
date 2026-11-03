@@ -17,6 +17,8 @@ const request = {
   htmlResult: { mode: 'new' },
 };
 const collaboration = {
+  gameBuildVersion: 1,
+  gameBuildEditingVersion: 1,
   active: true,
   connected: true,
   members: [],
@@ -145,6 +147,7 @@ test('every existing server capability gate has feedback and does not block supp
     'taskResultNaming',
     'taskInstructionsEditable',
     'multiProviderAi',
+    'gameBuildEditingVersion',
   ]) {
     const issues = gamejamIssues(next, {
       ...context,

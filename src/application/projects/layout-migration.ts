@@ -4,6 +4,7 @@ import type { MarkdownCodec } from '../ports/markdown-codec.ts';
 import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import { allocateDocumentPath } from '../../core/projects/document-path.ts';
 import { remapLayoutReferences } from '../../core/projects/layout-references.ts';
+import { remapTaskReferences } from '../../core/ai/task-references.ts';
 
 export type LayoutMarkdownLinks = (
   body: string,
@@ -62,6 +63,11 @@ export function remapProjectFiles(
   for (const [relative, raw] of Object.entries(files)) {
     const target = aliases[relative] ?? relative;
     if (relative.endsWith('.md')) {
+      const task = remapTaskReferences(raw, aliases, codec);
+      if (task !== null) {
+        next[target] = task;
+        continue;
+      }
       const parsed = codec.parse(raw);
       const metadata = remapLayoutReferences(parsed.data, aliases) as Record<
         string,

@@ -388,13 +388,17 @@ test('shared document versions reserve separately, preserve IDs and propagate fa
     matter(owner.files[update.relativePath]).data.expected_outputs,
     outputs,
   );
-  await assert.rejects(
-    owner.command('tasks:create', {
-      ...input,
-      inputPaths: outputs,
-      documentResult: { mode: 'update', baseDir: 'docs' },
-    }),
-    /GC-AI-004/,
+  const selectedUpdate = await owner.command('tasks:create', {
+    ...input,
+    inputPaths: outputs,
+    documentResult: { mode: 'update', baseDir: 'docs' },
+  });
+  assert.deepEqual(
+    matter(owner.files[selectedUpdate.relativePath]).data.document_updates,
+    {
+      version: 1,
+      targets: outputs.map((path, index) => ({ path, id: `new-doc-${index}` })),
+    },
   );
   await owner.beginAi(second.relativePath);
   await owner.finishAi('failed', {}, 'fixture', {
@@ -430,6 +434,23 @@ test('shared document versions reserve separately, preserve IDs and propagate fa
     assert.equal(actual.content, expected.content);
     assert.ok([x, y, width, height].every(Number.isFinite));
     assert.equal(collapsed, false);
+  }
+  await owner.beginAi(selectedUpdate.relativePath);
+  await owner.finishAi(
+    'completed',
+    Object.fromEntries(
+      outputs.map((path) => [
+        path,
+        matter.stringify(
+          'selected system update',
+          matter(owner.files[path]).data,
+        ),
+      ]),
+    ),
+  );
+  for (const [index, path] of outputs.entries()) {
+    assert.equal(matter(owner.files[path]).data.id, `new-doc-${index}`);
+    assert.match(matter(owner.files[path]).content, /selected system update/);
   }
 });
 async function setup(t) {

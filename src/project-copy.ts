@@ -1,4 +1,13 @@
 import path from 'node:path';
+import { GameBuildLimits } from './contracts/game-build.ts';
+import {
+  hasGameBuilds,
+  isGameBuildPath,
+  selectGameBuilds,
+  copyGameBuilds,
+  validateGameBuilds,
+} from './core/projects/game-build.ts';
+import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
 import { allocateDocumentPath } from './core/projects/document-path.ts';
 import { readProjectLayout } from './core/projects/project-layout.ts';
 import matter from './markdown.ts';
@@ -216,6 +225,8 @@ export function projectCopyBundle(
         throw Error(`지원하지 않는 본문 이미지 경로입니다: ${node.url}`);
     }
   }
+  Object.assign(collected, selectGameBuilds(files, previews));
+  validateGameBuilds(collected, gameBuildCodec);
   if (!documents.size && !sections.size && !previews.size && !drawings.length)
     throw Error('복사할 자료를 선택해주세요.');
   return {
@@ -282,9 +293,17 @@ export function importProjectCopy(
     Object.values(normalized).reduce(
       (sum, raw) => sum + Buffer.byteLength(raw),
       0,
-    ) > 20_000_000
+    ) > (hasGameBuilds(normalized) ? GameBuildLimits.snapshotBytes : 20_000_000)
   )
-    throw Error('복사 자료는 한 번에 20MB까지 지원합니다.');
+    throw Error('복사 자료의 전송 한도를 초과했습니다.');
+  validateGameBuilds(normalized, gameBuildCodec);
+  const selectedBuilds = selectGameBuilds(normalized, new Set(bundle.previews));
+  if (
+    Object.keys(normalized).some(
+      (key) => isGameBuildPath(key) && selectedBuilds[key] === undefined,
+    )
+  )
+    throw Error('선택 자료 외의 게임 제작 원본은 복사할 수 없습니다.');
   const paths = new Map<string, string>(),
     ids = new Map<string, string>(),
     warnings = new Set<string>();
@@ -358,6 +377,8 @@ export function importProjectCopy(
       );
     }
   const allowedFiles = new Set(paths.keys());
+  for (const key of Object.keys(selectedBuilds))
+    if (isGameBuildPath(key)) allowedFiles.add(key);
   if (Object.keys(normalized).some((key) => !allowedFiles.has(key)))
     throw Error('선택 자료 외의 파일은 복사할 수 없습니다.');
   const rawDocuments = [
@@ -563,9 +584,21 @@ export function importProjectCopy(
       },
     };
   });
+  const withBuilds = copyGameBuilds(
+    normalized,
+    next,
+    paths,
+    ids,
+    environment.id,
+    gameBuildCodec,
+  );
   const resultFiles = drawings.length
-    ? applyDrawing(next, { canvasId, action: 'create', objects: drawings })
-    : next;
+    ? applyDrawing(withBuilds, {
+        canvasId,
+        action: 'create',
+        objects: drawings,
+      })
+    : withBuilds;
   const count =
     bundle.documents.length +
     bundle.sections.length +

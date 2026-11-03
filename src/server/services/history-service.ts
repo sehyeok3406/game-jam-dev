@@ -10,6 +10,7 @@ import { invertEdit } from '../../edit-journal.ts';
 import { ApiError } from './errors.ts';
 import { listProjectHistory, readProjectHistory } from './history-query.ts';
 import { planHistoryRestoration } from './history-restoration.ts';
+import { assertGameBuildStorageSupport } from './game-build-capabilities.ts';
 type Ports = {
   admin: (member: Member) => void;
   editable: (project: Project, member: Member) => void;
@@ -84,6 +85,7 @@ export function createHistoryService(ports: Ports) {
       );
       ports.assertAiMutation(project, files);
       checkSnapshot(files);
+      assertGameBuildStorageSupport(files, input);
       const next = ports.clone(project);
       ports.recordChanges(
         next,
@@ -118,6 +120,7 @@ export function createHistoryService(ports: Ports) {
         throw new ApiError('복원할 기록을 찾을 수 없습니다.');
       const next = ports.clone(project);
       const files = planHistoryRestoration(project.files, record, input);
+      assertGameBuildStorageSupport(files, input);
       ports.assertAiMutation(project, files);
       ports.recordChanges(next, member, files, '이전 버전 복원', 'restore');
       await ports.persist(next);

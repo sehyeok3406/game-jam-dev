@@ -1,0 +1,860 @@
+{
+  "date": "2026-11-03",
+  "stage": 7,
+  "status": "complete within user-approved Codex/common scope",
+  "scope": {
+    "realAccounts": ["codex-cli"],
+    "deferredRealAccounts": ["claude-cli", "gemini-cli", "grok-cli"],
+    "syntheticProjectsOnly": true,
+    "newSubscriptionsOrCreditsPurchased": false,
+    "publicRelease": false
+  },
+  "checks": {
+    "unit": {
+      "total": 1118,
+      "passed": 1117,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Existing optional Grok native fixture"
+    },
+    "typecheck": "passed",
+    "architecture": "passed in npm test; no new exceptions",
+    "integration": "passed full suite after preparation/error fixes; subsequent viewport prompt verified by final packaged real reimport",
+    "sourceRuntime": {
+      "total": 6,
+      "passed": 6,
+      "ai": "four mocked providers, actual bundled toolset"
+    },
+    "preparationRuntime": {
+      "total": 8,
+      "passed": 8,
+      "registry": "actual isolated local registry",
+      "ai": "four mocked providers"
+    },
+    "windowsPackage": "passed; final source prompt exercised by real Codex reimport and native save/cancel",
+    "previewUi": {
+      "cases": 30,
+      "passed": true,
+      "renderer": "final app.asar"
+    },
+    "realScenarios": 5,
+    "browserRuns": 8,
+    "lint": "oxlint passed with existing Discord mock warning; global formatting failed only in untouched docs/plans/2026-11-02-shared-location-links.md",
+    "diffCheck": "passed"
+  },
+  "packageArtifact": {
+    "path": "out/Game Jam!-win32-x64/resources/app.asar",
+    "bytes": 8578483,
+    "sha256": "60a494e51ebe74064c767f4d6d9df78c3d944558bea3f455248733126ea30185"
+  },
+  "toolset": {
+    "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+    "unchangedFromStage6": true
+  },
+  "fixes": [
+    "Preparation prompt permits existing scoped file I/O without installation/code execution/new tool permissions",
+    "Missing request output includes bounded provider explanation",
+    "Codex detailed terminal errors survive final generic failures",
+    "Source generation asks to fit essential board/HUD/controls to iframe; reimport sample fits 1100x780 and 720x520"
+  ],
+  "realCases": [
+    {
+      "scenario": "pixel",
+      "realCodex": true,
+      "status": "passed",
+      "cliVersion": "codex-cli 0.166.0-alpha.5.1",
+      "model": "gpt-6.1-sol",
+      "reasoning": "low",
+      "runId": "1793678100127-b39cdcf3-2b5b-41c9-8a21-27c1955df957",
+      "terminalStatus": "completed",
+      "output": "output/inbox/달빛-우체부/v001/index.html",
+      "manifest": {
+        "version": 1,
+        "artifactId": "86693dba-dad8-428d-b006-63971e825d37",
+        "buildId": "67d9eddc-3050-496b-9b56-1517a5db4ed2",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "index.html",
+            "bytes": 1826,
+            "sha256": "8268b9a7b9bfbca127cfbed74c2f7d5557dd489fd0f9b88215c2288471215100"
+          },
+          {
+            "path": "main.js",
+            "bytes": 8021,
+            "sha256": "6f83124e1b4d231da8f1dc5599b71f7cafbe225e89d11b323a8da44e84d89737"
+          },
+          {
+            "path": "style.css",
+            "bytes": 2621,
+            "sha256": "31b7ec3f19bd113336c4b8faa6a3ec1096acb83c29edfd4ed4fa146f18dc2908"
+          }
+        ],
+        "assets": [
+          {
+            "key": "cat",
+            "path": "assets/images/import-87e03004-2090-4832-b0c8-149efc806e3c.png",
+            "sha256": "71c9ed729bae524041d819569ac6f376566499dda9babbb19460ea45db82d19a"
+          },
+          {
+            "key": "forest",
+            "path": "assets/images/import-c5a49e68-b452-4d20-b018-8c65853a4640.png",
+            "sha256": "029d071f8e5c56eb0936f9f07bbc1ad7b151d1ff4f5299d02e82ce69dc5dac72"
+          }
+        ],
+        "documents": [
+          {
+            "path": "docs/imported/import-87e03004-2090-4832-b0c8-149efc806e3c.md",
+            "id": "import-87e03004-2090-4832-b0c8-149efc806e3c",
+            "sha256": "b7bf3646bf553b7a1dec28fa0a99dc82b89dd111d2b89c4799ee62527c053822",
+            "designSha256": "a4098330992114893d79738d3ded6758d322bf6613d8eeee919cf47eddf6ed6f"
+          },
+          {
+            "path": "docs/imported/import-c5a49e68-b452-4d20-b018-8c65853a4640.md",
+            "id": "import-c5a49e68-b452-4d20-b018-8c65853a4640",
+            "sha256": "6938e0f33d9680a6a377ba232555817c6c9ce1f5ab45fe1dc4c45dc8f3850f4e",
+            "designSha256": "14dd3c3bf16ac5c721244f7674defdf396e20ed6450c8aed50046ae487d887d5"
+          },
+          {
+            "path": "docs/달빛-우체부-document-d1.md",
+            "id": "moonmail-rules-4bd23665-6375-4f74-a14f-038cb78167b3",
+            "sha256": "a3fbd9abd5b7480442a4075e9b6f2f59478c3653442fc9e24357725d4db98f50",
+            "designSha256": "90b8fb3bcdb38162c94bf265690471b0ae93f225bc4ce40c2e2a6b510719ebbc"
+          },
+          {
+            "path": "docs/달빛-우체부-document-d2.md",
+            "id": "moonmail-screen-70dd3ff6-834b-482d-8922-d89ce7882cc1",
+            "sha256": "30c8652d6114a650551a8a891e76a389e900e75637e6095e333956d2b23c0294",
+            "designSha256": "c2fffcc3a201bacf251e92d05c8b35524c31a1b010654b5fa61253ac15b9e650"
+          },
+          {
+            "path": "project.md",
+            "id": "qa-brief",
+            "sha256": "49f7bb5cb693e6e27ac5765c8ceb1f244e234bce7eb3a565b2a2e7d8936544b2",
+            "designSha256": "dfeb577fd85a475fe1164f49412d3e566e0d37284f57df1aa891caf6cc47c0f1"
+          }
+        ],
+        "dependenciesSha256": "83885b0003cc3172f6c4407fbb06c9b7d7486b285755fba2c04bb573558d7dc9",
+        "noticesSha256": "14e2f5d981502c6b821a133ebb44f8e9baffa3ba973e220c6141efe90b6d10db",
+        "output": {
+          "pathAtCreation": "output/inbox/달빛-우체부/v001/index.html",
+          "bytes": 15438,
+          "sha256": "a96818786d9e1a6298cbc2c87985e13e7ffb57e4c3529b67b82643ff97152a39"
+        },
+        "instructionsVersion": "2:832665cf7ecaaf231687295580fc4730d8425f2fb986d72511d270f87a87aa61",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      },
+      "lock": {
+        "version": 1,
+        "roots": {},
+        "packages": []
+      },
+      "nativeExport": "exact bytes and cancel passed"
+    },
+    {
+      "scenario": "edit",
+      "realCodex": true,
+      "status": "passed",
+      "cliVersion": "codex-cli 0.166.0-alpha.5.1",
+      "model": "gpt-6.1-sol",
+      "reasoning": "low",
+      "runId": "1793678389653-7d964c4f-6cd1-4700-9905-ac7c505ecc06",
+      "terminalStatus": "completed",
+      "output": "output/inbox/달빛-우체부/v001/index.html",
+      "manifest": {
+        "version": 1,
+        "artifactId": "86693dba-dad8-428d-b006-63971e825d37",
+        "buildId": "91842f1b-f1b7-409b-871f-169b3be161a9",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "index.html",
+            "bytes": 1834,
+            "sha256": "160f559eadd1f5532db9d14175878518df1ba594dc4523ca349b6b2258c35ee3"
+          },
+          {
+            "path": "main.js",
+            "bytes": 8021,
+            "sha256": "df5b1223ddc122913f7da2730a1b655814fdc520fad01695c69685e9cc10d4d3"
+          },
+          {
+            "path": "style.css",
+            "bytes": 2621,
+            "sha256": "31b7ec3f19bd113336c4b8faa6a3ec1096acb83c29edfd4ed4fa146f18dc2908"
+          }
+        ],
+        "assets": [
+          {
+            "key": "cat",
+            "path": "assets/images/import-87e03004-2090-4832-b0c8-149efc806e3c.png",
+            "sha256": "71c9ed729bae524041d819569ac6f376566499dda9babbb19460ea45db82d19a"
+          },
+          {
+            "key": "forest",
+            "path": "assets/images/import-c5a49e68-b452-4d20-b018-8c65853a4640.png",
+            "sha256": "029d071f8e5c56eb0936f9f07bbc1ad7b151d1ff4f5299d02e82ce69dc5dac72"
+          }
+        ],
+        "documents": [
+          {
+            "path": "docs/html-sources/html-2e9760a1a99ee5c28642c26f.md",
+            "id": "html-2e9760a1a99ee5c28642c26f",
+            "sha256": "c5eb815b0b4493bc1ce384d16cb460f6e55d4bea3570d869bd6e08f12a08b77e",
+            "designSha256": "a6332136c047fc9b0edbd79ad9ae8ce418d38adde9ba62cfb944472300fb25f5"
+          },
+          {
+            "path": "docs/imported/import-87e03004-2090-4832-b0c8-149efc806e3c.md",
+            "id": "import-87e03004-2090-4832-b0c8-149efc806e3c",
+            "sha256": "b7bf3646bf553b7a1dec28fa0a99dc82b89dd111d2b89c4799ee62527c053822",
+            "designSha256": "a4098330992114893d79738d3ded6758d322bf6613d8eeee919cf47eddf6ed6f"
+          },
+          {
+            "path": "docs/imported/import-c5a49e68-b452-4d20-b018-8c65853a4640.md",
+            "id": "import-c5a49e68-b452-4d20-b018-8c65853a4640",
+            "sha256": "6938e0f33d9680a6a377ba232555817c6c9ce1f5ab45fe1dc4c45dc8f3850f4e",
+            "designSha256": "14dd3c3bf16ac5c721244f7674defdf396e20ed6450c8aed50046ae487d887d5"
+          },
+          {
+            "path": "docs/달빛-우체부-document-d1.md",
+            "id": "moonmail-rules-4bd23665-6375-4f74-a14f-038cb78167b3",
+            "sha256": "92bf929a8592d724d3a02b1f1b2ee62fb61e1b1ed052e0c4d57077ebad9d7ff4",
+            "designSha256": "d7f5c693061229b2aec314ce8358fd503008f316051a2f979852e85a8201d16f"
+          },
+          {
+            "path": "docs/달빛-우체부-document-d2.md",
+            "id": "moonmail-screen-70dd3ff6-834b-482d-8922-d89ce7882cc1",
+            "sha256": "f60d3dd4216136769e4e9e158acaa1aac998567dc0e5feb0dee83d166053d696",
+            "designSha256": "517b19b42f6f963d03ec5ad4c6058210c7acc07c0004a02d26b3e488a2a3e1a8"
+          },
+          {
+            "path": "project.md",
+            "id": "qa-brief",
+            "sha256": "49f7bb5cb693e6e27ac5765c8ceb1f244e234bce7eb3a565b2a2e7d8936544b2",
+            "designSha256": "dfeb577fd85a475fe1164f49412d3e566e0d37284f57df1aa891caf6cc47c0f1"
+          }
+        ],
+        "dependenciesSha256": "83885b0003cc3172f6c4407fbb06c9b7d7486b285755fba2c04bb573558d7dc9",
+        "noticesSha256": "14e2f5d981502c6b821a133ebb44f8e9baffa3ba973e220c6141efe90b6d10db",
+        "output": {
+          "pathAtCreation": "output/inbox/달빛-우체부/v001/index.html",
+          "bytes": 15446,
+          "sha256": "d326b3d1a1666b78d9c8ca78fc45a2218c990afb4ac5fd9191ff9866e36afdc4"
+        },
+        "instructionsVersion": "2:c986004495a6474eb25af39d76ae144ac38eaa6185ba3ca1e4c09ed6b67aa316",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      },
+      "lock": {
+        "version": 1,
+        "roots": {},
+        "packages": []
+      },
+      "nativeExport": "exact bytes and cancel passed",
+      "restore": "before/after exact HTML and source revision passed"
+    },
+    {
+      "scenario": "neon",
+      "realCodex": true,
+      "status": "passed",
+      "cliVersion": "codex-cli 0.166.0-alpha.5.1",
+      "model": "gpt-6.1-sol",
+      "reasoning": "low",
+      "runId": "fdc91a32-a443-430b-9bd9-fc61750468ab",
+      "terminalStatus": "completed",
+      "output": "output/inbox/네온-신호-정렬/v001/index.html",
+      "manifest": {
+        "version": 1,
+        "artifactId": "83071c12-02f1-4879-8097-6467df4000f3",
+        "buildId": "2c74b57a-eb93-48e8-906f-09fd35f24bab",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "index.html",
+            "bytes": 2234,
+            "sha256": "39cc5bd294dadeb5fa0f6b5eba943a01007bbb3d74c9da2d7b29f79911e448fb"
+          },
+          {
+            "path": "main.js",
+            "bytes": 7567,
+            "sha256": "d7375942c38f7e93de4712360d1c126d9d6cfc515f882c6117f4a8d2021dccaa"
+          },
+          {
+            "path": "style.css",
+            "bytes": 4636,
+            "sha256": "5869a74f079529b45bd5f8c12adafbced5f571321f8cbeb8484a8ce362e35ceb"
+          }
+        ],
+        "assets": [],
+        "documents": [
+          {
+            "path": "docs/네온-신호-정렬-document-d1.md",
+            "id": "4c9d7547-21e7-41a9-8627-c218a786e180",
+            "sha256": "f4e8e72f222752cc5a4ed246eea68026068ca9d11f0457b0dd5e5e87e460138b",
+            "designSha256": "8cbf12f0bab904d7015cdc2d22759a3a15ce270d1158a85c8977934711abdcd3"
+          },
+          {
+            "path": "docs/네온-신호-정렬-document-d2.md",
+            "id": "f5c691a2-c8f0-4928-962b-a44dbe259bd7",
+            "sha256": "31c6eca400dfd8ec3914215a6a790a0800af528e13998ba18421262699697dbd",
+            "designSha256": "e06cb9f2e9947eae797e9d9783ddccc7e01505b0955420dfdb7688a1d00fbcb6"
+          },
+          {
+            "path": "project.md",
+            "id": "qa-brief",
+            "sha256": "92c80ddeaade172d182592c484cce7ffc537a49cfdcc4b1552f8e0a6f6974426",
+            "designSha256": "0ca221d11a6a59c53016fa08ae3001f4cd3348c0c75fb4b3fa2263f4edebcadd"
+          }
+        ],
+        "dependenciesSha256": "b3e069eb4252a3e301e1c0a5a4b09d49cfd8f83e05f522a32c42b9710e705160",
+        "noticesSha256": "cd945ac74bc1e8d20ec58c92e78e87fe7848f459f92571783fc0602883731aee",
+        "output": {
+          "pathAtCreation": "output/inbox/네온-신호-정렬/v001/index.html",
+          "bytes": 1304684,
+          "sha256": "f238b8c22e9d8f4f47650e247a59b437e6558c21e75bb5dd28bbbe465ccc29e6"
+        },
+        "instructionsVersion": "2:024a32c9bb9923f993715013ff7b311398ad86ac614f6313d7c77c085e620ebe",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      },
+      "lock": {
+        "version": 1,
+        "roots": {
+          "three": "node_modules/three"
+        },
+        "packages": [
+          {
+            "key": "node_modules/three",
+            "name": "three",
+            "version": "0.187.0",
+            "resolved": "https://registry.npmjs.org/three/-/three-0.187.0.tgz",
+            "integrity": "sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==",
+            "license": "MIT",
+            "dependencies": []
+          }
+        ]
+      },
+      "nativeExport": "exact bytes and cancel passed"
+    },
+    {
+      "scenario": "reimport",
+      "realCodex": true,
+      "status": "passed",
+      "cliVersion": "codex-cli 0.166.0-alpha.5.1",
+      "model": "gpt-6.1-sol",
+      "reasoning": "low",
+      "runId": "1793678685548-0e91b5bb-b252-4294-b36d-0c91e9845d3c",
+      "terminalStatus": "completed",
+      "output": "output/inbox/달빛-우체부-재가져오기/v001/index.html",
+      "manifest": {
+        "version": 1,
+        "artifactId": "03d72010-cf20-484a-9b6e-ed6d0b528549",
+        "buildId": "03afe3ca-ef5b-46d8-959c-c6a8073c3160",
+        "entry": "main.js",
+        "htmlTemplate": "index.html",
+        "sources": [
+          {
+            "path": "embedded-assets.js",
+            "bytes": 1216,
+            "sha256": "2c67a1b0a32d17d75ecc276444ff2f7c70d42e3e03cb6c5f03745715b32c492b"
+          },
+          {
+            "path": "index.html",
+            "bytes": 1868,
+            "sha256": "4acd0ef9865589dfe4a37e47d6068ef096d4399136b08c0d5664a7db497c661a"
+          },
+          {
+            "path": "main.js",
+            "bytes": 8547,
+            "sha256": "073af0acef018ccae54144278f8c17ffbdec29477cc964df6ece611494ca31c9"
+          },
+          {
+            "path": "style.css",
+            "bytes": 4895,
+            "sha256": "77c872599f632a30b4b566cff9f419497cd4d6a4cf900b37aad57ab1d423ce9f"
+          }
+        ],
+        "assets": [],
+        "documents": [
+          {
+            "path": "docs/html-sources/html-3e27e4a24950e60e96f6ab6b.md",
+            "id": "html-3e27e4a24950e60e96f6ab6b",
+            "sha256": "6bc1bd02d78d1f9e81407cdab3cad5eb5cdce9183cb3837a0318cad046678181",
+            "designSha256": "0edce06d4ab22274add24e2e0833bca58f81db67b2baa6539a50f0b32c368156"
+          }
+        ],
+        "dependenciesSha256": "83885b0003cc3172f6c4407fbb06c9b7d7486b285755fba2c04bb573558d7dc9",
+        "noticesSha256": "14e2f5d981502c6b821a133ebb44f8e9baffa3ba973e220c6141efe90b6d10db",
+        "output": {
+          "pathAtCreation": "output/inbox/달빛-우체부-재가져오기/v001/index.html",
+          "bytes": 17902,
+          "sha256": "067bba35a8c3575de2ea374eedade1de5dacc7721e43720ac12b5a09bd58e14f"
+        },
+        "instructionsVersion": "2:9c81eaec0538e7362cb11861bfe97e6e0b4398d636642fa93393687ae82304c7",
+        "tool": {
+          "name": "gamejam-standalone-builder",
+          "version": "1",
+          "sha256": "def2f9f854a94e7167aaf02692adec5471a5808c524c5b4766e23c3372c916f4",
+          "profile": "standalone-browser-v1"
+        }
+      },
+      "lock": {
+        "version": 1,
+        "roots": {},
+        "packages": []
+      },
+      "nativeExport": "exact bytes and cancel passed",
+      "originalImportPreserved": true
+    },
+    {
+      "scenario": "cancel",
+      "realCodex": true,
+      "status": "passed",
+      "cliVersion": "codex-cli 0.166.0-alpha.5.1",
+      "model": "gpt-6.1-sol",
+      "reasoning": "low",
+      "runId": "1793678389677-f3528511-093d-4231-b593-1dd07e32515a",
+      "terminalStatus": "cancelled",
+      "originalsPreserved": true
+    }
+  ],
+  "browserEvidence": [
+    {
+      "scenario": "pixel",
+      "browser": "Chrome",
+      "status": "passed",
+      "expectedLives": 3,
+      "actions": [
+        "Enter",
+        "water damage",
+        "repeat touch/1 second immunity",
+        "lose",
+        "R",
+        "reset",
+        "Right",
+        "Right",
+        "Down",
+        "Right",
+        "win"
+      ],
+      "imagesUsed": [true, true],
+      "initialViewport": {
+        "width": 1100,
+        "height": 780,
+        "scrollWidth": 1085,
+        "scrollHeight": 969
+      },
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "pixel",
+      "browser": "Edge",
+      "status": "passed",
+      "expectedLives": 3,
+      "actions": [
+        "Enter",
+        "water damage",
+        "repeat touch/1 second immunity",
+        "lose",
+        "R",
+        "reset",
+        "Right",
+        "Right",
+        "Down",
+        "Right",
+        "win"
+      ],
+      "imagesUsed": [true, true],
+      "initialViewport": {
+        "width": 1100,
+        "height": 780,
+        "scrollWidth": 1085,
+        "scrollHeight": 969
+      },
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "edit",
+      "browser": "Chrome",
+      "status": "passed",
+      "expectedLives": 5,
+      "actions": [
+        "Enter",
+        "water damage",
+        "repeat touch/1 second immunity",
+        "R",
+        "reset",
+        "Right",
+        "Right",
+        "Down",
+        "Right",
+        "win"
+      ],
+      "imagesUsed": [true, true],
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "edit",
+      "browser": "Edge",
+      "status": "passed",
+      "expectedLives": 5,
+      "actions": [
+        "Enter",
+        "water damage",
+        "repeat touch/1 second immunity",
+        "R",
+        "reset",
+        "Right",
+        "Right",
+        "Down",
+        "Right",
+        "win"
+      ],
+      "imagesUsed": [true, true],
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "neon",
+      "browser": "Chrome",
+      "status": "passed",
+      "actions": ["Enter", "1", "3", "win", "R", "reset"],
+      "webgl": {
+        "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+        "width": 1100,
+        "height": 780
+      },
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "neon",
+      "browser": "Edge",
+      "status": "passed",
+      "actions": ["Enter", "1", "3", "win", "R", "reset"],
+      "webgl": {
+        "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+        "width": 1100,
+        "height": 780
+      },
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "reimport",
+      "browser": "Chrome",
+      "status": "passed",
+      "expectedLives": 5,
+      "actions": [
+        "Enter",
+        "water damage",
+        "repeat touch/1 second immunity",
+        "R",
+        "reset",
+        "Right",
+        "Right",
+        "Down",
+        "Right",
+        "win"
+      ],
+      "imagesUsed": [true, true],
+      "initialViewport": {
+        "width": 1100,
+        "height": 780,
+        "scrollWidth": 1100,
+        "scrollHeight": 780
+      },
+      "viewportChecks": [
+        {
+          "width": 1100,
+          "height": 780,
+          "scrollWidth": 1100,
+          "scrollHeight": 780,
+          "canvas": {
+            "left": 286,
+            "top": 106,
+            "right": 814,
+            "bottom": 634
+          },
+          "buttons": [
+            {
+              "text": "재시작 R",
+              "left": 811.453125,
+              "top": 683,
+              "right": 888,
+              "bottom": 713
+            },
+            {
+              "text": "↑",
+              "left": 450,
+              "top": 737,
+              "right": 494,
+              "bottom": 769
+            },
+            {
+              "text": "←",
+              "left": 502,
+              "top": 737,
+              "right": 546,
+              "bottom": 769
+            },
+            {
+              "text": "↓",
+              "left": 554,
+              "top": 737,
+              "right": 598,
+              "bottom": 769
+            },
+            {
+              "text": "→",
+              "left": 606,
+              "top": 737,
+              "right": 650,
+              "bottom": 769
+            }
+          ]
+        },
+        {
+          "width": 720,
+          "height": 520,
+          "scrollWidth": 720,
+          "scrollHeight": 520,
+          "canvas": {
+            "left": 14,
+            "top": 46,
+            "right": 442,
+            "bottom": 474
+          },
+          "buttons": [
+            {
+              "text": "재시작 R",
+              "left": 629.453125,
+              "top": 201,
+              "right": 706,
+              "bottom": 231
+            },
+            {
+              "text": "↑",
+              "left": 563,
+              "top": 304,
+              "right": 607,
+              "bottom": 342
+            },
+            {
+              "text": "←",
+              "left": 513,
+              "top": 348,
+              "right": 557,
+              "bottom": 386
+            },
+            {
+              "text": "↓",
+              "left": 563,
+              "top": 348,
+              "right": 607,
+              "bottom": 386
+            },
+            {
+              "text": "→",
+              "left": 613,
+              "top": 348,
+              "right": 657,
+              "bottom": 386
+            }
+          ]
+        }
+      ],
+      "errors": 0,
+      "externalRequests": 0
+    },
+    {
+      "scenario": "reimport",
+      "browser": "Edge",
+      "status": "passed",
+      "expectedLives": 5,
+      "actions": [
+        "Enter",
+        "water damage",
+        "repeat touch/1 second immunity",
+        "R",
+        "reset",
+        "Right",
+        "Right",
+        "Down",
+        "Right",
+        "win"
+      ],
+      "imagesUsed": [true, true],
+      "initialViewport": {
+        "width": 1100,
+        "height": 780,
+        "scrollWidth": 1100,
+        "scrollHeight": 780
+      },
+      "viewportChecks": [
+        {
+          "width": 1100,
+          "height": 780,
+          "scrollWidth": 1100,
+          "scrollHeight": 780,
+          "canvas": {
+            "left": 286,
+            "top": 106,
+            "right": 814,
+            "bottom": 634
+          },
+          "buttons": [
+            {
+              "text": "재시작 R",
+              "left": 811.453125,
+              "top": 683,
+              "right": 888,
+              "bottom": 713
+            },
+            {
+              "text": "↑",
+              "left": 450,
+              "top": 737,
+              "right": 494,
+              "bottom": 769
+            },
+            {
+              "text": "←",
+              "left": 502,
+              "top": 737,
+              "right": 546,
+              "bottom": 769
+            },
+            {
+              "text": "↓",
+              "left": 554,
+              "top": 737,
+              "right": 598,
+              "bottom": 769
+            },
+            {
+              "text": "→",
+              "left": 606,
+              "top": 737,
+              "right": 650,
+              "bottom": 769
+            }
+          ]
+        },
+        {
+          "width": 720,
+          "height": 520,
+          "scrollWidth": 720,
+          "scrollHeight": 520,
+          "canvas": {
+            "left": 14,
+            "top": 46,
+            "right": 442,
+            "bottom": 474
+          },
+          "buttons": [
+            {
+              "text": "재시작 R",
+              "left": 629.453125,
+              "top": 201,
+              "right": 706,
+              "bottom": 231
+            },
+            {
+              "text": "↑",
+              "left": 563,
+              "top": 304,
+              "right": 607,
+              "bottom": 342
+            },
+            {
+              "text": "←",
+              "left": 513,
+              "top": 348,
+              "right": 557,
+              "bottom": 386
+            },
+            {
+              "text": "↓",
+              "left": 563,
+              "top": 348,
+              "right": 607,
+              "bottom": 386
+            },
+            {
+              "text": "→",
+              "left": 613,
+              "top": 348,
+              "right": 657,
+              "bottom": 386
+            }
+          ]
+        }
+      ],
+      "errors": 0,
+      "externalRequests": 0
+    }
+  ],
+  "preservation": {
+    "sameArtifact": true,
+    "newBuild": true,
+    "sameAssets": true,
+    "sameLock": true,
+    "originalIdeaPreserved": true,
+    "styleIdentical": true,
+    "restore": "before/after exact HTML and source revision passed",
+    "systemDocumentIdsPreserved": true,
+    "existingSystemDocumentSourcesRetained": true,
+    "lifeRuleUpdatedToFive": true
+  },
+  "outputs": [
+    {
+      "path": "out/game-build-stage7/pixel/export.html",
+      "bytes": 15438,
+      "sha256": "a96818786d9e1a6298cbc2c87985e13e7ffb57e4c3529b67b82643ff97152a39"
+    },
+    {
+      "path": "out/game-build-stage7/edit/export.html",
+      "bytes": 15446,
+      "sha256": "d326b3d1a1666b78d9c8ca78fc45a2218c990afb4ac5fd9191ff9866e36afdc4"
+    },
+    {
+      "path": "out/game-build-stage7/neon/export.html",
+      "bytes": 1304684,
+      "sha256": "f238b8c22e9d8f4f47650e247a59b437e6558c21e75bb5dd28bbbe465ccc29e6"
+    },
+    {
+      "path": "out/game-build-stage7/reimport/export.html",
+      "bytes": 17902,
+      "sha256": "067bba35a8c3575de2ea374eedade1de5dacc7721e43720ac12b5a09bd58e14f"
+    }
+  ],
+  "initialFailures": {
+    "preparation": "actual no-shell local-file-reader refusal; fixed and actual repro passed",
+    "quota": "two failed real runs preserved originals; no partial publication; after provider retry time a single QA_OK probe passed"
+  },
+  "limits": [
+    "Three real provider accounts deferred",
+    "Two small representative games; no general fun/balance/art/hardware claim",
+    "Older pixel layout remains as generated; final reimport sample demonstrates viewport repair",
+    "Image search/generation, mobile, ZIP/folder export, service billing/storage quota and library upgrades remain outside this phase"
+  ]
+}

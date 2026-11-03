@@ -1,4 +1,12 @@
 import { ServerLimits } from './contracts/server-limits.ts';
+import { GameBuildLimits } from './contracts/game-build.ts';
+import {
+  isGameBuildPath,
+  hasGameBuilds,
+  validateGameBuilds,
+  deleteGameBuilds,
+} from './core/projects/game-build.ts';
+import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
 import { readProjectLayout } from './core/projects/project-layout.ts';
 import { allocateDocumentPath } from './core/projects/document-path.ts';
@@ -93,6 +101,7 @@ export function collaborationPath(relative: unknown): string {
         relative,
       ) ||
       isPreviewPath(relative) ||
+      isGameBuildPath(relative) ||
       relative === 'output/README.md' ||
       relative === PROJECT_LAYOUT_PATH ||
       relative === RESULT_CATALOG_PATH ||
@@ -113,6 +122,7 @@ export function collaborationPath(relative: unknown): string {
           /[. ]$/.test(segment) ||
           (segment.startsWith('.') &&
             segment !== '.ai' &&
+            !(segment === '.game-builds' && isGameBuildPath(relative)) &&
             !(
               ([
                 RESULT_CATALOG_PATH,
@@ -136,6 +146,7 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
   readProjectLayout(files as Snapshot);
+  validateGameBuilds(files as Snapshot, gameBuildCodec);
   if ((files as Snapshot)[DOCUMENT_STATUSES_PATH])
     readStatuses((files as Snapshot)[DOCUMENT_STATUSES_PATH]);
   validateCanvasMembership(files as Snapshot);
@@ -187,6 +198,7 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
     bytes += Buffer.byteLength(value);
+    if (isGameBuildPath(key)) continue;
     if (isGameUiPath(key)) {
       readGameUi(value, key);
       continue;
@@ -232,8 +244,13 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
       ids.add(id);
     }
   }
-  if (bytes > ServerLimits.projectBytes)
-    throw new Error('초기 협업 프로젝트는 총 20MB까지 공유할 수 있습니다.');
+  const snapshotLimit = hasGameBuilds(files as Snapshot)
+    ? GameBuildLimits.snapshotBytes
+    : ServerLimits.projectBytes;
+  if (bytes > snapshotLimit)
+    throw new Error(
+      `프로젝트 전송 한도(${snapshotLimit / 1_000_000}MB)를 초과했습니다.`,
+    );
   const documents = new Map(
     snapshotDocuments(files as Snapshot).map((doc) => [doc.relativePath, doc]),
   );
@@ -718,6 +735,10 @@ export function reduceCollaboration(
       removed.add(relative);
     }
     for (const key of removed) delete next[key];
+    const cleaned = deleteGameBuilds(next, removed);
+    for (const key of Object.keys(next))
+      if (!(key in cleaned)) delete next[key];
+    Object.assign(next, cleaned);
     removeMembers(removed);
   } else if (channel === 'documents:duplicate') {
     const paths: string[] = [];
@@ -880,6 +901,8 @@ export function reduceCollaboration(
     const additions = createTaskFiles(
       {
         kind,
+        gameBuildVersion:
+          input.gameBuildVersion as CreateTaskInput['gameBuildVersion'],
         canvasId: canvasId(input.canvasId),
         sourceMode: input.sourceMode as CreateTaskInput['sourceMode'],
         inputPaths: paths,
@@ -889,6 +912,8 @@ export function reduceCollaboration(
         documentResult:
           input.documentResult as CreateTaskInput['documentResult'],
         instructions: input.instructions as string | undefined,
+        instructionOrigin:
+          input.instructionOrigin as CreateTaskInput['instructionOrigin'],
         resultName: input.resultName as string | undefined,
         thenImplement: input.thenImplement as CreateTaskInput['thenImplement'],
         requestSnapshot:

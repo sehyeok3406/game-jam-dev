@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isGameBuildPath } from './core/projects/game-build.ts';
 import { projectPath, type Snapshot } from './project-store.ts';
 import {
   isPreviewPath,
@@ -16,6 +17,16 @@ export async function trashDeletedFiles(
 ) {
   const removed = Object.keys(before).filter((key) => after[key] === undefined);
   const targets = new Set(removed);
+  for (const key of removed.filter(
+    (key) => isGameBuildPath(key) && key.endsWith('/manifest.json'),
+  )) {
+    const directory = key.slice(0, -'/manifest.json'.length);
+    if (Object.keys(after).some((path) => path.startsWith(`${directory}/`)))
+      continue;
+    for (const target of targets)
+      if (target.startsWith(`${directory}/`)) targets.delete(target);
+    targets.add(directory);
+  }
   for (const relative of removed.filter(isPreviewPath)) {
     const target = previewDeletionTarget(relative);
     for (const key of targets)

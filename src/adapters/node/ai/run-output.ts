@@ -51,8 +51,8 @@ export class ProviderRunOutput implements AiRunOutput {
       const message = describeCodexJsonEvent(parsed);
       if (!message) return;
       const record = parsed as Record<string, unknown>;
-      if (record.type === 'turn.failed' || record.type === 'error')
-        this.failure = message;
+      if (record.type === 'error') this.failure = message;
+      else if (record.type === 'turn.failed') this.failure ||= message;
       const item =
         record.item && typeof record.item === 'object'
           ? (record.item as Record<string, unknown>)
