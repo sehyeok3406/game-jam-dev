@@ -1,7 +1,7 @@
 import { WorkspaceDock } from '../shell/WorkspaceDock';
 import { useLocationNavigation } from '../canvas/useLocationNavigation.ts';
 import { useLocationLinks } from '../locations/useLocationLinks.ts';
-import { LocationLinkControls } from '../locations/LocationLinkControls.tsx';
+import '../locations/location-links.css';
 import type { LocationTarget } from '../../contracts/location-links.ts';
 import { WorkspaceChrome } from '../shell/WorkspaceChrome';
 import { useCanvasRegions } from '../CanvasChrome';
@@ -3311,7 +3311,34 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         scope={home || (!workspace.root && !loading) ? 'home' : 'project'}
         theme={theme}
       />
-      <LocationLinkControls state={locationLinks} />
+      {locationLinks.error && (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            className="section-dialog floating-surface"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="location-link-error-title"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.stopPropagation();
+                locationLinks.dismissError();
+              }
+            }}
+          >
+            <h2 id="location-link-error-title">위치 링크 안내</h2>
+            <p>{locationLinks.error}</p>
+            <div className="section-dialog__actions">
+              <button
+                type="button"
+                className="button-primary"
+                onClick={locationLinks.dismissError}
+              >
+                확인
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {locationNavigation.highlight && (
         <div
           className="location-link-highlight"

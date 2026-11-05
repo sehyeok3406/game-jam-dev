@@ -344,7 +344,7 @@ try {
       'Location package diagnostic',
       JSON.stringify(
         await js(
-          '({panel:document.querySelector(".location-link-panel")?.textContent,input:document.querySelector(".location-link-panel input")?.value,selected:document.querySelector(".react-flow__node.selected")?.dataset.id})',
+          '({error:document.querySelector("[aria-labelledby=location-link-error-title]")?.textContent,selected:document.querySelector(".react-flow__node.selected")?.dataset.id})',
         ).catch(() => null),
       ),
     );

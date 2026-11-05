@@ -34,8 +34,40 @@ async function run() {
     await js('localStorage.clear()');
     await win.reload();
     await wait('!!document.querySelector(".home-project-open")');
+    const manualControls = `!!document.querySelector('.location-link-controls, .location-link-panel, input[aria-label="위치 링크"]')`;
+    assert.equal(
+      await js(manualControls),
+      false,
+      'home has no manual link controls',
+    );
+    await js('window.sendLocation({kind:"document",id:"missing-link-item"})');
+    await wait(
+      '!!document.querySelector("[aria-labelledby=location-link-error-title]")',
+    );
+    assert.match(
+      await js(
+        'document.querySelector("[aria-labelledby=location-link-error-title]").textContent',
+      ),
+      /링크 대상 없음/,
+    );
+    assert.equal(
+      await js(manualControls),
+      false,
+      'link errors do not restore manual input',
+    );
+    await js(
+      'document.querySelector("[aria-labelledby=location-link-error-title] button").click()',
+    );
+    await wait(
+      '!document.querySelector("[aria-labelledby=location-link-error-title]")',
+    );
     await js('document.querySelector(".home-project-open").click()');
     await wait('!!document.querySelector("[data-id=raw-loop-note]")');
+    assert.equal(
+      await js(manualControls),
+      false,
+      'project has no manual link controls',
+    );
     await js(
       'window.sendLocation({kind:"document",id:"raw-loop-note",blockId:"22222222-2222-4222-8222-222222222222"})',
     );
@@ -71,7 +103,7 @@ async function run() {
     );
     assert.ok(!errors.length, errors.join('\n'));
     console.log(
-      'PASS: actual renderer shared-link receive, persistent paragraph rendering, scroll/highlight and copy menu',
+      'PASS: no manual controls on home/project; direct-link error notice, receive, paragraph scroll/highlight and copy menu',
     );
   } finally {
     win.destroy();

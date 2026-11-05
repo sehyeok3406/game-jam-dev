@@ -19,10 +19,7 @@ type Ports = {
 export function useLocationLinks(ports: () => Ports) {
   const latest = useRef(ports);
   latest.current = ports;
-  const [opened, setOpened] = useState(false),
-    [href, setHref] = useState(''),
-    [message, setMessage] = useState(''),
-    [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const running = useRef(false),
     generation = useRef(0),
     mounted = useRef(true);
@@ -31,14 +28,11 @@ export function useLocationLinks(ports: () => Ports) {
   const perform = async (text: string) => {
     if (!api || running.current) return;
     if (latest.current().composing()) {
-      setHref(text);
-      setMessage('한글 입력을 마친 뒤 다시 열어주세요.');
-      setOpened(true);
+      latest.current().report('한글 입력을 마친 뒤 링크를 다시 눌러주세요.');
       return;
     }
     running.current = true;
-    setBusy(true);
-    setMessage('');
+    setError('');
     const ticket = generation.current;
     const startSession = latest.current().workspace.session?.sessionId;
     try {
@@ -61,20 +55,16 @@ export function useLocationLinks(ports: () => Ports) {
       if (after.session?.sessionId !== result.workspace.session?.sessionId)
         return;
       latest.current().navigate(result);
-      setOpened(false);
     } catch (error) {
       if (
         mounted.current &&
         ticket === generation.current &&
         latest.current().workspace.session?.sessionId === startSession
       ) {
-        setHref(text);
-        setMessage(error instanceof Error ? error.message : String(error));
-        setOpened(true);
+        setError(error instanceof Error ? error.message : String(error));
       }
     } finally {
       running.current = false;
-      if (mounted.current) setBusy(false);
       if (mounted.current)
         queueMicrotask(() => {
           void receiveRef.current().catch(() => {});
@@ -105,8 +95,7 @@ export function useLocationLinks(ports: () => Ports) {
     mounted.current = true;
     const stop = api?.onReceived(() => {
       void receiveRef.current().catch((error) => {
-        setMessage(String(error));
-        setOpened(true);
+        if (mounted.current) setError(String(error));
       });
     });
     return () => {
@@ -118,8 +107,7 @@ export function useLocationLinks(ports: () => Ports) {
   useEffect(() => {
     if (p.ready)
       void receiveRef.current().catch((error) => {
-        setMessage(String(error));
-        setOpened(true);
+        if (mounted.current) setError(String(error));
       });
   }, [p.ready, api]);
   const copy = async (target: LocationTarget) => {
@@ -127,7 +115,6 @@ export function useLocationLinks(ports: () => Ports) {
     const session = latest.current().workspace.session;
     if (!session) return;
     running.current = true;
-    setBusy(true);
     try {
       await latest.current().flush();
       if (latest.current().workspace.session?.sessionId !== session.sessionId)
@@ -148,24 +135,17 @@ export function useLocationLinks(ports: () => Ports) {
         mounted.current &&
         latest.current().workspace.session?.sessionId === session.sessionId
       ) {
-        setMessage(error instanceof Error ? error.message : String(error));
-        setOpened(true);
+        setError(error instanceof Error ? error.message : String(error));
       }
     } finally {
       running.current = false;
-      if (mounted.current) setBusy(false);
       void receiveRef.current().catch(() => {});
     }
   };
   return {
     available: !!api,
-    opened,
-    setOpened,
-    href,
-    setHref,
-    message,
-    busy,
-    open: () => perform(href),
+    error,
+    dismissError: () => setError(''),
     openHref: perform,
     copy,
   };

@@ -13,7 +13,7 @@
 
 계약은 contracts, URL 검증/매칭/배율 계산은 core, 열기·발급 순서는 application의 LocationLinkService가 소유한다. ProjectHomeService의 기존 프로젝트 열기를 사용하고 desktop은 ProjectLibrary·인증 client·프로토콜/IPC를 조립한다. 화면은 주입된 runtime으로만 요청한다. 열린 프로젝트와 연결된 sessionId/epoch를 IPC에서 검사하며 기존 property/mutation 큐·편집 flush와 프로젝트 보존 경로를 재사용한다.
 
-Windows는 설치 앱을 `gamejam` 프로토콜 처리기로 등록한다. Electron의 userData별 단일 인스턴스 잠금으로 기존 창에 전달하고, 테스트 사용자 프로필은 별도 실행을 유지하며 OS 등록을 덮어쓰지 않는다. 최초 실행·second-instance·open-url을 같은 inbox에 넣는다. inbox는 최신 미처리 주소 한 개를 보관하고 ID가 같은 확인 응답만 제거한다. renderer 준비 전에 받은 주소도 pending 조회로 읽으며 오류는 붙여넣기 패널에서 재시도할 수 있다.
+Windows는 설치 앱을 `gamejam` 프로토콜 처리기로 등록한다. Electron의 userData별 단일 인스턴스 잠금으로 기존 창에 전달하고, 테스트 사용자 프로필은 별도 실행을 유지하며 OS 등록을 덮어쓰지 않는다. 최초 실행·second-instance·open-url을 같은 inbox에 넣는다. inbox는 최신 미처리 주소 한 개를 보관하고 ID가 같은 확인 응답만 제거한다. renderer 준비 전에 받은 주소도 pending 조회로 읽으며 오류는 홈·프로젝트 공통 안내창에 표시한다. 2026-11-05 사용자 지시에 따라 수동 붙여넣기 버튼/패널을 제거하고 직접 링크 열기와 오류 안내를 유지한다.
 
 영속 문단 위치는 Tiptap의 보이지 않는 inline atom `locationAnchor`로 보관한다. Markdown에서는 `<!--gamejam:block:<uuid>-->`, 캔버스 텍스트에서는 `{type:'locationAnchor',attrs:{id}}`로 직렬화한다. 앵커는 사용자가 문단 링크를 처음 복사할 때 기존 편집/저장 명령으로 추가한다. 임의 HTML 렌더링은 허용하지 않고 읽기 화면에서는 이 주석만 비활성 span으로 변환한다. 일반 문단·제목·목록·표 셀·인용을 지원하며 codeBlock이나 여러 문단에 걸친 선택은 거절한다.
 
@@ -25,7 +25,7 @@ Windows는 설치 앱을 `gamejam` 프로토콜 처리기로 등록한다. Elect
 
 ## 대안
 
-- HTTPS 안내 페이지: 메신저 호환성에는 유리하나 호스팅이 필요하다. 현재는 커스텀 프로토콜과 앱의 붙여넣기 열기를 제공한다.
+- HTTPS 안내 페이지: 메신저 호환성에는 유리하나 호스팅이 필요하다. 현재는 커스텀 프로토콜의 직접 열기를 제공한다.
 - URL에 서버 주소/초대 자격 포함: 자동 연결은 쉽지만 링크가 권한이나 자격 전송 대상이 되는 문제를 피하기 위해 채택하지 않았다.
 - 줄 번호/문자 offset/문장 검색: 앞쪽 편집·중복 문장에 취약하다. 문단의 명시적 ID를 사용한다.
 - 별도 앵커 metadata: Markdown 자체를 유지하기 쉽지만 외부 본문 교체 후 동일 문단을 보장하기 어렵다. 본문과 함께 이동하는 atom을 택했다.

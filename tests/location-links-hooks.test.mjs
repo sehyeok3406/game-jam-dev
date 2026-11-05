@@ -12,7 +12,7 @@ function deferred() {
   });
   return { promise, resolve };
 }
-test('late flush/copy requests cannot cross a project session and a failed manual open drains a newly received link', async () => {
+test('late flush/copy requests cannot cross a project session and a failed direct open drains a newly received link', async () => {
   const dom = new JSDOM('<!doctype html><div id="root"></div>');
   const saved = new Map();
   for (const key of [
@@ -93,15 +93,12 @@ test('late flush/copy requests cannot cross a project session and a failed manua
       await copying;
     });
     assert.equal(openCount, 0);
-    assert.equal(view.opened, false);
+    assert.equal(view.error, '');
     gate = deferred();
     flush = () => gate.promise;
     let opening;
     await act(async () => {
-      view.setHref('bad');
-    });
-    await act(async () => {
-      opening = view.open();
+      opening = view.openHref('bad');
       pending = { id: 1, href: 'next' };
       received();
     });
@@ -113,10 +110,12 @@ test('late flush/copy requests cannot cross a project session and a failed manua
     assert.equal(
       openCount,
       2,
-      'received link is processed after the manual request finishes',
+      'received link is processed after the direct request finishes',
     );
     assert.equal(pending, null);
-    assert.equal(view.href, 'next');
+    assert.equal(view.error, 'bad link');
+    await act(async () => view.dismissError());
+    assert.equal(view.error, '');
   } finally {
     await act(async () => root.unmount());
     dom.window.close();
