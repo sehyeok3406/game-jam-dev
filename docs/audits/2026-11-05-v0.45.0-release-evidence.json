@@ -1,0 +1,106 @@
+{
+  "date": "2026-11-05",
+  "version": "0.45.0",
+  "sourceCommit": "4238f72f3ae3f1793ae158d16dbdd86af249b72f",
+  "tag": "v0.45.0",
+  "release": "https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.45.0",
+  "ci": {
+    "run": 42021263873,
+    "url": "https://github.com/sehyeok3406/game-jam-dev/actions/runs/42021263873",
+    "jobs": {
+      "windows-tests": "success",
+      "types": "success",
+      "lint": "success",
+      "linux-server": "success"
+    }
+  },
+  "checks": {
+    "typecheck": "passed",
+    "core": "passed",
+    "architecture": "10 passed",
+    "focusedUnit": "57 passed",
+    "locationUi": "passed; manual input absent and direct links/anchors preserved",
+    "htmlUi": "passed; themes, sizes, warnings, collapse/fullscreen",
+    "packagedLocations": "passed; Windows cold/warm and OS dispatch, paragraph, HTML, text and huge/tiny/rotated targets",
+    "lint": "changed files passed locally; full CI passed",
+    "camera": "one run each: Markdown 300 P95 zoom out/in 16.8/16.7 ms, mixed 300 16.8/16.8 ms; native pan/wheel, no body/geometry writes, live-zoom text height passed",
+    "packagedContent": "performance summary/detail classes, GameBuildSummary, location anchors/menu present; removed manual link controls absent",
+    "nupkgResources": "2046 matched"
+  },
+  "candidate": {
+    "sourceFingerprint": "916e08b8eb4fd8ae1ac02746bdd580ccddd6e868083034978cf277f7643efcef",
+    "sourceFiles": 686,
+    "appAsar": {
+      "path": "out/Game Jam!-win32-x64/resources/app.asar",
+      "sha256": "4635937d5d72ae80412fdda85d1fa6997b9a033fdf16f0876781c436b86625f8"
+    },
+    "checks": {
+      "typecheck": "passed",
+      "core": "passed",
+      "architecture": "10 passed",
+      "focusedUnit": "57 passed",
+      "locationUi": "passed; manual input absent and direct links/anchors preserved",
+      "htmlUi": "passed; themes, sizes, warnings, collapse/fullscreen",
+      "packagedLocations": "passed; Windows cold/warm and OS dispatch, paragraph, HTML, text and huge/tiny/rotated targets"
+    }
+  },
+  "productInputs": {
+    "sha256": "95bc4ddaef08bde58bb970d67f73c128444cc4c08f91cf0b33288dedcedcdea2",
+    "files": 686
+  },
+  "resources": {
+    "sha256": "d48972736b9e2b3566ea4df622f7e8992a63b281cf1804ae529c29912483384a",
+    "files": 2046
+  },
+  "appAsar": {
+    "sha256": "4635937d5d72ae80412fdda85d1fa6997b9a033fdf16f0876781c436b86625f8",
+    "size": 8684318
+  },
+  "assets": [
+    {
+      "name": "Game.Jam-0.45.0.Setup.exe",
+      "size": 239844352,
+      "sha256": "70156558d54f938d0369a05d624776a1dd471f706e4007b3574efe9b4e9bc20d",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.45.0/Game.Jam-0.45.0.Setup.exe",
+      "publicStatus": 206
+    },
+    {
+      "name": "game_canvas-0.45.0-full.nupkg",
+      "size": 239835922,
+      "sha256": "45edf9a58c307724e04f2c7fc06130b439d16b9518ce484b7e26a8f2f292ae4c",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.45.0/game_canvas-0.45.0-full.nupkg",
+      "publicStatus": 206
+    },
+    {
+      "name": "RELEASES",
+      "size": 83,
+      "sha256": "59ce660ef24df4348f5c36fad38ff13065ae35f9af0e1457dd35dcbbf759c5d9",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.45.0/RELEASES",
+      "publicStatus": 206
+    }
+  ],
+  "squirrel": {
+    "sha1": "69B0C09B01F71CEA6C079AEA97369DB12FD52425",
+    "package": "game_canvas-0.45.0-full.nupkg",
+    "size": 239835922
+  },
+  "publicTagVerified": true,
+  "updateFeed": {
+    "reflectsRelease": true,
+    "json": {
+      "status": 200,
+      "exactInstaller": true
+    },
+    "package": {
+      "status": 200,
+      "exactPackage": true,
+      "body": "69B0C09B01F71CEA6C079AEA97369DB12FD52425 https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.45.0/game_canvas-0.45.0-full.nupkg 239835922"
+    }
+  },
+  "scope": {
+    "separateServerOrTunnelRestarted": false,
+    "userAppInstallationOrRestart": false,
+    "unrelatedResearchIncluded": false,
+    "newArchitectureExceptions": false
+  }
+}
