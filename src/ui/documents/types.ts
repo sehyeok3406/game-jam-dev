@@ -48,7 +48,6 @@ export type DocumentNodeData = {
   onReveal: (document: CanvasDocument) => Promise<void>;
   onDetails: () => void;
   onCollapse: () => void;
-  sourceTitles: Record<string, string>;
   reportEdit: (
     id: string,
     state: { dirty: boolean; saving: boolean; failed: boolean },

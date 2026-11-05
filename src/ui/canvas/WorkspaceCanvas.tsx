@@ -2,6 +2,11 @@ import { readProjectPreference } from '../workspace/project-preferences.ts';
 import { GamejamMaterialSelection } from '../GamejamMaterialSelection';
 import { EraserPreviewContext } from '../drawing/eraserPreview';
 import { CanvasResizeProvider } from './CanvasItemResizer';
+import { CanvasZoomStyle } from './CanvasZoomLabel';
+import {
+  CanvasViewportProvider,
+  CanvasViewportTracker,
+} from './CanvasViewport';
 import {
   Background,
   ReactFlow,
@@ -45,6 +50,8 @@ import {
   type Theme,
 } from '../workspace/workspace-types.ts';
 interface Props {
+  findOpen: boolean;
+  selectionScope: import('./selection-actions').SelectionScope;
   viewportIntent?: import('react').RefObject<number>;
   locationSharing?: LocationSharing;
   dropFiles: (
@@ -157,11 +164,11 @@ interface Props {
   >;
   setPluginPanelOpen: (value: import('react').SetStateAction<boolean>) => void;
   allLinkDocuments: CanvasDocument[];
+  sourceTitles: Record<string, string>;
   canvasSheets: CanvasSheets;
   dispatchDocumentLink: (href: string) => void;
   preferences: import('../runtime/preferences').PreferenceStore;
   firstCanvasView: import('react').RefObject<string | null>;
-  setViewZoom: import('react').Dispatch<import('react').SetStateAction<number>>;
   onNodesChange: import('@xyflow/react').OnNodesChange<CanvasNode>;
   setNodes: import('react').Dispatch<
     import('react').SetStateAction<CanvasNode[]>
@@ -233,6 +240,8 @@ interface Props {
   nodeTypes: NodeTypes;
 }
 export function WorkspaceCanvas({
+  findOpen,
+  selectionScope,
   viewportIntent,
   locationSharing,
   dropFiles,
@@ -287,11 +296,11 @@ export function WorkspaceCanvas({
   setInspectorId,
   setPluginPanelOpen,
   allLinkDocuments,
+  sourceTitles,
   canvasSheets,
   dispatchDocumentLink,
   preferences,
   firstCanvasView,
-  setViewZoom,
   onNodesChange,
   setNodes,
   openKanbanControls,
@@ -324,7 +333,7 @@ export function WorkspaceCanvas({
   nodeTypes,
 }: Props) {
   return (
-    <>
+    <CanvasViewportProvider scope={selectionScope} searching={findOpen}>
       <div
         className="canvas-shell"
         tabIndex={-1}
@@ -356,7 +365,13 @@ export function WorkspaceCanvas({
             void dropFiles(Array.from(event.dataTransfer.files), position);
         }}
         onClickCapture={(event) => {
-          const id = (event.target as Element)
+          const target = event.target as Element;
+          if (tool === 'hand' && target.closest('.document-card__content')) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          const id = target
             .closest('.react-flow__node')
             ?.getAttribute('data-id');
           if (id) acknowledgeNewFile(id);
@@ -504,6 +519,7 @@ export function WorkspaceCanvas({
         >
           <LocationSharingContext.Provider value={locationSharing ?? null}>
             <DocumentLinksProvider
+              sourceTitles={sourceTitles}
               documents={allLinkDocuments}
               canvases={canvasSheets.canvases}
               open={dispatchDocumentLink}
@@ -570,7 +586,6 @@ export function WorkspaceCanvas({
                         ) {
                           firstCanvasView.current = null;
                           void instance.setViewport(saved);
-                          setViewZoom(saved.zoom);
                           return;
                         }
                       } catch {
@@ -578,7 +593,6 @@ export function WorkspaceCanvas({
                       }
                       firstCanvasView.current = activeCanvas;
                       void instance.setViewport({ x: 0, y: 0, zoom: 1 });
-                      setViewZoom(1);
                       if (nodes.length) {
                         firstCanvasView.current = null;
                         const intent = viewportIntent?.current;
@@ -901,10 +915,6 @@ export function WorkspaceCanvas({
                       setSectionContextMenu(null);
                       setPreviewContextMenu(null);
                     }}
-                    onMove={(_event, viewport) => {
-                      if (activeCanvasRef.current === activeCanvas)
-                        setViewZoom(viewport.zoom);
-                    }}
                     onMoveEnd={() => {
                       if (activeCanvasRef.current === activeCanvas)
                         storeViewport(activeCanvas);
@@ -931,6 +941,8 @@ export function WorkspaceCanvas({
                     elevateNodesOnSelect={false}
                     deleteKeyCode={null}
                   >
+                    <CanvasZoomStyle />
+                    <CanvasViewportTracker />
                     <Background
                       color={theme === 'dark' ? '#373b44' : '#c9cdd3'}
                       gap={24}
@@ -1036,6 +1048,6 @@ export function WorkspaceCanvas({
           }}
         />
       )}
-    </>
+    </CanvasViewportProvider>
   );
 }

@@ -144,10 +144,20 @@ async function run() {
     await js(
       '[...document.querySelectorAll("[role=tab]")].find(e=>e.textContent.includes("텍스트 테스트")).click()',
     );
-    await wait('!!document.querySelector(".canvas-text-node")');
+    await wait('!!document.querySelector(".canvas-text-node .tiptap")');
+    // Read-only HTML is prepared progressively; wait for its initial measured
+    // geometry/fitView before targeting a native pointer coordinate.
+    await pause(180);
     assert.deepEqual((await list())[0].geometry, expected);
     const position = await js(
       '(()=>{const r=document.querySelector(".canvas-text-node").getBoundingClientRect();return {x:Math.round(r.x+30),y:Math.round(r.y+20)}})()',
+    );
+    console.log(
+      'Text native double-click target',
+      position,
+      await js(
+        `document.elementFromPoint(${position.x},${position.y})?.closest('.canvas-text-node')!==null`,
+      ),
     );
     await click(position.x, position.y, 2);
     await wait(

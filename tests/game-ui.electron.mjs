@@ -319,10 +319,10 @@ async function run() {
       '(async()=> !!(await window.gameCanvas.listGameUi())[0].descriptionPath)()',
     );
     await wait(
-      '(async()=> (await window.gameCanvas.listDocuments()).some(d=>d.relativePath.startsWith("docs/ui/")))()',
+      '(async()=>{const frame=(await window.gameCanvas.listGameUi())[0];return (await window.gameCanvas.listDocuments()).some(d=>d.relativePath===frame.descriptionPath)})()',
     );
     await js(
-      `(async()=>{const d=(await window.gameCanvas.listDocuments()).find(d=>d.relativePath.startsWith('docs/ui/'));await window.gameCanvas.saveDocument({relativePath:d.relativePath,title:d.title,body:d.body.replace('현재 체력과 최대 체력을 표시합니다.','한글로 직접 편집한 기능 설명<br>둘째 줄')})})()`,
+      `(async()=>{const frame=(await window.gameCanvas.listGameUi())[0];const d=(await window.gameCanvas.listDocuments()).find(d=>d.relativePath===frame.descriptionPath);await window.gameCanvas.saveDocument({relativePath:d.relativePath,title:d.title,body:d.body.replace('현재 체력과 최대 체력을 표시합니다.','한글로 직접 편집한 기능 설명<br>둘째 줄')})})()`,
     );
     await wait(
       `Array.from(document.querySelectorAll('.document-card td')).some(e=>e.textContent.includes('한글로 직접 편집한 기능 설명')&&e.querySelector('br')&&!e.textContent.includes('<br>'))`,
@@ -334,7 +334,7 @@ async function run() {
       '(async()=> (await window.gameCanvas.listGameUi())[0].items[0].name==="플레이어 체력")()',
     );
     await wait(
-      '(async()=> (await window.gameCanvas.listDocuments()).find(d=>d.relativePath.startsWith("docs/ui/")).body.includes("한글로 직접 편집한 기능 설명"))()',
+      '(async()=>{const frame=(await window.gameCanvas.listGameUi())[0];return (await window.gameCanvas.listDocuments()).find(d=>d.relativePath===frame.descriptionPath).body.includes("한글로 직접 편집한 기능 설명")})()',
     );
     await select('HUD 조합', 'inventory');
     await wait(

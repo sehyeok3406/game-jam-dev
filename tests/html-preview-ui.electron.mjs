@@ -22,6 +22,10 @@ async function run() {
     },
   });
   const watchdog = setTimeout(() => app.exit(1), 60000);
+  const rendererErrors = [];
+  win.webContents.on('console-message', (event) => {
+    if (event.level === 'error') rendererErrors.push(event.message);
+  });
   const results = [];
   try {
     for (const theme of ['light', 'dark'])
@@ -51,7 +55,10 @@ async function run() {
         }
         assert.ok(frame);
         const js = (code) => frame.executeJavaScript(code, true);
-        assert.ok(await js('!!document.querySelector(".preview-card")'));
+        assert.ok(
+          await js('!!document.querySelector(".preview-card")'),
+          rendererErrors.join('\n'),
+        );
         if (state === 'collapsed') {
           assert.equal(
             await js('document.querySelector(".preview-card").clientHeight'),

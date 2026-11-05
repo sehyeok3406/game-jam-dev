@@ -40,21 +40,32 @@ async function port() {
 }
 const pause = () => new Promise((r) => setTimeout(r, 100));
 let child, ws, js, send;
-async function boot(openDefault = true, env = process.env) {
+let frameSessions = [];
+async function boot(
+  openDefault = true,
+  env = process.env,
+  { extraArgs = [], showWindow = false } = {},
+) {
+  if (showWindow)
+    await fs.rm(path.join(profile, 'launch-status.json'), { force: true });
   const debugPort = await port();
   child = spawn(
     path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
     [
       `--game-canvas-test-profile=${profileId}`,
       `--remote-debugging-port=${debugPort}`,
+      ...extraArgs,
     ],
-    { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env },
+    { windowsHide: !showWindow, stdio: ['ignore', 'ignore', 'pipe'], env },
   );
   let diagnostic = '';
   child.stderr.on(
     'data',
     (d) => (diagnostic = (diagnostic + d.toString()).slice(-1000)),
   );
+  child.once('exit', (code, signal) => {
+    console.log('PACKAGED process exited', { code, signal, diagnostic });
+  });
   let target;
   for (let n = 0; n < 160; n++) {
     try {
@@ -74,21 +85,53 @@ async function boot(openDefault = true, env = process.env) {
     ws.addEventListener('error', j, { once: true });
   });
   let id = 0;
+  frameSessions = [];
   const pending = new Map();
   ws.addEventListener('message', ({ data }) => {
     const m = JSON.parse(String(data)),
       p = pending.get(m.id);
+    if (
+      m.method === 'Target.attachedToTarget' &&
+      m.params.targetInfo.type === 'iframe'
+    )
+      frameSessions.push(m.params.sessionId);
     if (p) {
       pending.delete(m.id);
+      clearTimeout(p.timer);
       if (m.error) p.reject(Error(JSON.stringify(m.error)));
       else p.resolve(m.result);
     }
   });
-  send = (method, params = {}) =>
+  ws.addEventListener('close', () => {
+    for (const item of pending.values()) {
+      clearTimeout(item.timer);
+      item.reject(Error('Packaged debugger connection closed: ' + diagnostic));
+    }
+    pending.clear();
+  });
+  send = (method, params = {}, sessionId) =>
     new Promise((resolve, reject) => {
       const next = ++id;
-      pending.set(next, { resolve, reject });
-      ws.send(JSON.stringify({ id: next, method, params }));
+      const timer = setTimeout(() => {
+        pending.delete(next);
+        reject(Error('Packaged debugger response timed out: ' + method));
+      }, 60000);
+      timer.unref();
+      pending.set(next, { resolve, reject, timer });
+      try {
+        ws.send(
+          JSON.stringify({
+            id: next,
+            method,
+            params,
+            ...(sessionId ? { sessionId } : {}),
+          }),
+        );
+      } catch (error) {
+        clearTimeout(timer);
+        pending.delete(next);
+        reject(error);
+      }
     });
   js = async (expression) => {
     const r = await send('Runtime.evaluate', {
@@ -112,6 +155,22 @@ async function boot(openDefault = true, env = process.env) {
   await wait(
     '!!document.querySelector(".home-project-open") || !!document.querySelector("[data-plugin-launcher]")',
   );
+  if (showWindow) {
+    let presented;
+    for (let n = 0; n < 200; n++) {
+      presented = await fs
+        .readFile(path.join(profile, 'launch-status.json'), 'utf8')
+        .then(JSON.parse)
+        .catch(() => null);
+      if (presented) break;
+      await pause();
+    }
+    assert.equal(
+      presented?.windowVisible,
+      true,
+      'native window must be shown before user interactions',
+    );
+  }
   if (openDefault) {
     if (
       !(await js(
@@ -187,6 +246,8 @@ const key = async (key, code, virtual, modifiers = 0) => {
 };
 
 const appProcessId = () => child?.pid;
+const packageProcessId = appProcessId;
+const packageFrameSessions = () => frameSessions;
 export {
   root,
   profile,
@@ -200,4 +261,6 @@ export {
   key,
   pause,
   appProcessId,
+  packageProcessId,
+  packageFrameSessions,
 };

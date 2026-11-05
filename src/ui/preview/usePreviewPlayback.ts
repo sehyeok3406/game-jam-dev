@@ -1,4 +1,11 @@
-import { useState, useRef, useId, useMemo, useEffect } from 'react';
+import {
+  useState,
+  useRef,
+  useId,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+} from 'react';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import type { PreviewWindowState } from '../../contracts/preview';
 import {
@@ -7,6 +14,7 @@ import {
   withPreviewKeyboardBridge,
 } from '../../preview-window';
 import { withMultiplayerSdk } from '../../multiplayer/sdk';
+import { previewPlaybackEvents } from './playback-events';
 
 /** Stable iframe identity: entering fullscreen never remounts the running game. */
 export function usePreviewPlayback(
@@ -18,6 +26,7 @@ export function usePreviewPlayback(
 
   const [restart, setRestart] = useState(0);
   const cardRef = useRef<HTMLElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const playAreaRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsId = useId();
@@ -36,87 +45,55 @@ export function usePreviewPlayback(
     [content, settingsId],
   );
   const collapsed = state.collapsed && !fullscreen;
+  useLayoutEffect(() => {
+    const card = cardRef.current,
+      frame = frameRef.current;
+    if (!card || !frame) return;
+    return previewPlaybackEvents(card.ownerDocument).register({
+      id: settingsId,
+      card,
+      frame,
+      fullscreen: setFullscreen,
+      diagnostic: capabilities.multiplayer
+        ? (diagnostic) => {
+            void api.preview.multiplayer
+              ?.reportPreview?.({ path, diagnostic })
+              .catch(() => {});
+          }
+        : undefined,
+    });
+  }, [settingsId, restart, path, api, capabilities.multiplayer]);
   useEffect(() => {
-    if (!capabilities.multiplayer) return;
-    const report = (event: MessageEvent) => {
-      if (
-        event.source !==
-          cardRef.current?.querySelector('iframe')?.contentWindow ||
-        event.data?.id !== settingsId ||
-        event.data?.type !== 'gamejam:diagnostic'
-      )
-        return;
-      void api.preview.multiplayer
-        ?.reportPreview?.({
-          path: path,
-          diagnostic: event.data.diagnostic,
-        })
-        .catch(() => {});
-    };
-    window.addEventListener('message', report);
-    return () => window.removeEventListener('message', report);
-  }, [settingsId, path, capabilities.multiplayer]);
-  useEffect(() => {
-    const update = () => {
-      const active = document.fullscreenElement === cardRef.current;
-      cardRef.current
-        ?.querySelector('iframe')
-        ?.contentWindow?.postMessage(
-          { type: 'game-canvas:preview-fullscreen', id: settingsId, active },
-          '*',
-        );
-      setFullscreen(active);
-    };
-    document.addEventListener('fullscreenchange', update);
-    const exit = () => {
-      if (document.fullscreenElement === cardRef.current)
-        void document.exitFullscreen().catch(() => {});
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') exit();
-    };
-    const frameEscape = (event: MessageEvent) => {
-      if (
-        event.source ===
-          cardRef.current?.querySelector('iframe')?.contentWindow &&
-        event.data?.type === 'game-canvas:preview-escape' &&
-        event.data?.id === settingsId
-      )
-        exit();
-    };
-    window.addEventListener('keydown', escape, true);
-    window.addEventListener('message', frameEscape);
-    return () => {
-      document.removeEventListener('fullscreenchange', update);
-      window.removeEventListener('keydown', escape, true);
-      window.removeEventListener('message', frameEscape);
-    };
-  }, [settingsId]);
-  useEffect(() => {
-    if (fullscreen) cardRef.current?.querySelector('iframe')?.focus();
+    if (fullscreen) frameRef.current?.focus();
   }, [fullscreen]);
-  useEffect(() => {
+  const fitFullscreen = fullscreen && !!preset;
+  useLayoutEffect(() => {
+    if (!fitFullscreen) return;
     const area = playAreaRef.current;
     if (!area) return;
     let frame = 0;
+    const measure = () => {
+      const width = area.clientWidth,
+        height = area.clientHeight;
+      setPlayAreaSize((previous) =>
+        previous.width === width && previous.height === height
+          ? previous
+          : { width, height },
+      );
+    };
+    // Measure before paint when entering fixed-resolution fullscreen. Ordinary
+    // cards use CSS sizing and do not need a React update or an observer.
+    measure();
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const width = area.clientWidth,
-          height = area.clientHeight;
-        setPlayAreaSize((previous) =>
-          previous.width === width && previous.height === height
-            ? previous
-            : { width, height },
-        );
-      });
+      frame = requestAnimationFrame(measure);
     });
     observer.observe(area);
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [fitFullscreen]);
   const toggleFullscreen = async () => {
     if (settingsRef.current?.matches(':popover-open'))
       settingsRef.current.hidePopover();
@@ -136,6 +113,7 @@ export function usePreviewPlayback(
     restart,
     setRestart,
     cardRef,
+    frameRef,
     playAreaRef,
     settingsRef,
     settingsId,

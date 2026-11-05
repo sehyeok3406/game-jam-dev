@@ -15,6 +15,11 @@ import { useDocumentEditing } from './useDocumentEditing';
 import { readingBlockFocus } from './markdown-title';
 import type { DocumentCanvasNode } from './types';
 import { useLocationSharing } from '../locations/LocationSharingContext.ts';
+import { useDocumentSourceTitles } from '../DocumentLinksContext';
+import {
+  CanvasContentGate,
+  useCanvasProtection,
+} from '../canvas/CanvasContent';
 export type { DocumentCanvasNode, DocumentNodeData } from './types';
 
 const DocumentCardContent = memo(function DocumentCardContent({
@@ -64,6 +69,15 @@ const DocumentCardContent = memo(function DocumentCardContent({
     restoreDraft,
     finishing,
   } = useDocumentEditing(data);
+  useCanvasProtection(
+    editing ||
+      startingEdit ||
+      saving ||
+      nameSaving ||
+      saveFailed ||
+      !!cachedDraft ||
+      !!taskError,
+  );
 
   const handleEditorKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.nativeEvent.isComposing || event.isPropagationStopped()) return;
@@ -333,113 +347,117 @@ const DocumentCardContent = memo(function DocumentCardContent({
                     : '클릭해서 바로 편집'
                 }
               >
-                {document.asset && (
-                  <div className="image-card-preview nowheel">
-                    <ProjectImage
-                      path={document.asset.path}
-                      title={document.title}
-                      cacheKey={`${data.draftKey}:${document.assetVersion ?? 0}`}
-                    />
-                    <span>
-                      {document.asset.purpose === 'asset'
-                        ? '게임 에셋'
-                        : '설명 도식'}{' '}
-                      · {document.asset.originalName} ·{' '}
-                      {(document.asset.bytes / 1024).toFixed(1)} KB
-                    </span>
-                    <div className="image-card-actions">
-                      <button
-                        disabled={data.locked}
-                        onClick={() => void startEdit()}
-                      >
-                        설명 편집
-                      </button>
-                      <button
-                        disabled={!capabilities.nativeClipboard}
-                        onClick={() =>
-                          void requireDesktopApi(api).copyText(
-                            document.asset!.path,
-                          )
-                        }
-                      >
-                        에셋 경로 복사
-                      </button>
-                      <button
-                        disabled={!capabilities.localFiles}
-                        onClick={() =>
-                          void requireDesktopApi(api).revealPath(
-                            document.asset!.path,
-                          )
-                        }
-                      >
-                        원본 파일 보기
-                      </button>
+                <CanvasContentGate
+                  label={
+                    document.type === 'image' ? '이미지 참고 자료' : '문서'
+                  }
+                >
+                  {document.asset && (
+                    <div className="image-card-preview nowheel">
+                      <ProjectImage
+                        path={document.asset.path}
+                        title={document.title}
+                        cacheKey={`${data.draftKey}:${document.assetVersion ?? 0}`}
+                        version={document.assetVersion ?? 0}
+                      />
+                      <span>
+                        {document.asset.purpose === 'asset'
+                          ? '게임 에셋'
+                          : '설명 도식'}{' '}
+                        · {document.asset.originalName} ·{' '}
+                        {(document.asset.bytes / 1024).toFixed(1)} KB
+                      </span>
+                      <div className="image-card-actions">
+                        <button
+                          disabled={data.locked}
+                          onClick={() => void startEdit()}
+                        >
+                          설명 편집
+                        </button>
+                        <button
+                          disabled={!capabilities.nativeClipboard}
+                          onClick={() =>
+                            void requireDesktopApi(api).copyText(
+                              document.asset!.path,
+                            )
+                          }
+                        >
+                          에셋 경로 복사
+                        </button>
+                        <button
+                          disabled={!capabilities.localFiles}
+                          onClick={() =>
+                            void requireDesktopApi(api).revealPath(
+                              document.asset!.path,
+                            )
+                          }
+                        >
+                          원본 파일 보기
+                        </button>
+                      </div>
                     </div>
+                  )}
+                  {taskError && (
+                    <p className="markdown-editor-warning" role="alert">
+                      {taskError}
+                    </p>
+                  )}
+                  <div className="markdown-body nowheel">
+                    <DocumentMarkdown
+                      copyBlock={copyBlock}
+                      body={document.body}
+                      title={document.title}
+                      disabled={
+                        data.locked ||
+                        saving ||
+                        startingEdit ||
+                        !!data.editingBy
+                      }
+                      onToggle={(offset, checked) =>
+                        void toggleTask(offset, checked)
+                      }
+                      image={({ src, alt }) => {
+                        const path = resolveAssetLink(
+                          src,
+                          document.relativePath,
+                        );
+                        if (path && path === document.asset?.path) return null;
+                        return path ? (
+                          <ProjectImage
+                            path={path}
+                            title={alt ?? ''}
+                            cacheKey={`${data.draftKey}:${document.assetVersion ?? 0}`}
+                            version={document.assetVersion ?? 0}
+                          />
+                        ) : (
+                          <span className="project-image-placeholder">
+                            {alt || '이미지'} · 연결된 이미지 파일을 별도로
+                            불러와주세요.
+                          </span>
+                        );
+                      }}
+                    />
                   </div>
-                )}
-                {taskError && (
-                  <p className="markdown-editor-warning" role="alert">
-                    {taskError}
-                  </p>
-                )}
-                <div className="markdown-body nowheel">
-                  <DocumentMarkdown
-                    copyBlock={copyBlock}
-                    body={document.body}
-                    title={document.title}
-                    disabled={
-                      data.locked || saving || startingEdit || !!data.editingBy
-                    }
-                    onToggle={(offset, checked) =>
-                      void toggleTask(offset, checked)
-                    }
-                    image={({ src, alt }) => {
-                      const path = resolveAssetLink(src, document.relativePath);
-                      if (path && path === document.asset?.path) return null;
-                      return path ? (
-                        <ProjectImage
-                          path={path}
-                          title={alt ?? ''}
-                          cacheKey={`${data.draftKey}:${document.assetVersion ?? 0}`}
-                        />
-                      ) : (
-                        <span className="project-image-placeholder">
-                          {alt || '이미지'} · 연결된 이미지 파일을 별도로
-                          불러와주세요.
-                        </span>
-                      );
-                    }}
-                  />
-                </div>
-                {document.type !== 'image' && (
-                  <div className="edit-hint">
-                    {startingEdit
-                      ? '편집 권한 확인 중…'
-                      : cachedDraft
-                        ? '보관된 초안 있음 · 클릭하여 편집'
-                        : '클릭하여 편집'}
-                  </div>
-                )}
+                  {document.type !== 'image' && (
+                    <div className="edit-hint">
+                      {startingEdit
+                        ? '편집 권한 확인 중…'
+                        : cachedDraft
+                          ? '보관된 초안 있음 · 클릭하여 편집'
+                          : '클릭하여 편집'}
+                    </div>
+                  )}
+                </CanvasContentGate>
               </div>
             )}
 
             <DocumentBacklinks path={document.relativePath} />
             {document.sources.length > 0 && (
-              <details className="source-list nodrag">
-                <summary>
-                  <Link2 size={12} /> 참고 메모 {document.sources.length}개
-                </summary>
-                {document.sources.map((source) => (
-                  <button
-                    type="button"
-                    key={`${document.id}-${source.id}`}
-                    onClick={() => data.onSource(source.id)}
-                    title={source.contribution}
-                  >
-                    {data.sourceTitles[source.id] ?? source.id}
-                  </button>
-                ))}
-              </details>
+              <DocumentSources
+                id={document.id}
+                sources={document.sources}
+                open={data.onSource}
+              />
             )}
 
             {document.type === 'ai-task' && (
@@ -457,6 +475,35 @@ const DocumentCardContent = memo(function DocumentCardContent({
         )}
       </article>
     </>
+  );
+});
+
+const DocumentSources = memo(function DocumentSources({
+  id,
+  sources,
+  open,
+}: {
+  id: string;
+  sources: DocumentCanvasNode['data']['document']['sources'];
+  open: (id: string) => void;
+}) {
+  const titles = useDocumentSourceTitles();
+  return (
+    <details className="source-list nodrag">
+      <summary>
+        <Link2 size={12} /> 참고 메모 {sources.length}개
+      </summary>
+      {sources.map((source) => (
+        <button
+          type="button"
+          key={`${id}-${source.id}`}
+          onClick={() => open(source.id)}
+          title={source.contribution}
+        >
+          {titles[source.id] ?? source.id}
+        </button>
+      ))}
+    </details>
   );
 });
 

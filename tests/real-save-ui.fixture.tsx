@@ -25,6 +25,7 @@ async function boot() {
     releaseDocumentLock: (relative: string) =>
       bridge.invoke('unlock', relative),
     saveDocument: (input: unknown) => bridge.invoke('save', input),
+    renameDocument: (input: unknown) => bridge.invoke('rename', input),
     setDocumentColor: (input: unknown) => bridge.invoke('color', input),
     onDocumentSaveChanged: (listener: unknown) => bridge.on('save', listener),
     onWorkspaceChanged: (listener: unknown) => bridge.on('workspace', listener),

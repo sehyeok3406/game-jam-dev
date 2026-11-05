@@ -9,6 +9,13 @@ import {
 } from 'react';
 import { EraserPreviewContext } from './eraserPreview';
 import { TextDrawingNode } from './TextDrawingNode';
+import { useCanvasZoom } from '../canvas/useCanvasZoom';
+import {
+  useCanvasResource,
+  useCanvasProtection,
+  useCanvasMode,
+} from '../canvas/CanvasContent';
+import { sameContentRevision } from '../canvas/content-cache.ts';
 import { textDocumentHtml } from '../../text-document';
 import { useReactFlow, type Node, type NodeProps } from '@xyflow/react';
 import {
@@ -38,7 +45,6 @@ export type DrawingNodeData = {
   object: DrawingObject;
   locked: boolean;
   textAlignmentSupported?: boolean;
-  zoom: number;
   onGesture: (active: boolean) => void;
   onPatch: (patch: DrawingPatch) => void;
   onContext: () => void;
@@ -47,21 +53,24 @@ export type DrawingCanvasNode = Node<DrawingNodeData, 'drawing'>;
 export function DrawingGraphic({
   object,
   hit = false,
-  zoom = 1,
+  preparedPath,
 }: {
   object: DrawingObject;
   hit?: boolean;
-  zoom?: number;
+  preparedPath?: string;
 }) {
   const clipId = useId().replace(/:/g, '_');
   const path = useMemo(
-    () => (object.kind === 'stroke' ? strokePath(object) : shapePath(object)),
+    () =>
+      preparedPath ??
+      (object.kind === 'stroke' ? strokePath(object) : shapePath(object)),
     [
       object.kind,
       object.geometry,
       object.transform.width,
       object.transform.height,
       object.style.strokeWidth,
+      preparedPath,
     ],
   );
   const head = arrowHead(object),
@@ -129,6 +138,7 @@ export function DrawingGraphic({
       )}
       {hit && (
         <path
+          className="drawing-node__hit"
           d={path}
           fill={
             object.kind === 'stroke'
@@ -138,7 +148,6 @@ export function DrawingGraphic({
                 : 'none'
           }
           stroke="transparent"
-          strokeWidth={Math.max(s.strokeWidth, 10 / zoom)}
           fillRule="evenodd"
           clipPath={
             object.kind === 'stroke' && object.geometry.erasures?.length
@@ -146,12 +155,57 @@ export function DrawingGraphic({
               : undefined
           }
           style={{
+            strokeWidth: `max(${s.strokeWidth}px, calc(10px / var(--canvas-zoom, 1)))`,
             pointerEvents:
               object.kind === 'stroke' ? 'all' : s.fill ? 'all' : 'stroke',
           }}
         />
       )}
     </g>
+  );
+}
+
+function CanvasDrawingGraphic({ object }: { object: DrawingObject }) {
+  const mode = useCanvasMode();
+  const computed = useRef<{
+    revision: readonly unknown[];
+    path: string;
+  } | null>(null);
+  const revision = [
+    object.generation,
+    object.kind,
+    object.geometry,
+    object.transform.width,
+    object.transform.height,
+    object.style.strokeWidth,
+  ];
+  const build = () => {
+    if (
+      !computed.current ||
+      !sameContentRevision(computed.current.revision, revision)
+    )
+      computed.current = {
+        revision,
+        path: object.kind === 'stroke' ? strokePath(object) : shapePath(object),
+      };
+    return computed.current.path;
+  };
+  const path = useCanvasResource(
+    `path:${object.id}`,
+    revision,
+    build,
+    (value) => value.length * 2 + 256,
+    true,
+  );
+  if (!path.managed) return <DrawingGraphic object={object} hit />;
+  if (mode === 0) {
+    computed.current = null;
+    return null;
+  }
+  // A visible stroke keeps its exact original SVG hit path even before the
+  // scheduled cache admission. The preparation reuses this computed value.
+  return (
+    <DrawingGraphic object={object} hit preparedPath={path.value ?? build()} />
   );
 }
 export const DrawingNode = memo(function DrawingNode({
@@ -170,6 +224,8 @@ const GraphicDrawingNode = memo(function GraphicDrawingNode({
 }: Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'>) {
   const [draft, setDraft] = useState<DrawingObject | null>(null),
     flow = useReactFlow();
+  const z = useCanvasZoom(!!selected && !data.locked);
+  useCanvasProtection(!!draft);
   const draftRef = useRef<DrawingObject | null>(null);
   const gesture = useRef<{
     pointerId: number;
@@ -209,8 +265,7 @@ const GraphicDrawingNode = memo(function GraphicDrawingNode({
       : undefined;
   const object = draft ?? preview?.object ?? data.object,
     t = object.transform,
-    base = drawingBounds(data.object),
-    z = data.zoom;
+    base = drawingBounds(data.object);
   const patch = (next: DrawingObject, original: DrawingObject) =>
     data.onPatch({
       id: original.id,
@@ -240,7 +295,7 @@ const GraphicDrawingNode = memo(function GraphicDrawingNode({
         <g
           transform={`translate(${t.x - base.x} ${t.y - base.y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2})`}
         >
-          <DrawingGraphic object={object} hit zoom={z} />
+          <CanvasDrawingGraphic object={object} />
           {selected && !data.locked && (
             <g
               className="drawing-handles nodrag nopan"

@@ -1,4 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import {
+  CanvasNodeModels,
+  reuseCanvasNode,
+  StaleCanvasNodeError,
+} from './node-model.ts';
+import type { SelectionScope } from './selection-actions.ts';
+import { useViewLifetime } from '../workspace/useViewLifetime.ts';
 import { AI_FILE_LOCK_MESSAGE, isAiFileLocked } from '../../ai-file-lock.ts';
 import { materialUsage, type AiQueueTask } from '../../ai-task-queue.ts';
 import { NEW_FILE_GAP } from '../../canvas-placement.ts';
@@ -158,7 +165,6 @@ interface Ports {
     hold: () => Promise<void>;
     saving: boolean;
   };
-  viewZoom: number;
   setDrawingGesture: import('react').Dispatch<
     import('react').SetStateAction<boolean>
   >;
@@ -190,6 +196,7 @@ interface Ports {
   ) => Promise<void>;
   navigateCanvasItem: import('react').RefObject<((id: string) => void) | null>;
   gameUi: {
+    savingFrameIds: ReadonlySet<string>;
     frames: import('../../game-ui-types').GameUiFrame[];
     submit: (c: import('../../game-ui-types').GameUiCommand) => Promise<void>;
     error: string;
@@ -219,7 +226,6 @@ interface Ports {
   pluginPanelOpen: boolean;
   canvasSheets: CanvasSheets;
   geometryEpoch: number;
-  sourceTitles: any;
   beginEdit: (document: CanvasDocument) => Promise<void>;
   endEdit: (document: CanvasDocument) => Promise<void>;
   registerEditor: (
@@ -233,9 +239,12 @@ interface Ports {
   ) => void;
 }
 export function useCanvasNodes(
+  scope: SelectionScope,
   ports: () => Ports,
   dependencies: React.DependencyList,
 ) {
+  const isCurrent = useViewLifetime(scope);
+  const models = useRef(new CanvasNodeModels());
   useEffect(() => {
     const {
       sections,
@@ -285,7 +294,6 @@ export function useCanvasNodes(
       activeCanvasRef,
       setNodes,
       drawing,
-      viewZoom,
       setDrawingGesture,
       submitDrawing,
       setTool,
@@ -304,7 +312,6 @@ export function useCanvasNodes(
       api,
       pendingGeometry,
       createdDrawingSelection,
-      sourceTitles,
       beginEdit,
       endEdit,
       registerEditor,
@@ -445,7 +452,6 @@ export function useCanvasNodes(
                 temporary: temporaryDocuments.includes(document.id),
               });
             },
-            sourceTitles,
             reportEdit,
           },
         };
@@ -553,199 +559,210 @@ export function useCanvasNodes(
           },
         };
       });
-    setNodes((currentNodes) => {
-      const existing = new Map(currentNodes.map((node) => [node.id, node]));
-      const currentDrawings = drawing.items
-        .filter((o) => o.canvasId === activeCanvas)
-        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-      const drawingNodes: DrawingCanvasNode[] = currentDrawings.map((o) => {
-        const bounds = drawingBounds(o);
-        const { canvasId: _canvasId, ...object } = o;
-        return {
-          id: `drawing:${o.id}`,
-          type: 'drawing',
-          className: 'canvas-drawing-node',
-          position: { x: bounds.x, y: bounds.y },
-          style: { width: bounds.width, height: bounds.height },
-          zIndex: o.layer === 'annotation' ? 4 : 1,
-          draggable: !locked,
-          data: {
-            kind: 'drawing',
-            textAlignmentSupported:
-              !collaboration.active ||
-              collaboration.drawingTextAlignmentVersion === 1,
-            scope: workspace.saveScope,
-            draftRegistry,
-            onCommand: async (command) => {
-              // Check and delete in one existing atomic batch, including on older
-              // text-capable servers that ignore conditional deletion fields.
-              if (
-                command.action === 'delete' &&
-                command.targets?.some((t) => t.expectedGeometry)
-              ) {
-                await drawing.flush();
-                await api.editor.applyCanvasCommands({
-                  scope: workspace.saveScope!,
-                  clipboardContextId: workspace.clipboardContextId,
-                  requestId: crypto.randomUUID(),
-                  commands: [
-                    {
-                      channel: 'drawings:apply',
-                      input: {
-                        canvasId: activeCanvas,
-                        action: 'patch',
-                        patches: command.targets
-                          .filter((t) => t.expectedGeometry)
-                          .map((t) => ({
-                            id: t.id,
-                            generation: t.generation,
-                            geometry: t.expectedGeometry,
-                            expectedGeometry: t.expectedGeometry,
-                          })),
-                      },
-                    },
-                    {
-                      channel: 'drawings:apply',
-                      input: { ...command, canvasId: activeCanvas },
-                    },
-                  ],
-                });
-                await drawing.reload();
-                return;
-              }
-              if (command.action === 'create' && command.objects?.[0])
-                createdDrawingSelection.current = command.objects[0].id;
-              await drawing.submit(command);
-            },
-            onSave: async (patch) => {
-              // Text owns its debounce and durable draft. Finish queued creations first;
-              // do not enqueue a second copy of a failed text save on retry.
+    const currentDrawings = drawing.items
+      .filter((o) => o.canvasId === activeCanvas)
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    const drawingNodes: DrawingCanvasNode[] = currentDrawings.map((o) => {
+      const bounds = drawingBounds(o);
+      const { canvasId: _canvasId, ...object } = o;
+      return {
+        id: `drawing:${o.id}`,
+        type: 'drawing',
+        className: 'canvas-drawing-node',
+        position: { x: bounds.x, y: bounds.y },
+        style: { width: bounds.width, height: bounds.height },
+        zIndex: o.layer === 'annotation' ? 4 : 1,
+        draggable: !locked,
+        data: {
+          kind: 'drawing',
+          textAlignmentSupported:
+            !collaboration.active ||
+            collaboration.drawingTextAlignmentVersion === 1,
+          scope: workspace.saveScope,
+          draftRegistry,
+          onCommand: async (command) => {
+            // Check and delete in one existing atomic batch, including on older
+            // text-capable servers that ignore conditional deletion fields.
+            if (
+              command.action === 'delete' &&
+              command.targets?.some((t) => t.expectedGeometry)
+            ) {
               await drawing.flush();
-              await api.editor.applyDrawingCommand({
-                canvasId: activeCanvas,
-                scope: workspace.saveScope,
+              if (!isCurrent()) throw new StaleCanvasNodeError();
+              await api.editor.applyCanvasCommands({
+                scope: workspace.saveScope!,
+                clipboardContextId: workspace.clipboardContextId,
                 requestId: crypto.randomUUID(),
-                action: 'patch',
-                patches: [patch],
+                commands: [
+                  {
+                    channel: 'drawings:apply',
+                    input: {
+                      canvasId: activeCanvas,
+                      action: 'patch',
+                      patches: command.targets
+                        .filter((t) => t.expectedGeometry)
+                        .map((t) => ({
+                          id: t.id,
+                          generation: t.generation,
+                          geometry: t.expectedGeometry,
+                          expectedGeometry: t.expectedGeometry,
+                        })),
+                    },
+                  },
+                  {
+                    channel: 'drawings:apply',
+                    input: { ...command, canvasId: activeCanvas },
+                  },
+                ],
               });
-              await drawing.reload();
-            },
-            object,
-            locked,
-            zoom: viewZoom,
-            onGesture: setDrawingGesture,
-            onPatch: (patch) =>
-              submitDrawing({ action: 'patch', patches: [patch] }),
-            onContext: () => {
-              setTool('select');
-              setNodes((current) =>
-                current.some((n) => n.id === `drawing:${o.id}` && n.selected)
-                  ? current
-                  : current.map((n) => ({
-                      ...n,
-                      selected: n.id === `drawing:${o.id}`,
-                    })),
-              );
-            },
+              if (isCurrent()) await drawing.reload();
+              return;
+            }
+            if (command.action === 'create' && command.objects?.[0])
+              createdDrawingSelection.current = command.objects[0].id;
+            await drawing.submit(command);
           },
-        };
-      });
-      const board: KanbanCanvasNode[] =
-        kanbanPreferences.enabled && kanbanPreferences.placed
-          ? [
-              {
-                id: `builtin.kanban:${activeCanvas}`,
-                type: 'kanban',
-                position: { x: kanbanPreferences.x, y: kanbanPreferences.y },
-                style: {
-                  width: kanbanPreferences.width,
-                  height: kanbanPreferences.minimized
-                    ? 44
-                    : kanbanPreferences.height,
-                },
-                zIndex: 2,
-                dragHandle: '.kanban-drag-handle',
-                draggable: true,
-                data: {
-                  kind: 'kanban',
-                  locked: false,
-                  canvasId: activeCanvas,
-                  activeCanvas,
-                  scope: kanbanPreferences.scope,
-                  preferences: kanbanPreferences,
-                  documents: kanbanDocuments,
-                  statuses: statusSettings.value,
-                  view: kanbanView.value,
-                  editable: workflowEditable && !kanbanViewError,
-                  busy: workflowBusy,
-                  reason: kanbanViewError || workflowReason,
-                  controls: openKanbanControls,
-                  update: (value) =>
-                    updateKanbanPreferences(value, activeCanvas),
-                  move: moveKanbanCard,
-                  open: (id) => navigateCanvasItem.current?.(id),
-                  manage: () => setStatusManagerOpen(true),
-                },
+          onSave: async (patch) => {
+            // Text owns its debounce and durable draft. Finish queued creations first;
+            // do not enqueue a second copy of a failed text save on retry.
+            await drawing.flush();
+            if (!isCurrent()) throw new StaleCanvasNodeError();
+            await api.editor.applyDrawingCommand({
+              canvasId: activeCanvas,
+              scope: workspace.saveScope,
+              requestId: crypto.randomUUID(),
+              action: 'patch',
+              patches: [patch],
+            });
+            if (isCurrent()) await drawing.reload();
+          },
+          object,
+          locked,
+          onGesture: setDrawingGesture,
+          onPatch: (patch) =>
+            submitDrawing({ action: 'patch', patches: [patch] }),
+          onContext: () => {
+            setTool('select');
+            setNodes((current) =>
+              current.some((n) => n.id === `drawing:${o.id}` && n.selected)
+                ? current
+                : current.map((n) => ({
+                    ...n,
+                    selected: n.id === `drawing:${o.id}`,
+                  })),
+            );
+          },
+        },
+      };
+    });
+    const board: KanbanCanvasNode[] =
+      kanbanPreferences.enabled && kanbanPreferences.placed
+        ? [
+            {
+              id: `builtin.kanban:${activeCanvas}`,
+              type: 'kanban',
+              position: { x: kanbanPreferences.x, y: kanbanPreferences.y },
+              style: {
+                width: kanbanPreferences.width,
+                height: kanbanPreferences.minimized
+                  ? 44
+                  : kanbanPreferences.height,
               },
-            ]
-          : [];
-      const gameUiNodes: GameUiCanvasNode[] = gameUi.frames
-        .filter((f) => f.canvasId === activeCanvas)
-        .map((frame) => ({
-          id: `game-ui:${frame.id}`,
-          type: 'game-ui',
-          position: { x: frame.x, y: frame.y },
-          style: { width: frame.width, height: gameUiHeight(frame) },
-          zIndex: 5,
-          dragHandle: '.game-ui-drag-handle',
-          draggable:
-            !locked &&
-            (!collaboration.active || collaboration.gameUiVersion === 2),
-          data: {
-            kind: 'game-ui',
-            saving: gameUi.saving,
-            saveError: gameUi.error,
-            retry: gameUi.retry,
-            frame,
-            scope: workspace.saveScope ?? '',
-            zoom: viewZoom,
-            libraryEnabled: gameUiSettings.enabled,
-            locked:
-              locked ||
-              (collaboration.active && collaboration.gameUiVersion !== 2),
-            inspectorMode:
-              preview?.id === 'game-ui-inspector'
-                ? preview.state === 'multiple'
-                  ? 'multiple'
-                  : 'single'
-                : undefined,
-            submit: async (command) => {
-              await flushEditors(false);
-              await gameUi.submit(command);
+              zIndex: 2,
+              dragHandle: '.kanban-drag-handle',
+              draggable: true,
+              data: {
+                kind: 'kanban',
+                locked: false,
+                canvasId: activeCanvas,
+                activeCanvas,
+                scope: kanbanPreferences.scope,
+                preferences: kanbanPreferences,
+                documents: kanbanDocuments,
+                statuses: statusSettings.value,
+                view: kanbanView.value,
+                editable: workflowEditable && !kanbanViewError,
+                busy: workflowBusy,
+                reason: kanbanViewError || workflowReason,
+                controls: openKanbanControls,
+                update: (value) => updateKanbanPreferences(value, activeCanvas),
+                move: moveKanbanCard,
+                open: (id) => navigateCanvasItem.current?.(id),
+                manage: () => setStatusManagerOpen(true),
+              },
             },
-            openDescription: async () => {
-              await loadProject(false);
-              setTimeout(
-                () => navigateCanvasItem.current?.(frame.id + '-description'),
-                220,
-              );
-            },
-            exportPng: (data, name) =>
-              requireDesktopApi(api).exportGameUiPng({
-                scope: workspace.saveScope ?? '',
-                name,
-                data,
-              }),
+          ]
+        : [];
+    const gameUiNodes: GameUiCanvasNode[] = gameUi.frames
+      .filter((f) => f.canvasId === activeCanvas)
+      .map((frame) => ({
+        id: `game-ui:${frame.id}`,
+        type: 'game-ui',
+        position: { x: frame.x, y: frame.y },
+        style: { width: frame.width, height: gameUiHeight(frame) },
+        zIndex: 5,
+        dragHandle: '.game-ui-drag-handle',
+        draggable:
+          !locked &&
+          (!collaboration.active || collaboration.gameUiVersion === 2),
+        data: {
+          kind: 'game-ui',
+          saving: gameUi.savingFrameIds.has(frame.id),
+          saveError: gameUi.error,
+          retry: gameUi.retry,
+          frame,
+          scope: workspace.saveScope ?? '',
+          libraryEnabled: gameUiSettings.enabled,
+          locked:
+            locked ||
+            (collaboration.active && collaboration.gameUiVersion !== 2),
+          inspectorMode:
+            preview?.id === 'game-ui-inspector'
+              ? preview.state === 'multiple'
+                ? 'multiple'
+                : 'single'
+              : undefined,
+          submit: async (command) => {
+            await flushEditors(false);
+            if (!isCurrent()) throw new StaleCanvasNodeError();
+            await gameUi.submit(command);
           },
-        }));
-      const next = [
+          openDescription: async () => {
+            await loadProject(false);
+            if (!isCurrent()) return;
+            setTimeout(() => {
+              if (isCurrent())
+                navigateCanvasItem.current?.(frame.id + '-description');
+            }, 220);
+          },
+          exportPng: (data, name) =>
+            requireDesktopApi(api).exportGameUiPng({
+              scope: workspace.saveScope ?? '',
+              name,
+              data,
+            }),
+        },
+      }));
+    const prepared = models.current.prepare(
+      [
         ...gameUiNodes,
         ...board,
         ...sectionNodes,
         ...drawingNodes,
         ...documentNodes,
         ...previewNodes,
-      ].map((node) => {
+      ],
+      isCurrent,
+    );
+    const createdSelection = createdDrawingSelection.current;
+    if (
+      createdSelection &&
+      prepared.some((node) => node.id === `drawing:${createdSelection}`)
+    )
+      createdDrawingSelection.current = null;
+    setNodes((currentNodes) => {
+      const existing = new Map(currentNodes.map((node) => [node.id, node]));
+      const next = prepared.map((node) => {
         const old = existing.get(node.id),
           pending = pendingGeometry.current.get(node.id);
         const geometryLocked =
@@ -759,8 +776,8 @@ export function useCanvasNodes(
           measured: old?.measured,
           selected: node.className?.includes('section-member-hidden')
             ? false
-            : createdDrawingSelection.current
-              ? node.id === `drawing:${createdDrawingSelection.current}`
+            : createdSelection
+              ? node.id === `drawing:${createdSelection}`
               : node.data.kind === 'drawing' &&
                   ['drawing-object', 'drawing-inspector'].includes(
                     preview?.id ?? '',
@@ -780,28 +797,13 @@ export function useCanvasNodes(
               ? { position: pending.position, style: pending.style }
               : {}),
         } as CanvasNode;
-        if (
-          old &&
-          JSON.stringify(old, (_key, value) =>
-            typeof value === 'function' ? undefined : value,
-          ) ===
-            JSON.stringify(result, (_key, value) =>
-              typeof value === 'function' ? undefined : value,
-            )
-        )
-          return old;
-        return result;
+        return reuseCanvasNode(old, result);
       });
-      if (
-        createdDrawingSelection.current &&
-        next.some((n) => n.id === `drawing:${createdDrawingSelection.current}`)
-      )
-        createdDrawingSelection.current = null;
       return next.length === currentNodes.length &&
         next.every((node, index) => node === currentNodes[index])
         ? currentNodes
         : next;
     });
-  }, dependencies);
+  }, [isCurrent, ...dependencies]);
   return {};
 }

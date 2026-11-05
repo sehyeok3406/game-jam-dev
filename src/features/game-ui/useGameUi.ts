@@ -1,5 +1,6 @@
 import { useRuntime } from '../../ui/runtime/runtime-context.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { retainUnchangedRecords } from '../../core/editing/record-identity.ts';
 import {
   applyGameUi,
   gameUiPath,
@@ -8,6 +9,7 @@ import {
 } from '../../game-ui-model';
 import type { GameUiCommand, GameUiFrame } from '../../game-ui-types';
 function optimistic(frames: GameUiFrame[], commands: GameUiCommand[]) {
+  if (!commands.length) return frames;
   const canvases = new Set([
     ...frames.map((f) => f.canvasId),
     ...commands
@@ -24,7 +26,15 @@ function optimistic(frames: GameUiFrame[], commands: GameUiCommand[]) {
     ),
   };
   for (const c of commands) files = applyGameUi(files, c);
-  return snapshotGameUi(files);
+  const affected = new Set(
+    commands.map((command) => command.frame?.id ?? command.id),
+  );
+  const previous = new Map(frames.map((frame) => [frame.id, frame]));
+  return snapshotGameUi(files).map((frame) =>
+    !affected.has(frame.id) && previous.has(frame.id)
+      ? previous.get(frame.id)!
+      : frame,
+  );
 }
 export function useGameUi(scope: string | undefined) {
   const { api } = useRuntime();
@@ -65,8 +75,9 @@ export function useGameUi(scope: string | undefined) {
     if (!s.scope || !api.editor.listGameUi) return;
     const frames = await api.editor.listGameUi();
     if (state.current !== s || e !== s.epoch) return;
-    s.frames = frames;
-    setConfirmed(frames);
+    const stable = retainUnchangedRecords(s.frames, frames);
+    s.frames = stable;
+    setConfirmed(stable);
   }, []);
   const drain = useCallback(async () => {
     const s = state.current;
@@ -75,9 +86,10 @@ export function useGameUi(scope: string | undefined) {
       const frames = await api.editor.applyGameUiCommand(s.queue[0]);
       if (state.current !== s) return;
       s.epoch++;
-      s.frames = frames;
+      const stable = retainUnchangedRecords(s.frames, frames);
+      s.frames = stable;
       s.queue.shift();
-      setConfirmed(frames);
+      setConfirmed(stable);
       setPending([...s.queue]);
       setError('');
       await backup();
@@ -150,6 +162,13 @@ export function useGameUi(scope: string | undefined) {
       return confirmed;
     }
   }, [confirmed, pending]);
+  const savingFrameIds = useMemo(
+    () =>
+      new Set(
+        !error ? pending.map((command) => command.frame?.id ?? command.id) : [],
+      ),
+    [pending, error],
+  );
   const retry = () => {
     chain.current = chain.current
       .catch(() => undefined)
@@ -169,5 +188,6 @@ export function useGameUi(scope: string | undefined) {
     retry,
     flush,
     saving: pending.length > 0 && !error,
+    savingFrameIds,
   };
 }

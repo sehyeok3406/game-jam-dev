@@ -1266,7 +1266,7 @@ export function createDevGameCanvasApi(
         ...(sheetsRaw ? { [CANVAS_SHEETS_PATH]: sheetsRaw } : {}),
       };
       for (const d of documents)
-        if (files[d.relativePath] && d.relativePath.startsWith('docs/ui/')) {
+        if (files[d.relativePath] && d.relativePath.endsWith('.md')) {
           const meta = matter(files[d.relativePath]).data;
           files[d.relativePath] = matter.stringify(d.body, {
             ...meta,
@@ -1280,7 +1280,7 @@ export function createDevGameCanvasApi(
       files = applyGameUi(files, input);
       gameUiFiles = Object.fromEntries(
         Object.entries(files).filter(
-          ([p]) => isGameUiPath(p) || p.startsWith('docs/ui/'),
+          ([p]) => isGameUiPath(p) || p.endsWith('.md'),
         ),
       );
       for (const [p, raw] of Object.entries(gameUiFiles))

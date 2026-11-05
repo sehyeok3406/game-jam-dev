@@ -27,7 +27,6 @@ import {
   fitPreviewViewport,
 } from '../../preview-window';
 import { isImportedPreviewPath } from '../../preview-output';
-import { PREVIEW_SANDBOX } from '../../preview-permissions';
 import { FilePropertyBadges } from '../FileProperties';
 import { DocumentBacklinks } from '../DocumentBacklinks';
 import { useDocumentLinks } from '../DocumentLinksContext';
@@ -35,6 +34,7 @@ import { MultiplayerLobby } from '../MultiplayerLobby';
 import { usePreviewPlayback } from './usePreviewPlayback';
 import { GameBuildSummary } from './GameBuildSummary';
 import { useRuntime } from '../runtime/RuntimeProvider';
+import { PreviewGameFrame } from './PreviewGameFrame';
 
 export type PreviewNodeData = {
   aiUsage?: string;
@@ -65,7 +65,6 @@ const PreviewCardContent = memo(function PreviewCardContent({
   data,
   selected,
 }: Pick<NodeProps<PreviewCanvasNode>, 'data' | 'selected'>) {
-  const pageLinks = useDocumentLinks();
   const { api } = useRuntime();
   const [exporting, setExporting] = useState(false),
     [exportMessage, setExportMessage] = useState('');
@@ -97,14 +96,12 @@ const PreviewCardContent = memo(function PreviewCardContent({
       if (epoch === exportEpoch.current) setExporting(false);
     }
   };
-  const linkedDocument = pageLinks.documents.find(
-    (doc) => doc.htmlSource === data.preview.relativePath,
-  );
   const state = data.windowState;
   const {
     restart,
     setRestart,
     cardRef,
+    frameRef,
     playAreaRef,
     settingsRef,
     settingsId,
@@ -329,9 +326,7 @@ const PreviewCardContent = memo(function PreviewCardContent({
             완료
           </button>
         </div>
-        {!collapsed && linkedDocument && (
-          <DocumentBacklinks path={linkedDocument.relativePath} />
-        )}
+        {!collapsed && <PreviewBacklinks path={data.preview.relativePath} />}
         {!collapsed && (
           <GameBuildSummary
             build={data.preview.build}
@@ -370,22 +365,12 @@ const PreviewCardContent = memo(function PreviewCardContent({
                 : undefined
             }
           >
-            <iframe
-              key={restart}
-              className="nodrag nowheel"
-              title="생성된 HTML 게임 미리보기"
-              sandbox={PREVIEW_SANDBOX}
-              onLoad={(event) =>
-                event.currentTarget.contentWindow?.postMessage(
-                  {
-                    type: 'game-canvas:preview-fullscreen',
-                    id: settingsId,
-                    active: document.fullscreenElement === cardRef.current,
-                  },
-                  '*',
-                )
-              }
-              srcDoc={previewHtml}
+            <PreviewGameFrame
+              html={previewHtml}
+              restart={restart}
+              id={settingsId}
+              cardRef={cardRef}
+              frameRef={frameRef}
             />
           </div>
         </div>
@@ -397,6 +382,20 @@ const PreviewCardContent = memo(function PreviewCardContent({
       </section>
     </>
   );
+});
+
+const PreviewBacklinks = memo(function PreviewBacklinks({
+  path,
+}: {
+  path: string;
+}) {
+  const pageLinks = useDocumentLinks();
+  const linkedDocument = pageLinks.documents.find(
+    (doc) => doc.htmlSource === path,
+  );
+  return linkedDocument ? (
+    <DocumentBacklinks path={linkedDocument.relativePath} />
+  ) : null;
 });
 
 // Position and dragging belong to React Flow; content receives only its own inputs.

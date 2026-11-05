@@ -19,14 +19,19 @@ const DocumentLinksContext = createContext({
   open: (_href: string): void => {},
   backlinks: (_path: string): readonly LinkDocument[] => [],
 });
+const DocumentSourceTitlesContext = createContext<Record<string, string>>({});
+export const useDocumentSourceTitles = () =>
+  useContext(DocumentSourceTitlesContext);
 export const useDocumentLinks = () => useContext(DocumentLinksContext);
 export function DocumentLinksProvider({
   documents,
+  sourceTitles,
   canvases,
   open,
   children,
 }: {
   documents: CanvasDocument[];
+  sourceTitles: Record<string, string>;
   canvases: CanvasSheet[];
   open: (href: string) => void;
   children: ReactNode;
@@ -47,8 +52,10 @@ export function DocumentLinksProvider({
     };
   }, [documents, canvases, open]);
   return (
-    <DocumentLinksContext.Provider value={value}>
-      {children}
-    </DocumentLinksContext.Provider>
+    <DocumentSourceTitlesContext.Provider value={sourceTitles}>
+      <DocumentLinksContext.Provider value={value}>
+        {children}
+      </DocumentLinksContext.Provider>
+    </DocumentSourceTitlesContext.Provider>
   );
 }

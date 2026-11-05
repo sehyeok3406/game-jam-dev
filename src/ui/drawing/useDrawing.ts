@@ -1,5 +1,6 @@
 import { useRuntime } from '../runtime/runtime-context.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { retainUnchangedRecords } from '../../core/editing/record-identity.ts';
 import {
   applyDrawing,
   drawingPath,
@@ -28,12 +29,23 @@ const optimistic = (items: DrawingItem[], command: DrawingCommand) => {
         .map(({ canvasId: _canvasId, ...o }) => o),
     });
   const next = applyDrawing(files, command);
+  const affected = new Set([
+    ...(command.objects ?? []).map((object) => object.id),
+    ...(command.patches ?? []).map((patch) => patch.id),
+    ...(command.targets ?? []).map((target) => target.id),
+    ...(command.erasures ?? []).map((erasure) => erasure.id),
+  ]);
+  const previous = new Map(items.map((item) => [item.id, item]));
   return Object.entries(next).flatMap(([p, raw]) => {
     const c = p.slice('.canvas/drawings/'.length, -5);
-    return (JSON.parse(raw).objects as DrawingObject[]).map((o) => ({
-      ...o,
-      canvasId: c,
-    }));
+    return (JSON.parse(raw).objects as DrawingObject[]).map((o) =>
+      !affected.has(o.id) && previous.has(o.id)
+        ? previous.get(o.id)!
+        : {
+            ...o,
+            canvasId: c,
+          },
+    );
   });
 };
 export function useDrawing(scope: string | undefined, canvasId: string) {
@@ -94,8 +106,9 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
       : await api.editor.listDrawings();
     if (state.current.scope !== root || state.current.epoch !== epoch) return;
     if (changes) signatures.current = changes.signatures;
-    s.confirmed = objects;
-    setConfirmed(objects);
+    const stable = retainUnchangedRecords(s.confirmed, objects);
+    s.confirmed = stable;
+    setConfirmed(stable);
   }, []);
   useEffect(() => {
     state.current = {
@@ -147,12 +160,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
         const result = await api.editor.applyDrawingCommand(cmd);
         if (state.current !== s) return;
         s.epoch++;
-        const previous = new Map(s.confirmed.map((o) => [o.id, o]));
-        const stable = result.map((o) =>
-          JSON.stringify(previous.get(o.id)) === JSON.stringify(o)
-            ? previous.get(o.id)!
-            : o,
-        );
+        const stable = retainUnchangedRecords(s.confirmed, result);
         s.confirmed = stable;
         s.commands.shift();
         setConfirmed(stable);

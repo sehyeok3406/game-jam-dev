@@ -1,4 +1,15 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type ReactElement,
+} from 'react';
+import { useNodeId } from '@xyflow/react';
+import { useCanvasResource } from './canvas/CanvasContent';
+import { useOptionalCanvasViewport } from './canvas/CanvasViewport';
 import { createPortal } from 'react-dom';
 import { remarkLocationAnchors } from './locations/remark-location-anchors.ts';
 import ReactMarkdown, {
@@ -158,6 +169,26 @@ function TaskInput({
   );
 }
 
+export function compileDocumentMarkdown(body: string, title?: string) {
+  // The installed react-markdown synchronous export is a pure processor-to-JSX
+  // function (no hooks). Cache its element tree; links/tasks keep live contexts.
+  return ReactMarkdown({
+    children: body,
+    urlTransform: (url) =>
+      parseDocumentLink(url) || isSharedLocationLink(url)
+        ? url
+        : defaultUrlTransform(url),
+    remarkPlugins: [
+      remarkGfm,
+      remarkBreaks,
+      remarkLineBreaks,
+      remarkLocationAnchors,
+      [remarkDocumentTitle, { title }],
+    ],
+    components,
+  });
+}
+
 export function DocumentMarkdown({
   copyBlock,
   body,
@@ -178,8 +209,38 @@ export function DocumentMarkdown({
     x: number;
     y: number;
   } | null>(null);
+  const id = useNodeId();
+  const store = useOptionalCanvasViewport();
+  const prepared = useCanvasResource(
+    `markdown:${id}`,
+    [body, title],
+    () => compileDocumentMarkdown(body, title),
+    () => body.length * 12 + 2048,
+  );
+  const standalone = useMemo(
+    () => (prepared.managed ? undefined : compileDocumentMarkdown(body, title)),
+    [prepared.managed, body, title],
+  );
+  const previous = useRef<{
+    owner: typeof store;
+    id: string | null;
+    value: ReactElement;
+  } | null>(null);
+  if (prepared.value)
+    previous.current = { owner: store, id, value: prepared.value };
+  const last =
+    previous.current?.owner === store && previous.current.id === id
+      ? previous.current.value
+      : undefined;
+  const content = prepared.value ?? last;
   return (
-    <RenderContext.Provider value={{ disabled, onToggle, image }}>
+    <RenderContext.Provider
+      value={{
+        disabled: disabled || (prepared.managed && !prepared.value),
+        onToggle,
+        image,
+      }}
+    >
       <div
         onContextMenu={(event) => {
           if (!copyBlock) return;
@@ -199,23 +260,24 @@ export function DocumentMarkdown({
           });
         }}
       >
-        <ReactMarkdown
-          urlTransform={(url) =>
-            parseDocumentLink(url) || isSharedLocationLink(url)
-              ? url
-              : defaultUrlTransform(url)
-          }
-          remarkPlugins={[
-            remarkGfm,
-            remarkBreaks,
-            remarkLineBreaks,
-            remarkLocationAnchors,
-            [remarkDocumentTitle, { title }],
-          ]}
-          components={components}
-        >
-          {body}
-        </ReactMarkdown>
+        {prepared.managed ? (
+          <>
+            {content ?? (
+              <span className="project-image-placeholder">
+                {prepared.error || '문서 준비 중…'}
+              </span>
+            )}
+            {last && !prepared.value && (
+              <span className="project-image-placeholder" role="status">
+                {prepared.error
+                  ? '문서를 새로 표시하지 못했습니다.'
+                  : '문서 갱신 중…'}
+              </span>
+            )}
+          </>
+        ) : (
+          standalone
+        )}
       </div>
       {blockMenu &&
         copyBlock &&

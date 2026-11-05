@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import { WorkspaceHeader } from '../shell/WorkspaceHeader';
 import { WorkspaceCanvasTools } from '../canvas/WorkspaceCanvasTools';
+import { CanvasZoomLabel } from '../canvas/CanvasZoomLabel';
 import { WorkspaceAiPanels } from '../ai/WorkspaceAiPanels';
 import { WorkspaceSettings } from '../shell/WorkspaceSettings';
 import { WorkspaceCanvas } from '../canvas/WorkspaceCanvas';
@@ -108,7 +109,6 @@ type Props = Pick<
     | 'setTool'
     | 'tool'
     | 'undoState'
-    | 'viewZoom'
   > &
   Pick<
     ComponentProps<typeof WorkspaceAiPanels>,
@@ -217,7 +217,6 @@ export function WorkspaceChrome({
   tool,
   uiHidden,
   undoState,
-  viewZoom,
   workspace,
 }: Props) {
   return (
@@ -461,7 +460,7 @@ export function WorkspaceChrome({
         </button>
         <details className="canvas-zoom-menu">
           <summary aria-label="확대율 메뉴">
-            {Math.round(viewZoom * 100)}%
+            <CanvasZoomLabel />
           </summary>
           <div>
             <button onClick={() => void flowRef.current?.zoomTo(1)}>

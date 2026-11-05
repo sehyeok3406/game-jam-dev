@@ -62,6 +62,7 @@ async function run() {
       win.webContents.send('save-test:' + event, value);
   };
   const read = (relative: string) => {
+    if (!relative || typeof client.files[relative] !== 'string') return null;
     const document = snapshotDocuments({
       [relative]: client.files[relative],
     })[0];
@@ -153,6 +154,9 @@ async function run() {
         canSend: () =>
           client.state.connected && !client.offline && !client.outgoing,
         read: async (relative) => read(relative),
+        resolvePath: (relative, id) =>
+          snapshotDocuments(client.files).find((doc) => doc.id === id)
+            ?.relativePath ?? relative,
         write,
       });
       return scope;
@@ -176,6 +180,21 @@ async function run() {
       return client.unlock(input);
     }
     if (command === 'save') return write(input);
+    if (command === 'rename') {
+      await queue.flush(scope);
+      const before = client.files;
+      const change = (await client.command(
+        'documents:rename',
+        input,
+      )) as import('../src/contracts/document-names').DocumentNameChange;
+      return {
+        document: read(change.to),
+        change,
+        affectedPaths: Object.keys({ ...before, ...client.files }).filter(
+          (path) => before[path] !== client.files[path],
+        ),
+      };
+    }
     if (command === 'color')
       return client.command('documents:set-color', input);
     throw Error('Unknown test operation');
@@ -187,12 +206,18 @@ async function run() {
     await wait('!!document.querySelector(".document-card__content")');
     await js('document.querySelector(".document-card__content").click()');
     await wait(`!!document.querySelector('[aria-label="문서 내용"]')`);
+    await wait(
+      `document.activeElement?.getAttribute('aria-label')==='문서 내용'`,
+    );
     const relative = await js(
       `document.querySelector('[aria-label="문서 제목"]').closest('.react-flow__node').dataset.id`,
     );
     const target = Object.keys(client.files).find(
       (relativePath) => read(relativePath)?.id === relative,
     )!;
+    const currentTarget = () =>
+      snapshotDocuments(client.files).find((doc) => doc.id === relative)!
+        .relativePath;
     const other = Object.keys(client.files).find(
       (relativePath) => relativePath !== target && relativePath.endsWith('.md'),
     )!;
@@ -359,7 +384,7 @@ async function run() {
     await wait(`!document.querySelector('[aria-label="문서 내용"]')`);
     await queue.flush(scope);
     assert.ok(
-      read(target)!.body.endsWith('z'),
+      read(currentTarget())!.body.endsWith('z'),
       'text typed while finishing must reach the server',
     );
     console.log(
@@ -378,9 +403,8 @@ async function run() {
     );
     await peer.refresh();
     assert.equal(
-      read(target)!.body,
-      snapshotDocuments(peer.files).find((doc) => doc.relativePath === target)!
-        .body,
+      read(currentTarget())!.body,
+      snapshotDocuments(peer.files).find((doc) => doc.id === relative)!.body,
     );
     await fs.mkdir(directory, { recursive: true });
     await fs.writeFile(

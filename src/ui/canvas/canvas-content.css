@@ -1,0 +1,46 @@
+.canvas-detail-region {
+  min-width: 0;
+}
+.canvas-content-summary {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 14px 16px;
+  color: var(--muted, #667085);
+  overflow: hidden;
+  pointer-events: none;
+}
+.canvas-content-summary span {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-content-summary i {
+  display: block;
+  height: 5px;
+  max-width: 72%;
+  margin: 8px 0;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0.13;
+}
+.canvas-content-summary i:nth-of-type(2) {
+  max-width: 52%;
+}
+.canvas-content-summary i:nth-of-type(3) {
+  max-width: 62%;
+}
+.canvas-text-summary {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.kanban-board-content > .canvas-detail-region {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}

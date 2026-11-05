@@ -1,4 +1,5 @@
 import type { ReactFlowInstance } from '@xyflow/react';
+import { CanvasZoomLabel } from './CanvasZoomLabel';
 import {
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
@@ -51,7 +52,6 @@ interface Props {
   editBusy: boolean;
   changeEdit: (direction: 'undo' | 'redo') => Promise<void>;
   flowRef: import('react').RefObject<ReactFlowInstance<CanvasNode> | null>;
-  viewZoom: number;
   setShortcutsOpen: (value: import('react').SetStateAction<boolean>) => void;
   nodes: CanvasNode[];
   selectionLocked: boolean;
@@ -145,7 +145,6 @@ export function WorkspaceCanvasTools({
   editBusy,
   changeEdit,
   flowRef,
-  viewZoom,
   setShortcutsOpen,
   nodes,
   selectionLocked,
@@ -233,7 +232,7 @@ export function WorkspaceCanvasTools({
             })
           }
         >
-          {Math.round(viewZoom * 100)}%
+          <CanvasZoomLabel />
         </button>
         <button
           className="icon-button"

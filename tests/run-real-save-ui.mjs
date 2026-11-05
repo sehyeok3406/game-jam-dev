@@ -1,6 +1,11 @@
 import { createServer, build } from 'vite';
 import { spawn } from 'node:child_process';
 import electron from 'electron';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+const directory =
+  process.env.GC_SAVE_TEST_DIRECTORY ??
+  path.resolve('out/real-save-ui/runs', randomUUID());
 await build({
   configFile: false,
   logLevel: 'error',
@@ -17,7 +22,10 @@ await build({
 const server = await createServer({
   configFile: 'vite.renderer.config.mts',
   cacheDir: 'out/real-save-ui/vite-cache',
-  resolve: { dedupe: ['react', 'react-dom', '@xyflow/react'] },
+  resolve: {
+    dedupe: ['react', 'react-dom', '@xyflow/react'],
+    alias: { 'node:crypto': path.resolve('tests/mocks/browser-crypto.ts') },
+  },
   optimizeDeps: { entries: ['tests/real-save-ui.fixture.html'], force: true },
   server: {
     host: '127.0.0.1',
@@ -34,6 +42,7 @@ try {
       stdio: 'inherit',
       env: {
         ...process.env,
+        GC_SAVE_TEST_DIRECTORY: directory,
         QA_URL: `http://127.0.0.1:${server.httpServer.address().port}/tests/real-save-ui.fixture.html`,
       },
     });

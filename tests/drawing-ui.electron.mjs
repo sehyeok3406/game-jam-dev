@@ -68,6 +68,24 @@ async function run() {
     js(
       `(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
     );
+  const stableCenter = async (selector) => {
+    let previous,
+      settled = 0;
+    for (let i = 0; i < 20; i++) {
+      const point = await center(selector);
+      if (
+        previous &&
+        Math.abs(point.x - previous.x) < 0.5 &&
+        Math.abs(point.y - previous.y) < 0.5
+      )
+        settled++;
+      else settled = 0;
+      if (settled >= 2) return point;
+      previous = point;
+      await pause();
+    }
+    throw Error('Handle did not settle after panel resize: ' + selector);
+  };
   const count = () =>
     js('(async()=> (await window.gameCanvas.listDrawings()).length)()');
   try {
@@ -434,7 +452,19 @@ async function run() {
     const peerObject = await js(
       '(async()=>{const id=document.querySelector(".canvas-drawing-node.selected").dataset.id.slice(8);return (await window.gameCanvas.listDrawings()).find(o=>o.id===id)})()',
     );
-    const handle = await center('[data-handle=se]');
+    // This test validates resize/save conflict handling, so frame the selected
+    // object before targeting its handle (which may be below the viewport).
+    await key('2', ['shift']);
+    // Opening the dock resizes the canvas and re-centers its camera. Capture the
+    // settled handle position, rather than clicking a point from the transition.
+    const handle = await stableCenter('[data-handle=se]');
+    assert.equal(
+      await js(
+        `document.elementFromPoint(${handle.x},${handle.y})?.getAttribute('data-handle')`,
+      ),
+      'se',
+      'resize gesture reaches the actual handle',
+    );
     await mouse('mouseDown', handle.x, handle.y);
     await mouse('mouseMove', handle.x + 10, handle.y + 10, ['leftButtonDown']);
     await js(

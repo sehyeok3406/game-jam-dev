@@ -99,6 +99,7 @@ import { useCanvasCommands } from '../canvas/useCanvasCommands';
 import { useCanvasGeometry } from '../canvas/useCanvasGeometry';
 import { useCanvasNavigation } from '../canvas/useCanvasNavigation';
 import { useCanvasNodes } from '../canvas/useCanvasNodes';
+import { sameFields } from '../canvas/node-model';
 import { useCanvasSelection } from '../canvas/useCanvasSelection';
 import { useCollapseActions } from '../canvas/useCollapseActions';
 import { useNoteCreation } from '../canvas/useNoteCreation';
@@ -344,7 +345,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   >({});
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
-  const [viewZoom, setViewZoom] = useState(1);
   const panPrevious = useRef<CanvasTool | null>(null);
   const snapLatest = useRef<{ id: string; x: number; y: number } | null>(null);
   const [aiResultPaths, setAiResultPaths] = useState<string[]>([]);
@@ -1801,22 +1801,21 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     });
   };
 
-  const sourceTitles = useMemo(
-    () =>
-      Object.fromEntries([
-        ...documents.map((item) => [item.id, item.title]),
-        ...previews
-          .filter((item) => item.sourceId)
-          .map((item) => [
-            item.sourceId!,
-            item.title ?? previewLabel(item.relativePath),
-          ]),
-      ]),
-    [
-      documents.map((item) => `${item.id}:${item.title}`).join('|'),
-      previews.map((item) => `${item.sourceId}:${item.title}`).join('|'),
-    ],
-  );
+  const sourceTitleCache = useRef<Record<string, string>>({});
+  const sourceTitles = useMemo(() => {
+    const next = Object.fromEntries([
+      ...documents.map((item) => [item.id, item.title]),
+      ...previews
+        .filter((item) => item.sourceId)
+        .map((item) => [
+          item.sourceId!,
+          item.title ?? previewLabel(item.relativePath),
+        ]),
+    ]);
+    if (!sameFields(sourceTitleCache.current, next))
+      sourceTitleCache.current = next;
+    return sourceTitleCache.current;
+  }, [documents, previews]);
   const workflowEditable =
     !statusError &&
     (!collaboration.active ||
@@ -1871,6 +1870,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const toggleSection = (section: CanvasSection) =>
     collapseActions.section(section, sectionCollapsed(section));
   useCanvasNodes(
+    selectionScope,
     () => ({
       sections,
       activeCanvas,
@@ -1919,7 +1919,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       activeCanvasRef,
       setNodes,
       drawing,
-      viewZoom,
       setDrawingGesture,
       submitDrawing,
       setTool,
@@ -1945,7 +1944,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       pluginPanelOpen,
       canvasSheets,
       geometryEpoch,
-      sourceTitles,
       beginEdit,
       endEdit,
       registerEditor,
@@ -1974,12 +1972,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       drawing.items,
       gameUi.frames,
       gameUi.saving,
+      gameUi.savingFrameIds,
       gameUi.error,
       gameUiSettings.enabled,
       gameUi.submit,
       submitDrawing,
-      viewZoom,
-      sourceTitles,
       activeCanvas,
       findOpen,
       locked,
@@ -3607,7 +3604,6 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           tool,
           uiHidden,
           undoState,
-          viewZoom,
           workspace,
         }}
       />
@@ -3751,6 +3747,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceCanvas
         {...{
+          findOpen,
+          selectionScope,
           dropFiles,
           compactChrome,
           materialItems,
@@ -3811,11 +3809,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           setInspectorId,
           setPluginPanelOpen,
           allLinkDocuments,
+          sourceTitles,
           canvasSheets,
           dispatchDocumentLink,
           preferences,
           firstCanvasView,
-          setViewZoom,
           onNodesChange,
           setNodes,
           openKanbanControls,

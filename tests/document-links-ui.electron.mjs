@@ -53,6 +53,9 @@ async function run() {
     await win.reload();
     await wait('!!document.querySelector(".home-project-open")');
     await js('document.querySelector(".home-project-open").click()');
+    // Initial fit/measurement can temporarily summarize a reading body. Start
+    // link edits after the project's load notice and camera have settled.
+    await wait('document.querySelector(".status-toast")?.hidden===true');
     await wait(
       `document.querySelectorAll('${source} .document-link').length===2`,
     );
@@ -61,7 +64,7 @@ async function run() {
       'window.gameCanvas.saveDocument({relativePath:"ideas/automation.md",title:"전투·스킬 시스템",body:"대상 내용"})',
     );
     await wait(
-      `document.querySelector('${source} .document-link').textContent==='전투·스킬 시스템'`,
+      `document.querySelector('${source} .document-link')?.textContent==='전투·스킬 시스템' && document.querySelectorAll('${source} .document-link').length===2`,
     );
     assert.equal(
       await js(
@@ -188,6 +191,7 @@ async function run() {
     await wait(
       '!document.querySelector(".tiptap") && !document.querySelector("textarea")',
     );
+    await wait(`!!document.querySelector('${source} .document-link')`);
     await js(`document.querySelector('${source} .document-link').click()`);
     await wait(
       'document.querySelector(".react-flow__node[data-id=automation-note]").classList.contains("selected")',
@@ -199,6 +203,7 @@ async function run() {
     await wait(
       '!document.querySelector(".react-flow__node[data-id=automation-note]")',
     );
+    await wait(`!!document.querySelector('${source} .document-link')`);
     await js(`document.querySelector('${source} .document-link').click()`);
     await wait(
       'document.querySelector("[role=tab][aria-selected=true]").textContent.includes("대상 캔버스")',

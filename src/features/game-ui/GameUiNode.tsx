@@ -41,12 +41,16 @@ import {
 } from './GameUiInspectorPanel';
 import { GAME_UI_STATES } from '../../game-ui-details';
 import { snapPosition } from '../../canvas-ux';
+import { useCanvasZoom } from '../../ui/canvas/useCanvasZoom';
+import {
+  CanvasSvgContentGate,
+  useCanvasProtection,
+} from '../../ui/canvas/CanvasContent';
 export type GameUiNodeData = {
   kind: 'game-ui';
   frame: GameUiFrame;
   locked: boolean;
   scope: string;
-  zoom: number;
   libraryEnabled: boolean;
   saving?: boolean;
   saveError?: string;
@@ -83,6 +87,16 @@ const GameUiNodeContent = memo(function GameUiNodeContent({
     [hoveredId, setHoveredId] = useState<string | null>(null);
   const inspectorOwner =
     data.scope + ':' + f.canvasId + ':' + f.id + ':' + f.generation;
+  useCanvasProtection(
+    inspector ||
+      !!draft ||
+      preview ||
+      exportPreview ||
+      !!error ||
+      !!data.saveError ||
+      !!data.saving ||
+      Object.keys(previews).length > 0,
+  );
   const { dock, activate } = useGameUiInspector(inspectorOwner);
   const setInspector = (next: boolean | ((previous: boolean) => boolean)) => {
     const open = typeof next === 'function' ? next(inspector) : next;
@@ -162,8 +176,8 @@ const GameUiNodeContent = memo(function GameUiNodeContent({
       setHoveredId(null);
     }
   }, [dock?.active, inspectorOwner]);
-  const handleSize =
-    (12 * f.viewportWidth) / (f.width * Math.max(0.05, data.zoom));
+  const zoom = useCanvasZoom(ids.length > 0 || hoveredId !== null);
+  const handleSize = (12 * f.viewportWidth) / (f.width * Math.max(0.05, zoom));
   const command = (c: Omit<GameUiCommand, 'id' | 'generation'>) =>
     data
       .submit({ ...c, id: f.id, generation: f.generation })
@@ -725,125 +739,131 @@ const GameUiNodeContent = memo(function GameUiNodeContent({
           fill={f.backgroundColor ?? '#ffffff'}
           onPointerDown={() => setIds([])}
         />
-        {f.items.map((original) => {
-          const i = draft?.find((d) => d.id === original.id) ?? original;
-          return (
-            <g
-              key={i.id}
-              transform={gameUiTransform(i)}
-              data-game-ui-item={i.id}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                svg.current?.focus();
-                if (preview) return;
-                let selectedIds = e.shiftKey
-                  ? ids.includes(i.id)
-                    ? ids.filter((id) => id !== i.id)
-                    : [...ids, i.id]
-                  : ids.includes(i.id)
-                    ? ids
-                    : [i.id];
-                if (i.groupId && !e.shiftKey)
-                  selectedIds = f.items
-                    .filter((o) => o.groupId === i.groupId)
-                    .map((o) => o.id);
-                setIds(selectedIds);
-                setInspector(true);
-                if (
-                  data.locked ||
-                  selectedIds.some(
-                    (id) => f.items.find((o) => o.id === id)?.locked,
+        <CanvasSvgContentGate
+          label={`게임 UI · ${f.items.length}개 요소`}
+          width={f.viewportWidth}
+          height={f.viewportHeight}
+        >
+          {f.items.map((original) => {
+            const i = draft?.find((d) => d.id === original.id) ?? original;
+            return (
+              <g
+                key={i.id}
+                transform={gameUiTransform(i)}
+                data-game-ui-item={i.id}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  svg.current?.focus();
+                  if (preview) return;
+                  let selectedIds = e.shiftKey
+                    ? ids.includes(i.id)
+                      ? ids.filter((id) => id !== i.id)
+                      : [...ids, i.id]
+                    : ids.includes(i.id)
+                      ? ids
+                      : [i.id];
+                  if (i.groupId && !e.shiftKey)
+                    selectedIds = f.items
+                      .filter((o) => o.groupId === i.groupId)
+                      .map((o) => o.id);
+                  setIds(selectedIds);
+                  setInspector(true);
+                  if (
+                    data.locked ||
+                    selectedIds.some(
+                      (id) => f.items.find((o) => o.id === id)?.locked,
+                    )
                   )
-                )
-                  return;
-                gesture.current = {
-                  pointer: e.pointerId,
-                  start: point(e),
-                  items: f.items.filter((o) => selectedIds.includes(o.id)),
-                  mode: 'move',
-                };
-                svg.current!.setPointerCapture(e.pointerId);
-              }}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                setIds([i.id]);
-                setInspector(true);
-                cancel();
-              }}
-            >
-              <GameUiItemGraphic
-                item={i}
-                prefix={f.id}
-                preview={previews[i.id]}
-              />
-              <rect width={i.width} height={i.height} fill="transparent" />
-              {((!preview && ids.includes(i.id)) || hoveredId === i.id) && (
-                <rect
-                  width={i.width}
-                  height={i.height}
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth={handleSize / 6}
-                  strokeDasharray={
-                    !ids.includes(i.id)
-                      ? `${handleSize / 2} ${handleSize / 3}`
-                      : undefined
-                  }
+                    return;
+                  gesture.current = {
+                    pointer: e.pointerId,
+                    start: point(e),
+                    items: f.items.filter((o) => selectedIds.includes(o.id)),
+                    mode: 'move',
+                  };
+                  svg.current!.setPointerCapture(e.pointerId);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setIds([i.id]);
+                  setInspector(true);
+                  cancel();
+                }}
+              >
+                <GameUiItemGraphic
+                  item={i}
+                  prefix={f.id}
+                  preview={previews[i.id]}
                 />
-              )}
-              {!preview &&
-                !data.locked &&
-                !i.locked &&
-                ids.length === 1 &&
-                ids[0] === i.id && (
+                <rect width={i.width} height={i.height} fill="transparent" />
+                {((!preview && ids.includes(i.id)) || hoveredId === i.id) && (
                   <rect
-                    x={i.width - handleSize / 2}
-                    y={i.height - handleSize / 2}
-                    width={handleSize}
-                    height={handleSize}
-                    fill="#2563eb"
-                    style={{ cursor: 'nwse-resize' }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      gesture.current = {
-                        pointer: e.pointerId,
-                        start: point(e),
-                        items: [original],
-                        mode: 'resize',
-                      };
-                      svg.current!.setPointerCapture(e.pointerId);
-                    }}
-                  />
-                )}
-              {!preview &&
-                !data.locked &&
-                !i.locked &&
-                ids.length === 1 &&
-                ids[0] === i.id && (
-                  <circle
-                    cx={i.width / 2}
-                    cy={-handleSize * 2}
-                    r={handleSize / 2}
-                    fill="#fff"
+                    width={i.width}
+                    height={i.height}
+                    fill="none"
                     stroke="#2563eb"
                     strokeWidth={handleSize / 6}
-                    data-game-ui-rotate={i.id}
-                    style={{ cursor: 'grab' }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      gesture.current = {
-                        pointer: e.pointerId,
-                        start: point(e),
-                        items: [original],
-                        mode: 'rotate',
-                      };
-                      svg.current!.setPointerCapture(e.pointerId);
-                    }}
+                    strokeDasharray={
+                      !ids.includes(i.id)
+                        ? `${handleSize / 2} ${handleSize / 3}`
+                        : undefined
+                    }
                   />
                 )}
-            </g>
-          );
-        })}
+                {!preview &&
+                  !data.locked &&
+                  !i.locked &&
+                  ids.length === 1 &&
+                  ids[0] === i.id && (
+                    <rect
+                      x={i.width - handleSize / 2}
+                      y={i.height - handleSize / 2}
+                      width={handleSize}
+                      height={handleSize}
+                      fill="#2563eb"
+                      style={{ cursor: 'nwse-resize' }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        gesture.current = {
+                          pointer: e.pointerId,
+                          start: point(e),
+                          items: [original],
+                          mode: 'resize',
+                        };
+                        svg.current!.setPointerCapture(e.pointerId);
+                      }}
+                    />
+                  )}
+                {!preview &&
+                  !data.locked &&
+                  !i.locked &&
+                  ids.length === 1 &&
+                  ids[0] === i.id && (
+                    <circle
+                      cx={i.width / 2}
+                      cy={-handleSize * 2}
+                      r={handleSize / 2}
+                      fill="#fff"
+                      stroke="#2563eb"
+                      strokeWidth={handleSize / 6}
+                      data-game-ui-rotate={i.id}
+                      style={{ cursor: 'grab' }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        gesture.current = {
+                          pointer: e.pointerId,
+                          start: point(e),
+                          items: [original],
+                          mode: 'rotate',
+                        };
+                        svg.current!.setPointerCapture(e.pointerId);
+                      }}
+                    />
+                  )}
+              </g>
+            );
+          })}
+        </CanvasSvgContentGate>
       </svg>
       {inspector && (
         <GameUiInspectorPanel

@@ -1,4 +1,5 @@
 import { readFileNames } from '../../core/documents/name-registry.ts';
+import { FILE_NAMES_PATH } from '../../contracts/document-names.ts';
 import type { LocalProjectRepository } from '../ports/local-project-repository.ts';
 import type { ProjectTextFiles } from '../ports/text-files.ts';
 import type { PreviewWindowState } from '../../contracts/preview.ts';
@@ -34,19 +35,19 @@ export class ProjectPreviewService {
     return { exists: raw !== null, content: raw ?? '', relativePath: relative };
   }
   async window(relative = DEFAULT_PREVIEW_PATH) {
-    const files = await this.ports.project.capture();
-    const entry = readFileNames(files).entries.find(
-      (e) => e.kind === 'html' && e.path === relative,
-    );
+    const entry = await this.nameEntry(relative);
     const raw =
-      (await this.ports.files.read(await this.windowPath(relative))) ??
+      (await this.ports.files.read(this.windowPath(relative, entry?.id))) ??
       (await this.ports.files.read(
         previewWindowPath(entry?.originalPath ?? relative),
       ));
     return raw === null ? null : normalizePreviewWindow(JSON.parse(raw));
   }
   async saveWindow(state: PreviewWindowState, relative = DEFAULT_PREVIEW_PATH) {
-    const windowPath = await this.windowPath(relative);
+    const windowPath = this.windowPath(
+      relative,
+      (await this.nameEntry(relative))?.id,
+    );
     if (
       ![state.x, state.y, state.width, state.height].every(Number.isFinite) ||
       typeof state.collapsed !== 'boolean'
@@ -62,12 +63,14 @@ export class ProjectPreviewService {
       );
     });
   }
-  private async windowPath(relative: string) {
+  private async nameEntry(relative: string) {
     assertPreviewPath(relative);
-    const files = await this.ports.project.capture();
-    const entry = readFileNames(files).entries.find(
-      (e) => e.kind === 'html' && e.path === relative,
-    );
-    return `.canvas/previews/${entry?.id ?? htmlSourceId(relative)}.json`;
+    const raw = await this.ports.files.read(FILE_NAMES_PATH);
+    return readFileNames(
+      raw === null ? {} : { [FILE_NAMES_PATH]: raw },
+    ).entries.find((e) => e.kind === 'html' && e.path === relative);
+  }
+  private windowPath(relative: string, id?: string) {
+    return `.canvas/previews/${id ?? htmlSourceId(relative)}.json`;
   }
 }

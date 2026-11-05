@@ -1,4 +1,11 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
@@ -10,6 +17,8 @@ import {
   NodeResizer,
   NodeToolbar,
   Position,
+  useReactFlow,
+  useNodeId,
   type NodeProps,
 } from '@xyflow/react';
 import {
@@ -30,6 +39,7 @@ import {
   EMPTY_TEXT_DOCUMENT,
   isEmptyTextDocument,
   validateTextDocument,
+  textDocumentHtml,
 } from '../../text-document';
 import { validateDrawingObject } from '../../drawing-model';
 import { useRuntime } from '../runtime/runtime-context';
@@ -41,20 +51,198 @@ import {
   canvasTextAlignment,
   serializeCanvasText,
 } from './text-alignment';
+import {
+  useCanvasResource,
+  useCanvasProtection,
+  useCanvasSoleSelection,
+  CanvasContentSummary,
+} from '../canvas/CanvasContent';
+import { useOptionalCanvasViewport } from '../canvas/CanvasViewport';
 
-export const TextDrawingNode = memo(function TextDrawingNode({
+type TextNodeProps = Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'> & {
+  object: TextObject;
+};
+
+export const TextDrawingNode = memo(function TextDrawingNode(
+  props: TextNodeProps,
+) {
+  const { api } = useRuntime();
+  const flow = useReactFlow(),
+    nodeId = useNodeId();
+  const visit = useOptionalCanvasViewport();
+  const selected = useCanvasSoleSelection(!!props.selected);
+  const [active, setActive] = useState(selected),
+    [requested, setRequested] = useState(false);
+  const lastPointer = useRef<{ time: number; x: number; y: number } | null>(
+    null,
+  );
+  const requestEditing = () => {
+    setActive(true);
+    setRequested(true);
+    // Replacing the lazy reader can remove the native click target before
+    // React Flow selects it. Explicit editing always selects its owner.
+    if (nodeId)
+      flow.setNodes((nodes) =>
+        nodes.map((node) => ({ ...node, selected: node.id === nodeId })),
+      );
+  };
+  useCanvasProtection(active || selected || requested);
+  useLayoutEffect(() => {
+    if (selected) setActive(true);
+  }, [selected]);
+  useEffect(() => {
+    let current = true;
+    void api.saves
+      .getEditorDraft(`canvas-text:${props.data.scope}:${props.object.id}`)
+      .then((draft) => {
+        if (current && draft) setActive(true);
+      })
+      .catch(() => {
+        if (current) setActive(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [api, props.data.scope, props.object.id]);
+  const content =
+    active || selected || requested ? (
+      <EditableTextDrawingNode
+        key={`${visit?.viewKey}:${props.data.scope}:${props.object.generation}`}
+        {...props}
+        selected={selected}
+        requested={requested}
+        consume={() => setRequested(false)}
+        release={() => {
+          if (!selected) {
+            setActive(false);
+            setRequested(false);
+          }
+        }}
+      />
+    ) : (
+      <ReadableCanvasText {...props} activate={requestEditing} />
+    );
+  return (
+    <div
+      className="canvas-text-wrapper"
+      style={{ width: '100%', height: '100%' }}
+      onMouseDownCapture={(event) => {
+        if (
+          !props.data.locked &&
+          event.button === 0 &&
+          event.detail >= 2 &&
+          !(event.target as Element).closest(
+            'button,input,select,textarea,[contenteditable="true"]',
+          )
+        ) {
+          requestEditing();
+        }
+      }}
+      onPointerDownCapture={(event) => {
+        if (
+          props.data.locked ||
+          event.button !== 0 ||
+          (event.target as Element).closest(
+            'button,input,select,textarea,[contenteditable="true"],.react-flow__resize-control',
+          )
+        )
+          return;
+        const previous = lastPointer.current;
+        if (
+          previous &&
+          event.timeStamp - previous.time < 500 &&
+          Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 6
+        ) {
+          requestEditing();
+        }
+        lastPointer.current = {
+          time: event.timeStamp,
+          x: event.clientX,
+          y: event.clientY,
+        };
+      }}
+    >
+      {content}
+    </div>
+  );
+});
+
+function ReadableCanvasText({
+  object,
+  data,
+  activate,
+}: TextNodeProps & { activate: () => void }) {
+  const geometry = object.geometry;
+  const html = useCanvasResource(
+    `text:${object.id}`,
+    [object.generation, geometry.document, geometry.align],
+    () => textDocumentHtml(geometry.document, geometry.align),
+    (value) => value.length * 4 + 512,
+  );
+  const standalone = useMemo(
+    () =>
+      html.managed
+        ? undefined
+        : textDocumentHtml(geometry.document, geometry.align),
+    [html.managed, geometry.document, geometry.align],
+  );
+  const value = html.managed ? html.value : standalone;
+  return (
+    <div
+      className="canvas-text-node canvas-text-summary"
+      aria-label="캔버스 텍스트"
+      style={
+        {
+          fontSize: geometry.fontSize,
+          color: geometry.color,
+          fontFamily: geometry.fontFamily,
+          textAlign: geometry.align,
+          '--canvas-text-align': geometry.align,
+          opacity: object.style.opacity,
+        } as import('react').CSSProperties
+      }
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        if (!data.locked) activate();
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        data.onContext();
+      }}
+    >
+      {value !== undefined ? (
+        <div
+          className="tiptap"
+          contentEditable={false}
+          dangerouslySetInnerHTML={{ __html: value }}
+        />
+      ) : (
+        <CanvasContentSummary label="텍스트" />
+      )}
+    </div>
+  );
+}
+
+const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
   data,
   selected,
   object,
-}: Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'> & {
-  object: TextObject;
+  requested,
+  consume,
+  release,
+}: TextNodeProps & {
+  requested: boolean;
+  consume: () => void;
+  release: () => void;
 }) {
   const { api } = useRuntime();
   const locationSharing = useLocationSharing();
+  const flow = useReactFlow();
   const [editing, setEditing] = useState(false),
     [error, setError] = useState('');
   const [geometry, setGeometry] = useState(object.geometry);
   const [loaded, setLoaded] = useState(false);
+  const [, setReleaseTick] = useState(0);
   const [recovered, setRecovered] = useState<TextObject['geometry'] | null>(
     null,
   );
@@ -153,7 +341,7 @@ export const TextDrawingNode = memo(function TextDrawingNode({
                   42,
                   Math.ceil(
                     editor.view.dom.getBoundingClientRect().height /
-                      latest.current.zoom,
+                      flow.getZoom(),
                   ),
                 ),
               );
@@ -182,6 +370,7 @@ export const TextDrawingNode = memo(function TextDrawingNode({
           throw failure;
         } finally {
           saving.current = false;
+          if (mounted.current) setReleaseTick((value) => value + 1);
         }
       });
     chain.current = next;
@@ -245,6 +434,7 @@ export const TextDrawingNode = memo(function TextDrawingNode({
       .catch((failure) => setError(`텍스트 편집 종료 실패: ${String(failure)}`))
       .finally(() => {
         finishing.current = false;
+        if (mounted.current) setReleaseTick((value) => value + 1);
       });
   };
   callbacks.current = {
@@ -348,11 +538,17 @@ export const TextDrawingNode = memo(function TextDrawingNode({
   useEffect(() => {
     if (!editor) return;
     const observer = new ResizeObserver(() => {
-      if (!ready.current || data.locked || saving.current) return;
+      if (
+        !editingSession.current ||
+        !ready.current ||
+        data.locked ||
+        saving.current
+      )
+        return;
       const height = Math.max(
         42,
         Math.ceil(
-          editor.view.dom.getBoundingClientRect().height / latest.current.zoom,
+          editor.view.dom.getBoundingClientRect().height / flow.getZoom(),
         ),
       );
       if (Math.abs(height - latest.current.object.transform.height) > 1) {
@@ -374,6 +570,27 @@ export const TextDrawingNode = memo(function TextDrawingNode({
       setEditing(true);
     }
   };
+  useEffect(() => {
+    if (requested && loaded && !data.locked) {
+      startEditing();
+      consume();
+    }
+  }, [requested, loaded, data.locked]);
+  useEffect(() => {
+    if (
+      !selected &&
+      !requested &&
+      !editingSession.current &&
+      !editing &&
+      loaded &&
+      !dirty.current &&
+      !saving.current &&
+      !finishing.current &&
+      !recovered &&
+      !error
+    )
+      release();
+  });
   const command = (fn: () => void) => {
     startEditing();
     fn();
