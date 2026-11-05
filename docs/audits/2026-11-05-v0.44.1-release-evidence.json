@@ -1,0 +1,95 @@
+{
+  "date": "2026-11-05",
+  "version": "0.44.1",
+  "sourceCommit": "6eff75ce86aa6778e402032800fd1bb4375b7fe8",
+  "tag": "v0.44.1",
+  "release": "https://github.com/sehyeok3406/game-jam-dev/releases/tag/v0.44.1",
+  "ci": {
+    "run": 41972280707,
+    "url": "https://github.com/sehyeok3406/game-jam-dev/actions/runs/41972280707",
+    "jobs": {
+      "types": "success",
+      "windows-tests": "success",
+      "lint": "success",
+      "linux-server": "success"
+    }
+  },
+  "checks": {
+    "typecheck": "passed; CI and focused local checks",
+    "architecture": "10 passed locally; CI passed; no new exceptions",
+    "focusedHooksAndProtocol": "3 passed",
+    "renderer": "home/project manual controls absent, direct-link failure notice, paragraph navigation/highlight and copy passed",
+    "packaged": "cold/warm links, Windows OS dispatch, paragraph/HTML/text/geometry passed once against the final package",
+    "nupkgResources": "2046 matched"
+  },
+  "productInputs": {
+    "sha256": "198c00d0ec3827c8af9ec448987e8877140f3b2abb8eed8601d1683442af62bd",
+    "files": 671
+  },
+  "resources": {
+    "sha256": "cbe9ade9c16784e08cbb43c2a8c36c2a88ab8e48f6205af6fe5800077eadd065",
+    "files": 2046
+  },
+  "appAsar": {
+    "sha256": "7c8e5ac4aee91b5f308bf9e323eff40c21e1e2d1210be0eb814151bda9691bad",
+    "size": 8648965
+  },
+  "assets": [
+    {
+      "name": "Game.Jam-0.44.1.Setup.exe",
+      "size": 239833088,
+      "sha256": "ba6e527d42366c2c718af43290c946f9e78039740836d102e1baddd6239cb2b3",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.1/Game.Jam-0.44.1.Setup.exe",
+      "publicStatus": 206
+    },
+    {
+      "name": "game_canvas-0.44.1-full.nupkg",
+      "size": 239825243,
+      "sha256": "e628bf6eefdcd5be016f9e3215d2450464c15d6a827e320e7c969ff44cffe93d",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.1/game_canvas-0.44.1-full.nupkg",
+      "publicStatus": 206
+    },
+    {
+      "name": "RELEASES",
+      "size": 83,
+      "sha256": "5c562dd23067287c66aae37098b7e5fe0bd238e535c96e398be01afe5ac0efe6",
+      "url": "https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.1/RELEASES",
+      "publicStatus": 206
+    }
+  ],
+  "squirrel": {
+    "sha1": "BD9F801938F7CB2C016E637B471579C01A04D17B",
+    "package": "game_canvas-0.44.1-full.nupkg",
+    "size": 239825243
+  },
+  "checkoutNormalization": {
+    "reason": "Snapshot before branch switch used LF; main fast-forward checkout used CRLF before package started. Every changed product file matches the original snapshot after CRLF normalization. Package/make fingerprint comparisons use the after-checkout source-after-package manifest.",
+    "before": "f3f1c939cc64352d052a61bcbf34107e7259bde61e5d72b16525d145100ca752",
+    "after": "198c00d0ec3827c8af9ec448987e8877140f3b2abb8eed8601d1683442af62bd",
+    "changed": [
+      "package.json",
+      "src/ui/locations/location-links.css",
+      "src/ui/locations/useLocationLinks.ts",
+      "src/ui/workspace/WorkspaceScreen.tsx"
+    ],
+    "normalizedEqual": true
+  },
+  "publicTagVerified": true,
+  "updateFeed": {
+    "reflectsRelease": true,
+    "json": {
+      "status": 200,
+      "exactInstaller": true
+    },
+    "package": {
+      "status": 200,
+      "exactPackage": true,
+      "body": "BD9F801938F7CB2C016E637B471579C01A04D17B https://github.com/sehyeok3406/game-jam-dev/releases/download/v0.44.1/game_canvas-0.44.1-full.nupkg 239825243"
+    }
+  },
+  "scope": {
+    "separateServerOrTunnelRestarted": false,
+    "userAppInstallationOrRestart": false,
+    "unrelatedResearchIncluded": false
+  }
+}
