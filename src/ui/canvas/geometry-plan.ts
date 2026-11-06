@@ -1,8 +1,10 @@
 import type { CanvasDocument } from '../../contracts/documents';
 import type { CanvasSection } from '../../contracts/canvas';
+import { imageDescriptionEditingClass } from './file-card-presentation.ts';
 
 export interface DocumentGeometry {
   parentId?: string;
+  className?: string;
   position: { x: number; y: number };
   measured?: { width?: number; height?: number };
   data: { document: CanvasDocument; fileNode?: unknown };
@@ -14,6 +16,7 @@ export function documentDragLayout(
   sections: CanvasSection[],
 ) {
   const document = node.data.document;
+  const imageEditing = node.className?.includes(imageDescriptionEditingClass);
   const parent = sections.find(
     (section) => node.parentId === `section:${section.id}`,
   );
@@ -27,12 +30,13 @@ export function documentDragLayout(
     x: node.position.x + (parent?.x ?? 0),
     y: node.position.y + (parent?.y ?? 0),
     width:
-      document.collapsed && node.data.fileNode
+      imageEditing || (document.collapsed && node.data.fileNode)
         ? document.width
         : (node.measured?.width ?? document.width),
-    height: document.collapsed
-      ? document.height
-      : (node.measured?.height ?? document.height),
+    height:
+      imageEditing || document.collapsed
+        ? document.height
+        : (node.measured?.height ?? document.height),
   };
 }
 
@@ -49,8 +53,17 @@ export function documentMembership(
           member.id === document.id || member.path === document.relativePath,
       ),
     ) ?? null;
-  const centerX = layout.x + (node.measured?.width ?? document.width) / 2;
-  const centerY = layout.y + (node.measured?.height ?? document.height) / 2;
+  const imageEditing = node.className?.includes(imageDescriptionEditingClass);
+  const centerX =
+    layout.x +
+    (imageEditing ? layout.width : (node.measured?.width ?? document.width)) /
+      2;
+  const centerY =
+    layout.y +
+    (imageEditing
+      ? layout.height
+      : (node.measured?.height ?? document.height)) /
+      2;
   const toSection =
     [...sections]
       .filter(

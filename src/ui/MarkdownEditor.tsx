@@ -44,6 +44,7 @@ import {
 } from '../editor-ux';
 
 type Props = {
+  referencePreview?: ReactNode;
   onCopyBlock?: (id: string) => void;
   value: string;
   onChange: (value: string) => void;
@@ -59,6 +60,7 @@ type Props = {
   currentCanvas?: string;
 };
 export function MarkdownEditor({
+  referencePreview,
   onCopyBlock,
   value,
   onChange,
@@ -1281,6 +1283,7 @@ export function MarkdownEditor({
         requestAnimationFrame(() => updateLinkTrigger());
       }}
     >
+      {referencePreview}
       {warning && (
         <p className="markdown-editor-warning" role="status">
           {warning}

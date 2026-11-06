@@ -132,6 +132,12 @@ async function run() {
     if (!baseline) {
       await open('markdown', 20, '&preview-source=1');
       await js(
+        `for(const selector of ['[data-id="perf-0"]','.react-flow__node-preview','[data-id="perf-1"]'])document.querySelector(selector+' .file-node-surface')?.click();`,
+      );
+      await wait(
+        `!!document.querySelector('[data-id="perf-0"] .canvas-file-header__title')&&!!document.querySelector('[data-id="perf-1"] .source-list button')&&!!document.querySelector('iframe')`,
+      );
+      await js(
         `window.__iframe=document.querySelector('iframe');window.__iframeWindow=__iframe.contentWindow;window.__nodesBefore=__perfFlow.getNodes();window.__perfCounts={};qaNodeUpdates.rename('참고 원본 | 제목: 갱신');true`,
       );
       await wait(

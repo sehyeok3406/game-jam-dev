@@ -138,6 +138,17 @@ test('drag plans convert relative coordinates and preserve collapsed stored heig
   });
   const compact = { ...input, data: { ...input.data, fileNode: {} } };
   assert.equal(documentDragLayout(compact, [section]).width, document.width);
+  const imageEditor = {
+    ...input,
+    className: 'file-node-image-editing',
+    data: { document },
+    measured: { width: 320, height: 300 },
+  };
+  const imageLayout = documentDragLayout(imageEditor, [section]);
+  assert.deepEqual(
+    [imageLayout.width, imageLayout.height],
+    [document.width, document.height],
+  );
   assert.equal(input.position.x, 12);
 });
 

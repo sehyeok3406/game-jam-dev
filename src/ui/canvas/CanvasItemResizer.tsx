@@ -12,22 +12,32 @@ import { NodeResizer, useNodeId, useReactFlow } from '@xyflow/react';
 import { PREVIEW_PRESETS } from '../../preview-window';
 import type { CanvasNode } from '../workspace/workspace-types';
 import { resizeGroup, type ResizeBox } from './group-resize';
+import { imageDescriptionEditingClass } from './file-card-presentation';
 
 const ResizeContext = createContext<null | {
   save: (nodes: CanvasNode[]) => Promise<void>;
   scope: string;
+  reportImageEditing?: (id: string, editing: boolean) => void;
 }>(null);
+
+export const useImageDescriptionPresentation = () =>
+  useContext(ResizeContext)?.reportImageEditing;
 
 export function CanvasResizeProvider({
   save,
   scope,
+  reportImageEditing,
   children,
 }: {
   save: (nodes: CanvasNode[]) => Promise<void>;
   scope: string;
+  reportImageEditing?: (id: string, editing: boolean) => void;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ save, scope }), [save, scope]);
+  const value = useMemo(
+    () => ({ save, scope, reportImageEditing }),
+    [save, scope, reportImageEditing],
+  );
   return (
     <ResizeContext.Provider value={value}>{children}</ResizeContext.Provider>
   );
@@ -38,7 +48,12 @@ function boxFor(node: CanvasNode): ResizeBox | null {
     return null;
   const data = node.data;
   if (data.kind === 'document') {
-    if (data.layoutLocked || data.document.collapsed) return null;
+    if (
+      data.layoutLocked ||
+      data.document.collapsed ||
+      node.className?.includes(imageDescriptionEditingClass)
+    )
+      return null;
     return {
       id: node.id,
       ...node.position,

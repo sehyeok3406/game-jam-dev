@@ -182,33 +182,87 @@ const originals = await Promise.all(
   ]),
 );
 const fileNodesOnly = process.argv.includes('--file-nodes');
-const imagePath = 'assets/images/dot.png';
+const imagePath = 'assets/images/wide.png';
 const imageDocument = path.join(game, 'docs', 'picture.md');
 const imageBody = `![불러온 이미지](../${imagePath})\n\n## 이미지 용도\n\n게임 에셋\n\n## 설명\n\n초기 설명\n\n원본 이미지: \`${imagePath}\`\n`;
+const recoveredDescription = '복원한 이미지 설명 초안';
 if (fileNodesOnly) {
-  const png = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7S8AAAAASUVORK5CYII=',
-    'base64',
-  );
+  const fixtures = [
+    [
+      'picture',
+      imagePath,
+      '스프라이트',
+      1100,
+      'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAECAYAAAC6Jt6KAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2AgB8hN+P+fWEx7DQBvzVgtcyg/0wAAAABJRU5ErkJggg==',
+    ],
+    [
+      'portrait',
+      'assets/images/tall.png',
+      '세로형',
+      1320,
+      'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAMCAYAAABFohwTAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2DABuQm/P8Pw0NHAABTrlgt0bibAQAAAABJRU5ErkJggg==',
+    ],
+  ];
   await fs.mkdir(path.join(game, 'assets', 'images'), { recursive: true });
-  await fs.writeFile(path.join(game, imagePath), png);
+  for (const [id, asset, title, x, bytes] of fixtures) {
+    const png = Buffer.from(bytes, 'base64');
+    await fs.writeFile(path.join(game, asset), png);
+    await fs.writeFile(
+      path.join(game, 'docs', id + '.md'),
+      matter.stringify(imageBody.replaceAll(imagePath, asset), {
+        id,
+        title,
+        type: 'image',
+        x,
+        y: 740,
+        width: 180,
+        height: 160,
+        asset: {
+          path: asset,
+          purpose: 'asset',
+          originalName: path.basename(asset),
+          mime: 'image/png',
+          bytes: png.length,
+        },
+      }),
+    );
+  }
+  const neighbor = 'same-section';
   await fs.writeFile(
-    imageDocument,
-    matter.stringify(imageBody, {
-      id: 'picture',
-      title: '스프라이트',
-      type: 'image',
-      x: 1100,
-      y: 740,
-      width: 300,
-      height: 220,
-      asset: {
-        path: imagePath,
-        purpose: 'asset',
-        originalName: 'dot.png',
-        mime: 'image/png',
-        bytes: png.length,
-      },
+    path.join(game, 'docs', neighbor + '.md'),
+    matter.stringify('같은 섹션의 접힌 문서', {
+      id: neighbor,
+      title: '같은 섹션',
+      type: 'idea',
+      x: 565,
+      y: 365,
+      width: 340,
+      height: 300,
+    }),
+  );
+  const section = matter(sectionRaw);
+  const sections = path.join(game, 'sections');
+  await fs.writeFile(
+    path.join(sections, 'presentation.md'),
+    matter.stringify(section.content, {
+      ...section.data,
+      members: [
+        ...section.data.members,
+        { id: neighbor, path: `docs/${neighbor}.md` },
+      ],
+    }),
+  );
+  await fs.writeFile(
+    path.join(sections, 'second.md'),
+    matter.stringify('', {
+      id: 'presentation-second',
+      title: '다른 섹션',
+      type: 'section',
+      x: 622,
+      y: 390,
+      width: 500,
+      height: 380,
+      members: [{ id: 'b', path: 'docs/b.md' }],
     }),
   );
 }
@@ -248,6 +302,79 @@ async function enterWorkspace() {
     `(()=>{if(document.querySelector('[data-plugin-launcher]'))return true;const button=document.querySelector('.home-project-open');if(!button||button.disabled)return false;button.click();return true;})()`,
   );
   await wait('!!document.querySelector("[data-plugin-launcher]")');
+}
+
+async function checkExpandedOrder() {
+  const a = '[data-id="a"]',
+    b = '[data-id="b"]';
+  const query = (selector) =>
+    `document.querySelector(${JSON.stringify(selector)})`;
+  const intersection = (other) =>
+    `(()=>{const a=${query(a)}.getBoundingClientRect(),b=${query(other)}.getBoundingClientRect();const l=Math.max(a.left,b.left),r=Math.min(a.right,b.right),t=Math.max(a.top,b.top),d=Math.min(a.bottom,b.bottom);return r-l>8&&d-t>8?{x:(l+r)/2,y:(t+d)/2}:null;})()`;
+  const hit = (point) =>
+    `(()=>{const p=${point};return p&&document.elementFromPoint(p.x,p.y)?.closest('.react-flow__node')?.dataset.id;})()`;
+  const otherSection = intersection(b);
+  const sameSection = intersection('[data-id="same-section"]');
+  const handle = a + ' .window-resize-handle.bottom.right';
+  await wait(`!!${query(a + ' .file-node-surface')}`);
+  await js(`${query(a + ' .file-node-surface')}.click()`);
+  await wait(`!!${query(handle)}`);
+  const { point, distance } = await js(
+    `(()=>{const h=${query(handle)}.getBoundingClientRect(),a=${query(a)}.getBoundingClientRect(),b=${query(b)}.getBoundingClientRect();return {point:{x:Math.round(h.x+h.width/2),y:Math.round(h.y+h.height/2)},distance:Math.ceil(b.left-a.right+b.width/4)};})()`,
+  );
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    ...point,
+    button: 'left',
+    buttons: 1,
+    clickCount: 1,
+  });
+  const end = { x: point.x + distance, y: point.y };
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    ...end,
+    button: 'left',
+    buttons: 1,
+  });
+  await wait(`${hit(otherSection)}==='a'&&${hit(sameSection)}==='a'`);
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    ...end,
+    button: 'left',
+    buttons: 0,
+    clickCount: 1,
+  });
+  await wait(
+    `window.gameCanvas.getDocument('docs/a.md').then(doc=>doc.width>500)`,
+  );
+  await wait(`${hit(otherSection)}==='a'&&${hit(sameSection)}==='a'`);
+
+  const preview = '.react-flow__node-preview';
+  const layer = (selector) =>
+    `Number(getComputedStyle(${query(selector)}).zIndex)`;
+  await js(`${query(preview + ' .file-node-surface')}.click()`);
+  await wait(`${layer(preview)}>${layer(a)}`);
+  await js(`${query(a + ' .document-card__header')}.click()`);
+  await wait(`${layer(a)}>${layer(preview)}`);
+  await js(`${query(preview + ' button[aria-label="접기"]')}.click()`);
+
+  await js(`${query(b + ' .file-node-surface')}.click()`);
+  await wait(`${hit(otherSection)}==='b'`);
+  await js(`${query(a + ' .document-card__header')}.click()`);
+  await wait(`${hit(otherSection)}==='a'`);
+  await js(
+    `{const p=${otherSection};document.elementFromPoint(p.x,p.y).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,altKey:true,clientX:p.x,clientY:p.y}));}`,
+  );
+  await wait(
+    `document.querySelector('.drawing-overlap-menu [role=menuitem]')?.textContent.startsWith('보존할 a')`,
+  );
+  await key('Escape');
+  await js(`${query(a + ' button[aria-label="접기"]')}.click()`);
+  await wait(`!!${query(a + ' .file-node-surface')}`);
+  await js(`${query(b + ' button[aria-label="접기"]')}.click()`);
+  await wait(`!!${query(b + ' .file-node-surface')}`);
+  await js(`${query(a + ' .file-node-surface')}.click()`);
+  await wait(`!!${query(a + ' .file-node-expanded')}`);
 }
 
 async function checkFileNodes() {
@@ -383,8 +510,27 @@ async function checkFileNodes() {
   for (const [relative, raw] of originals)
     assert.equal(await fs.readFile(path.join(game, relative), 'utf8'), raw);
   const image = '[data-id="picture"] .asset-node-surface';
-  await wait(`!!${query(image + ' img')}?.complete`);
-  assert.equal(await js(`${query(image)}.textContent`), '');
+  const originalAsset = await fs.readFile(path.join(game, imagePath));
+  await js(
+    `document.querySelector('button[aria-label="캔버스 전체 맞춤"]').click()`,
+  );
+  for (const [surface, width, height] of [
+    ['[data-id=portrait] .asset-node-surface', 4, 12],
+    [image, 12, 4],
+  ]) {
+    await js(`${query(surface)}.focus({preventScroll:true})`);
+    const img = query(surface + ' img');
+    await wait(
+      `${img}?.naturalWidth===${width}&&${img}.naturalHeight===${height}`,
+    );
+    assert.equal(await js(`${query(surface)}.textContent`), '');
+    assert.equal(
+      await js(
+        `(()=>{const root=document.documentElement,theme=root.dataset.theme;try{return ['light','dark'].every(value=>{root.dataset.theme=value;const style=getComputedStyle(${img});return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.objectFit==='contain';});}finally{root.dataset.theme=theme;}})()`,
+      ),
+      true,
+    );
+  }
   await js(
     `${query(image)}.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,button:2,clientX:600,clientY:300}))`,
   );
@@ -399,6 +545,29 @@ async function checkFileNodes() {
   const editor = '[data-id="picture"] .tiptap';
   await wait(`!!${query(editor)}`);
   assert.equal(await js(`${query(editor)}.innerText`), '초기 설명');
+  const imagePreview = '[data-id="picture"] .asset-description-preview img';
+  await wait(`${query(imagePreview)}?.naturalWidth===12`);
+  assert.equal(
+    await js(
+      `(()=>{const card=getComputedStyle(document.querySelector('[data-id=picture]')),p=${query(imagePreview)}.getBoundingClientRect(),e=${query(editor)}.getBoundingClientRect();return card.width==='320px'&&card.height==='300px'&&p.height>10&&p.bottom<=e.top;})()`,
+    ),
+    true,
+  );
+  await wait(`!!document.querySelector('button[aria-label="집중 편집"]')`);
+  await js(`document.querySelector('button[aria-label="집중 편집"]').click()`);
+  await wait(
+    `document.querySelector('.editor-focus-dialog .asset-description-preview img')?.naturalWidth===12`,
+  );
+  assert.equal(
+    await js(
+      `document.querySelector('.editor-focus-dialog .asset-description-preview').getBoundingClientRect().bottom <= document.querySelector('.editor-focus-dialog .tiptap').getBoundingClientRect().top`,
+    ),
+    true,
+  );
+  await js(
+    `document.querySelector('button[aria-label="집중 편집 닫기"]').click()`,
+  );
+  await wait(`!!${query(editor)}`);
   await js(
     `{const e=${query(editor)};e.focus();const range=document.createRange();range.selectNodeContents(e);getSelection().removeAllRanges();getSelection().addRange(range);}`,
   );
@@ -413,6 +582,14 @@ async function checkFileNodes() {
     imageBody.replace('초기 설명', '저장한 이미지 설명'),
   );
   assert.equal(written.data.asset.path, imagePath);
+  assert.deepEqual([written.data.width, written.data.height], [180, 160]);
+  assert.deepEqual(
+    await fs.readFile(path.join(game, imagePath)),
+    originalAsset,
+  );
+  await wait(
+    `getComputedStyle(document.querySelector('[data-id=picture]')).width==='180px'&&getComputedStyle(document.querySelector('[data-id=picture]')).height==='160px'`,
+  );
   await js(`${query(image)}.click()`);
   await wait(`${query(editor)}?.innerText==='저장한 이미지 설명'`);
   await js(
@@ -436,10 +613,22 @@ async function checkFileNodes() {
   await js(
     `[...document.querySelectorAll('[role=tab]')].find(item=>!item.textContent.includes(${JSON.stringify(extraLabel)})).click()`,
   );
-  const opened = '[data-id="a"] .file-node-surface';
-  await wait(`!!${query(opened)}`);
-  await js(`${query(opened)}.click()`);
-  await wait('!!document.querySelector(\'[data-id="a"] .file-node-expanded\')');
+  await wait(`!!${query('[data-id="a"] .file-node-surface')}`);
+  await js(
+    `document.querySelector('button[aria-label="캔버스 전체 맞춤"]').click()`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  await checkExpandedOrder();
+  const workspace = await call('getWorkspace');
+  await call(
+    'setEditorDraft',
+    `game-canvas-draft:${workspace.root}:picture`,
+    {
+      title: '스프라이트',
+      body: imageBody.replace('초기 설명', recoveredDescription),
+    },
+    1,
+  );
   console.log(
     'PASS: packaged file nodes open and resize, keep the HTML iframe, draw links, edit image descriptions, and apply saved sizing to all tabs and new nodes',
   );
@@ -457,6 +646,27 @@ try {
     );
     await wait(
       '!!document.querySelector(\'[data-id="a"] .file-node-expanded\')',
+    );
+    await js(
+      `document.querySelector('button[aria-label="캔버스 전체 맞춤"]').click()`,
+    );
+    const draftCard = `document.querySelector('[data-id=picture] .document-card__content')`;
+    await wait(`!!${draftCard}`);
+    await js(`${draftCard}.click()`);
+    await wait(
+      `[...document.querySelectorAll('[data-id=picture] button')].some(button=>button.textContent==='보관된 초안 불러오기')`,
+    );
+    await js(
+      `[...document.querySelectorAll('[data-id=picture] button')].find(button=>button.textContent==='보관된 초안 불러오기').click()`,
+    );
+    await wait(
+      `document.querySelector('[data-id=picture] .tiptap')?.innerText===${JSON.stringify(recoveredDescription)}&&document.querySelector('[data-id=picture] .asset-description-preview img')?.naturalWidth===12`,
+    );
+    await js(
+      `[...document.querySelectorAll('[data-id=picture] button')].find(button=>button.textContent==='완료').click()`,
+    );
+    await wait(
+      `!!document.querySelector('[data-id=picture] .asset-node-surface')`,
     );
     console.log(
       'PASS: Windows package restores the collapsed state and size after restart',
@@ -553,7 +763,7 @@ try {
   console.error(
     'Presentation UI failure state:',
     await js(
-      `({notice:document.querySelector('.status-toast')?.textContent,dialog:document.querySelector('[aria-modal=true]')?.textContent,disabled:document.querySelector('[data-ui-id=membership] .button-primary')?.disabled,undoDisabled:document.querySelector('button[title^="실행 취소"]')?.disabled,selected:[...document.querySelectorAll('.react-flow__node.selected')].map(node=>node.dataset.id)})`,
+      `({notice:document.querySelector('.status-toast')?.textContent,dialog:document.querySelector('[aria-modal=true]')?.textContent,disabled:document.querySelector('[data-ui-id=membership] .button-primary')?.disabled,undoDisabled:document.querySelector('button[title^="실행 취소"]')?.disabled,selected:[...document.querySelectorAll('.react-flow__node.selected')].map(node=>node.dataset.id),nodes:${fileNodesOnly}?[...document.querySelectorAll('.react-flow__node')].map(node=>({id:node.dataset.id,bounds:node.getBoundingClientRect().toJSON(),layer:getComputedStyle(node).zIndex,text:node.innerText.slice(0,100)})):undefined})`,
     ).catch(() => undefined),
   );
   throw error;

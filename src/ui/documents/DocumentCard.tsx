@@ -1,6 +1,9 @@
-import { memo, type KeyboardEvent } from 'react';
+import { memo, useLayoutEffect, type KeyboardEvent } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import { CanvasItemResizer } from '../canvas/CanvasItemResizer';
+import {
+  CanvasItemResizer,
+  useImageDescriptionPresentation,
+} from '../canvas/CanvasItemResizer';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { cardColor } from '../../card-colors';
 import { FilePropertyBadges } from '../FileProperties';
@@ -35,6 +38,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
   const { api, capabilities } = useRuntime();
   const locationSharing = useLocationSharing();
   const { document } = data;
+  const assetPath = document.asset?.path;
+  const reportImageEditing = useImageDescriptionPresentation();
   const copyBlock = locationSharing?.anchors
     ? (blockId: string) =>
         locationSharing.copy({
@@ -75,6 +80,11 @@ const DocumentCardContent = memo(function DocumentCardContent({
     restoreDraft,
     finishing,
   } = useDocumentEditing(data);
+  useLayoutEffect(() => {
+    if (!editing || !assetPath || !reportImageEditing) return;
+    reportImageEditing(document.id, true);
+    return () => reportImageEditing(document.id, false);
+  }, [editing, assetPath, document.id, reportImageEditing]);
   useCanvasProtection(
     editing ||
       startingEdit ||
@@ -190,7 +200,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
 
   return (
     <>
-      {!document.collapsed && (
+      {!document.collapsed && !(document.asset && editing) && (
         <CanvasItemResizer
           color="var(--selection)"
           isVisible={selected && !data.layoutLocked}
@@ -339,6 +349,22 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 <MarkdownEditor
                   onCopyBlock={copyBlock}
                   currentCanvas={document.canvasId}
+                  referencePreview={
+                    assetPath && (
+                      <div
+                        className="asset-description-preview"
+                        role="group"
+                        aria-label="설명할 이미지 미리보기"
+                      >
+                        <ProjectImage
+                          path={assetPath}
+                          title={document.title}
+                          cacheKey={data.draftKey}
+                          version={document.assetVersion}
+                        />
+                      </div>
+                    )
+                  }
                   value={description?.body ?? body}
                   onCompositionChange={setComposing}
                   locked={data.locked}
@@ -428,6 +454,10 @@ const DocumentCardContent = memo(function DocumentCardContent({
                     event.target.closest('button, a, input')
                   )
                     return;
+                  if (document.asset) {
+                    void startEdit();
+                    return;
+                  }
                   if (document.type === 'image') return;
                   if (data.locked) data.onBlocked();
                   else
@@ -444,8 +474,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
                     });
                 }}
                 title={
-                  document.type === 'image'
-                    ? '이미지 참고 자료 · 설명 편집 버튼으로 수정'
+                  document.asset
+                    ? '클릭해서 이미지 설명 편집'
                     : '클릭해서 바로 편집'
                 }
               >

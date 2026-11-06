@@ -1,6 +1,11 @@
 import { readProjectPreference } from '../workspace/project-preferences.ts';
 import { useState } from 'react';
 import { FileNodeEdges } from './FileNodeEdges';
+import {
+  isVisibleCanvasNode,
+  useFileCardPresentation,
+} from './file-card-presentation';
+import { selectionScopeKey } from './selection-actions';
 import type { PreviewResult } from '../../contracts/preview';
 import { GamejamMaterialSelection } from '../GamejamMaterialSelection';
 import { EraserPreviewContext } from '../drawing/eraserPreview';
@@ -343,6 +348,13 @@ export function WorkspaceCanvas({
     canvas: string;
     id: string;
   } | null>(null);
+  const { renderedNodes, activate, reportImageEditing } =
+    useFileCardPresentation(nodes, selectionScopeKey(selectionScope));
+  const activateFileAt = (target: Element) => {
+    if (materialPicker !== null || tool !== 'select') return;
+    const id = target.closest('.react-flow__node')?.getAttribute('data-id');
+    if (id) activate(id);
+  };
   return (
     <CanvasViewportProvider scope={selectionScope} searching={findOpen}>
       <div
@@ -386,8 +398,10 @@ export function WorkspaceCanvas({
             .closest('.react-flow__node')
             ?.getAttribute('data-id');
           if (id) acknowledgeNewFile(id);
+          activateFileAt(target);
         }}
         onPointerDownCapture={(event) => {
+          if (event.button === 0) activateFileAt(event.target as Element);
           if (
             (event.target as Element).closest(
               'button:not(.file-node-surface), input, select, textarea, a, .nodrag, [contenteditable="true"]',
@@ -426,6 +440,10 @@ export function WorkspaceCanvas({
             pane && event.button === 0 && (target === pane || event.shiftKey)
               ? { pane, pointerId: event.pointerId }
               : null;
+        }}
+        onFocusCapture={(event) => {
+          if (event.target instanceof HTMLIFrameElement)
+            activateFileAt(event.target);
         }}
         onPointerMoveCapture={(event) => {
           const gesture = noteGesture.current;
@@ -478,24 +496,22 @@ export function WorkspaceCanvas({
             y: event.clientY,
           });
           if (!point) return;
-          const ids = [...nodes]
-            .sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0))
-            .filter((n) => {
-              const parent = sections.find(
-                  (s) => n.parentId === sectionNodeId(s.id),
-                ),
-                x = n.position.x + (parent?.x ?? 0),
-                y = n.position.y + (parent?.y ?? 0);
-              return (
-                point.x >= x &&
-                point.x <=
-                  x + (n.measured?.width ?? Number(n.style?.width ?? 0)) &&
+          const ids = renderedNodes
+            .flatMap((node, index) => {
+              if (!isVisibleCanvasNode(node)) return [];
+              const internal = flowRef.current?.getInternalNode(node.id);
+              if (!internal) return [];
+              const { x, y } = internal.internals.positionAbsolute;
+              const { width = 0, height = 0 } = internal.measured;
+              return point.x >= x &&
+                point.x <= x + width &&
                 point.y >= y &&
-                point.y <=
-                  y + (n.measured?.height ?? Number(n.style?.height ?? 0))
-              );
+                point.y <= y + height
+                ? [{ id: node.id, layer: internal.internals.z, index }]
+                : [];
             })
-            .map((n) => n.id);
+            .sort((a, b) => b.layer - a.layer || b.index - a.index)
+            .map(({ id }) => id);
           if (!ids.length) return;
           event.preventDefault();
           event.stopPropagation();
@@ -551,13 +567,14 @@ export function WorkspaceCanvas({
                 <CanvasResizeProvider
                   save={persistResizedNodes}
                   scope={`${workspace.saveScope ?? workspace.root}:${activeCanvas}`}
+                  reportImageEditing={reportImageEditing}
                 >
                   <ReactFlow<CanvasNode>
                     key={activeCanvas}
                     nodes={
                       materialPicker === null
-                        ? nodes
-                        : nodes.map((node) => ({
+                        ? renderedNodes
+                        : renderedNodes.map((node) => ({
                             ...node,
                             selected:
                               !!materialPath(node) &&
@@ -865,6 +882,7 @@ export function WorkspaceCanvas({
                     onSelectionChange={({ nodes: selected }) => {
                       acknowledgeNewFiles(selected.map((node) => node.id));
                       if (materialPicker !== null) return;
+                      if (selected.length === 1) activate(selected[0].id);
                       const nextIds = selected.flatMap((node) =>
                         node.data.kind === 'document'
                           ? [node.data.document.id]

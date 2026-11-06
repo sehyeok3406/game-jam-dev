@@ -141,7 +141,33 @@ button.file-node-surface:active:not(:disabled) {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  background: transparent;
   border-radius: 0;
+}
+.react-flow__node.file-node-image-editing {
+  min-width: 320px;
+  min-height: 300px;
+}
+.asset-description-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 35%;
+  min-height: 0;
+  max-height: 160px;
+  overflow: hidden;
+}
+.editor-focus-dialog .asset-description-preview {
+  max-height: 240px;
+}
+.asset-description-preview .project-image {
+  height: 100%;
+  max-height: 100%;
+  background: transparent;
+}
+.markdown-editor .asset-description-preview ~ .markdown-editor-content,
+.markdown-editor .asset-description-preview ~ textarea {
+  min-height: 56px;
 }
 .section-dialog.file-node-settings {
   grid-template-columns: minmax(0, 1fr);
