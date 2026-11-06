@@ -119,6 +119,8 @@ export function planAiResult(
         x: Number.isFinite(taskData.x) ? taskData.x : 120,
         y: Number.isFinite(taskData.y) ? taskData.y : 120,
         canvasId: canvasId(taskData.canvas_id),
+        nodePlacement: taskData.node_placement,
+        inputs: taskData.inputs,
       }),
     };
     checkSnapshot(files);

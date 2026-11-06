@@ -4,6 +4,7 @@ import { readProjectLayout } from '../../core/projects/project-layout.ts';
 import type { HistoryEntry } from '../../contracts/history.ts';
 import type { AiProviderId } from '../../contracts/ai.ts';
 import type { AiFileLock } from '../../contracts/ai.ts';
+import type { PreviewWindowState } from '../../contracts/preview.ts';
 import type { LocalProjectRepository } from '../ports/local-project-repository.ts';
 import type { AiStageWorkspace } from './stage-workspace.ts';
 import matter from '../../markdown.ts';
@@ -18,7 +19,8 @@ import {
   gameBuildTask,
 } from '../../task-plan.ts';
 import { validateHtmlAnalysis } from '../../html-source.ts';
-import { isPreviewPath } from '../../preview-output.ts';
+import { isPreviewPath, managedPreviewPaths } from '../../preview-output.ts';
+import { readNodePlacement } from '../../core/canvas/file-node-style.ts';
 import { embedSelectedAssets } from '../../ai-asset-links.ts';
 import {
   changedAiFile,
@@ -82,6 +84,9 @@ export class AiRunService {
     relative: string,
   ) => Promise<unknown>;
   private readonly now: () => number;
+  private readonly previewWindow?: (
+    path: string,
+  ) => Promise<PreviewWindowState | null>;
   private buildSnapshot: Snapshot = {};
   private buildOptions?: {
     execution: GameBuildExecutionPort;
@@ -107,6 +112,7 @@ export class AiRunService {
       codec: GameBuildCodec;
       id(): string;
     },
+    previewWindow?: (path: string) => Promise<PreviewWindowState | null>,
   ) {
     this.baseline = baseline;
     this.taskPath = taskPath;
@@ -114,6 +120,7 @@ export class AiRunService {
     this.repository = repository;
     this.validateHtml = validateHtml;
     this.now = now;
+    this.previewWindow = previewWindow;
     this.stages = workflowStages(baseline[taskPath]);
     this.phaseBaseline = baseline;
     if (gameBuildTask(baseline[taskPath])) {
@@ -472,12 +479,31 @@ export class AiRunService {
         ...Object.fromEntries(paths.map((p) => [p, merged[p]])),
       };
     }
+    const windowFor = this.previewWindow;
+    const windows =
+      !input.shared && readNodePlacement(taskData.node_placement) && windowFor
+        ? new Map(
+            (
+              await Promise.all(
+                managedPreviewPaths(current).map(
+                  async (path) => [path, await windowFor(path)] as const,
+                ),
+              )
+            ).filter(
+              (entry): entry is readonly [string, PreviewWindowState] =>
+                entry[1] !== null,
+            ),
+          )
+        : undefined;
     let changes = input.shared
       ? artifacts
       : layoutNewDocuments(current, artifacts, {
           x: Number.isFinite(taskData.x) ? taskData.x : 120,
           y: Number.isFinite(taskData.y) ? taskData.y : 120,
           canvasId: canvasId(taskData.canvas_id),
+          nodePlacement: taskData.node_placement,
+          inputs: taskData.inputs,
+          windows,
         });
     const initialized = initializeWorkflows(
       current,

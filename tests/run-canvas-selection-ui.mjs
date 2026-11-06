@@ -6,7 +6,10 @@ import path from 'node:path';
 const server = await createServer({
   configFile: 'vite.renderer.config.mts',
   resolve: {
-    alias: { 'node:crypto': path.resolve('tests/mocks/browser-crypto.ts') },
+    alias: {
+      'node:crypto': path.resolve('tests/mocks/browser-crypto.ts'),
+      'node:buffer': path.resolve('tests/mocks/browser-buffer.ts'),
+    },
   },
   server: { host: '127.0.0.1', port: 0, watch: { ignored: ['**/out/**'] } },
 });

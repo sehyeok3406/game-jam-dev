@@ -3,6 +3,7 @@ import type { FilePropertyVisibility } from '../../file-properties';
 import type { DocumentStatuses } from '../../contracts/document-statuses';
 import type { CanvasDocument } from '../../contracts/documents';
 import type { Node } from '@xyflow/react';
+import type { FileNodeDisplay } from '../canvas/FileNodeSurface';
 
 export type DocumentNodeData = {
   draftRegistry: DraftFlusherRegistry;
@@ -16,6 +17,9 @@ export type DocumentNodeData = {
   onManageWorkflow: () => void;
   sectionHidden?: boolean;
   kind: 'document';
+  fileNode?: FileNodeDisplay;
+  onOpenFileNode?: () => void;
+  onResizeFileNode?: (width: number, height: number) => void;
   locked: boolean;
   onBlocked: () => void;
   registerEditor: (

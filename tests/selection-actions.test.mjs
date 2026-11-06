@@ -553,3 +553,36 @@ test('arrangement waits for flush and emits the original stored heights; disposa
   await pending;
   assert.ok(!second.events.some((item) => item[0] === 'duplicate'));
 });
+
+test('mixed arrangement reloads saved document positions if a private HTML position fails', async () => {
+  const { ports, service, events, errors, notices } = setup();
+  const failure = Error('private preview storage failed');
+  ports.savePreviewPositions = async (moves) => {
+    events.push(['windows', moves]);
+    throw failure;
+  };
+  const [note] = selectionArrangementItems([doc], []);
+  const items = [
+    { ...note, width: 180, storedWidth: 300 },
+    {
+      key: 'preview:output/index.html',
+      relativePath: 'output/index.html',
+      kind: 'preview',
+      x: 400,
+      y: 300,
+      width: 340,
+      height: 112,
+      storedHeight: 520,
+    },
+  ];
+  await service.arrange(
+    items,
+    'row',
+    items.map((item) => item.relativePath),
+  );
+  assert.equal(events[1][1][0].width, 300);
+  assert.equal(events[2][1][0].x, 230);
+  assert.equal(events.at(-1), 'reload');
+  assert.deepEqual(errors, [failure]);
+  assert.deepEqual(notices, []);
+});

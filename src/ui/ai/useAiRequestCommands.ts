@@ -37,6 +37,7 @@ import type { SelectionScope } from '../canvas/selection-actions.ts';
 import { useProjectLifetime } from '../workspace/useViewLifetime.ts';
 import type { CanvasNode } from '../workspace/workspace-types.ts';
 interface Ports {
+  nodePlacement?: import('../../contracts/ai').CreateTaskInput['nodePlacement'];
   canWriteAiRequest: boolean;
   setNotice: import('react').Dispatch<import('react').SetStateAction<string>>;
   collaboration: CollaborationState;
@@ -446,7 +447,10 @@ export function useAiRequestCommands(
           '자료의 저장과 프로젝트 연결을 확인한 뒤 다시 실행해주세요. 작성 내용은 보관됩니다.',
         );
       const request = resolveGamejamRequest(
-        aiRequest,
+        {
+          ...aiRequest,
+          nodePlacement: aiRequest.nodePlacement ?? ports().nodePlacement,
+        },
         latestDocuments,
         latestPreviews,
         latestDrawings,

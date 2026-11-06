@@ -2,6 +2,7 @@ import type { CanvasDocument } from '../../contracts/documents';
 import type { CanvasSection } from '../../contracts/canvas';
 import type { DrawingObject } from '../../contracts/drawing-types';
 import type { CommandEnvironment } from '../../core/editing/environment';
+import { arrangeFileNodes } from '../../core/canvas/result-placement.ts';
 
 export type DeletionItem = Pick<
   CanvasDocument,
@@ -20,17 +21,21 @@ export type ArrangementAction =
   | 'center-y'
   | 'bottom'
   | 'distribute-x'
-  | 'distribute-y';
+  | 'distribute-y'
+  | 'row'
+  | 'column'
+  | 'grid';
 export type ArrangementItem = {
   revision?: number;
   key: string;
-  kind: 'document' | 'section';
+  kind: 'document' | 'section' | 'preview';
   relativePath: string;
   x: number;
   y: number;
   width: number;
   height: number;
   storedHeight: number;
+  storedWidth?: number;
 };
 
 export function selectionArrangementItems(
@@ -88,9 +93,10 @@ export function arrangeSelectionItems(
     right = Math.max(...items.map((item) => item.x + item.width));
   const top = Math.min(...items.map((item) => item.y)),
     bottom = Math.max(...items.map((item) => item.y + item.height));
-  const positions = new Map(
-    items.map((item) => [item.key, { x: item.x, y: item.y }]),
-  );
+  const positions =
+    action === 'row' || action === 'column' || action === 'grid'
+      ? arrangeFileNodes(items, action)
+      : new Map(items.map((item) => [item.key, { x: item.x, y: item.y }]));
   if (action === 'distribute-x' || action === 'distribute-y') {
     const axis = action === 'distribute-x' ? 'x' : 'y',
       size = axis === 'x' ? 'width' : 'height';
@@ -121,7 +127,7 @@ export function arrangeSelectionItems(
     relativePath: item.relativePath,
     revision: item.revision,
     ...positions.get(item.key)!,
-    width: item.width,
+    width: item.storedWidth ?? item.width,
     height: item.storedHeight,
     ...(item.kind === 'section' ? { moveMembers: true } : {}),
   }));

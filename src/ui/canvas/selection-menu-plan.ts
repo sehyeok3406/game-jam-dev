@@ -23,7 +23,7 @@ export function selectionMenuTargets(nodes: CanvasNode[]) {
     node.data.kind === 'drawing' ? [node.data.object] : [],
   );
   const collapse = nodes.flatMap((node): CollapseTarget[] => {
-    if (node.data.kind === 'document')
+    if (node.data.kind === 'document' && !node.data.document.asset)
       return [{ kind: 'document', document: node.data.document }];
     if (node.data.kind === 'section')
       return [

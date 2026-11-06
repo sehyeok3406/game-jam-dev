@@ -96,6 +96,9 @@ import {
 import { SelectionDeleteDialogs } from '../canvas/SelectionDeleteDialogs';
 import { useCanvasClipboard } from '../canvas/useCanvasClipboard';
 import { useCanvasCommands } from '../canvas/useCanvasCommands';
+import { htmlNodeKey, markdownNodeKey } from '../canvas/file-node-identity';
+import { useFileNodePreferences } from '../canvas/file-node-preferences';
+import { FileNodeSettings } from '../canvas/FileNodeSettings';
 import { useCanvasGeometry } from '../canvas/useCanvasGeometry';
 import { useCanvasNavigation } from '../canvas/useCanvasNavigation';
 import { useCanvasNodes } from '../canvas/useCanvasNodes';
@@ -522,6 +525,20 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const [previewWindows, setPreviewWindows] = useState<
     Record<string, PreviewWindowState>
   >({});
+  const fileNodeScope = collaboration.projectId
+    ? personalScope
+    : (workspace.libraryId ?? personalScope);
+  const fileNodes = useFileNodePreferences(
+    fileNodeScope,
+    documents,
+    previews,
+    (error) => showError(error),
+  );
+  const [fileNodeSettingsScope, setFileNodeSettingsScope] = useState<
+    string | null
+  >(null);
+  const [heldFileLinks, setHeldFileLinks] = useState(false);
+  const [pinnedFileLinks, setPinnedFileLinks] = useState<string[]>([]);
   const [creatingTask, setCreatingTask] = useScopedPrompt(
     JSON.stringify([
       workspace.root,
@@ -1054,6 +1071,20 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   selectionPromptsRef.current = selectionPrompts;
   const { actions: selectionActions, busy: selectionBusy } =
     useSelectionActions(selectionScope, () => ({
+      savePreviewPositions: (moves) =>
+        updatePreviewWindows(
+          moves.flatMap((move) => {
+            const state = previewWindows[move.relativePath];
+            return state
+              ? [
+                  {
+                    relative: move.relativePath,
+                    state: { ...state, x: move.x, y: move.y },
+                  },
+                ]
+              : [];
+          }),
+        ),
       editor: api.editor,
       preview: api.preview,
       environment: { now: Date.now, id: () => crypto.randomUUID() },
@@ -1096,7 +1127,20 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     selectionScope,
     () => ({
       busy: legacyEditBusy || selectionBusy || sectionBusy,
-      editor: api.editor,
+      editor: {
+        setDocumentCollapsed: async ({ relativePath, collapsed }) => {
+          const document = documents.find(
+            (item) => item.relativePath === relativePath,
+          );
+          if (document && !document.asset && document.type !== 'ai-task') {
+            fileNodes.update(markdownNodeKey(document), {
+              expanded: !collapsed,
+            });
+          } else {
+            await api.editor.setDocumentCollapsed({ relativePath, collapsed });
+          }
+        },
+      },
       canCollapse: (paths) => !blockAiFiles(paths),
       flush: async (guard, mode) => {
         const gameFlush = gameUi.flush,
@@ -1140,6 +1184,17 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         (document.activeElement as HTMLElement | null)?.blur();
       },
       savePreview: async (relative, state, guard) => {
+        const preview = previews.find((item) => item.relativePath === relative);
+        if (preview) {
+          guard();
+          fileNodes.update(htmlNodeKey(preview), {
+            expanded: !state.collapsed,
+          });
+          setTemporaryDocuments((current) =>
+            current.filter((id) => id !== previewNodeId(preview)),
+          );
+          return;
+        }
         const normalized = normalizePreviewWindow(state);
         guard();
         setPreviewWindows((current) => ({
@@ -1530,6 +1585,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const { updatePreviewWindow, updatePreviewWindows, compareWindows } =
     usePreviewWindows(selectionScope, () => ({
       previews,
+      revealPreview: (id) => revealFileNode(id),
       setPreviewWindows,
       api,
       showError,
@@ -1872,6 +1928,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   useCanvasNodes(
     selectionScope,
     () => ({
+      fileNodes,
       sections,
       activeCanvas,
       sectionCollapsed,
@@ -1957,6 +2014,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       kanbanViewError,
       filePropertyViews,
       personalScope,
+      fileNodes.style,
+      fileNodes.views,
       workflowBusy,
       workflowEditable,
       setWorkflow,
@@ -2062,6 +2121,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     startApprovalRequest,
     submitAiRequest,
   } = useAiRequestCommands(selectionScope, () => ({
+    nodePlacement: {
+      width: fileNodes.style.width,
+      height: fileNodes.style.height,
+    },
     canWriteAiRequest,
     setNotice,
     collaboration,
@@ -2237,13 +2300,55 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     selectedSections.some(sectionLocked) ||
     selectedPreviews.some((preview) => pathLocked(preview.relativePath));
 
-  const arrangementItems = useMemo(
-    () => selectionArrangementItems(selectedDocuments, selectedSections),
-    [selectedDocuments, selectedSections],
-  );
+  const arrangementItems = useMemo(() => {
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const items = selectionArrangementItems(
+      selectedDocuments,
+      selectedSections,
+    ).map((item) => {
+      const node = nodesById.get(
+        item.kind === 'document'
+          ? item.key.slice('document:'.length)
+          : item.key,
+      );
+      return {
+        ...item,
+        storedWidth: item.width,
+        width: Number(node?.style?.width) || item.width,
+        height: Number(node?.style?.height) || item.height,
+      };
+    });
+    for (const preview of selectedPreviews) {
+      const node = nodesById.get(preview.id);
+      if (node?.data.kind !== 'preview') continue;
+      const { sourceId, sourcePath } = node.data.preview;
+      if (
+        selectedSections.some((section) =>
+          section.members.some(
+            (member) => member.id === sourceId || member.path === sourcePath,
+          ),
+        )
+      )
+        continue;
+      const state = node.data.windowState;
+      items.push({
+        key: node.id,
+        kind: 'preview',
+        relativePath: preview.relativePath,
+        x: node.position.x,
+        y: node.position.y,
+        width: Number(node.style?.width) || state.width,
+        height: Number(node.style?.height) || state.height,
+        storedWidth: state.width,
+        storedHeight: state.height,
+      });
+    }
+    return items;
+  }, [nodes, selectedDocuments, selectedSections, selectedPreviews]);
   const arrangeSelection = (action: ArrangementAction) =>
     selectionActions.arrange(arrangementItems, action, [
       ...selectedDocuments.map((document) => document.relativePath),
+      ...selectedPreviews.map((preview) => preview.relativePath),
       ...selectedSections.flatMap((section) => [
         section.relativePath,
         ...section.members.map((member) => member.path),
@@ -2340,7 +2445,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           )
         : target.id;
       pendingCanvasJump.current = id;
-      setTemporaryDocuments((current) => [...new Set([...current, target.id])]);
+      revealFileNode(id);
       navigateCanvasItem.current?.(id);
     } finally {
       openingLink.current = false;
@@ -2384,14 +2489,26 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   };
   navigateCanvasItem.current = jumpTo;
   openLinkRef.current = openDocumentLink;
+  const revealFileNode = (id: string) => {
+    const preview = previews.find((item) => previewNodeId(item) === id);
+    const document = documents.find((item) => item.id === id);
+    if (
+      preview
+        ? fileNodes.view(htmlNodeKey(preview)).expanded
+        : document && fileNodes.view(markdownNodeKey(document)).expanded
+    )
+      return;
+    setTemporaryDocuments((current) =>
+      current.includes(id) ? current : [...current, id],
+    );
+  };
   const locationNavigation = useLocationNavigation(() => ({
     session: workspace.session,
     activeCanvas,
     nodes,
     flow: flowRef.current,
     switchCanvas: switchCanvasTo,
-    revealDocument: (id) =>
-      setTemporaryDocuments((current) => [...new Set([...current, id])]),
+    revealDocument: revealFileNode,
     select: (id) => {
       const section = sections.find((item) =>
         item.members.some(
@@ -2523,7 +2640,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const minimizeSelection = () => {
     const targets = nodes.flatMap((node): CollapseTarget[] => {
       if (!node.selected) return [];
-      if (node.data.kind === 'document')
+      if (node.data.kind === 'document' && !node.data.document.asset)
         return [{ kind: 'document', document: node.data.document }];
       if (node.data.kind === 'section')
         return [
@@ -2622,6 +2739,15 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     },
     action: (action, event) => {
       event.preventDefault();
+      if (action === 'show-links') setHeldFileLinks(true);
+      if (action === 'toggle-links') {
+        const key = `${personalScope}:${activeCanvas}`;
+        setPinnedFileLinks((current) =>
+          current.includes(key)
+            ? current.filter((item) => item !== key)
+            : [...current, key],
+        );
+      }
       if (action === 'search') setCommandOpen(true);
       if (action === 'navigator') setNavigatorOpen((value) => !value);
       if (action === 'help') setShortcutsOpen(true);
@@ -2747,6 +2873,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         panPrevious.current = null;
       }
     },
+    releaseLinks: () => setHeldFileLinks(false),
     blur: cancelNoteDrawing,
   });
 
@@ -3397,6 +3524,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       <WorkspaceDock
         {...{
           activeCanvas,
+          openFileNodeSettings: () => setFileNodeSettingsScope(personalScope),
           aiBusy,
           aiHistorySelection,
           api,
@@ -3532,6 +3660,16 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           prepareLayout: () => flushEditors(),
         }}
       />
+      {fileNodeSettingsScope === personalScope && (
+        <FileNodeSettings
+          key={personalScope}
+          value={fileNodes.style}
+          canApply={!!workspace.root}
+          save={fileNodes.save}
+          applyAll={fileNodes.applyAll}
+          close={() => setFileNodeSettingsScope(null)}
+        />
+      )}
       <WorkspaceChrome
         {...{
           aiBusy,
@@ -3809,6 +3947,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           setInspectorId,
           setPluginPanelOpen,
           allLinkDocuments,
+          fileNodePreviews: previews,
+          allFileLinks:
+            heldFileLinks ||
+            pinnedFileLinks.includes(`${personalScope}:${activeCanvas}`),
           sourceTitles,
           canvasSheets,
           dispatchDocumentLink,

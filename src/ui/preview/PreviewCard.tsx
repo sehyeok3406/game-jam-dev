@@ -35,6 +35,12 @@ import { usePreviewPlayback } from './usePreviewPlayback';
 import { GameBuildSummary } from './GameBuildSummary';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { PreviewGameFrame } from './PreviewGameFrame';
+import {
+  FileNodeSurface,
+  fileNodeVariables,
+  type FileNodeDisplay,
+} from '../canvas/FileNodeSurface';
+import { previewLabel } from '../../preview-output';
 
 export type PreviewNodeData = {
   aiUsage?: string;
@@ -48,6 +54,10 @@ export type PreviewNodeData = {
   onWorkflow: (id: string) => void;
   onManageWorkflow: () => void;
   kind: 'preview';
+  fileNode?: FileNodeDisplay;
+  onOpenFileNode?: () => void;
+  onCloseFileNode?: () => void;
+  onResizeFileNode?: (width: number, height: number) => void;
   locked: boolean;
   preview: PreviewResult;
   windowState: PreviewWindowState;
@@ -140,8 +150,27 @@ const PreviewCardContent = memo(function PreviewCardContent({
         data-ai-usage={data.aiUsage || undefined}
         inert={data.sectionHidden || undefined}
         data-card-color={cardColor(data.preview.backgroundColor)}
-        className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${!collapsed && data.preview.warnings?.length ? ' preview-card--warning' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}`}
+        style={
+          data.fileNode
+            ? fileNodeVariables(data.fileNode.style, 'html', state.height)
+            : undefined
+        }
+        className={`preview-card${collapsed ? ' preview-card--collapsed' : ''}${!collapsed && data.preview.warnings?.length ? ' preview-card--warning' : ''}${state.width < 560 && !fullscreen ? ' preview-card--compact' : ''}${data.fileNode ? (collapsed ? ' preview-card--node-collapsed' : ' file-node-expanded') : ''}`}
       >
+        {collapsed && data.fileNode && (
+          <FileNodeSurface
+            kind="html"
+            title={
+              data.preview.title || previewLabel(data.preview.relativePath)
+            }
+            display={data.fileNode}
+            selected={selected}
+            locked={data.locked}
+            hidden={data.sectionHidden}
+            onOpen={data.onOpenFileNode}
+            onResize={data.onResizeFileNode}
+          />
+        )}
         <header
           className={`canvas-file-header ${fullscreen ? 'nodrag' : 'preview-drag-handle'}`}
         >
@@ -253,12 +282,15 @@ const PreviewCardContent = memo(function PreviewCardContent({
               type="button"
               className="icon-button"
               title={state.collapsed ? 'HTML 창 펼치기' : 'HTML 창 최소화'}
-              disabled={fullscreen || data.locked}
+              aria-label={state.collapsed ? '펼치기' : '접기'}
+              disabled={fullscreen || (!data.fileNode && data.locked)}
               onClick={() =>
-                void data.onWindowChange({
-                  ...state,
-                  collapsed: !state.collapsed,
-                })
+                data.onCloseFileNode
+                  ? data.onCloseFileNode()
+                  : void data.onWindowChange({
+                      ...state,
+                      collapsed: !state.collapsed,
+                    })
               }
             >
               {state.collapsed ? (

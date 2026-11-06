@@ -635,6 +635,9 @@ export function WorkspaceChrome({
                       AlignVerticalJustifyCenter,
                     ],
                     ['bottom', '아래쪽 맞춤', AlignVerticalJustifyEnd],
+                    ['row', '가로 배치', AlignHorizontalSpaceAround],
+                    ['column', '세로 배치', AlignVerticalSpaceAround],
+                    ['grid', '격자 배치', AlignHorizontalJustifyCenter],
                     [
                       'distribute-x',
                       '가로 간격 동일하게',

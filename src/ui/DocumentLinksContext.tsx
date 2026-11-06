@@ -18,6 +18,7 @@ const DocumentLinksContext = createContext({
   resolve: (href: string) => resolveDocumentLink(href, []),
   open: (_href: string): void => {},
   backlinks: (_path: string): readonly LinkDocument[] => [],
+  connections: [] as ReturnType<DocumentLinkIndex['connections']>,
 });
 const DocumentSourceTitlesContext = createContext<Record<string, string>>({});
 export const useDocumentSourceTitles = () =>
@@ -41,6 +42,7 @@ export function DocumentLinksProvider({
     index.current.update(documents);
     return {
       documents,
+      connections: index.current.connections(),
       open,
       resolve: (href: string) => resolveDocumentLink(href, documents),
       canvasName: (id?: string) =>

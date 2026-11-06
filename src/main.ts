@@ -1217,6 +1217,9 @@ const startCodexRun = async (
   projectSessions.assertCurrent(sessionRef);
   const baseline = await captureProject(root);
   const workspace = await fileStageWorkspace(root, runId);
+  const previews = projectPreviewService(root, () =>
+    projectSessions.assertCurrent(sessionRef),
+  );
   const service = new AiRunService(
     baseline,
     input.taskPath,
@@ -1247,6 +1250,7 @@ const startCodexRun = async (
           id: randomUUID,
         }
       : undefined,
+    (relative) => previews.window(relative),
   );
   const outputs = service.inspectInput();
   const records = fileAiRunRecords(root, runId, input.taskPath, workspace);
@@ -2004,6 +2008,18 @@ const handle = (
   return cachedInvoke;
 };
 
+function projectPreviewService(root: string, assertCurrent: () => void) {
+  return new ProjectPreviewService({
+    project: filesystemProjectRepository(root, assertCurrent),
+    files: filesystemTextFiles(root, assertCurrent),
+    mutate: (action) => enqueueMutation(action),
+    assertUnlocked: (paths) => {
+      assertCurrent();
+      assertAiFilesUnlocked(currentAiFileLock(), paths);
+    },
+  });
+}
+
 const applyImportedFiles = async (
   payload: ImportBatchInput,
   context?: CanvasClipboardPasteInput,
@@ -2330,16 +2346,9 @@ const registerIpc = () => {
   registerPreviewIpc(handle, () => {
     const root = requireWorkspace(),
       session = projectSessions.ref;
-    const assertCurrent = () => projectSessions.assertCurrent(session);
-    return new ProjectPreviewService({
-      project: filesystemProjectRepository(root, assertCurrent),
-      files: filesystemTextFiles(root, assertCurrent),
-      mutate: (action) => enqueueMutation(action),
-      assertUnlocked: (paths) => {
-        assertCurrent();
-        assertAiFilesUnlocked(currentAiFileLock(), paths);
-      },
-    });
+    return projectPreviewService(root, () =>
+      projectSessions.assertCurrent(session),
+    );
   });
   handle('preview:export-html', async (event, relative: string) => {
     if (!isUpdateSender(event))

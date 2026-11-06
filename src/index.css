@@ -6,6 +6,7 @@
 @import './ui/styles/canvas-controls.css';
 @import './ui/styles/documents.css';
 @import './ui/styles/preview.css';
+@import './ui/styles/file-nodes.css';
 @import './ui/styles/history.css';
 @import './ui/styles/workspace-overrides.css';
 @import './ui/styles/project-home.css';

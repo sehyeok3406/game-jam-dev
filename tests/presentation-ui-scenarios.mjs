@@ -136,38 +136,28 @@ export async function presentationUiScenarios({
       (d) => !memberKeys.has(d.id) && !memberKeys.has(d.relativePath),
     ) ?? originals[0];
   const documentNode = `[data-id="${doc.id}"]`;
-  // Initial fixtures use expanded documents. A native file change must record once and keep expanded height.
-  assert.equal(doc.collapsed, false);
+  const showDocument = (collapsed) =>
+    wait(
+      `!!document.querySelector(${JSON.stringify(documentNode + (collapsed ? ' .file-node-surface' : ' .file-node-expanded'))})`,
+    );
+  const showAllDocuments = (collapsed) =>
+    wait(
+      `document.querySelectorAll('.react-flow__node-document ${collapsed ? '.file-node-surface--md' : '.file-node-expanded'}').length===${originals.length}`,
+    );
   const beforeDocument = await history();
-  await click(`${documentNode} button[title="메모 최소화"]`);
-  await wait(
-    `window.gameCanvas.listDocuments().then(d=>d.find(d=>d.id===${JSON.stringify(doc.id)})?.collapsed===true)`,
-  );
-  await ready();
-  assert.equal(await history(), beforeDocument + 1);
+  await click(`${documentNode} button.file-node-surface`);
+  await showDocument(false);
+  await click(`${documentNode} button[aria-label="접기"]`);
+  await showDocument(true);
+  assert.equal(await history(), beforeDocument);
   assert.equal(
     (await call('listDocuments')).find((d) => d.id === doc.id).height,
     doc.height,
   );
-  await shortcut('Z', ['control']);
-  await wait(
-    `window.gameCanvas.listDocuments().then(d=>d.find(d=>d.id===${JSON.stringify(doc.id)})?.collapsed===false)`,
-  );
-  await wait(
-    `!!document.querySelector('button[title^="다시 실행"]:not(:disabled)')`,
-  );
-  await shortcut('Y', ['control']);
-  await wait(
-    `window.gameCanvas.listDocuments().then(d=>d.find(d=>d.id===${JSON.stringify(doc.id)})?.collapsed===true)`,
-  );
-  await ready();
-  await click(`${documentNode} button[title="메모 펼치기"]`);
-  await wait(
-    `window.gameCanvas.listDocuments().then(d=>d.find(d=>d.id===${JSON.stringify(doc.id)})?.collapsed===false)`,
-  );
-  await ready();
+  await click(`${documentNode} button.file-node-surface`);
+  await showDocument(false);
   console.log(
-    'PASS: document header collapse/expand uses native persistence/history and Undo/Redo while preserving stored height',
+    'PASS: document collapse/expand uses personal settings and preserves native history and stored height',
   );
   const beforeMenu = await history();
   for (const [label, collapsed] of [
@@ -175,53 +165,52 @@ export async function presentationUiScenarios({
     ['펼치기', false],
   ]) {
     await js(
-      `{const card=document.querySelector(${JSON.stringify(documentNode + ' .document-card')}),r=card.getBoundingClientRect();card.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:r.x+20,clientY:r.y+12}));}`,
+      `{const card=document.querySelector(${JSON.stringify(documentNode + (collapsed ? ' .document-card' : ' .file-node-surface'))}),r=card.getBoundingClientRect();card.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:r.x+20,clientY:r.y+12}));}`,
     );
     await wait('!!document.querySelector("[data-ui-id=document-menu]")');
     await js(
       `Array.from(document.querySelectorAll('[data-ui-id=document-menu] button')).find(button=>button.textContent.includes(${JSON.stringify(label)})).click()`,
     );
     await wait('!document.querySelector("[data-ui-id=document-menu]")');
+    await showDocument(collapsed);
     await ready();
-    assert.equal(
-      (await call('listDocuments')).find((item) => item.id === doc.id)
-        .collapsed,
-      collapsed,
-    );
   }
-  assert.equal(await history(), beforeMenu + 2);
+  assert.equal(await history(), beforeMenu);
   console.log(
     'PASS: document context-menu minimize/expand uses the same command boundary and closes the originating menu',
   );
   const beforeAll = await history();
+  for (const original of originals.filter((item) => item.id !== doc.id))
+    await click(`[data-id="${original.id}"] button.file-node-surface`);
   await shortcut('A', ['control']);
   await wait(
     `document.querySelectorAll('.react-flow__node-document.selected').length===${originals.length}`,
   );
   await click('button[title="선택 항목 최소화 또는 펼치기 (Ctrl+Shift+M)"]');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.every(d=>d.collapsed))',
-  );
+  await showAllDocuments(true);
   await ready();
-  assert.equal(await history(), beforeAll + originals.length);
+  assert.equal(await history(), beforeAll);
   await shortcut('A', ['control']);
   await shortcut('M', ['control', 'shift']);
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.every(d=>!d.collapsed))',
-  );
+  await showAllDocuments(false);
   await ready();
-  assert.equal(await history(), beforeAll + originals.length * 2);
+  assert.equal(await history(), beforeAll);
   for (const original of originals) {
     const current = (await call('listDocuments')).find(
       (d) => d.id === original.id,
     );
     assert.equal(current.body, original.body);
     assert.equal(current.height, original.height);
+    assert.equal(current.collapsed, original.collapsed);
   }
   console.log(
-    'PASS: selected document minimize/expand preserves sequential per-document history and original bodies/dimensions',
+    'PASS: selected document minimize/expand preserves native history and original bodies/dimensions',
   );
   // Select documents, section and HTML together with an actual pane drag.
+  for (const preview of await call('listPreviews'))
+    await click(
+      `[data-id="preview:${preview.identityPath ?? preview.relativePath}"] button.file-node-surface`,
+    );
   await shortcut('1', ['shift']);
   await pause(350);
   const box = await js(
@@ -244,25 +233,17 @@ export async function presentationUiScenarios({
       previews.map((item) => call('getPreviewWindow', item.relativePath)),
     );
   await shortcut('M', ['control', 'shift']);
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.every(d=>d.collapsed))',
-  );
+  await showAllDocuments(true);
   await ready();
   await wait(
     `!!document.querySelector(${JSON.stringify(sectionNode + ' .section-card--collapsed')})`,
   );
+  await wait(
+    '!!document.querySelector(".react-flow__node-preview .file-node-surface--html")',
+  );
   for (let n = 0; n < previews.length; n++) {
     const current = await call('getPreviewWindow', previews[n].relativePath);
-    assert.equal(current.collapsed, true);
-    if (priorWindows[n])
-      for (const field of ['x', 'y', 'width', 'height', 'presetId', 'freeSize'])
-        assert.deepEqual(current[field], priorWindows[n][field]);
-    // Restore the isolated preview after verifying the real mixed command's persistence.
-    await call(
-      'savePreviewWindow',
-      { ...current, collapsed: false },
-      previews[n].relativePath,
-    );
+    assert.deepEqual(current, priorWindows[n]);
   }
   await click(`${sectionNode} button[title="섹션 펼치기"]`);
   await wait(
@@ -270,12 +251,10 @@ export async function presentationUiScenarios({
   );
   await shortcut('A', ['control']);
   await shortcut('M', ['control', 'shift']);
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.every(d=>!d.collapsed))',
-  );
+  await showAllDocuments(false);
   await ready();
   console.log(
-    'PASS: actual mixed pane selection persists preview collapse/geometry alongside personal section and document collapse',
+    'PASS: mixed pane selection collapses preview, section and documents without changing stored geometry',
   );
   // The rename confirmation from an old canvas cannot survive another visit.
   await openRename();

@@ -50,7 +50,7 @@ type Props = {
   locked: boolean;
   owner: string;
   title: string;
-  onTitle: (title: string) => void;
+  onTitle?: (title: string) => void;
   status: string;
   onFinish: () => void;
   onSave: () => void;
@@ -1426,8 +1426,8 @@ export function MarkdownEditor({
                   composing.current = false;
                   onCompositionChange?.(false);
                 }}
-                readOnly={locked}
-                onChange={(e) => onTitle(e.target.value)}
+                readOnly={locked || !onTitle}
+                onChange={(e) => onTitle?.(e.target.value)}
               />
               {toolbar}
               {content}

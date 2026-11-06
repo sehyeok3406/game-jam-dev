@@ -7,6 +7,7 @@ import {
   defaultTaskInstructions,
 } from './task-instructions.ts';
 import type { CreateTaskInput } from './contracts/ai.ts';
+import { readNodePlacement } from './core/canvas/file-node-style.ts';
 import type { TaskDesignContextV1 } from './contracts/task-instructions.ts';
 import { freezeEffectiveInstructions } from './core/ai/task-instructions.ts';
 import { taskDesignContextRules } from './core/ai/task-context.ts';
@@ -34,6 +35,7 @@ export function createTaskSpecification(
   suppliedContext?: TaskDesignContextV1,
   documentUpdates?: import('./contracts/task-instructions.ts').TaskDocumentUpdatesV1,
 ) {
+  const nodePlacement = readNodePlacement(input.nodePlacement);
   const instructions = taskInstructions(
     input.kind,
     input.instructions ?? defaultTaskInstructions(input.kind, input.sourceMode),
@@ -147,6 +149,7 @@ export function createTaskSpecification(
       status: 'pending',
       x: input.x,
       y: input.y,
+      ...(nodePlacement ? { node_placement: nodePlacement } : {}),
       width: 420,
       height: 500,
       inputs: input.inputPaths,

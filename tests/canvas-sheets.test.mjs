@@ -397,6 +397,7 @@ test('shared AI freezes destination across unrelated edits and prevents destinat
     x: 0,
     y: 0,
     htmlResult: { mode: 'new' },
+    nodePlacement: { width: 600, height: 140 },
   });
   await assert.rejects(
     client.request('ai-start', {
@@ -426,12 +427,20 @@ test('shared AI freezes destination across unrelated edits and prevents destinat
     }),
     /AI 작업/,
   );
-  const output = matter(client.files[task.relativePath]).data
-    .expected_outputs[0];
+  const taskData = matter(client.files[task.relativePath]).data;
+  assert.deepEqual(taskData.node_placement, { width: 600, height: 140 });
+  const output = taskData.expected_outputs[0];
   await client.finishAi('completed', {
     [output]: '<html><body>combined</body></html>',
   });
-  assert.equal(describePreview(client.files, output).canvasId, 'combat');
+  const preview = describePreview(client.files, output);
+  assert.equal(preview.canvasId, 'combat');
+  const input = snapshotDocuments(client.files).find(
+    (doc) => doc.relativePath === 'ideas/a.md',
+  );
+  const blocker = describePreview(client.files, html).initialWindow;
+  assert.equal(preview.initialWindow.x, input.x);
+  assert.equal(preview.initialWindow.y, blocker.y + blocker.height + 40);
   assert.equal(
     snapshotDocuments(client.files).find(
       (doc) => doc.relativePath === note.relativePath,

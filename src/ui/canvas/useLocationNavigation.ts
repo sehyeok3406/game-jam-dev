@@ -96,6 +96,14 @@ export function useLocationNavigation(ports: () => Ports) {
       p.revealDocument(node.data.document.id);
       return;
     }
+    if (
+      node.data.kind === 'preview' &&
+      node.data.fileNode &&
+      node.data.windowState.collapsed
+    ) {
+      p.revealDocument(node.id);
+      return;
+    }
     const element = [
       ...document.querySelectorAll<HTMLElement>('.react-flow__node'),
     ].find((el) => el.dataset.id === id);

@@ -140,6 +140,7 @@ type Props = Pick<
     | 'workflowBusy'
     | 'workflowEditable'
     | 'prepareLayout'
+    | 'openFileNodeSettings'
   > &
   Pick<
     ComponentProps<typeof WorkspaceAiPanels>,
@@ -368,6 +369,7 @@ export function WorkspaceDock({
   workflowChange,
   workflowEditable,
   prepareLayout,
+  openFileNodeSettings,
   workflowReason,
 }: Props) {
   const { capabilities } = useRuntime();
@@ -1126,6 +1128,15 @@ export function WorkspaceDock({
                   <X size={16} />
                 </button>
               </header>
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  openFileNodeSettings?.();
+                }}
+              >
+                노드 모양
+              </button>
               <button
                 disabled={!workflowEditable || workflowBusy}
                 onClick={() => {

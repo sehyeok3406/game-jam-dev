@@ -163,12 +163,12 @@ async function attach() {
   };
   await wait('!!window.gameCanvas?.locationLinks');
 }
-async function boot(href) {
+async function boot(href, profile = profileId) {
   debugPort = await port();
   child = spawn(
     executable,
     [
-      `--game-canvas-test-profile=${profileId}`,
+      `--game-canvas-test-profile=${profile}`,
       `--remote-debugging-port=${debugPort}`,
       ...(href ? [href] : []),
     ],
@@ -315,6 +315,70 @@ try {
   await wait(
     '(document.querySelector("[data-location-block]")?.closest(".document-card__content")?.scrollTop ?? 0)>0',
   );
+  const noteSelector = '[data-id="packaged-note"]';
+  const ownerClient = new CollaborationClient(owner.credentials, () => {});
+  try {
+    await ownerClient.refresh();
+    const beforePersonalView = ownerClient.files['docs/note.md'];
+    await js(
+      `document.querySelector('summary[aria-label="더보기"]').click();[...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent.trim()==='설정 및 도구').click()`,
+    );
+    await wait(`!!document.querySelector('.canvas-settings')`);
+    await js(
+      `[...document.querySelectorAll('.canvas-settings button')].find(item=>item.textContent.trim()==='노드 모양').click()`,
+    );
+    await wait('!!document.querySelector(".file-node-settings")');
+    await js(
+      `{const input=document.querySelector('[aria-label="기본 너비"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'432');input.dispatchEvent(new Event('input',{bubbles:true}));}`,
+    );
+    await wait(
+      `document.querySelector('.file-node-settings .file-node-surface').parentElement.style.width==='432px'`,
+    );
+    const clickSettings = (label) =>
+      `[...document.querySelectorAll('.file-node-settings button')].find(item=>item.textContent.trim()===${JSON.stringify(label)})`;
+    await js(`${clickSettings('저장')}.click()`);
+    await wait(`!${clickSettings('전체 노드에 적용')}?.disabled`);
+    await js(
+      `${clickSettings('전체 노드에 적용')}.click();document.querySelector('.file-node-settings button[aria-label="닫기"]').click()`,
+    );
+    await js(
+      `document.querySelector('${noteSelector} button[aria-label="접기"]').click()`,
+    );
+    await wait(
+      `document.querySelector('${noteSelector}:has(.file-node-surface)')?.style.width==='432px'`,
+    );
+    await js(
+      `document.querySelector('${noteSelector} .file-node-surface').click()`,
+    );
+    await wait(
+      `!!document.querySelector('${noteSelector} .file-node-expanded')`,
+    );
+    await stop();
+
+    const peerProfile = randomUUID();
+    await boot(undefined, peerProfile);
+    await js(
+      `window.gameCanvas.joinCollaboration(${JSON.stringify({ serverUrl, code: owner.result.code, nickname: '개인 보기 비교 참여자' })})`,
+    );
+    await stop();
+    await boot(url({ kind: 'document', id: 'packaged-note' }), peerProfile);
+    await wait(
+      `!!document.querySelector('${noteSelector} .file-node-expanded')`,
+    );
+    await js(
+      `document.querySelector('${noteSelector} button[aria-label="접기"]').click()`,
+    );
+    await wait(
+      `document.querySelector('${noteSelector}:has(.file-node-surface)')?.style.width==='340px'`,
+    );
+    await ownerClient.refresh();
+    assert.equal(ownerClient.files['docs/note.md'], beforePersonalView);
+    console.log(
+      'PASS: two packaged collaboration profiles keep individual node size and expansion outside the shared document',
+    );
+  } finally {
+    ownerClient.stop();
+  }
   await fs.mkdir('out/location-links-packaged', { recursive: true });
   await fs.writeFile(
     'out/location-links-packaged/evidence.json',

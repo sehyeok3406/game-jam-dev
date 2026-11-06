@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { htmlNodeKey, markdownNodeKey } from './file-node-identity.ts';
+import type { FileNodePreferences } from './file-node-preferences';
 import {
   CanvasNodeModels,
   reuseCanvasNode,
@@ -52,6 +54,7 @@ import {
 } from '../workspace/workspace-types.ts';
 
 interface Ports {
+  fileNodes?: FileNodePreferences;
   preview: UiDebugSelection | undefined;
   sections: CanvasSection[];
   activeCanvas: string;
@@ -247,6 +250,7 @@ export function useCanvasNodes(
   const models = useRef(new CanvasNodeModels());
   useEffect(() => {
     const {
+      fileNodes,
       sections,
       activeCanvas,
       sectionCollapsed,
@@ -351,6 +355,19 @@ export function useCanvasNodes(
     const documentNodes: DocumentCanvasNode[] = documents
       .filter((document) => canvasId(document.canvasId) === activeCanvas)
       .map((document) => {
+        const nodeKey = markdownNodeKey(document);
+        const view =
+          !document.asset && document.type !== 'ai-task'
+            ? fileNodes?.view(nodeKey)
+            : undefined;
+        const temporary = findOpen || temporaryDocuments.includes(document.id);
+        const collapsed =
+          !temporary &&
+          (view ? !view.expanded : !document.asset && document.collapsed);
+        const effectiveDocument =
+          document.collapsed === collapsed
+            ? document
+            : { ...document, collapsed };
         const foreignLock = collaboration.locks.find(
           (lock) =>
             lock.relativePath === document.relativePath &&
@@ -378,20 +395,32 @@ export function useCanvasNodes(
             ? { x: document.x - parent.x, y: document.y - parent.y }
             : { x: document.x, y: document.y },
           style: {
-            width: document.width,
-            height:
-              document.collapsed &&
-              !findOpen &&
-              !temporaryDocuments.includes(document.id)
-                ? 38
-                : document.height,
+            width: collapsed && view ? view.width : document.width,
+            height: collapsed ? (view?.height ?? 38) : document.height,
           },
           parentId: parent ? sectionNodeId(parent.id) : undefined,
           zIndex: 2,
-          dragHandle: '.document-card__header',
+          dragHandle:
+            collapsed && view
+              ? '.file-node-drag'
+              : document.asset
+                ? '.asset-node-surface, .document-card__header'
+                : '.document-card__header',
           draggable: !layoutLocked,
           data: {
             kind: 'document',
+            ...(view && fileNodes
+              ? {
+                  fileNode: {
+                    style: fileNodes.style,
+                    size: fileNodes.views[nodeKey] ?? fileNodes.style,
+                  },
+                  onOpenFileNode: () =>
+                    fileNodes.interact(nodeKey, { expanded: true }),
+                  onResizeFileNode: (width: number, height: number) =>
+                    fileNodes.interact(nodeKey, { width, height }),
+                }
+              : {}),
             aiUsage: materialUsage(projectAiQueue, document.relativePath),
             propertyVisibility: propertyVisibilityFor(document.id),
             authorshipKey: `${personalScope}:${document.id}:${document.modifiedAt}`,
@@ -437,10 +466,7 @@ export function useCanvasNodes(
             beginEdit,
             endEdit,
             registerEditor,
-            document:
-              findOpen || temporaryDocuments.includes(document.id)
-                ? { ...document, collapsed: false }
-                : document,
+            document: effectiveDocument,
             onSave: saveDocument,
             onResize: resizeDocument,
             onSource: focusSource,
@@ -448,9 +474,15 @@ export function useCanvasNodes(
             onReveal: revealDocument,
             onDetails: () => setInspectorId(document.id),
             onCollapse: () => {
-              void collapseActions.document(document, {
-                temporary: temporaryDocuments.includes(document.id),
-              });
+              const linked = temporaryDocuments.includes(document.id);
+              if (view && fileNodes) {
+                if (linked) collapseActions.closeTemporaryDocument(document.id);
+                else fileNodes.interact(nodeKey, { expanded: collapsed });
+              } else {
+                void collapseActions.document(effectiveDocument, {
+                  temporary: linked,
+                });
+              }
             },
             reportEdit,
           },
@@ -477,13 +509,23 @@ export function useCanvasNodes(
         const sectionHidden = !!(
           parentSection && sectionCollapsed(parentSection)
         );
-        const previewWindow = previewWindows[preview.relativePath] ?? {
+        const baseWindow = previewWindows[preview.relativePath] ?? {
           x: previewX,
           y: previewY + index * (520 + NEW_FILE_GAP),
           width: 720,
           height: 520,
           collapsed: false,
         };
+        const nodeKey = htmlNodeKey(preview);
+        const view = fileNodes?.view(nodeKey);
+        const temporary = temporaryDocuments.includes(previewNodeId(preview));
+        const collapsed = view
+          ? !view.expanded && !temporary
+          : baseWindow.collapsed;
+        const previewWindow =
+          baseWindow.collapsed === collapsed
+            ? baseWindow
+            : { ...baseWindow, collapsed };
         return {
           id: previewNodeId(preview),
           type: 'preview',
@@ -498,14 +540,34 @@ export function useCanvasNodes(
             y: previewWindow.y,
           },
           style: {
-            width: previewWindow.width,
-            height: previewWindow.collapsed ? 38 : previewWindow.height,
+            width: collapsed && view ? view.width : previewWindow.width,
+            height: collapsed ? (view?.height ?? 38) : previewWindow.height,
           },
-          dragHandle: '.preview-drag-handle',
+          dragHandle:
+            collapsed && view ? '.file-node-drag' : '.preview-drag-handle',
           draggable: !pathLocked(preview.relativePath),
           zIndex: 3,
           data: {
             kind: 'preview',
+            ...(view && fileNodes
+              ? {
+                  fileNode: {
+                    style: fileNodes.style,
+                    size: fileNodes.views[nodeKey] ?? fileNodes.style,
+                  },
+                  onOpenFileNode: () =>
+                    fileNodes.interact(nodeKey, { expanded: true }),
+                  onResizeFileNode: (width: number, height: number) =>
+                    fileNodes.interact(nodeKey, { width, height }),
+                  onCloseFileNode: () => {
+                    if (temporary)
+                      collapseActions.closeTemporaryDocument(
+                        previewNodeId(preview),
+                      );
+                    else fileNodes.interact(nodeKey, { expanded: false });
+                  },
+                }
+              : {}),
             propertyVisibility: propertyVisibilityFor(
               preview.sourceId!,
               preview.propertyPreviousIds ?? [],

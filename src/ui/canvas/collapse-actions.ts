@@ -216,6 +216,9 @@ export class CanvasCollapseActions {
   activate() {
     this.disposed = false;
   }
+  closeTemporaryDocument(id: string) {
+    this.read().clearTemporaryDocument(id);
+  }
   dispose() {
     this.disposed = true;
   }

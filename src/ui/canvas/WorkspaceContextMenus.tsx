@@ -360,6 +360,34 @@ export function WorkspaceContextMenus({
               <small>문서가 저장된 폴더에서 MD 파일 선택</small>
             </span>
           </button>
+          {documentContextMenu.document.asset && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!capabilities.nativeClipboard}
+                onClick={() => {
+                  const path = documentContextMenu.document.asset!.path;
+                  setDocumentContextMenu(null);
+                  void requireDesktopApi(api).copyText(path).catch(showError);
+                }}
+              >
+                <span>에셋 경로 복사</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!capabilities.localFiles}
+                onClick={() => {
+                  const path = documentContextMenu.document.asset!.path;
+                  setDocumentContextMenu(null);
+                  void requireDesktopApi(api).revealPath(path).catch(showError);
+                }}
+              >
+                <span>원본 파일 보기</span>
+              </button>
+            </>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -389,29 +417,31 @@ export function WorkspaceContextMenus({
               <small>이전 내용 확인과 복원</small>
             </span>
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() =>
-              void toggleDocumentCollapsed(documentContextMenu.document)
-            }
-          >
-            {documentContextMenu.document.collapsed ? (
-              <Maximize2 size={16} />
-            ) : (
-              <Minimize2 size={16} />
-            )}
-            <span>
-              <strong>
-                {documentContextMenu.document.collapsed ? '펼치기' : '최소화'}
-              </strong>
-              <small>
-                {documentContextMenu.document.collapsed
-                  ? '원래 카드 크기로 복원'
-                  : '제목이 보이는 상단 바만 남기기'}
-              </small>
-            </span>
-          </button>
+          {!documentContextMenu.document.asset && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() =>
+                void toggleDocumentCollapsed(documentContextMenu.document)
+              }
+            >
+              {documentContextMenu.document.collapsed ? (
+                <Maximize2 size={16} />
+              ) : (
+                <Minimize2 size={16} />
+              )}
+              <span>
+                <strong>
+                  {documentContextMenu.document.collapsed ? '펼치기' : '최소화'}
+                </strong>
+                <small>
+                  {documentContextMenu.document.collapsed
+                    ? '원래 카드 크기로 복원'
+                    : '접힌 노드로 표시'}
+                </small>
+              </span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

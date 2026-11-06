@@ -11,6 +11,12 @@ import { DocumentMarkdown } from '../DocumentMarkdown';
 import { resolveAssetLink } from '../../asset-links';
 import { DocumentBacklinks } from '../DocumentBacklinks';
 import { ProjectImage } from './ProjectImage';
+import {
+  FileNodeSurface,
+  fileNodeVariables,
+  opensFileNode,
+} from '../canvas/FileNodeSurface';
+import { imageDescription } from '../../core/canvas/image-description';
 import { useDocumentEditing } from './useDocumentEditing';
 import { readingBlockFocus } from './markdown-title';
 import type { DocumentCanvasNode } from './types';
@@ -106,6 +112,82 @@ const DocumentCardContent = memo(function DocumentCardContent({
     }
   };
 
+  if (document.collapsed && data.fileNode)
+    return (
+      <FileNodeSurface
+        kind="md"
+        title={document.title}
+        body={document.body}
+        display={data.fileNode}
+        selected={selected}
+        hidden={data.sectionHidden}
+        locked={data.layoutLocked}
+        onOpen={data.onOpenFileNode}
+        onResize={data.onResizeFileNode}
+      />
+    );
+
+  if (document.asset && !editing && !cachedDraft && !saveFailed)
+    return (
+      <>
+        <CanvasItemResizer
+          color="var(--selection)"
+          isVisible={selected && !data.layoutLocked}
+          lineClassName="window-resize-edge"
+          handleClassName="window-resize-handle"
+          minWidth={100}
+          minHeight={80}
+          keepAspectRatio
+          onResizeEnd={(_event, params) =>
+            void data.onResize(
+              document,
+              params.x,
+              params.y,
+              params.width,
+              params.height,
+            )
+          }
+        />
+        <article
+          ref={cardRef}
+          className="asset-node-surface"
+          role="button"
+          tabIndex={0}
+          aria-label={`${document.title} 설명 편집`}
+          inert={data.sectionHidden || undefined}
+          onClick={(event) => {
+            if (
+              opensFileNode(event) &&
+              !(event.target as Element).closest('button')
+            )
+              void startEdit();
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              (event.key === 'Enter' || event.key === ' ')
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              event.currentTarget.click();
+            }
+          }}
+        >
+          <ProjectImage
+            path={document.asset.path}
+            title={document.title}
+            cacheKey={data.draftKey}
+            version={document.assetVersion}
+          />
+        </article>
+      </>
+    );
+
+  const description =
+    document.asset && editing
+      ? imageDescription(body, document.asset.path)
+      : undefined;
+
   return (
     <>
       {!document.collapsed && (
@@ -133,11 +215,20 @@ const DocumentCardContent = memo(function DocumentCardContent({
         inert={data.sectionHidden || undefined}
         data-find-document={document.id}
         data-card-color={cardColor(document.backgroundColor)}
-        className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}`}
+        style={
+          data.fileNode
+            ? fileNodeVariables(data.fileNode.style, 'md', document.height)
+            : undefined
+        }
+        className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}${data.fileNode ? ' file-node-expanded' : ''}`}
       >
         <header className="document-card__header canvas-file-header">
           <div className="canvas-file-header__name">
-            {editing ? (
+            {description ? (
+              <strong className="document-card__title canvas-file-header__title">
+                {document.title}
+              </strong>
+            ) : editing ? (
               <input
                 className="document-card__title canvas-file-header__title nodrag nowheel"
                 ref={titleRef}
@@ -207,8 +298,15 @@ const DocumentCardContent = memo(function DocumentCardContent({
             <button
               className="icon-button"
               title={document.collapsed ? '메모 펼치기' : '메모 최소화'}
-              disabled={data.layoutLocked}
-              onClick={data.onCollapse}
+              aria-label={document.collapsed ? '펼치기' : '접기'}
+              disabled={!data.fileNode && data.layoutLocked}
+              onClick={() => {
+                if (editing)
+                  void finishEdit()
+                    .then(data.onCollapse)
+                    .catch(() => undefined);
+                else data.onCollapse();
+              }}
             >
               {document.collapsed ? (
                 <Maximize2 size={13} />
@@ -241,17 +339,21 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 <MarkdownEditor
                   onCopyBlock={copyBlock}
                   currentCanvas={document.canvasId}
-                  value={body}
+                  value={description?.body ?? body}
                   onCompositionChange={setComposing}
                   locked={data.locked}
                   owner={editorOwner}
                   title={title}
-                  onTitle={updateTitle}
+                  onTitle={description ? undefined : updateTitle}
                   status={editStatus}
                   onSave={() => void save().catch(() => undefined)}
                   onFinish={() => void finishEdit().catch(() => undefined)}
                   initialFocus={editFocus}
-                  onChange={updateBody}
+                  onChange={
+                    description
+                      ? (next) => updateBody(description.replace(next))
+                      : updateBody
+                  }
                 />
                 <div className="document-editor__actions">
                   <span
@@ -367,34 +469,6 @@ const DocumentCardContent = memo(function DocumentCardContent({
                         · {document.asset.originalName} ·{' '}
                         {(document.asset.bytes / 1024).toFixed(1)} KB
                       </span>
-                      <div className="image-card-actions">
-                        <button
-                          disabled={data.locked}
-                          onClick={() => void startEdit()}
-                        >
-                          설명 편집
-                        </button>
-                        <button
-                          disabled={!capabilities.nativeClipboard}
-                          onClick={() =>
-                            void requireDesktopApi(api).copyText(
-                              document.asset!.path,
-                            )
-                          }
-                        >
-                          에셋 경로 복사
-                        </button>
-                        <button
-                          disabled={!capabilities.localFiles}
-                          onClick={() =>
-                            void requireDesktopApi(api).revealPath(
-                              document.asset!.path,
-                            )
-                          }
-                        >
-                          원본 파일 보기
-                        </button>
-                      </div>
                     </div>
                   )}
                   {taskError && (

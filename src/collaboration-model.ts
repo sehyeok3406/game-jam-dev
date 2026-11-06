@@ -959,6 +959,7 @@ export function reduceCollaboration(
         inputPaths: paths,
         x: number(input.x),
         y: number(input.y),
+        nodePlacement: input.nodePlacement as CreateTaskInput['nodePlacement'],
         htmlResult: input.htmlResult as CreateTaskInput['htmlResult'],
         documentResult:
           input.documentResult as CreateTaskInput['documentResult'],

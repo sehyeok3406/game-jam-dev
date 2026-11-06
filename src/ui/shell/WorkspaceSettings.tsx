@@ -3,6 +3,7 @@ import type { CodexConnectionStatus, PreviewResult } from '../../shared.ts';
 import { requireDesktopApi } from '../runtime/desktop-api.ts';
 import { ProjectLayoutControl } from './ProjectLayoutControl.tsx';
 interface Props {
+  openFileNodeSettings?: () => void;
   prepareLayout?: () => Promise<void>;
   settingsOpen: boolean;
   setSettingsOpen: (value: import('react').SetStateAction<boolean>) => void;

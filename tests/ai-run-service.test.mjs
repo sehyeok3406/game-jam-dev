@@ -2,20 +2,22 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import matter from '../src/markdown.ts';
 import { AiRunService } from '../src/application/ai/run-service.ts';
+import { describePreview } from '../src/html-source.ts';
 
 const taskPath = '.ai/tasks/run.md';
 const output = 'output/index.html';
 const html = (value) =>
   `<!doctype html><html><head><title>test</title></head><body>${value}</body></html>`;
-function fixture() {
+function fixture(next = output, previewWindow) {
   const baseline = {
     [taskPath]: matter.stringify('Only update the game', {
       id: 'task',
       type: 'ai-task',
       title: 'task',
       inputs: ['ideas/a.md'],
-      expected_outputs: [output],
-      html_output_mode: 'update',
+      expected_outputs: [next],
+      html_output_mode: next === output ? 'update' : 'new',
+      ...(next !== output && { node_placement: { width: 400, height: 140 } }),
     }),
     'ideas/a.md': matter.stringify('Keep original source', {
       id: 'idea',
@@ -26,7 +28,7 @@ function fixture() {
     [output]: html('old'),
   };
   let current = { ...baseline },
-    staged = { ...baseline, [output]: html('new') };
+    staged = { ...baseline, [next]: html('new') };
   const commits = [],
     history = [],
     phases = [],
@@ -64,6 +66,8 @@ function fixture() {
     repository,
     async (raw, p) => htmlChecks.push([raw, p]),
     () => 456,
+    undefined,
+    previewWindow,
   );
   const options = {
     history: {
@@ -94,6 +98,30 @@ function fixture() {
     },
   };
 }
+
+test('local AI publishes below existing private HTML windows without changing them', async () => {
+  const next = 'output/systems/preview/v001/index.html';
+  const previousWindow = {
+    x: 600,
+    y: 120,
+    width: 720,
+    height: 520,
+    collapsed: false,
+  };
+  const f = fixture(next, async (path) =>
+    path === output ? previousWindow : null,
+  );
+  const { staged, outputs } = await f.service.validateFinal(
+    () => {},
+    f.options.phase,
+  );
+  await f.service.publish(staged, outputs, f.options);
+  assert.equal(f.current()[output], html('old'));
+  const result = describePreview(f.current(), next);
+  assert.equal(result.initialWindow.x, 120);
+  assert.equal(result.initialWindow.y, 680);
+  assert.ok(result.placementId);
+});
 
 test('write-only executor input is scoped to the task and captures the current phase without unrelated documents', async () => {
   const f = fixture();

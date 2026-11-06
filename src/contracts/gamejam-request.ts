@@ -2,6 +2,7 @@ import type { MultiplayerSettings } from './multiplayer.ts';
 import type { HtmlResultChoice } from './preview.ts';
 import type { DocumentResultChoice } from './document-output.ts';
 export type GamejamRequest = {
+  nodePlacement?: import('./ai.ts').CreateTaskInput['nodePlacement'];
   multiplayer?: MultiplayerSettings | null;
   canvasId?: string;
   sourceMode?: 'html' | 'html-compose';

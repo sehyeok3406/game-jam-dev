@@ -136,6 +136,8 @@ test('drag plans convert relative coordinates and preserve collapsed stored heig
     width: 130,
     height: 240,
   });
+  const compact = { ...input, data: { ...input.data, fileNode: {} } };
+  assert.equal(documentDragLayout(compact, [section]).width, document.width);
   assert.equal(input.position.x, 12);
 });
 

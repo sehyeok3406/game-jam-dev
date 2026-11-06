@@ -8,6 +8,7 @@ type CanvasCommands = {
   action: (action: Shortcut, event: KeyboardEvent) => void;
   escape: () => void;
   releasePan: () => void;
+  releaseLinks?: () => void;
   blur: () => void;
 };
 
@@ -22,7 +23,7 @@ export function useCanvasCommands(commands: CanvasCommands) {
       if (document.fullscreenElement?.classList.contains('preview-card'))
         return;
       if (document.activeElement?.tagName === 'IFRAME') return;
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof Element ? event.target : null;
       const dialog = !!document.querySelector('[aria-modal="true"]');
       if (
         (event.ctrlKey || event.metaKey) &&
@@ -41,7 +42,7 @@ export function useCanvasCommands(commands: CanvasCommands) {
         return;
       const action = canvasShortcut(event, {
         editable: !!target?.closest(
-          'input, textarea, select, button, [role="listbox"], .plugin-control-panel, [contenteditable="true"], [data-editor-owner]',
+          'input, textarea, select, button:not(.file-node-surface), [role="listbox"], .plugin-control-panel, [contenteditable="true"], [data-editor-owner]',
         ),
         dialog,
         playing: document.activeElement?.tagName === 'IFRAME',
@@ -60,9 +61,11 @@ export function useCanvasCommands(commands: CanvasCommands) {
     };
     const keyup = (event: KeyboardEvent) => {
       if (event.key === ' ') latest.current.releasePan();
+      if (event.key.toLowerCase() === 'g') latest.current.releaseLinks?.();
     };
     const blur = () => {
       latest.current.releasePan();
+      latest.current.releaseLinks?.();
       latest.current.blur();
     };
     window.addEventListener('keydown', keydown);

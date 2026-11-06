@@ -10,6 +10,7 @@ import type { GamejamRequest } from './gamejam-request.ts';
 import type { CollaborationRole } from './shared.ts';
 import { readSavedRequest } from './gamejam-history.ts';
 import { gamejamIssues } from './gamejam-validation.ts';
+import { readNodePlacement } from './core/canvas/file-node-style.ts';
 export const APPROVAL_STATUS_NAMES: Record<ApprovalStatus, string> = {
   pending: '요청 대기',
   feedback: '보완 요청',
@@ -102,12 +103,14 @@ export function parseApprovalRequest(value: unknown): GamejamRequest {
   if (issues.length) throw new Error(issues[0].message);
   // Pick the contract explicitly: arbitrary client fields never enter shared metadata.
   const r = saved.request;
+  const nodePlacement = readNodePlacement(r.nodePlacement);
   return structuredClone({
     organize: r.organize,
     implement: r.implement,
     inputPaths: r.inputPaths,
     x: r.x,
     y: r.y,
+    ...(nodePlacement ? { nodePlacement } : {}),
     canvasId: r.canvasId,
     sourceMode: r.sourceMode,
     htmlResult: r.htmlResult,

@@ -13,6 +13,7 @@ import {
 } from '../workspace/workspace-types.ts';
 interface Ports {
   previews?: import('../../contracts/preview.ts').PreviewResult[];
+  revealPreview?: (id: string) => void;
   setPreviewWindows: import('react').Dispatch<
     import('react').SetStateAction<Record<string, PreviewWindowState>>
   >;
@@ -79,8 +80,14 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
   );
 
   const compareWindows = async (a: string, b: string, presetId: string) => {
-    const { setPreviewWindows, api, previewWindows, flowRef, setNotice } =
-      ports();
+    const {
+      setPreviewWindows,
+      api,
+      previewWindows,
+      flowRef,
+      setNotice,
+      revealPreview,
+    } = ports();
 
     if (a === b) throw new Error('서로 다른 버전을 선택해주세요.');
     let first = previewWindows[a],
@@ -103,6 +110,12 @@ export function usePreviewWindows(scope: SelectionScope, ports: () => Ports) {
     ]);
     if (!isCurrent()) return;
     setPreviewWindows((current) => ({ ...current, [a]: first, [b]: second }));
+    for (const relative of [a, b]) {
+      const preview = live
+        .current()
+        .previews?.find((item) => item.relativePath === relative);
+      if (preview) revealPreview?.(previewNodeId(preview));
+    }
     setTimeout(
       () =>
         isCurrent() &&

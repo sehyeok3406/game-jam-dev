@@ -5,7 +5,7 @@ export interface DocumentGeometry {
   parentId?: string;
   position: { x: number; y: number };
   measured?: { width?: number; height?: number };
-  data: { document: CanvasDocument };
+  data: { document: CanvasDocument; fileNode?: unknown };
 }
 
 /** React Flow stores child coordinates relative to a section; files store absolute coordinates. */
@@ -26,7 +26,10 @@ export function documentDragLayout(
     revision: document.revision,
     x: node.position.x + (parent?.x ?? 0),
     y: node.position.y + (parent?.y ?? 0),
-    width: node.measured?.width ?? document.width,
+    width:
+      document.collapsed && node.data.fileNode
+        ? document.width
+        : (node.measured?.width ?? document.width),
     height: document.collapsed
       ? document.height
       : (node.measured?.height ?? document.height),
@@ -46,7 +49,7 @@ export function documentMembership(
           member.id === document.id || member.path === document.relativePath,
       ),
     ) ?? null;
-  const centerX = layout.x + layout.width / 2;
+  const centerX = layout.x + (node.measured?.width ?? document.width) / 2;
   const centerY = layout.y + (node.measured?.height ?? document.height) / 2;
   const toSection =
     [...sections]

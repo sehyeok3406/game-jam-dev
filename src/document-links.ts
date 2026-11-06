@@ -264,4 +264,12 @@ export class DocumentLinkIndex {
   backlinks(target: LinkDocument) {
     return this.reverse.get(target.relativePath) ?? [];
   }
+  connections() {
+    return Array.from(this.reverse, ([targetPath, sources]) =>
+      sources.map((source) => ({
+        sourcePath: source.relativePath,
+        targetPath,
+      })),
+    ).flat();
+  }
 }

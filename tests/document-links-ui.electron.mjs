@@ -53,9 +53,17 @@ async function run() {
     await win.reload();
     await wait('!!document.querySelector(".home-project-open")');
     await js('document.querySelector(".home-project-open").click()');
+    await wait('document.querySelector(".status-toast")?.hidden===true');
+    await wait(`!!document.querySelector('${source} .file-node-surface')`);
+    await js(`document.querySelector('${source} .file-node-surface').click()`);
+    await wait(
+      '!!document.querySelector("[data-id=automation-note] .file-node-surface")',
+    );
+    await js(
+      'document.querySelector("[data-id=automation-note] .file-node-surface").click()',
+    );
     // Initial fit/measurement can temporarily summarize a reading body. Start
     // link edits after the project's load notice and camera have settled.
-    await wait('document.querySelector(".status-toast")?.hidden===true');
     await wait(
       `document.querySelectorAll('${source} .document-link').length===2`,
     );

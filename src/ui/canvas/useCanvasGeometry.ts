@@ -316,7 +316,9 @@ function createGeometryActions(
                   ...moved.data.windowState,
                   x: moved.position.x,
                   y: moved.position.y,
-                  width: moved.measured?.width ?? moved.data.windowState.width,
+                  width: moved.data.windowState.collapsed
+                    ? moved.data.windowState.width
+                    : (moved.measured?.width ?? moved.data.windowState.width),
                   height: moved.data.windowState.collapsed
                     ? moved.data.windowState.height
                     : (moved.measured?.height ?? moved.data.windowState.height),

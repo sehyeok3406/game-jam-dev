@@ -203,6 +203,8 @@ async function run() {
     await win.loadURL(process.env.QA_URL!);
     await wait('!!document.querySelector(".home-project-open")');
     await js('document.querySelector(".home-project-open").click()');
+    await wait('!!document.querySelector(".file-node-surface--md")');
+    await js('document.querySelector(".file-node-surface--md").click()');
     await wait('!!document.querySelector(".document-card__content")');
     await js('document.querySelector(".document-card__content").click()');
     await wait(`!!document.querySelector('[aria-label="문서 내용"]')`);

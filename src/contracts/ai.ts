@@ -5,6 +5,7 @@ import type { DocumentResultChoice } from './document-output.ts';
 import type { FailureInfo } from './errors.ts';
 import type { ApprovalStart } from './gamejam-approval.ts';
 export type CreateTaskInput = {
+  nodePlacement?: { width: number; height: number };
   gameBuildVersion?: 1;
   queueVersion?: 1;
   multiplayer?: MultiplayerSettings | null;

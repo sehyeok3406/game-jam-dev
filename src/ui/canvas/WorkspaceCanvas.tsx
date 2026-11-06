@@ -1,4 +1,7 @@
 import { readProjectPreference } from '../workspace/project-preferences.ts';
+import { useState } from 'react';
+import { FileNodeEdges } from './FileNodeEdges';
+import type { PreviewResult } from '../../contracts/preview';
 import { GamejamMaterialSelection } from '../GamejamMaterialSelection';
 import { EraserPreviewContext } from '../drawing/eraserPreview';
 import { CanvasResizeProvider } from './CanvasItemResizer';
@@ -164,6 +167,8 @@ interface Props {
   >;
   setPluginPanelOpen: (value: import('react').SetStateAction<boolean>) => void;
   allLinkDocuments: CanvasDocument[];
+  fileNodePreviews?: PreviewResult[];
+  allFileLinks?: boolean;
   sourceTitles: Record<string, string>;
   canvasSheets: CanvasSheets;
   dispatchDocumentLink: (href: string) => void;
@@ -296,6 +301,8 @@ export function WorkspaceCanvas({
   setInspectorId,
   setPluginPanelOpen,
   allLinkDocuments,
+  fileNodePreviews,
+  allFileLinks,
   sourceTitles,
   canvasSheets,
   dispatchDocumentLink,
@@ -332,6 +339,10 @@ export function WorkspaceCanvas({
   guides,
   nodeTypes,
 }: Props) {
+  const [hoveredFileNode, setHoveredFileNode] = useState<{
+    canvas: string;
+    id: string;
+  } | null>(null);
   return (
     <CanvasViewportProvider scope={selectionScope} searching={findOpen}>
       <div
@@ -379,7 +390,7 @@ export function WorkspaceCanvas({
         onPointerDownCapture={(event) => {
           if (
             (event.target as Element).closest(
-              'button, input, select, textarea, a, .nodrag, [contenteditable="true"]',
+              'button:not(.file-node-surface), input, select, textarea, a, .nodrag, [contenteditable="true"]',
             )
           )
             return;
@@ -642,6 +653,10 @@ export function WorkspaceCanvas({
                     onSelectionEnd={() => {
                       materialMarquee.current = null;
                     }}
+                    onNodeMouseEnter={(_event, node) =>
+                      setHoveredFileNode({ canvas: activeCanvas, id: node.id })
+                    }
+                    onNodeMouseLeave={() => setHoveredFileNode(null)}
                     onNodeClick={(event, node) => {
                       if (materialPicker !== null) {
                         const path = materialPath(node);
@@ -943,6 +958,17 @@ export function WorkspaceCanvas({
                   >
                     <CanvasZoomStyle />
                     <CanvasViewportTracker />
+                    {fileNodePreviews && materialPicker === null && (
+                      <FileNodeEdges
+                        previews={fileNodePreviews}
+                        hover={
+                          hoveredFileNode?.canvas === activeCanvas
+                            ? hoveredFileNode.id
+                            : null
+                        }
+                        all={allFileLinks === true}
+                      />
+                    )}
                     <Background
                       color={theme === 'dark' ? '#373b44' : '#c9cdd3'}
                       gap={24}

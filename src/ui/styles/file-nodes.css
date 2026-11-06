@@ -1,0 +1,224 @@
+.file-node-surface,
+.file-node-example {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--card-line);
+  border-radius: var(--node-radius, 12px);
+  background: var(--node-body-bg, var(--card));
+  color: var(--node-body-fg, var(--card-text));
+  text-align: left;
+}
+button.file-node-surface {
+  padding: 0;
+  cursor: grab;
+}
+button.file-node-surface:hover:not(:disabled) {
+  background: var(--node-body-bg, var(--card));
+}
+button.file-node-surface:active:not(:disabled) {
+  cursor: grabbing;
+  transform: none;
+}
+.file-node-surface:focus-visible,
+.asset-node-surface:focus-visible {
+  outline: 2px solid var(--selection);
+}
+.react-flow__node.selected .file-node-surface {
+  outline: 2px solid var(--selection);
+}
+.file-node-title {
+  display: flex;
+  align-items: center;
+  flex: 0 0 var(--node-title-height, 38px);
+  gap: 7px;
+  min-width: 0;
+  padding: 0 12px;
+  background: var(--node-title-bg, var(--document-title-background));
+  color: var(--node-title-fg, var(--card-text));
+}
+.file-node-title svg,
+.file-node-title small {
+  flex: none;
+}
+.file-node-title strong {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.file-node-title small {
+  font-size: 11px;
+}
+.file-node-surface--html .file-node-title {
+  flex: 1;
+}
+.file-node-summary,
+.file-node-example__body {
+  padding: 7px 12px;
+  font-size: 13px;
+  line-height: 19px;
+}
+.file-node-summary {
+  flex: 1;
+  min-height: 0;
+  padding-block: 5px;
+}
+.file-node-summary > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.file-node-example--html .file-node-example__body {
+  flex: 1;
+  background: #000;
+}
+.document-card.file-node-expanded,
+.preview-card.file-node-expanded {
+  border-radius: var(--node-radius, 12px);
+}
+.document-card.file-node-expanded[data-card-color] {
+  background: var(--node-body-bg, var(--card));
+  color: var(--node-body-fg, var(--card-text));
+}
+.document-card.file-node-expanded .document-card__content:hover {
+  background: color-mix(
+    in srgb,
+    var(--node-body-bg, var(--card)) 95%,
+    var(--selection) 5%
+  );
+}
+.document-card.file-node-expanded > .canvas-file-header,
+.preview-card.file-node-expanded > .canvas-file-header {
+  min-height: var(--node-title-height, 38px);
+  background: var(--node-title-bg, var(--document-title-background));
+  color: var(--node-title-fg, var(--card-text));
+}
+.file-node-expanded > .canvas-file-header .canvas-file-header__title {
+  color: inherit;
+}
+.file-node-expanded .markdown-body {
+  color: var(--node-body-fg, var(--card-text));
+}
+.preview-card--node-collapsed {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.react-flow__node.selected .preview-card--node-collapsed,
+.react-flow__node.new-file-node .preview-card--node-collapsed {
+  box-shadow: none;
+}
+.preview-card--node-collapsed
+  > :not(.file-node-surface):not(.window-resize-handle) {
+  display: none;
+}
+.asset-node-surface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: var(--text);
+  cursor: grab;
+}
+.react-flow__node.selected:has(.asset-node-surface) {
+  filter: none;
+}
+.asset-node-surface .project-image {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 0;
+}
+.section-dialog.file-node-settings {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(880px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+}
+.file-node-settings > header,
+.file-node-settings__preview-controls,
+.file-node-settings__colors,
+.file-node-settings__colors > div,
+.file-node-settings__colors label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-node-settings > header,
+.file-node-settings__preview-controls {
+  justify-content: space-between;
+}
+.file-node-settings__preview {
+  background: var(--canvas);
+  padding: 12px;
+  border-radius: 8px;
+}
+.file-node-settings__sample {
+  position: relative;
+  margin-block: 10px;
+  overflow: hidden;
+}
+.file-node-settings__cards {
+  display: flex;
+  gap: 20px;
+  transform-origin: top left;
+}
+.file-node-settings__fields {
+  display: grid;
+  gap: 9px;
+  margin-block: 14px;
+}
+.file-node-settings__number {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) 68px;
+  gap: 8px;
+  align-items: center;
+}
+.file-node-settings__number input {
+  width: 100%;
+  min-width: 0;
+}
+.file-node-settings__colors {
+  flex-wrap: wrap;
+}
+.file-node-settings__colors input {
+  width: 34px;
+}
+.file-node-edges {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.file-node-edges g path {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.7px;
+}
+.file-node-edges g[data-file-edge='input'] path {
+  stroke: var(--selection);
+  stroke-width: 2px;
+}
+.file-node-edges text {
+  fill: var(--text);
+  font-size: 11px;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--canvas);
+  stroke-width: 3px;
+}

@@ -55,6 +55,9 @@ export type SelectionActionPorts = {
   reloadDrawings: () => Promise<void>;
   submitDrawing: (command: DrawingCommand) => void;
   reload: () => Promise<unknown>;
+  savePreviewPositions?: (
+    moves: { relativePath: string; x: number; y: number }[],
+  ) => Promise<void>;
   notice: (message: string) => void;
   error: (error: unknown) => void;
 };
@@ -344,9 +347,18 @@ export class CanvasSelectionActions {
       const updates = arrangeSelectionItems(targets, action);
       await ports.flush(guard);
       writable();
-      await ports.editor.updateLayouts(updates);
-      guard();
-      await ports.reload();
+      const project = updates.flatMap(({ kind, ...layout }) =>
+        kind === 'preview' ? [] : [{ ...layout, kind }],
+      );
+      const previews = updates.filter((item) => item.kind === 'preview');
+      if (project.length) await ports.editor.updateLayouts(project);
+      try {
+        writable();
+        if (previews.length) await ports.savePreviewPositions?.(previews);
+      } finally {
+        guard();
+        await ports.reload();
+      }
       guard();
       ports.notice(`${targets.length}개 항목의 배치를 정리했습니다.`);
     });

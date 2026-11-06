@@ -65,6 +65,7 @@ export function gamejamTaskInput(
         }
       : {}),
     kind,
+    ...(request.nodePlacement ? { nodePlacement: request.nodePlacement } : {}),
     ...(request.implement ? { gameBuildVersion: 1 as const } : {}),
     canvasId: request.canvasId,
     sourceMode:
