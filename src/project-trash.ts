@@ -258,7 +258,7 @@ export class ProjectTrash {
     await this.library.removeProject(record.projectId);
     record.stage = 'retained';
     record.trashedAt = Date.now();
-    record.expiresAt = Date.now() + TRASH_RETENTION;
+    record.expiresAt = record.trashedAt + TRASH_RETENTION;
     record.error = undefined;
     await this.save(record);
   }
