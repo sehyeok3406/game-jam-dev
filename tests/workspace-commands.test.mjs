@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { fittedImage } from '../src/core/canvas/image-layout.ts';
+import { arrangeSelectionItems } from '../src/ui/canvas/selection-plan.ts';
 import {
   documentDragLayout,
   documentMembership,
@@ -178,6 +180,71 @@ test('membership uses the visible center, smallest containing section and path-c
   assert.equal(leaving.fromSection.id, 's');
   assert.equal(leaving.toSection, null);
   assert.equal(documentMembership(node(900, 900), []), null);
+});
+
+test('image moves, resizes and arrangement round trip through the stored box', () => {
+  const box = { ...document, width: 360, height: 320 };
+  const wide = fittedImage(box, 3);
+  const tall = fittedImage(box, 1 / 3);
+  assert.deepEqual(wide, { x: 0, y: 100, width: 360, height: 120 });
+  assert.ok(Math.abs(tall.x - 126.666667) < 0.000001);
+  assert.equal(tall.height, 320);
+  const image = {
+    ...node(24, 66),
+    parentId: 'section:s',
+    data: { document: box, imageAspect: 3 },
+    measured: { width: 540, height: 180 },
+  };
+  const geometry = ({ x, y, width, height }) => [x, y, width, height];
+  assert.deepEqual(
+    geometry(documentDragLayout(image, [section])),
+    [124, 166, 360, 320],
+  );
+  assert.deepEqual(
+    geometry(documentDragLayout(image, [section], true)),
+    [124, 116, 540, 480],
+  );
+  const nested = {
+    ...section,
+    id: 'small',
+    x: 300,
+    y: 310,
+    width: 30,
+    height: 30,
+  };
+  assert.equal(
+    documentMembership(image, [section, nested]).toSection.id,
+    'small',
+  );
+
+  const arranged = arrangeSelectionItems(
+    [
+      {
+        kind: 'document',
+        key: 'md',
+        relativePath: 'docs/md.md',
+        x: 10,
+        y: 40,
+        width: 150,
+        height: 120,
+        storedHeight: 120,
+      },
+      {
+        kind: 'document',
+        key: 'image',
+        relativePath: box.relativePath,
+        x: 170,
+        y: 120,
+        width: wide.width,
+        height: wide.height,
+        storedWidth: box.width,
+        storedHeight: box.height,
+        storageInset: wide,
+      },
+    ],
+    'top',
+  );
+  assert.deepEqual(geometry(arranged[1]), [170, -60, 360, 320]);
 });
 
 test('mixed and drawing-only transfers preserve the single canvas transaction and expected generations', () => {

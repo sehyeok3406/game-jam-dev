@@ -27,6 +27,9 @@ export type DocumentNodeData = {
     flush: ((finish?: boolean) => Promise<void>) | null,
   ) => void;
   document: CanvasDocument;
+  imageAspect?: number;
+  imageKey?: string;
+  onImageAspect?: (key: string, aspect: number) => void;
   collaborative: boolean;
   layoutLocked: boolean;
   draftKey: string;

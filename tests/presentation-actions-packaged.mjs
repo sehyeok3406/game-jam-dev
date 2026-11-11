@@ -7,6 +7,9 @@ import path from 'node:path';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { createCollaborationServer } from '../src/collaboration-server.ts';
+import { CollaborationClient } from '../src/collaboration-client.ts';
+import { locationLinkHref } from '../src/core/projects/location-links.ts';
 const root = await fs.mkdtemp(
   path.join(os.tmpdir(), 'gamejam-presentation-packaged-'),
 );
@@ -45,13 +48,14 @@ async function port() {
 }
 const pause = () => new Promise((r) => setTimeout(r, 100));
 let child, ws, js, send;
-async function boot() {
+async function boot(href) {
   const debugPort = await port();
   child = spawn(
     path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
     [
       `--game-canvas-test-profile=${profileId}`,
       `--remote-debugging-port=${debugPort}`,
+      ...(href ? [href] : []),
     ],
     { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
   );
@@ -127,7 +131,9 @@ async function wait(code) {
   throw Error('Timeout: ' + code);
 }
 async function stop(graceful = false) {
-  if (graceful && child && child.exitCode === null) {
+  const running = () =>
+    child && child.exitCode === null && child.signalCode === null;
+  if (graceful && running()) {
     let timer;
     const exited = new Promise((resolve) => child.once('exit', resolve));
     void js('window.close()').catch(() => undefined);
@@ -147,10 +153,11 @@ async function stop(graceful = false) {
   }
   ws?.close();
   ws = null;
-  if (child && child.exitCode === null) {
+  if (running()) {
     child.kill();
     await new Promise((r) => child.once('exit', r));
   }
+  child = null;
   await pause();
 }
 const call = (method, ...args) =>
@@ -186,22 +193,14 @@ const imagePath = 'assets/images/wide.png';
 const imageDocument = path.join(game, 'docs', 'picture.md');
 const imageBody = `![불러온 이미지](../${imagePath})\n\n## 이미지 용도\n\n게임 에셋\n\n## 설명\n\n초기 설명\n\n원본 이미지: \`${imagePath}\`\n`;
 const recoveredDescription = '복원한 이미지 설명 초안';
+const wideImage =
+  'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAECAYAAAC6Jt6KAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2AgB8hN+P+fWEx7DQBvzVgtcyg/0wAAAABJRU5ErkJggg==';
+const tallImage =
+  'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAMCAYAAABFohwTAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2DABuQm/P8Pw0NHAABTrlgt0bibAQAAAABJRU5ErkJggg==';
 if (fileNodesOnly) {
   const fixtures = [
-    [
-      'picture',
-      imagePath,
-      '스프라이트',
-      1100,
-      'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAECAYAAAC6Jt6KAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2AgB8hN+P+fWEx7DQBvzVgtcyg/0wAAAABJRU5ErkJggg==',
-    ],
-    [
-      'portrait',
-      'assets/images/tall.png',
-      '세로형',
-      1320,
-      'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAMCAYAAABFohwTAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2DABuQm/P8Pw0NHAABTrlgt0bibAQAAAABJRU5ErkJggg==',
-    ],
+    ['picture', imagePath, '스프라이트', 1100, wideImage],
+    ['portrait', 'assets/images/tall.png', '세로형', 1320, tallImage],
   ];
   await fs.mkdir(path.join(game, 'assets', 'images'), { recursive: true });
   for (const [id, asset, title, x, bytes] of fixtures) {
@@ -377,6 +376,360 @@ async function checkExpandedOrder() {
   await wait(`!!${query(a + ' .file-node-expanded')}`);
 }
 
+async function canvasPointer(type, point, modifiers = 0) {
+  await send('Input.dispatchMouseEvent', {
+    type,
+    ...point,
+    button: 'left',
+    buttons: type === 'mouseReleased' ? 0 : 1,
+    clickCount: 1,
+    modifiers,
+  });
+}
+
+async function clickAt(point, modifiers = 0) {
+  await canvasPointer('mousePressed', point, modifiers);
+  await canvasPointer('mouseReleased', point, modifiers);
+}
+
+async function dragTo(start, end) {
+  await canvasPointer('mousePressed', start);
+  await canvasPointer('mouseMoved', {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  });
+  await canvasPointer('mouseMoved', end);
+  await canvasPointer('mouseReleased', end);
+}
+
+const nodeQuery = (id) => `document.querySelector('[data-id="${id}"]')`;
+const center = (selector) =>
+  js(
+    `(()=>{const r=${selector}.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`,
+  );
+
+async function clearCanvasSelection() {
+  const blank = await js(
+    `(()=>{const r=document.querySelector('.react-flow').getBoundingClientRect();for(let y=r.top+80;y<r.bottom-90;y+=60)for(let x=r.left+120;x<r.right-180;x+=70)if(document.elementFromPoint(x,y)?.classList.contains('react-flow__pane'))return {x,y};})()`,
+  );
+  assert.ok(blank, 'a blank point in the canvas');
+  await clickAt(blank);
+  await wait(`!document.querySelector('.react-flow__node.selected')`);
+}
+
+async function zoomAt(id, zoom) {
+  const scale = `new DOMMatrix(getComputedStyle(document.querySelector('.react-flow__viewport')).transform).a`;
+  await js(
+    `(()=>{const r=document.querySelector('[data-id="${id}"]').getBoundingClientRect();document.querySelector('.react-flow__pane').dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+r.height/2,deltaY:Math.log2(${zoom}/(${scale}))/-0.002}));})()`,
+  );
+  await wait(`Math.abs((${scale})-${zoom})<0.001`);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+}
+
+async function checkImageBounds(id, axis, gap = 15) {
+  const node = nodeQuery(id);
+  const image = `${node}.querySelector('.asset-node-fitted img')`;
+  await js(`${node}.dispatchEvent(new MouseEvent('contextmenu', {
+    bubbles: true, button: 2, clientX: 240, clientY: 200,
+  }))`);
+  await wait(`${node}.classList.contains('selected')`);
+  await key('Escape');
+  await js(`[...document.querySelectorAll('.canvas-zoom-menu button')]
+    .find(button => button.textContent.trim() === '선택 항목 맞춤').click()`);
+  await pause();
+  for (const zoom of [0.57, 1]) {
+    await zoomAt(id, zoom);
+    await wait(`!!${image}?.naturalWidth`);
+    await clearCanvasSelection();
+    const margin = await js(`(() => {
+      const r = ${image}.getBoundingClientRect();
+      const x = r.x + r.width / 2, y = r.y + r.height / 2;
+      const points = ${
+        axis === 'x'
+          ? `[{x:r.left-${gap}, y}, {x:r.right+${gap}, y}]`
+          : `[{x, y:r.top-${gap}}, {x, y:r.bottom+${gap}}]`
+      };
+      return points.find(({x,y}) => document.elementFromPoint(x,y)?.classList.contains('react-flow__pane'));
+    })()`);
+    assert.ok(
+      margin,
+      `${id} has an exposed canvas point in the former margin at ${zoom}`,
+    );
+    await clickAt(margin);
+    await wait(`!${node}.classList.contains('selected')`);
+    const inside = await center(image);
+    const target = await js(`(() => {
+      const element = document.elementFromPoint(${inside.x}, ${inside.y});
+      return {
+        id: element?.closest('[data-id]')?.dataset.id,
+        tag: element?.className,
+        window: {width: innerWidth, height: innerHeight},
+      };
+    })()`);
+    assert.equal(target.id, id, JSON.stringify({ zoom, inside, target }));
+    await clickAt(inside, 8);
+    await wait(`${node}.querySelectorAll('.window-resize-handle').length===4`);
+    assert.equal(
+      await js(
+        `(()=>{const r=${image}.getBoundingClientRect(),n=${node}.getBoundingClientRect();return ['left','right','top','bottom'].every(side=>Math.abs(r[side]-n[side])<=1)&&[...${node}.querySelectorAll('.window-resize-handle')].every(handle=>{const b=handle.getBoundingClientRect(),x=handle.classList.contains('left')?r.left:r.right,y=handle.classList.contains('top')?r.top:r.bottom;return Math.abs(x-b.x-b.width/2)<=1&&Math.abs(y-b.y-b.height/2)<=1;});})()`,
+      ),
+      true,
+      `${id} bounds and handles at ${zoom}`,
+    );
+  }
+  await zoomAt(id, 0.57);
+}
+
+async function resizeImage(id, dx, dy) {
+  const node = nodeQuery(id);
+  await wait(`!!${node}.querySelector('.window-resize-handle')`);
+  const handle = await js(`(() => {
+    for (const element of ${node}.querySelectorAll('.window-resize-handle')) {
+      const r = element.getBoundingClientRect();
+      const x = Math.round(r.x + r.width / 2);
+      const y = Math.round(r.y + r.height / 2);
+      if (document.elementFromPoint(x, y) === element) return {
+        x, y, left: element.classList.contains('left'), top: element.classList.contains('top'),
+      };
+    }
+  })()`);
+  assert.ok(handle, `${id} has a visible resize handle`);
+  const start = { x: handle.x, y: handle.y };
+  const end = {
+    x: start.x + (handle.left ? -dx : dx),
+    y: start.y + (handle.top ? -dy : dy),
+  };
+  const width = await js(`parseFloat(${node}.style.width)`);
+  await canvasPointer('mousePressed', start);
+  await canvasPointer('mouseMoved', end);
+  const during = await js(`parseFloat(${node}.style.width)`);
+  await canvasPointer('mouseReleased', end);
+  assert.ok(
+    during > width,
+    `${id} resized during the gesture from ${width} to ${during}`,
+  );
+}
+
+async function importTestImage(name, base64, x, y) {
+  const [image] = await js(
+    `(async()=>{const workspace=await window.gameCanvas.getWorkspace();return window.gameCanvas.importFiles({
+      x:${x},y:${y},imagePurpose:'asset',scope:workspace.saveScope,contextId:workspace.clipboardContextId,
+      files:[{name:${JSON.stringify(name)},bytes:Uint8Array.from(atob(${JSON.stringify(base64)}),value=>value.charCodeAt(0))}],
+    });})()`,
+  );
+  return image;
+}
+
+async function checkImageOperations(square) {
+  await resizeImage(square.id, 25, 25);
+  await wait(
+    `window.gameCanvas.getDocument(${JSON.stringify(square.relativePath)}).then(doc=>doc.width>360&&doc.height>320)`,
+  );
+  await js(
+    `document.querySelector('button[aria-label="캔버스 전체 맞춤"]').click()`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  await clearCanvasSelection();
+  for (const id of ['picture', 'portrait'])
+    await clickAt(await center(nodeQuery(id)), 8);
+  await wait(
+    `document.querySelectorAll('.react-flow__node.selected').length===2`,
+  );
+  await resizeImage('picture', 24, 8);
+  await wait(
+    `Promise.all(['picture','portrait'].map(id=>window.gameCanvas.getDocument('docs/'+id+'.md'))).then(([a,b])=>a.width>180&&b.height>160)`,
+  );
+  assert.equal(
+    await js(
+      `(()=>{const a=${nodeQuery('picture')}.getBoundingClientRect(),b=${nodeQuery('portrait')}.getBoundingClientRect();return Math.abs(a.width-3*a.height)<=1&&Math.abs(b.height-3*b.width)<=1;})()`,
+    ),
+    true,
+  );
+  await js(
+    `document.querySelector('button[title^="실행 취소"]:not(:disabled)').click()`,
+  );
+  await wait(
+    `Promise.all(['picture','portrait'].map(id=>window.gameCanvas.getDocument('docs/'+id+'.md'))).then(docs=>docs.every(doc=>doc.width===180&&doc.height===160))`,
+  );
+  await clearCanvasSelection();
+  for (const id of ['picture', 'portrait'])
+    await clickAt(await center(nodeQuery(id)), 8);
+  await wait(`!!document.querySelector('.selection-arrange-menu summary')`);
+  await js(
+    `document.querySelector('.selection-arrange-menu summary').click();[...document.querySelectorAll('.selection-arrange-menu button')].find(button=>button.textContent.trim()==='위쪽 맞춤').click();`,
+  );
+  await wait(
+    `Math.abs(${nodeQuery('picture')}.getBoundingClientRect().top-${nodeQuery('portrait')}.getBoundingClientRect().top)<=1`,
+  );
+  await clearCanvasSelection();
+  const section = nodeQuery('section:presentation-second');
+  const target = await js(
+    `(()=>{const r=${section}.getBoundingClientRect();return {x:r.right-28,y:r.bottom-25};})()`,
+  );
+  await dragTo(await center(nodeQuery('picture')), target);
+  await wait(
+    `!!document.querySelector('[data-ui-id=membership] .button-primary')`,
+  );
+  await js(
+    `document.querySelector('[data-ui-id=membership] .button-primary').click()`,
+  );
+  await wait(`!document.querySelector('[data-ui-id=membership]')`);
+  const savedSection = matter(
+    await fs.readFile(path.join(game, 'sections/second.md'), 'utf8'),
+  );
+  assert.ok(
+    savedSection.data.members.some((member) => member.id === 'picture'),
+  );
+  const saved = await call('getDocument', 'docs/picture.md');
+  assert.deepEqual([saved.width, saved.height], [180, 160]);
+  console.log(
+    'PASS: single and mixed image resize, undo, visual alignment and section movement save through document layouts',
+  );
+}
+
+async function checkSharedImage() {
+  const server = await createCollaborationServer({
+    dataDirectory: path.join(root, 'image-layout-server'),
+    port: 0,
+    creationKey: 'image-layout',
+  });
+  try {
+    const pendingPng = await js(`(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 21;
+      canvas.height = 7;
+      canvas.getContext('2d').fillRect(0, 0, 10, 7);
+      const data = canvas.toDataURL();
+      const decode = Image.prototype.decode;
+      Image.prototype.decode = function () {
+        if (this.src !== data) return decode.call(this);
+        Image.prototype.decode = decode;
+        return decode.call(this).then(() => new Promise(resolve => {
+          window.releaseTestImageDecode = resolve;
+        }));
+      };
+      return data.split(',')[1];
+    })()`);
+    const pending = await importTestImage(
+      '지연 이미지.png',
+      pendingPng,
+      520,
+      160,
+    );
+    const pendingNode = nodeQuery(pending.id);
+    await wait(`!!${pendingNode}?.querySelector('.asset-node-surface')`);
+    await js(
+      `${pendingNode}.querySelector('.asset-node-surface').focus({preventScroll:true})`,
+    );
+    await wait('typeof window.releaseTestImageDecode === "function"');
+    const serverUrl = `http://127.0.0.1:${server.port}`;
+    const sharedPath = 'docs/picture.md';
+    const original = matter(await fs.readFile(imageDocument, 'utf8'));
+    const owner = await CollaborationClient.create(
+      serverUrl,
+      'image-layout',
+      '레이아웃 관리자',
+      '공동 이미지 검사',
+      {
+        'project.md': '# 공동 이미지 검사\n',
+        [sharedPath]: matter.stringify(original.content, {
+          ...original.data,
+          x: 240,
+          y: 240,
+        }),
+        [imagePath]: `data:image/png;base64,${wideImage}`,
+        'docs/지연 이미지.md': matter.stringify('공동 프로젝트 이미지', {
+          id: pending.id,
+          title: pending.title,
+          type: 'image',
+          x: 520,
+          y: 160,
+          width: 360,
+          height: 320,
+          asset: {
+            ...pending.asset,
+            bytes: Buffer.from(tallImage, 'base64').length,
+          },
+        }),
+        [pending.asset.path]: `data:image/png;base64,${tallImage}`,
+      },
+    );
+    await call('joinCollaboration', {
+      serverUrl,
+      code: owner.result.code,
+      nickname: '레이아웃 검증 참여자',
+    });
+    const tallBounds = `(() => {
+      const node = ${pendingNode};
+      return node?.querySelector('.asset-node-fitted img')?.naturalWidth === 4 &&
+        Math.abs(parseFloat(node.style.width) * 3 - parseFloat(node.style.height)) < 0.1;
+    })()`;
+    await wait(tallBounds);
+    await js(
+      'window.releaseTestImageDecode(); delete window.releaseTestImageDecode;',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await wait(tallBounds);
+    console.log(
+      'PASS: a delayed local image decode cannot replace the shared project image bounds',
+    );
+    const href = locationLinkHref({
+      version: 1,
+      projectId: owner.credentials.projectId,
+      target: { kind: 'document', id: 'picture' },
+    });
+    await stop(true);
+    await boot(href);
+    const picture = nodeQuery('picture');
+    await wait(`!!${picture}?.querySelector('.asset-node-fitted img')`);
+    await wait(`${picture}.classList.contains('selected')`);
+    await pause();
+    await resizeImage('picture', 30, 10);
+    await wait(
+      `window.gameCanvas.getDocument('${sharedPath}').then(doc=>doc.width>180)`,
+    );
+    await pause();
+    const beforeMove = await call('getDocument', sharedPath);
+    const point = await center(picture);
+    await dragTo(point, { x: point.x + 45, y: point.y + 22 });
+    await wait(
+      `window.gameCanvas.getDocument('${sharedPath}').then(doc=>doc.x>${beforeMove.x})`,
+    );
+    const { x, y, width, height } = await call('getDocument', sharedPath);
+    const ownerClient = new CollaborationClient(owner.credentials, () => {});
+    try {
+      await ownerClient.refresh();
+      const saved = matter(ownerClient.files[sharedPath]).data;
+      assert.deepEqual(
+        [saved.x, saved.y, saved.width, saved.height],
+        [x, y, width, height],
+      );
+    } finally {
+      ownerClient.stop();
+    }
+    await stop(true);
+    await boot(href);
+    await wait(`!!${picture}?.querySelector('.asset-node-fitted img')`);
+    const restored = await call('getDocument', sharedPath);
+    assert.deepEqual(
+      [restored.x, restored.y, restored.width, restored.height],
+      [x, y, width, height],
+    );
+    assert.equal(
+      await js(
+        `Math.abs(parseFloat(${picture}.style.width)-3*parseFloat(${picture}.style.height))<0.1`,
+      ),
+      true,
+    );
+    console.log(
+      'PASS: shared image drag and resize survive restart and reconnect',
+    );
+  } finally {
+    await stop();
+    await server.close();
+  }
+}
+
 async function checkFileNodes() {
   const selector = '[data-id="b"]';
   const compact = `${selector} .file-node-surface`;
@@ -521,18 +874,19 @@ async function checkFileNodes() {
     await js(`${query(surface)}.focus({preventScroll:true})`);
     const img = query(surface + ' img');
     await wait(
-      `${img}?.naturalWidth===${width}&&${img}.naturalHeight===${height}`,
+      `${img}?.naturalWidth===${width}&&${img}.naturalHeight===${height}&&${query(surface)}.classList.contains('asset-node-fitted')`,
     );
     assert.equal(await js(`${query(surface)}.textContent`), '');
     assert.equal(
       await js(
-        `(()=>{const root=document.documentElement,theme=root.dataset.theme;try{return ['light','dark'].every(value=>{root.dataset.theme=value;const style=getComputedStyle(${img});return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.objectFit==='contain';});}finally{root.dataset.theme=theme;}})()`,
+        `(()=>{const root=document.documentElement,theme=root.dataset.theme;try{return ['light','dark'].every(value=>{root.dataset.theme=value;return getComputedStyle(${img}).backgroundColor==='rgba(0, 0, 0, 0)';});}finally{root.dataset.theme=theme;}})()`,
       ),
       true,
     );
   }
+  await new Promise((resolve) => setTimeout(resolve, 350));
   await js(
-    `${query(image)}.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,button:2,clientX:600,clientY:300}))`,
+    `(()=>{const surface=${query(image)},r=surface.getBoundingClientRect();surface.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,button:2,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));})()`,
   );
   await wait(
     `[...document.querySelectorAll('[role=menuitem]')].some(b=>b.textContent==='에셋 경로 복사')`,
@@ -588,7 +942,7 @@ async function checkFileNodes() {
     originalAsset,
   );
   await wait(
-    `getComputedStyle(document.querySelector('[data-id=picture]')).width==='180px'&&getComputedStyle(document.querySelector('[data-id=picture]')).height==='160px'`,
+    `getComputedStyle(document.querySelector('[data-id=picture]')).width==='180px'&&getComputedStyle(document.querySelector('[data-id=picture]')).height==='60px'`,
   );
   await js(`${query(image)}.click()`);
   await wait(`${query(editor)}?.innerText==='저장한 이미지 설명'`);
@@ -619,6 +973,26 @@ async function checkFileNodes() {
   );
   await new Promise((resolve) => setTimeout(resolve, 350));
   await checkExpandedOrder();
+  await checkImageBounds('picture', 'y');
+  await checkImageBounds('portrait', 'x');
+  const squareImage = await js(`(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 32;
+    canvas.getContext('2d').fillRect(8, 8, 16, 16);
+    return canvas.toDataURL().split(',')[1];
+  })()`);
+  const square = await importTestImage('정사각형.png', squareImage, 1470, 400);
+  await js(
+    `document.querySelector('button[aria-label="캔버스 전체 맞춤"]').click()`,
+  );
+  await wait(
+    `!!document.querySelector('[data-id="${square.id}"] .asset-node-fitted img')`,
+  );
+  await checkImageBounds(square.id, 'x', 8);
+  console.log(
+    'PASS: wide, tall and newly imported square image bounds and selection handles match at 57% and 100%',
+  );
+  await checkImageOperations(square);
   const workspace = await call('getWorkspace');
   await call(
     'setEditorDraft',
@@ -639,6 +1013,9 @@ try {
   if (fileNodesOnly) {
     await checkFileNodes();
     await stop(true);
+    const portraitPath = path.join(game, 'assets/images/tall.png');
+    const portraitBytes = await fs.readFile(portraitPath);
+    await fs.unlink(portraitPath);
     await boot();
     await enterWorkspace();
     await wait(
@@ -668,9 +1045,17 @@ try {
     await wait(
       `!!document.querySelector('[data-id=picture] .asset-node-surface')`,
     );
-    console.log(
-      'PASS: Windows package restores the collapsed state and size after restart',
+    const retry = `${nodeQuery('portrait')}.querySelector('.project-image-placeholder button')`;
+    await wait(`!!${retry}`);
+    await fs.writeFile(portraitPath, portraitBytes);
+    await js(`${retry}?.click()`);
+    await wait(
+      `!!${nodeQuery('portrait')}.querySelector('.asset-node-fitted img')`,
     );
+    console.log(
+      'PASS: Windows package restores the collapsed state and image draft, and retries a missing image',
+    );
+    await checkSharedImage();
   } else {
     const result = await presentationUiScenarios({
       js,
@@ -760,6 +1145,7 @@ try {
     );
   }
 } catch (error) {
+  console.error(error);
   console.error(
     'Presentation UI failure state:',
     await js(
@@ -780,6 +1166,7 @@ try {
           path.sep,
       ),
   );
-  await fs.rm(root, { recursive: true, force: true });
-  await fs.rm(profile, { recursive: true, force: true });
+  const cleanup = { recursive: true, force: true, maxRetries: 10 };
+  await fs.rm(root, cleanup);
+  await fs.rm(profile, cleanup);
 }

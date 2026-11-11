@@ -1,5 +1,5 @@
 import { useRuntime } from '../runtime/RuntimeProvider';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { useCanvasResource } from '../canvas/CanvasContent';
 import { useOptionalCanvasViewport } from '../canvas/CanvasViewport';
 import { useNodeId } from '@xyflow/react';
@@ -9,8 +9,9 @@ type ImageProps = {
   title: string;
   cacheKey: string;
   version?: number | string;
+  onAspect?: (key: string, aspect: number) => void;
 };
-type PreparedImage = { url: string; bytes: number };
+type PreparedImage = { url: string; bytes: number; aspect: number };
 
 async function prepareImage(
   content: string,
@@ -20,6 +21,7 @@ async function prepareImage(
   image.src = content;
   await image.decode();
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const aspect = image.naturalWidth / image.naturalHeight;
   const scale = Math.min(
     1,
     768 / Math.max(image.naturalWidth, image.naturalHeight),
@@ -27,6 +29,7 @@ async function prepareImage(
   if (scale === 1)
     return {
       url: content,
+      aspect,
       bytes: image.naturalWidth * image.naturalHeight * 4 + content.length * 2,
     };
   const canvas = document.createElement('canvas');
@@ -36,10 +39,16 @@ async function prepareImage(
   const url = canvas.toDataURL('image/png');
   const bytes = canvas.width * canvas.height * 4 + url.length * 2;
   canvas.width = canvas.height = 0;
-  return { url, bytes };
+  return { url, bytes, aspect };
 }
 
-function CanvasProjectImage({ path, title, cacheKey, version }: ImageProps) {
+function CanvasProjectImage({
+  path,
+  title,
+  cacheKey,
+  version,
+  onAspect,
+}: ImageProps) {
   const { api } = useRuntime();
   const prepared = useCanvasResource(
     `image:${path}`,
@@ -50,7 +59,12 @@ function CanvasProjectImage({ path, title, cacheKey, version }: ImageProps) {
       return prepareImage(content, signal);
     },
     (value) => value.bytes,
+    !!onAspect,
   );
+  const aspect = prepared.value?.aspect;
+  useLayoutEffect(() => {
+    if (aspect !== undefined) onAspect?.(cacheKey, aspect);
+  }, [aspect, cacheKey, onAspect]);
   if (!prepared.value)
     return (
       <span className="project-image-placeholder">

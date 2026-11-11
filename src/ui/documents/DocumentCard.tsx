@@ -20,6 +20,7 @@ import {
   opensFileNode,
 } from '../canvas/FileNodeSurface';
 import { imageDescription } from '../../core/canvas/image-description';
+import { fittedImage, imageResizeRange } from '../../core/canvas/image-layout';
 import { useDocumentEditing } from './useDocumentEditing';
 import { readingBlockFocus } from './markdown-title';
 import type { DocumentCanvasNode } from './types';
@@ -80,11 +81,12 @@ const DocumentCardContent = memo(function DocumentCardContent({
     restoreDraft,
     finishing,
   } = useDocumentEditing(data);
+  const showImageCard = !!assetPath && (editing || !!cachedDraft || saveFailed);
   useLayoutEffect(() => {
-    if (!editing || !assetPath || !reportImageEditing) return;
+    if (!showImageCard || !reportImageEditing) return;
     reportImageEditing(document.id, true);
     return () => reportImageEditing(document.id, false);
-  }, [editing, assetPath, document.id, reportImageEditing]);
+  }, [showImageCard, document.id, reportImageEditing]);
   useCanvasProtection(
     editing ||
       startingEdit ||
@@ -137,30 +139,33 @@ const DocumentCardContent = memo(function DocumentCardContent({
       />
     );
 
-  if (document.asset && !editing && !cachedDraft && !saveFailed)
+  if (document.asset && !showImageCard) {
+    const image = data.imageAspect
+      ? fittedImage(document, data.imageAspect)
+      : null;
+    const range = imageResizeRange(document);
     return (
       <>
-        <CanvasItemResizer
-          color="var(--selection)"
-          isVisible={selected && !data.layoutLocked}
-          lineClassName="window-resize-edge"
-          handleClassName="window-resize-handle"
-          minWidth={100}
-          minHeight={80}
-          keepAspectRatio
-          onResizeEnd={(_event, params) =>
-            void data.onResize(
-              document,
-              params.x,
-              params.y,
-              params.width,
-              params.height,
-            )
-          }
-        />
+        {image && (
+          <CanvasItemResizer
+            color="var(--selection)"
+            isVisible={selected && !data.layoutLocked}
+            lineClassName="window-resize-edge"
+            handleClassName="window-resize-handle"
+            minWidth={image.width * range.min}
+            minHeight={image.height * range.min}
+            maxWidth={image.width * range.max}
+            maxHeight={image.height * range.max}
+            keepAspectRatio
+          />
+        )}
         <article
           ref={cardRef}
-          className="asset-node-surface"
+          className={
+            image
+              ? 'asset-node-surface asset-node-fitted'
+              : 'asset-node-surface'
+          }
           role="button"
           tabIndex={0}
           aria-label={`${document.title} 설명 편집`}
@@ -186,12 +191,13 @@ const DocumentCardContent = memo(function DocumentCardContent({
           <ProjectImage
             path={document.asset.path}
             title={document.title}
-            cacheKey={data.draftKey}
-            version={document.assetVersion}
+            cacheKey={data.imageKey ?? data.draftKey}
+            onAspect={data.onImageAspect}
           />
         </article>
       </>
     );
+  }
 
   const description =
     document.asset && editing
@@ -200,7 +206,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
 
   return (
     <>
-      {!document.collapsed && !(document.asset && editing) && (
+      {!document.collapsed && !document.asset && (
         <CanvasItemResizer
           color="var(--selection)"
           isVisible={selected && !data.layoutLocked}
@@ -359,8 +365,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
                         <ProjectImage
                           path={assetPath}
                           title={document.title}
-                          cacheKey={data.draftKey}
-                          version={document.assetVersion}
+                          cacheKey={data.imageKey ?? data.draftKey}
+                          onAspect={data.onImageAspect}
                         />
                       </div>
                     )
@@ -489,8 +495,8 @@ const DocumentCardContent = memo(function DocumentCardContent({
                       <ProjectImage
                         path={document.asset.path}
                         title={document.title}
-                        cacheKey={`${data.draftKey}:${document.assetVersion ?? 0}`}
-                        version={document.assetVersion ?? 0}
+                        cacheKey={data.imageKey ?? data.draftKey}
+                        onAspect={data.onImageAspect}
                       />
                       <span>
                         {document.asset.purpose === 'asset'

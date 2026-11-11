@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { fittedImage } from '../../core/canvas/image-layout.ts';
 import { htmlNodeKey, markdownNodeKey } from './file-node-identity.ts';
 import type { FileNodePreferences } from './file-node-preferences';
 import {
@@ -248,6 +249,11 @@ export function useCanvasNodes(
 ) {
   const isCurrent = useViewLifetime(scope);
   const models = useRef(new CanvasNodeModels());
+  const imageAspects = useMemo(
+    () => new Map<string, { key: string; aspect: number }>(),
+    [isCurrent],
+  );
+  const [imageGeometryEpoch, setImageGeometryEpoch] = useState(0);
   useEffect(() => {
     const {
       fileNodes,
@@ -386,17 +392,40 @@ export function useCanvasNodes(
         const parent =
           sectionByMember.get(document.id) ??
           sectionByMember.get(document.relativePath);
+        const asset = document.asset;
+        const imageKey =
+          asset &&
+          JSON.stringify([
+            asset.path,
+            document.assetVersion,
+            asset.mime,
+            asset.bytes,
+          ]);
+        const decoded = imageAspects.get(document.id);
+        const imageAspect =
+          decoded?.key === imageKey &&
+          Number.isFinite(document.width) &&
+          Number.isFinite(document.height) &&
+          document.width > 0 &&
+          document.height > 0
+            ? decoded?.aspect
+            : undefined;
+        const image = imageAspect ? fittedImage(document, imageAspect) : null;
         return {
           id: document.id,
           type: 'document',
           className: `${newFileNodes.has(document.id) ? 'new-file-node' : ''}${parent && sectionCollapsed(parent) ? ' section-member-hidden' : ''}`,
           selectable: !(parent && sectionCollapsed(parent)),
-          position: parent
-            ? { x: document.x - parent.x, y: document.y - parent.y }
-            : { x: document.x, y: document.y },
+          position: {
+            x: document.x - (parent?.x ?? 0) + (image?.x ?? 0),
+            y: document.y - (parent?.y ?? 0) + (image?.y ?? 0),
+          },
           style: {
-            width: collapsed && view ? view.width : document.width,
-            height: collapsed ? (view?.height ?? 38) : document.height,
+            width:
+              image?.width ?? (collapsed && view ? view.width : document.width),
+            height:
+              image?.height ??
+              (collapsed ? (view?.height ?? 38) : document.height),
           },
           parentId: parent ? sectionNodeId(parent.id) : undefined,
           zIndex: 2,
@@ -409,6 +438,23 @@ export function useCanvasNodes(
           draggable: !layoutLocked,
           data: {
             kind: 'document',
+            ...(imageKey && {
+              imageKey,
+              imageAspect,
+              onImageAspect: (key: string, aspect: number) => {
+                if (
+                  !isCurrent() ||
+                  key !== imageKey ||
+                  !Number.isFinite(aspect) ||
+                  aspect <= 0
+                )
+                  return;
+                const previous = imageAspects.get(document.id);
+                if (previous?.key === key && previous.aspect === aspect) return;
+                imageAspects.set(document.id, { key, aspect });
+                setImageGeometryEpoch((epoch) => epoch + 1);
+              },
+            }),
             ...(view && fileNodes
               ? {
                   fileNode: {
@@ -831,11 +877,20 @@ export function useCanvasNodes(
           node.data.kind === 'document'
             ? node.data.layoutLocked
             : node.data.locked;
+        const gesturing = (old?.dragging || old?.resizing) && !geometryLocked;
+        const imageGeometryChanged =
+          node.data.kind === 'document' &&
+          node.data.imageAspect !== undefined &&
+          (old?.style?.width !== node.style?.width ||
+            old?.style?.height !== node.style?.height);
         const result = {
           ...node,
           // React Flow temporarily hides nodes without measured dimensions.
           // Dropping this on a save/heartbeat blurs the still-mounted editor.
-          measured: old?.measured,
+          measured:
+            !gesturing && !pending && imageGeometryChanged
+              ? { width: node.style?.width, height: node.style?.height }
+              : old?.measured,
           selected: node.className?.includes('section-member-hidden')
             ? false
             : createdSelection
@@ -846,8 +901,13 @@ export function useCanvasNodes(
                   )
                 ? true
                 : (old?.selected ?? false),
-          ...((old?.dragging || old?.resizing) && !geometryLocked
+          ...(gesturing
             ? {
+                ...(node.data.kind === 'document' &&
+                  old.data.kind === 'document' &&
+                  node.data.imageAspect !== old.data.imageAspect && {
+                    data: { ...node.data, imageAspect: old.data.imageAspect },
+                  }),
                 position: old.position,
                 style: old.style,
                 width: old.width,
@@ -866,6 +926,6 @@ export function useCanvasNodes(
         ? currentNodes
         : next;
     });
-  }, [isCurrent, ...dependencies]);
+  }, [isCurrent, imageAspects, imageGeometryEpoch, ...dependencies]);
   return {};
 }

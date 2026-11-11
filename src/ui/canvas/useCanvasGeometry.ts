@@ -124,10 +124,7 @@ function createGeometryActions(
       );
       if (documents.length)
         await api.editor.updateLayouts(
-          documents.map((node) => ({
-            ...documentDragLayout(node, sections),
-            size: true,
-          })),
+          documents.map((node) => documentDragLayout(node, sections, true)),
         );
       if (!isCurrent()) return;
       await updatePreviewWindows(
@@ -147,7 +144,7 @@ function createGeometryActions(
             : [],
         ),
       );
-      if (isCurrent())
+      if (isCurrent() && nodes.length > 1)
         setNotice(`${nodes.length}개 항목의 크기를 함께 저장했습니다.`);
     } catch (error) {
       if (isCurrent()) showError(error);

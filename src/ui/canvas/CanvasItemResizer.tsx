@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { NodeResizer, useNodeId, useReactFlow } from '@xyflow/react';
+import { imageResizeRange } from '../../core/canvas/image-layout';
 import { PREVIEW_PRESETS } from '../../preview-window';
 import type { CanvasNode } from '../workspace/workspace-types';
 import { resizeGroup, type ResizeBox } from './group-resize';
@@ -54,6 +55,21 @@ function boxFor(node: CanvasNode): ResizeBox | null {
       node.className?.includes(imageDescriptionEditingClass)
     )
       return null;
+    if (data.document.asset) {
+      if (!data.imageAspect) return null;
+      const width = Number(node.style?.width);
+      const height = Number(node.style?.height);
+      const imageScale = imageResizeRange(data.document);
+      return {
+        id: node.id,
+        ...node.position,
+        width,
+        height,
+        imageScale,
+        minWidth: width * imageScale.min,
+        minHeight: height * imageScale.min,
+      };
+    }
     return {
       id: node.id,
       ...node.position,
@@ -115,7 +131,13 @@ export function CanvasItemResizer(props: ComponentProps<typeof NodeResizer>) {
     if (!current || current.scope !== live.current.context?.scope) return false;
     return current.nodes.every((node) => {
       const now = live.current.flow.getNode(node.id);
-      return now && boxFor(now) !== null;
+      return (
+        now &&
+        boxFor(now) !== null &&
+        (node.data.kind !== 'document' ||
+          (now.data.kind === 'document' &&
+            node.data.imageKey === now.data.imageKey))
+      );
     });
   }, []);
   const apply = useCallback((boxes: ResizeBox[], resizing: boolean) => {
@@ -156,11 +178,14 @@ export function CanvasItemResizer(props: ComponentProps<typeof NodeResizer>) {
       const nodes = flow
         .getNodes()
         .filter((node) => node.selected && boxFor(node));
-      if (nodes.length < 2) return;
       const boxes = nodes.map((node) => boxFor(node)!);
-      const primary = boxes.find((box) => box.id === id)!;
+      const primary = boxes.find((box) => box.id === id);
+      if (!primary || (nodes.length < 2 && !primary.imageScale)) return;
       // The resizer's start snapshot is authoritative for the dragged card.
-      Object.assign(primary, params);
+      Object.assign(
+        primary,
+        primary.imageScale ? { x: params.x, y: params.y } : params,
+      );
       session.current = {
         scope: context.scope,
         primary,

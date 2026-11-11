@@ -94,3 +94,33 @@ test('side handles leave the other axis unchanged and top-left minimum does not 
     assert.equal(box.width - boxes[index].width, -140);
   });
 });
+
+test('mixed resizes keep the aspect of images and their opposite corner', () => {
+  const primary = boxes[0];
+  const image = {
+    id: 'image',
+    x: 720,
+    y: 200,
+    width: 360,
+    height: 120,
+    minWidth: 120,
+    minHeight: 40,
+    imageScale: { min: 1 / 3, max: 1000 },
+  };
+  const [file, resized] = resizeGroup([primary, image], primary, {
+    x: 40,
+    y: 30,
+    width: 460,
+    height: 390,
+  });
+  assert.deepEqual([file.width, file.height], [460, 390]);
+  assert.deepEqual([resized.width, resized.height], [630, 210]);
+  assert.equal(resized.x + resized.width, image.x + image.width);
+  assert.equal(resized.y + resized.height, image.y + image.height);
+  const [shrunken] = resizeGroup([image], image, {
+    ...image,
+    width: 6,
+    height: 2,
+  });
+  assert.deepEqual([shrunken.width, shrunken.height], [120, 40]);
+});

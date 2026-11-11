@@ -36,6 +36,7 @@ export type ArrangementItem = {
   height: number;
   storedHeight: number;
   storedWidth?: number;
+  storageInset?: { x: number; y: number };
 };
 
 export function selectionArrangementItems(
@@ -126,7 +127,8 @@ export function arrangeSelectionItems(
     kind: item.kind,
     relativePath: item.relativePath,
     revision: item.revision,
-    ...positions.get(item.key)!,
+    x: positions.get(item.key)!.x - (item.storageInset?.x ?? 0),
+    y: positions.get(item.key)!.y - (item.storageInset?.y ?? 0),
     width: item.storedWidth ?? item.width,
     height: item.storedHeight,
     ...(item.kind === 'section' ? { moveMembers: true } : {}),

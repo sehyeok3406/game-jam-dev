@@ -144,6 +144,9 @@ button.file-node-surface:active:not(:disabled) {
   background: transparent;
   border-radius: 0;
 }
+.asset-node-fitted .project-image {
+  object-fit: fill;
+}
 .react-flow__node.file-node-image-editing {
   min-width: 320px;
   min-height: 300px;

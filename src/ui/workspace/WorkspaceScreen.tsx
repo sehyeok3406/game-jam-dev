@@ -19,6 +19,7 @@ import {
 import { queueFileLock } from '../../ai-task-queue';
 import { entryTaskRecord, historyTaskPath } from '../../ai-task-records';
 import { canvasId, readCanvasSheets } from '../../canvas-sheets';
+import { fittedImage } from '../../core/canvas/image-layout';
 import type { DocumentOutputTemplate } from '../../document-format';
 import { linkStatusText, resolveDocumentLink } from '../../document-links';
 import { documentSets } from '../../document-output';
@@ -2311,8 +2312,17 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           ? item.key.slice('document:'.length)
           : item.key,
       );
+      const image =
+        node?.data.kind === 'document' && node.data.imageAspect
+          ? fittedImage(node.data.document, node.data.imageAspect)
+          : null;
       return {
         ...item,
+        ...(image && {
+          x: item.x + image.x,
+          y: item.y + image.y,
+          storageInset: { x: image.x, y: image.y },
+        }),
         storedWidth: item.width,
         width: Number(node?.style?.width) || item.width,
         height: Number(node?.style?.height) || item.height,

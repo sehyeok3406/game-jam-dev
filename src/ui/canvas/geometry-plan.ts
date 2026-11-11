@@ -1,5 +1,6 @@
 import type { CanvasDocument } from '../../contracts/documents';
 import type { CanvasSection } from '../../contracts/canvas';
+import { storedImageLayout } from '../../core/canvas/image-layout.ts';
 import { imageDescriptionEditingClass } from './file-card-presentation.ts';
 
 export interface DocumentGeometry {
@@ -7,28 +8,25 @@ export interface DocumentGeometry {
   className?: string;
   position: { x: number; y: number };
   measured?: { width?: number; height?: number };
-  data: { document: CanvasDocument; fileNode?: unknown };
+  data: { document: CanvasDocument; fileNode?: unknown; imageAspect?: number };
 }
 
 /** React Flow stores child coordinates relative to a section; files store absolute coordinates. */
 export function documentDragLayout(
   node: DocumentGeometry,
   sections: CanvasSection[],
+  resize = false,
 ) {
   const document = node.data.document;
   const imageEditing = node.className?.includes(imageDescriptionEditingClass);
   const parent = sections.find(
     (section) => node.parentId === `section:${section.id}`,
   );
-  return {
-    kind: 'document' as const,
-    objectId: document.id,
-    structureRevision: document.structureRevision,
-    size: false,
-    relativePath: document.relativePath,
-    revision: document.revision,
+  const position = {
     x: node.position.x + (parent?.x ?? 0),
     y: node.position.y + (parent?.y ?? 0),
+  };
+  const size = {
     width:
       imageEditing || (document.collapsed && node.data.fileNode)
         ? document.width
@@ -37,6 +35,22 @@ export function documentDragLayout(
       imageEditing || document.collapsed
         ? document.height
         : (node.measured?.height ?? document.height),
+  };
+  return {
+    kind: 'document' as const,
+    objectId: document.id,
+    structureRevision: document.structureRevision,
+    size: resize,
+    relativePath: document.relativePath,
+    revision: document.revision,
+    ...(node.data.imageAspect
+      ? storedImageLayout(
+          document,
+          node.data.imageAspect,
+          position,
+          resize ? size.width : undefined,
+        )
+      : { ...position, ...size }),
   };
 }
 
@@ -53,14 +67,16 @@ export function documentMembership(
           member.id === document.id || member.path === document.relativePath,
       ),
     ) ?? null;
-  const imageEditing = node.className?.includes(imageDescriptionEditingClass);
+  const useStoredSize =
+    !!node.data.imageAspect ||
+    node.className?.includes(imageDescriptionEditingClass);
   const centerX =
     layout.x +
-    (imageEditing ? layout.width : (node.measured?.width ?? document.width)) /
+    (useStoredSize ? layout.width : (node.measured?.width ?? document.width)) /
       2;
   const centerY =
     layout.y +
-    (imageEditing
+    (useStoredSize
       ? layout.height
       : (node.measured?.height ?? document.height)) /
       2;
