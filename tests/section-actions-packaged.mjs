@@ -157,6 +157,19 @@ const call = (method, ...args) =>
   js(
     `window.gameCanvas[${JSON.stringify(method)}](...${JSON.stringify(args)})`,
   );
+const pointer = (type, point) =>
+  send('Input.dispatchMouseEvent', {
+    type:
+      type === 'mouseDown'
+        ? 'mousePressed'
+        : type === 'mouseUp'
+          ? 'mouseReleased'
+          : 'mouseMoved',
+    ...point,
+    button: 'left',
+    buttons: type === 'mouseUp' ? 0 : 1,
+    clickCount: 1,
+  });
 await fs.mkdir(path.join(game, 'docs'));
 await fs.mkdir(path.join(game, 'output'));
 await fs.writeFile(
@@ -212,36 +225,110 @@ async function enterWorkspace() {
   );
   await wait('!!document.querySelector("[data-plugin-launcher]")');
 }
+async function sectionMenu(section, label, dialog) {
+  const header = `[data-id="section:${section.id}"] .section-card__header`;
+  await wait(`!!document.querySelector(${JSON.stringify(header)})`);
+  await js(`{
+    const node = document.querySelector(${JSON.stringify(header)});
+    const rect = node.getBoundingClientRect();
+    node.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.x + 24, clientY: rect.y + 12 }));
+  }`);
+  await wait('!!document.querySelector("[data-ui-id=section-menu]")');
+  await js(
+    `Array.from(document.querySelectorAll('[data-ui-id=section-menu] button')).find(button => button.textContent.includes(${JSON.stringify(label)})).click()`,
+  );
+  await wait(`!!document.querySelector('[data-ui-id=${dialog}]')`);
+}
+async function addChild(parent) {
+  await sectionMenu(parent, '하위 섹션 만들기', 'section-create');
+  await js(
+    "document.querySelector('[data-ui-id=section-create] .button-primary').click()",
+  );
+  await wait('!document.querySelector("[data-ui-id=section-create]")');
+  const child = (await call('listSections')).find(
+    (section) => section.parentSectionId === parent.id,
+  );
+  assert.ok(child);
+  assert.equal(child.members.length, 0);
+  return child;
+}
+async function dragToParent(leaf, parent) {
+  const root = (await call('listSections')).find(
+    (section) => section.id === parent.id,
+  );
+  const leafHeader = `[data-id="section:${leaf.id}"] .section-card__header`;
+  await key('1', ['shift']);
+  await pause();
+  const geometry = await js(`(() => {
+    const header = document.querySelector(${JSON.stringify(leafHeader)});
+    const child = header.getBoundingClientRect();
+    const root = document.querySelector('[data-id="section:${root.id}"]').getBoundingClientRect();
+    const y = child.y + child.height / 2;
+    const x = [.57, .36, .7, .2].map(fraction => child.x + child.width * fraction).find(value => {
+      const target = document.elementFromPoint(value, y);
+      return header.contains(target) && !target.closest('button');
+    });
+    return { x, y, scale: root.width / ${root.width} };
+  })()`);
+  assert.ok(
+    Number.isFinite(geometry.x),
+    'A visible part of the nested section header must receive pointer input',
+  );
+  const dx = (root.x + 18 - (leaf.x + leaf.width / 2)) * geometry.scale;
+  await pointer('mouseDown', {
+    x: Math.round(geometry.x),
+    y: Math.round(geometry.y),
+  });
+  for (let step = 1; step <= 14; step++) {
+    await pointer('mouseMove', {
+      x: Math.round(geometry.x + (dx * step) / 14),
+      y: Math.round(geometry.y),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 23));
+  }
+  await pointer('mouseUp', {
+    x: Math.round(geometry.x + dx),
+    y: Math.round(geometry.y),
+  });
+  await wait('!!document.querySelector("[data-ui-id=membership]")');
+  assert.ok(
+    await js(
+      `document.querySelector('#membership-dialog-description')?.textContent.includes(${JSON.stringify(leaf.title)})`,
+    ),
+  );
+}
 try {
   await boot();
   await enterWorkspace();
-  const result = await sectionUiScenarios({
-    js,
-    key,
-    wait,
-    pointer: async (type, point) => {
-      await send('Input.dispatchMouseEvent', {
-        type:
-          type === 'mouseDown'
-            ? 'mousePressed'
-            : type === 'mouseUp'
-              ? 'mouseReleased'
-              : 'mouseMoved',
-        ...point,
-        button: 'left',
-        buttons: type === 'mouseUp' ? 0 : 1,
-        clickCount: 1,
+  const result = process.argv.includes('--nested-only')
+    ? await (async () => {
+        const doc = (await call('listDocuments')).find(
+          (item) => item.id === 'a',
+        );
+        const section = await call('createSection', {
+          title: '상위 섹션',
+          members: [{ id: doc.id, path: doc.relativePath }],
+          x: 120,
+          y: 200,
+          width: 620,
+          height: 500,
+        });
+        return { sectionId: section.id, documentId: doc.id };
+      })()
+    : await sectionUiScenarios({
+        js,
+        key,
+        wait,
+        pointer,
+        screenshot: async (name) => {
+          const shot = await send('Page.captureScreenshot');
+          await fs.mkdir('out/section-actions-packaged', { recursive: true });
+          await fs.writeFile(
+            `out/section-actions-packaged/${name}.png`,
+            Buffer.from(shot.data, 'base64'),
+          );
+        },
       });
-    },
-    screenshot: async (name) => {
-      const shot = await send('Page.captureScreenshot');
-      await fs.mkdir('out/section-actions-packaged', { recursive: true });
-      await fs.writeFile(
-        `out/section-actions-packaged/${name}.png`,
-        Buffer.from(shot.data, 'base64'),
-      );
-    },
-  });
   for (const [relative, raw] of originals) {
     const current = matter(
         await fs.readFile(path.join(game, relative), 'utf8'),
@@ -258,15 +345,87 @@ try {
       .find((s) => s.id === result.sectionId)
       .members.some((m) => m.id === result.documentId),
   );
+  const parent = sectionsBefore.find(
+    (section) => section.id === result.sectionId,
+  );
+  const childSection = await addChild(parent);
+  const leaf = await addChild(childSection);
+  const parentToggle = `[data-id="section:${parent.id}"] .section-card__file button[aria-expanded]`;
+  const leafNode = `[data-id="section:${leaf.id}"]`;
+  const leafHidden = `document.querySelector(${JSON.stringify(leafNode)})?.classList.contains('section-member-hidden')`;
+  await wait(`!!document.querySelector(${JSON.stringify(leafNode)})`);
+  await js(`document.querySelector(${JSON.stringify(parentToggle)}).click()`);
+  await wait(leafHidden);
+  await js(`document.querySelector(${JSON.stringify(parentToggle)}).click()`);
+  await wait(`!(${leafHidden})`);
+  await dragToParent(leaf, parent);
+  await key('Escape');
+  await wait('!document.querySelector("[data-ui-id=membership]")');
+  assert.equal(
+    (await call('listSections')).find((section) => section.id === leaf.id)
+      .parentSectionId,
+    childSection.id,
+  );
+  await dragToParent(leaf, parent);
+  await js(
+    "document.querySelector('[data-ui-id=membership] .button-primary').click()",
+  );
+  await wait('!document.querySelector("[data-ui-id=membership]")');
+  assert.equal(
+    (await call('listSections')).find((section) => section.id === leaf.id)
+      .parentSectionId,
+    parent.id,
+  );
+  await call('undo');
+  await wait(
+    `window.gameCanvas.listSections().then(s => s.some(v => v.id === ${JSON.stringify(leaf.id)} && v.parentSectionId === ${JSON.stringify(childSection.id)}))`,
+  );
+  await wait(
+    `document.querySelector('[data-id="section:${childSection.id}"] .section-card__title')?.textContent.includes('하위 1개')`,
+  );
+  await sectionMenu(childSection, '섹션 해제', 'section-action');
+  await js(
+    "document.querySelector('[data-ui-id=section-action] .button-primary').click()",
+  );
+  await wait('!document.querySelector("[data-ui-id=section-action]")');
+  assert.equal(
+    (await call('listSections')).find((section) => section.id === leaf.id)
+      .parentSectionId,
+    parent.id,
+  );
+  await call('undo');
+  await wait(
+    `window.gameCanvas.listSections().then(s => s.some(v => v.id === ${JSON.stringify(childSection.id)}))`,
+  );
+  await sectionMenu(childSection, '섹션과 파일 삭제', 'section-action');
+  assert.ok(
+    await js(
+      "document.querySelector('[aria-label=\"삭제 대상\"]')?.textContent.includes('섹션')",
+    ),
+  );
+  await js(
+    "document.querySelector('[data-ui-id=section-action] .button-danger').click()",
+  );
+  await wait('!document.querySelector("[data-ui-id=section-action]")');
+  assert.ok(
+    !(await call('listSections')).some((section) => section.id === leaf.id),
+  );
+  await call('undo');
+  await wait(
+    `window.gameCanvas.listSections().then(s => s.some(v => v.id === ${JSON.stringify(leaf.id)}))`,
+  );
+  const nestedBefore = await call('listSections');
+  const nestedHistory = (await call('listHistory')).length;
   await stop(true);
   await boot();
   await enterWorkspace();
   assert.equal((await call('listDocuments')).length, before.length);
-  assert.equal((await call('listHistory')).length, historyBefore);
+  assert.ok(nestedHistory > historyBefore);
+  assert.equal((await call('listHistory')).length, nestedHistory);
   const sectionsAfter = await call('listSections');
   assert.deepEqual(
-    sectionsAfter.map((s) => [s.id, s.members]),
-    sectionsBefore.map((s) => [s.id, s.members]),
+    sectionsAfter.map((s) => [s.id, s.parentSectionId, s.members]),
+    nestedBefore.map((s) => [s.id, s.parentSectionId, s.members]),
   );
   assert.ok(
     !(await js(

@@ -22,6 +22,13 @@ import {
 } from './core/projects/document-path.ts';
 import { importProjectCopy } from './project-copy.ts';
 import { layoutValues } from './core/editing/layout.ts';
+import {
+  fitChildSections,
+  sectionAncestors,
+  sectionBranch,
+  sectionDeletionPaths,
+  sectionTree,
+} from './core/editing/section-tree.ts';
 import type { CommandEnvironment } from './core/editing/environment.ts';
 import { COMMAND_LABELS, isCommandName } from './contracts/commands.ts';
 import { documentEditContent } from './core/editing/document-edit.ts';
@@ -158,7 +165,10 @@ export function collaborationPath(relative: unknown): string {
   return relative;
 }
 
-export function checkSnapshot(files: unknown): asserts files is Snapshot {
+export function checkSnapshot(
+  files: unknown,
+  local = false,
+): asserts files is Snapshot {
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
   readProjectLayout(files as Snapshot);
@@ -281,13 +291,16 @@ export function checkSnapshot(files: unknown): asserts files is Snapshot {
         `이미지 카드에 연결된 원본 이미지를 찾을 수 없습니다: ${document.relativePath}`,
       );
   }
-  for (const section of snapshotSections(files as Snapshot))
+  for (const section of snapshotSections(files as Snapshot)) {
+    if (!local && section.parentSectionId !== undefined)
+      throw Error('중첩 섹션은 로컬 프로젝트에서만 사용할 수 있습니다.');
     for (const member of section.members) {
       const doc = documents.get(member?.path);
       if (!doc || doc.id !== member.id || memberships.has(member.path))
         throw new Error(`섹션 소속을 확인해주세요: ${section.relativePath}`);
       memberships.add(member.path);
     }
+  }
 }
 
 export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
@@ -386,6 +399,9 @@ export function snapshotSections(files: Snapshot): CanvasSection[] {
         canvasId: canvasId(data.canvas_id),
         id: data.id ?? relativePath,
         title: typeof data.title === 'string' ? data.title : '섹션',
+        ...(typeof data.parent_section_id === 'string'
+          ? { parentSectionId: data.parent_section_id }
+          : {}),
         relativePath,
         x: data.x ?? 80,
         y: data.y ?? 80,
@@ -431,11 +447,18 @@ export function reduceCollaboration(
   channel: string,
   value: unknown,
   environment: CommandEnvironment = { now: Date.now, id: randomUUID },
+  local = false,
 ): { files: Snapshot; result: unknown } {
   if (!isCommandName(channel))
     throw new Error('허용되지 않은 공동 작업입니다.');
   let next = { ...files };
   const input = record(value);
+  if (
+    !local &&
+    (input.parentSectionId !== undefined || input.membership !== undefined)
+  )
+    throw Error('중첩 섹션은 로컬 프로젝트에서만 사용할 수 있습니다.');
+  const validate = (snapshot: Snapshot) => checkSnapshot(snapshot, local);
   if (channel === 'preview:rename') {
     const plan = planPreviewName(
       files,
@@ -447,7 +470,7 @@ export function reduceCollaboration(
       remapLayoutMarkdown,
       previewNameCodec,
     );
-    checkSnapshot(plan.files);
+    validate(plan.files);
     return { files: plan.files, result: plan.change };
   }
   if (channel === 'files:unify-names') {
@@ -461,7 +484,7 @@ export function reduceCollaboration(
       remapLayoutMarkdown,
       previewNameCodec,
     );
-    checkSnapshot(plan.files);
+    validate(plan.files);
     return { files: plan.files, result: plan.affectedPaths };
   }
   if (channel === 'documents:rename') {
@@ -474,7 +497,7 @@ export function reduceCollaboration(
       },
       remapLayoutMarkdown,
     );
-    checkSnapshot(plan.files);
+    validate(plan.files);
     return { files: plan.files, result: plan.change };
   }
   if (channel === 'projects:import-copy') {
@@ -483,7 +506,7 @@ export function reduceCollaboration(
       value as import('./contracts/project-copy.ts').ProjectCopyImport,
       environment,
     );
-    checkSnapshot(copied.files);
+    validate(copied.files);
     return copied;
   }
   if (channel === 'kanban:move-card' || channel === 'kanban:save-view') {
@@ -498,7 +521,7 @@ export function reduceCollaboration(
             files,
             input as unknown as import('./features/kanban/view').KanbanViewInput,
           );
-    checkSnapshot(changed);
+    validate(changed);
     return { files: changed, result: undefined };
   }
   if (
@@ -524,7 +547,7 @@ export function reduceCollaboration(
               input as unknown as StatusesInput,
               environment.now,
             );
-    checkSnapshot(changed);
+    validate(changed);
     return { files: changed, result: undefined };
   }
   if (channel === 'canvas:batch') {
@@ -555,31 +578,33 @@ export function reduceCollaboration(
         String(part.channel),
         part.input,
         environment,
+        local,
       );
       changed = reduced.files;
       results.push(reduced.result);
     }
-    checkSnapshot(changed);
+    validate(changed);
     return { files: changed, result: results };
   }
   if (channel === 'drawings:apply') {
     assertCanvas(files, input.canvasId);
     if (input.action === 'move') assertCanvas(files, input.targetCanvasId);
     const changed = applyDrawing(files, input as unknown as DrawingCommand);
-    checkSnapshot(changed);
+    validate(changed);
     return { files: changed, result: undefined };
   }
   if (channel === 'game-ui:apply') {
     const changed = applyGameUi(files, input as unknown as GameUiCommand);
-    checkSnapshot(changed);
+    validate(changed);
     return { files: changed, result: snapshotGameUi(changed) };
   }
   if (channel === 'canvases:change') {
     const changed = changeCanvasSheets(
       files,
       input as unknown as CanvasSheetCommand,
+      local ? snapshotSections(files) : undefined,
     );
-    checkSnapshot(changed);
+    validate(changed);
     return { files: changed, result: undefined };
   }
   if (
@@ -602,7 +627,7 @@ export function reduceCollaboration(
             },
           ];
     const relocated = relocateResults(files, moves);
-    checkSnapshot(relocated);
+    validate(relocated);
     return { files: relocated, result: moves };
   }
   if (channel === 'files:import-batch') {
@@ -622,7 +647,7 @@ export function reduceCollaboration(
         '이미 존재하는 파일을 덮어쓸 수 없습니다.',
       );
     Object.assign(next, additions);
-    checkSnapshot(next);
+    validate(next);
     return { files: next, result: snapshotDocuments(additions) };
   }
   if (channel === 'documents:delete-many') {
@@ -635,6 +660,7 @@ export function reduceCollaboration(
         'documents:delete',
         document,
         environment,
+        local,
       ).files;
     return { files: current, result: undefined };
   }
@@ -650,28 +676,115 @@ export function reduceCollaboration(
       updated_at: environment.now(),
     });
   };
+  const patchSection = (section: CanvasSection, fields: Input) => {
+    const parsed = read(section.relativePath);
+    const data = { ...parsed.data, ...fields };
+    if (data.parent_section_id === undefined) delete data.parent_section_id;
+    write(parsed.relative, data, parsed.content);
+  };
+  const expandParents = (id: string) => {
+    const tree = sectionTree(snapshotSections(next));
+    for (const parent of sectionAncestors(tree, id)) {
+      const children = (tree.children.get(parent.id) ?? []).map((child) => {
+        const { x, y, width, height } = read(child.relativePath).data;
+        return {
+          ...child,
+          x: x ?? child.x,
+          y: y ?? child.y,
+          width: width ?? child.width,
+          height: height ?? child.height,
+        };
+      });
+      const frame = fitChildSections(parent, children);
+      if (
+        frame.x !== parent.x ||
+        frame.y !== parent.y ||
+        frame.width !== parent.width ||
+        frame.height !== parent.height
+      )
+        patchSection(parent, frame);
+    }
+  };
   const layout = (entry: Input) => {
     const parsed = read(entry.relativePath);
-    const { x, y, width, height } = layoutValues(parsed.data, entry);
-    if (entry.kind === 'section' && entry.moveMembers !== false) {
-      for (const member of parsed.data.members ?? []) {
-        const child = read(member.path);
+    let frame = layoutValues(parsed.data, entry);
+    if (entry.kind !== 'section') {
+      write(parsed.relative, { ...parsed.data, ...frame }, parsed.content);
+      return;
+    }
+    const sections = snapshotSections(next);
+    const section = sections.find(
+      (item) => item.relativePath === parsed.relative,
+    );
+    if (
+      !section ||
+      (entry.objectId !== undefined && entry.objectId !== section.id)
+    )
+      throw Error('섹션이 변경되었습니다. 목록을 새로고침해주세요.');
+    const tree = sectionTree(sections);
+    const branch = sectionBranch(tree, section);
+    const parentPatch: Input = {};
+    if (entry.membership !== undefined) {
+      if (!local)
+        throw Error('중첩 섹션은 로컬 프로젝트에서만 사용할 수 있습니다.');
+      const { expectedParentId, targetParentId } = record(entry.membership);
+      if (expectedParentId !== (section.parentSectionId ?? null))
+        throw Error('상위 섹션이 변경되었습니다. 다시 옮겨주세요.');
+      if (
+        targetParentId !== null &&
+        !sections.some(
+          (target) =>
+            target.id === targetParentId &&
+            target.canvasId === section.canvasId &&
+            !branch.some((child) => child.id === target.id),
+        )
+      )
+        throw Error(
+          '같은 캔버스에서 자신이나 하위 섹션 밖의 상위 섹션을 선택해주세요.',
+        );
+      parentPatch.parent_section_id = targetParentId ?? undefined;
+    }
+    const dx = frame.x - section.x,
+      dy = frame.y - section.y;
+    if (entry.moveMembers !== false && (dx || dy)) {
+      for (const child of branch.slice(1))
+        patchSection(child, { x: child.x + dx, y: child.y + dy });
+      for (const relative of new Set(
+        branch.flatMap((child) => child.members.map((member) => member.path)),
+      )) {
+        const child = read(relative);
         write(
           child.relative,
           {
             ...child.data,
-            x: number(child.data.x ?? 120) + x - number(parsed.data.x ?? 80),
-            y: number(child.data.y ?? 120) + y - number(parsed.data.y ?? 80),
+            x: number(child.data.x ?? 120) + dx,
+            y: number(child.data.y ?? 120) + dy,
           },
           child.content,
         );
       }
     }
-    write(
-      parsed.relative,
-      { ...parsed.data, x, y, width, height },
-      parsed.content,
-    );
+    if (local) {
+      const children = tree.children.get(section.id) ?? [];
+      const placed =
+        entry.moveMembers === false
+          ? children
+          : children.map((child) => ({
+              ...child,
+              x: child.x + dx,
+              y: child.y + dy,
+            }));
+      frame = fitChildSections(
+        {
+          ...frame,
+          width: Math.max(frame.width, 420),
+          height: Math.max(frame.height, 280),
+        },
+        placed,
+      );
+    }
+    patchSection(section, { ...frame, ...parentPatch });
+    if (local) expandParents(section.id);
   };
   const removeMembers = (paths: Set<string>, target?: string) => {
     for (const section of snapshotSections(next)) {
@@ -838,10 +951,33 @@ export function reduceCollaboration(
       kind: channel.startsWith('sections') ? 'section' : 'document',
     });
   } else if (channel === 'layouts:update') {
-    for (const item of array(input.updates)) {
-      const entry = record(item);
+    const entries = array(input.updates).map(record);
+    const carried = new Set<string>();
+    if (local) {
+      const sections = snapshotSections(next);
+      const tree = sectionTree(sections);
+      const moving = new Set(
+        entries
+          .filter(
+            (entry) =>
+              entry.kind === 'section' &&
+              entry.moveMembers !== false &&
+              entry.position !== false,
+          )
+          .map((entry) => entry.relativePath),
+      );
+      for (const section of sections) {
+        if (!moving.has(section.relativePath)) continue;
+        for (const child of sectionBranch(tree, section)) {
+          if (child !== section) carried.add(child.relativePath);
+          for (const member of child.members) carried.add(member.path);
+        }
+      }
+    }
+    for (const entry of entries) {
       if (entry.kind !== 'section' && entry.kind !== 'document')
         throw new Error('배치 종류가 올바르지 않습니다.');
+      if (carried.has(String(entry.relativePath))) continue;
       layout(entry);
     }
   } else if (channel === 'sections:rename') {
@@ -852,13 +988,23 @@ export function reduceCollaboration(
     if (!title) throw new Error('섹션 이름을 입력해주세요.');
     write(parsed.relative, { ...parsed.data, title }, parsed.content);
   } else if (channel === 'sections:create') {
+    const parent =
+      input.parentSectionId === undefined
+        ? undefined
+        : snapshotSections(next).find(
+            (item) =>
+              item.id === input.parentSectionId &&
+              item.canvasId === canvasId(input.canvasId),
+          );
+    if (input.parentSectionId !== undefined && !parent)
+      throw Error('상위 섹션을 찾을 수 없습니다.');
     const members = array(input.members).map((item) => {
       const member = record(item),
         doc = read(member.path);
       return { id: doc.data.id ?? doc.relative, path: doc.relative };
     });
     if (
-      !members.length ||
+      (!members.length && !parent) ||
       new Set(members.map((member) => member.path)).size !== members.length
     )
       throw new Error('섹션 구성원을 확인해주세요.');
@@ -874,6 +1020,8 @@ export function reduceCollaboration(
     const id = `section-${environment.id().slice(0, 8)}`,
       relative = `sections/${id}.md`,
       title = text(input.title, 300).trim() || '새 섹션';
+    if (next[relative] !== undefined)
+      throw Error('섹션 ID가 중복되었습니다. 다시 시도해주세요.');
     write(
       relative,
       {
@@ -881,6 +1029,7 @@ export function reduceCollaboration(
         title,
         canvas_id: canvasId(input.canvasId),
         type: 'section',
+        ...(parent ? { parent_section_id: parent.id } : {}),
         status: 'active',
         x: number(input.x),
         y: number(input.y),
@@ -890,6 +1039,7 @@ export function reduceCollaboration(
       },
       `# ${title}\n\n섹션 멤버십과 위치를 관리합니다.`,
     );
+    if (parent) expandParents(id);
     result = snapshotSections(next).find(
       (section) => section.relativePath === relative,
     );
@@ -900,23 +1050,46 @@ export function reduceCollaboration(
       parsed.data.id !== input.sectionId
     )
       throw new Error('섹션을 확인할 수 없습니다.');
-    const paths = new Set<string>(
-      (parsed.data.members ?? []).map((member: { path: string }) =>
-        collaborationPath(member.path),
-      ),
-    );
+    const sections = snapshotSections(next);
+    const section = sections.find(
+      (item) => item.relativePath === parsed.relative,
+    )!;
+    const tree = sectionTree(sections);
+    const recursive = input.deleteMembers === true;
+    const paths = sectionDeletionPaths(tree, section, recursive);
+    if (
+      input.expectedPaths !== undefined &&
+      JSON.stringify(array(input.expectedPaths).slice().sort()) !==
+        JSON.stringify(paths.slice().sort())
+    )
+      throw Error('섹션의 삭제 대상이 변경되었습니다. 다시 확인해주세요.');
+    const branch = recursive ? sectionBranch(tree, section) : [section];
+    const sectionPaths = new Set(branch.map((child) => child.relativePath));
     let deletedDocumentCount = 0;
-    if (input.deleteMembers === true)
-      for (const relative of paths)
+    if (recursive) {
+      const documents = new Set(
+        paths.filter((path) => !sectionPaths.has(path)),
+      );
+      for (const relative of documents)
         if (next[relative]) {
           delete next[relative];
           deletedDocumentCount++;
         }
-    delete next[parsed.relative];
-    if (input.deleteMembers === true) removeMembers(paths);
+      removeMembers(documents);
+    } else {
+      const parent = tree.parents.get(section.id);
+      for (const child of tree.children.get(section.id) ?? [])
+        patchSection(child, { parent_section_id: parent?.id });
+      if (parent)
+        removeMembers(
+          new Set(section.members.map((member) => member.path)),
+          parent.id,
+        );
+    }
+    for (const relative of sectionPaths) delete next[relative];
     result = {
       deletedDocumentCount,
-      preservedDocumentCount: paths.size - deletedDocumentCount,
+      preservedDocumentCount: recursive ? 0 : section.members.length,
     };
   } else if (channel === 'sections:move-document') {
     const doc = read(input.documentPath),
@@ -990,7 +1163,7 @@ export function reduceCollaboration(
     ].includes(channel)
   )
     next = initializeWorkflows(files, next);
-  checkSnapshot(next);
+  validate(next);
   if (result && typeof result === 'object' && 'relativePath' in result)
     result =
       snapshotDocuments(next).find(

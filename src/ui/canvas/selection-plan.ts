@@ -3,6 +3,7 @@ import type { CanvasSection } from '../../contracts/canvas';
 import type { DrawingObject } from '../../contracts/drawing-types';
 import type { CommandEnvironment } from '../../core/editing/environment';
 import { arrangeFileNodes } from '../../core/canvas/result-placement.ts';
+import type { SectionActionPrompt } from './section-actions.ts';
 
 export type DeletionItem = Pick<
   CanvasDocument,
@@ -10,8 +11,11 @@ export type DeletionItem = Pick<
 >;
 export type SelectionTargets = {
   documents: DeletionItem[];
-  sections: CanvasSection[];
+  sections: SectionDeleteTarget[];
   drawings: DrawingObject[];
+};
+export type SectionDeleteTarget = CanvasSection & {
+  affected?: SectionActionPrompt['affected'];
 };
 export type ArrangementAction =
   | 'left'

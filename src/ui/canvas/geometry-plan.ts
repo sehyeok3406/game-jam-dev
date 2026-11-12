@@ -1,3 +1,7 @@
+import {
+  sectionAncestors,
+  sectionTree,
+} from '../../core/editing/section-tree.ts';
 import type { CanvasDocument } from '../../contracts/documents';
 import type { CanvasSection } from '../../contracts/canvas';
 import { storedImageLayout } from '../../core/canvas/image-layout.ts';
@@ -57,6 +61,7 @@ export function documentDragLayout(
 export function documentMembership(
   node: DocumentGeometry,
   sections: CanvasSection[],
+  canDrop: (section: CanvasSection) => boolean = () => true,
 ) {
   const document = node.data.document,
     layout = documentDragLayout(node, sections);
@@ -80,17 +85,22 @@ export function documentMembership(
       ? layout.height
       : (node.measured?.height ?? document.height)) /
       2;
+  const tree = sectionTree(sections);
   const toSection =
     [...sections]
       .filter(
         (section) =>
+          canDrop(section) &&
           centerX >= section.x &&
           centerX <= section.x + section.width &&
           centerY >= section.y &&
           centerY <= section.y + section.height,
       )
       .sort(
-        (left, right) => left.width * left.height - right.width * right.height,
+        (left, right) =>
+          sectionAncestors(tree, right.id).length -
+            sectionAncestors(tree, left.id).length ||
+          left.width * left.height - right.width * right.height,
       )[0] ?? null;
   if (fromSection?.id === toSection?.id) return null;
   return {

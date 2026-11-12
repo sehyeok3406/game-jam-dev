@@ -97,7 +97,19 @@ export class LocalMutationService {
           (relative) => before[relative] !== after[relative],
         )
       ) {
-        await p.record(before, after, label!);
+        try {
+          await p.record(before, after, label!);
+        } catch (error) {
+          if (channel.startsWith('sections:')) {
+            const rollback = Object.fromEntries(
+              [...new Set([...Object.keys(before), ...Object.keys(after)])]
+                .filter((relative) => before[relative] !== after[relative])
+                .map((relative) => [relative, before[relative] ?? null]),
+            );
+            await p.project.apply(after, rollback);
+          }
+          throw error;
+        }
         p.assertCurrent();
       }
     }

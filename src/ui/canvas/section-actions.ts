@@ -6,9 +6,10 @@ import { selectionScopeKey, type SelectionScope } from './selection-actions.ts';
 export type SectionActionPrompt = {
   section: CanvasSection;
   deleteMembers: boolean;
+  affected?: { path: string; title: string; kind: 'section' | 'file' }[];
 };
 export type MembershipPrompt = {
-  document: CanvasDocument;
+  document: CanvasDocument | CanvasSection;
   fromSection: CanvasSection | null;
   toSection: CanvasSection | null;
   x: number;
@@ -19,6 +20,8 @@ export type MembershipPrompt = {
 export type SectionCreatePrompt = {
   title: string;
   documents: CanvasDocument[];
+  parent?: CanvasSection;
+  occupied?: Pick<CanvasSection, 'x' | 'width'>[];
 };
 export type SectionRenamePrompt = { section: CanvasSection; title: string };
 
@@ -52,7 +55,8 @@ export type SectionActionPorts = {
     | 'deleteSection'
     | 'moveDocumentToSection'
     | 'renameSection'
-  >;
+  > &
+    Partial<Pick<EditorApi, 'updateSectionLayout'>>;
   busy: boolean;
   canEdit: (paths: string[]) => boolean;
   reload: () => Promise<unknown>;
@@ -117,33 +121,60 @@ export class CanvasSectionActions {
     prompt: SectionCreatePrompt,
     acknowledge: (section: CanvasSection) => void,
   ) {
-    const input = sectionCreationInput(
-      prompt.documents,
-      prompt.title,
-      this.read().scope.canvasId,
-    );
+    const input =
+      sectionCreationInput(
+        prompt.documents,
+        prompt.title,
+        this.read().scope.canvasId,
+      ) ??
+      (prompt.parent
+        ? {
+            title: prompt.title.trim() || '새 섹션',
+            canvasId: this.read().scope.canvasId,
+            x:
+              Math.max(
+                prompt.parent.x,
+                ...(prompt.occupied ?? []).map((item) => item.x + item.width),
+              ) + 48,
+            y: prompt.parent.y + 72,
+            width: 420,
+            height: 280,
+            members: [],
+          }
+        : null);
     if (!input) {
       this.read().notice('섹션으로 묶을 문서를 하나 이상 선택하세요.');
       return Promise.resolve();
     }
     return this.run(
-      input.members.map((member) => member.path),
+      [
+        ...input.members.map((member) => member.path),
+        ...(prompt.parent ? [prompt.parent.relativePath] : []),
+      ],
       async (ports, guard) => {
-        const section = await ports.editor.createSection(input);
+        const section = await ports.editor.createSection({
+          ...input,
+          ...(prompt.parent ? { parentSectionId: prompt.parent.id } : {}),
+        });
         guard();
         await ports.reload();
         guard();
         acknowledge(section);
         ports.notice(
-          `'${section.title}' 섹션에 ${section.members.length}개 파일을 묶었습니다.`,
+          section.members.length
+            ? `'${section.title}' 섹션에 ${section.members.length}개 파일을 묶었습니다.`
+            : `'${section.title}' 하위 섹션을 만들었습니다.`,
         );
       },
     );
   }
   remove(prompt: SectionActionPrompt, acknowledge: () => void) {
-    const { section, deleteMembers } = structuredClone(prompt);
+    const { section, deleteMembers, affected } = structuredClone(prompt);
     return this.run(
-      [section.relativePath, ...section.members.map((member) => member.path)],
+      affected?.map((item) => item.path) ?? [
+        section.relativePath,
+        ...section.members.map((member) => member.path),
+      ],
       async (ports, guard) => {
         let result;
         try {
@@ -152,10 +183,14 @@ export class CanvasSectionActions {
             relativePath: section.relativePath,
             revision: section.revision,
             deleteMembers,
+            ...(affected
+              ? { expectedPaths: affected.map((item) => item.path) }
+              : {}),
           });
         } catch (error) {
           guard();
           acknowledge();
+          if (affected) await ports.reload();
           throw error;
         }
         guard();
@@ -200,16 +235,33 @@ export class CanvasSectionActions {
     return this.run(paths, async (ports, guard) => {
       if (!cancel) {
         try {
-          await ports.editor.moveDocumentToSection({
-            documentId: document.id,
-            documentPath: document.relativePath,
-            revision: document.revision,
-            targetSectionId: toSection?.id ?? null,
-            x,
-            y,
-            width,
-            height,
-          });
+          if ('members' in document) {
+            if (!ports.editor.updateSectionLayout)
+              throw Error('섹션 배치를 저장할 수 없습니다.');
+            await ports.editor.updateSectionLayout({
+              objectId: document.id,
+              relativePath: document.relativePath,
+              revision: document.revision,
+              x,
+              y,
+              width,
+              height,
+              membership: {
+                expectedParentId: document.parentSectionId ?? null,
+                targetParentId: toSection?.id ?? null,
+              },
+            });
+          } else
+            await ports.editor.moveDocumentToSection({
+              documentId: document.id,
+              documentPath: document.relativePath,
+              revision: document.revision,
+              targetSectionId: toSection?.id ?? null,
+              x,
+              y,
+              width,
+              height,
+            });
         } catch (error) {
           guard();
           acknowledge();

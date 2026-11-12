@@ -12,6 +12,8 @@ import {
   serializeDrawing,
 } from './drawing-model.ts';
 import type { Snapshot } from './project-store.ts';
+import type { CanvasSection } from './contracts/canvas.ts';
+import { sectionBranch, sectionTree } from './core/editing/section-tree.ts';
 import type { CanvasSheetCommand } from './shared.ts';
 import { isPreviewPath } from './preview-output.ts';
 import { htmlSourcePath, sourceMetadata } from './html-source.ts';
@@ -56,6 +58,7 @@ export function validateCanvasMembership(files: Snapshot) {
 export function changeCanvasSheets(
   files: Snapshot,
   input: CanvasSheetCommand,
+  sections: CanvasSection[] = [],
 ): Snapshot {
   const sheets = readCanvasSheets(files[CANVAS_SHEETS_PATH]);
   const actual = files[CANVAS_SHEETS_PATH] ?? null;
@@ -163,6 +166,11 @@ export function changeCanvasSheets(
         paths.add(path);
       }
       // Moving a section includes every member. Moving one child detaches it.
+      const tree = sectionTree(sections);
+      for (const section of sections)
+        if (paths.has(section.relativePath))
+          for (const child of sectionBranch(tree, section))
+            paths.add(child.relativePath);
       for (const path of paths)
         if (path.startsWith('sections/') && next[path])
           for (const member of matter(next[path]).data.members ?? [])
@@ -183,6 +191,24 @@ export function changeCanvasSheets(
     }
     if (input.action === 'move')
       placeMovedDocuments(files, next, paths, target);
+    for (const section of sections) {
+      if (
+        !paths.has(section.relativePath) ||
+        !section.parentSectionId ||
+        sections.some(
+          (parent) =>
+            parent.id === section.parentSectionId &&
+            paths.has(parent.relativePath),
+        )
+      )
+        continue;
+      const parsed = matter(next[section.relativePath]);
+      delete parsed.data.parent_section_id;
+      next[section.relativePath] = matter.stringify(
+        parsed.content,
+        parsed.data,
+      );
+    }
     for (const path of paths) assign(path, target);
     if (input.action === 'delete') {
       const sourcePath = drawingPath(id),

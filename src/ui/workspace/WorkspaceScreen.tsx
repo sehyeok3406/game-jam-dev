@@ -1,3 +1,9 @@
+import {
+  sectionAncestors,
+  sectionBranch,
+  sectionDeletionPaths,
+  sectionTree,
+} from '../../core/editing/section-tree.ts';
 import { WorkspaceDock } from '../shell/WorkspaceDock';
 import { useLocationNavigation } from '../canvas/useLocationNavigation.ts';
 import { useLocationLinks } from '../locations/useLocationLinks.ts';
@@ -522,6 +528,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   );
   linkDocumentsRef.current = allLinkDocuments;
   const [sections, setSections] = useState<CanvasSection[]>([]);
+  const hierarchy = useMemo(() => sectionTree(sections), [sections]);
   const [previews, setPreviews] = useState<PreviewResult[]>([]);
   const [previewWindows, setPreviewWindows] = useState<
     Record<string, PreviewWindowState>
@@ -607,14 +614,20 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   } = useCanvasSelection<CanvasNode>();
   useEffect(() => {
     setTemporarySections((current) => {
-      const next = current.filter((id) =>
-        sections
-          .find((s) => s.id === id)
-          ?.members.some((m) => selectedIds.includes(m.id)),
-      );
+      const next = current.filter((id) => {
+        const parent = sections.find((section) => section.id === id);
+        return (
+          parent &&
+          sectionBranch(hierarchy, parent).some(
+            (section) =>
+              selectedSectionIds.includes(section.id) ||
+              section.members.some((member) => selectedIds.includes(member.id)),
+          )
+        );
+      });
       return next.length === current.length ? current : next;
     });
-  }, [selectedIds, sections]);
+  }, [hierarchy, selectedIds, selectedSectionIds, sections]);
   const [notice, setNotice] = useState('프로젝트 폴더를 열어 시작하세요.');
   const {
     openImport,
@@ -993,6 +1006,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     geometryEpoch,
   } = useCanvasGeometry(selectionScope, () => ({
     sections,
+    nestedSections: !collaboration.active,
     api,
     loadProject,
     showError,
@@ -1024,17 +1038,86 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const sectionTitle = createPrompt?.title ?? '새 섹션';
   const setSectionTitle = (title: string) =>
     setCreatePrompt((current) => (current ? { ...current, title } : current));
-  const setSectionDialogOpen = (open: boolean) =>
-    setCreatePrompt(
-      open
-        ? {
-            title: '새 섹션',
-            documents: structuredClone(
-              documents.filter((doc) => selectedIds.includes(doc.id)),
+  const setSectionDialogOpen = (open: boolean) => {
+    if (!open) return setCreatePrompt(null);
+    const selected = documents.filter((doc) => selectedIds.includes(doc.id));
+    const parent =
+      collaboration.active || !selected.length
+        ? undefined
+        : sections.find((section) =>
+            selected.every((doc) =>
+              section.members.some(
+                (member) =>
+                  member.id === doc.id || member.path === doc.relativePath,
+              ),
             ),
-          }
-        : null,
+          );
+    setCreatePrompt({
+      title: '새 섹션',
+      documents: structuredClone(selected),
+      parent,
+    });
+  };
+  const openChildSection = collaboration.active
+    ? undefined
+    : (parent: CanvasSection) => {
+        if (editBusy || sectionLocked(parent)) return;
+        setCreatePrompt({
+          title: '새 섹션',
+          documents: [],
+          parent,
+          occupied: [
+            ...(hierarchy.children.get(parent.id) ?? []),
+            ...documents.filter((doc) =>
+              parent.members.some(
+                (member) =>
+                  member.id === doc.id || member.path === doc.relativePath,
+              ),
+            ),
+          ],
+        });
+      };
+  const sectionAffected = (section: CanvasSection, deleteMembers: boolean) => {
+    if (
+      collaboration.active ||
+      (!section.parentSectionId && !hierarchy.children.has(section.id))
+    )
+      return undefined;
+    const byPath = new Map(sections.map((item) => [item.relativePath, item]));
+    const files = new Map(
+      documents.map((item) => [item.relativePath, item.title]),
     );
+    return sectionDeletionPaths(hierarchy, section, deleteMembers).map(
+      (path) => {
+        const child = byPath.get(path);
+        return {
+          path,
+          title: child?.title ?? files.get(path) ?? path,
+          kind: child ? ('section' as const) : ('file' as const),
+        };
+      },
+    );
+  };
+  const openSectionAction = (prompt: NonNullable<typeof sectionActionPrompt>) =>
+    setSectionActionPrompt({
+      ...prompt,
+      affected: sectionAffected(prompt.section, prompt.deleteMembers),
+    });
+  const chooseSectionDeletion = (targets: CanvasSection[]) => {
+    const ids = new Set(targets.map((section) => section.id));
+    return targets
+      .filter(
+        (section) =>
+          !sectionAncestors(hierarchy, section.id).some((parent) =>
+            ids.has(parent.id),
+          ),
+      )
+      .map((section) => ({
+        ...section,
+        affected: sectionAffected(section, true),
+      }));
+  };
+
   const { actions: sectionActions, busy: sectionBusy } = useSectionActions(
     selectionScope,
     () => ({
@@ -1179,7 +1262,11 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           current.filter((item) => item !== id),
         ),
       selectCollapsedSection: (section) => {
-        const members = new Set(section.members.map((member) => member.id));
+        const members = new Set(
+          sectionBranch(hierarchy, section).flatMap((child) =>
+            child.members.map((member) => member.id),
+          ),
+        );
         setSelectedIds((current) => current.filter((id) => !members.has(id)));
         setSelectedSectionIds([section.id]);
         (document.activeElement as HTMLElement | null)?.blur();
@@ -1465,9 +1552,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   );
   const sectionLocked = useCallback(
     (section: CanvasSection) =>
-      pathLocked(section.relativePath) ||
-      section.members.some((member) => pathLocked(member.path)),
-    [pathLocked],
+      sectionDeletionPaths(hierarchy, section, true).some(pathLocked),
+    [hierarchy, pathLocked],
   );
   const blockAiFiles = (paths: string[]) => {
     if (!paths.some((path) => isAiFileLocked(aiFileLock, path))) return false;
@@ -1922,6 +2008,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     kanbanView,
     pathLocked,
   });
+  useEffect(() => {
+    if (hierarchy.invalid.size)
+      setNotice(
+        '연결할 수 없는 상위 섹션이 있습니다. 캔버스에서 섹션을 다시 배치해주세요.',
+      );
+  }, [hierarchy.invalid.size]);
   const sectionCollapsed = (section: CanvasSection) =>
     sectionViewCollapsed(section.id, sectionViews, findOpen, temporarySections);
   const toggleSection = (section: CanvasSection) =>
@@ -2110,6 +2202,16 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     return sectionActions.create(prompt, (section) => {
       if (sectionPromptsRef.current.createPrompt !== prompt) return;
       setCreatePrompt(null);
+      if (prompt.parent)
+        setTemporarySections((current) => [
+          ...new Set([
+            ...current,
+            prompt.parent!.id,
+            ...sectionAncestors(hierarchy, prompt.parent!.id).map(
+              (parent) => parent.id,
+            ),
+          ]),
+        ]);
       setSelectedIds([]);
       setSelectedSectionIds([section.id]);
       selectCreated([sectionNodeId(section.id)]);
@@ -2462,9 +2564,20 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     }
   };
   const jumpTo = (id: string) => {
-    const section = sections.find((s) => s.members.some((m) => m.id === id));
-    if (section && sectionViews[section.id])
-      setTemporarySections((v) => [...new Set([...v, section.id])]);
+    const targetSection = sections.find(
+      (section) => sectionNodeId(section.id) === id,
+    );
+    const section = targetSection
+      ? hierarchy.parents.get(targetSection.id)
+      : sections.find((s) => s.members.some((m) => m.id === id));
+    if (section)
+      setTemporarySections((v) => [
+        ...new Set([
+          ...v,
+          section.id,
+          ...sectionAncestors(hierarchy, section.id).map((parent) => parent.id),
+        ]),
+      ]);
     const itemCanvas =
       documents.find((item) => item.id === id)?.canvasId ??
       sections.find((item) => sectionNodeId(item.id) === id)?.canvasId ??
@@ -2480,6 +2593,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     }
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
+    if (node.className?.includes('section-member-hidden')) {
+      pendingCanvasJump.current = id;
+      return;
+    }
     setTool('select');
     setSelectedIds(
       node.data.kind === 'document' ? [node.data.document.id] : [],
@@ -2527,7 +2644,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       );
       if (section)
         setTemporarySections((current) => [
-          ...new Set([...current, section.id]),
+          ...new Set([
+            ...current,
+            section.id,
+            ...sectionAncestors(hierarchy, section.id).map(
+              (parent) => parent.id,
+            ),
+          ]),
         ]);
       setTool('select');
       setSelectedIds(documents.some((doc) => doc.id === id) ? [id] : []);
@@ -2593,7 +2716,14 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   }, [activeCanvas, nodes]);
   useEffect(() => {
     const id = pendingCanvasJump.current;
-    if (!id || !nodes.some((node) => node.id === id)) return;
+    if (
+      !id ||
+      !nodes.some(
+        (node) =>
+          node.id === id && !node.className?.includes('section-member-hidden'),
+      )
+    )
+      return;
     pendingCanvasJump.current = null;
     setSelectedIds(
       nodes.find((node) => node.id === id)?.data.kind === 'document'
@@ -2722,21 +2852,36 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       return;
     }
     if (
+      selectedSections.length === 1 &&
+      !selectedDocuments.length &&
+      !selectedPreviews.length &&
+      !selectedDrawings.length &&
+      (selectedSections[0].parentSectionId ||
+        hierarchy.children.has(selectedSections[0].id))
+    ) {
+      openSectionAction({ section: selectedSections[0], deleteMembers: true });
+      return;
+    }
+    if (
       selectedDocuments.length ||
       selectedPreviews.length ||
       selectedSections.length
     ) {
       setDeleteDrawingTargets(selectedDrawings);
-      setDeleteSectionTargets(selectedSections);
-      setDeleteManyPrompt([...selectedDocuments, ...selectedPreviews]);
+      const targets = chooseSectionDeletion(selectedSections);
+      const members = new Set(
+        targets.flatMap((section) =>
+          sectionDeletionPaths(hierarchy, section, true),
+        ),
+      );
+      setDeleteSectionTargets(targets);
+      setDeleteManyPrompt([
+        ...selectedDocuments.filter((doc) => !members.has(doc.relativePath)),
+        ...selectedPreviews,
+      ]);
       return;
     }
-    if (selectedSections.length === 1)
-      setSectionActionPrompt({
-        section: selectedSections[0],
-        deleteMembers: true,
-      });
-    else setNotice('삭제할 메모·파일·HTML 결과 또는 섹션 하나를 선택해주세요.');
+    setNotice('삭제할 메모·파일·HTML 결과 또는 섹션 하나를 선택해주세요.');
   };
   useCanvasCommands({
     home: home || materialPicker !== null,
@@ -3058,9 +3203,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         ...new Set(
           materialPicker.flatMap((path) => [
             path,
-            ...(sections
-              .find((section) => section.relativePath === path)
-              ?.members.map((member) => member.path) ?? []),
+            ...sections
+              .filter((section) => section.relativePath === path)
+              .flatMap((section) =>
+                sectionBranch(hierarchy, section).flatMap((child) =>
+                  child.members.map((member) => member.path),
+                ),
+              ),
           ]),
         ),
       ];
@@ -4089,7 +4238,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           setSectionContextMenu,
           sectionCollapsed,
           sectionLocked,
-          setSectionActionPrompt,
+          openChildSection,
+          setSectionActionPrompt: openSectionAction,
           overlapMenu,
           nodes,
           setNodes,
@@ -4165,13 +4315,14 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           onDelete={() => {
             const targets = selectionContextMenu.targets;
             closeContextMenus();
+            const sectionTargets = chooseSectionDeletion(targets.sections);
             const members = new Set(
-              targets.sections.flatMap((section) =>
-                section.members.map((member) => member.path),
+              sectionTargets.flatMap((section) =>
+                sectionDeletionPaths(hierarchy, section, true),
               ),
             );
             setDeleteDrawingTargets(targets.drawings);
-            setDeleteSectionTargets(targets.sections);
+            setDeleteSectionTargets(sectionTargets);
             setDeleteManyPrompt([
               ...targets.documents.filter(
                 (doc) => !members.has(doc.relativePath),
@@ -4379,6 +4530,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         sectionDialogOpen={sectionDialogOpen}
         sectionTitle={sectionTitle}
         createDocuments={createPrompt?.documents ?? []}
+        createParent={createPrompt?.parent}
         setSectionDialogOpen={openSectionDialog}
         setSectionTitle={setSectionTitle}
         createSectionFromSelection={() => {

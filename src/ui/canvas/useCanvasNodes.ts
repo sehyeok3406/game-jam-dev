@@ -1,3 +1,7 @@
+import {
+  sectionAncestors,
+  sectionTree,
+} from '../../core/editing/section-tree.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fittedImage } from '../../core/canvas/image-layout.ts';
 import { htmlNodeKey, markdownNodeKey } from './file-node-identity.ts';
@@ -336,28 +340,53 @@ export function useCanvasNodes(
         sectionByMember.set(member.path, section);
       });
     });
+    const tree = sectionTree(sections);
+    const hiddenInside = (parent: CanvasSection | undefined) =>
+      !!parent &&
+      (sectionCollapsed(parent) ||
+        sectionAncestors(tree, parent.id).some(sectionCollapsed));
     const sectionNodes: SectionCanvasNode[] = sections
       .filter((section) => canvasId(section.canvasId) === activeCanvas)
-      .map((section) => ({
-        id: sectionNodeId(section.id),
-        type: 'section',
-        position: { x: section.x, y: section.y },
-        style: {
-          width: section.width,
-          height: sectionCollapsed(section) ? 44 : section.height,
-        },
-        zIndex: 0,
-        draggable: !sectionLocked(section),
-        data: {
-          kind: 'section',
-          collapsed: sectionCollapsed(section),
-          onCollapse: () => void toggleSection(section),
-          locked: sectionLocked(section),
-          section,
-          onResize: resizeSection,
-          onReveal: revealSection,
-        },
-      }));
+      .sort(
+        (a, b) =>
+          sectionAncestors(tree, a.id).length -
+          sectionAncestors(tree, b.id).length,
+      )
+      .map((section) => {
+        const parent = tree.parents.get(section.id);
+        const hidden = hiddenInside(parent);
+        return {
+          id: sectionNodeId(section.id),
+          type: 'section',
+          parentId: parent ? sectionNodeId(parent.id) : undefined,
+          position: {
+            x: section.x - (parent?.x ?? 0),
+            y: section.y - (parent?.y ?? 0),
+          },
+          style: {
+            width: section.width,
+            height: sectionCollapsed(section) ? 44 : section.height,
+          },
+          zIndex: 0,
+          className: hidden ? 'section-member-hidden' : undefined,
+          dragHandle:
+            parent || tree.children.has(section.id)
+              ? '.section-card__header'
+              : undefined,
+          selectable: !hidden,
+          draggable: !hidden && !sectionLocked(section),
+          data: {
+            kind: 'section',
+            collapsed: sectionCollapsed(section),
+            onCollapse: () => void toggleSection(section),
+            locked: sectionLocked(section),
+            section,
+            childCount: tree.children.get(section.id)?.length,
+            onResize: resizeSection,
+            onReveal: revealSection,
+          },
+        };
+      });
     const documentNodes: DocumentCanvasNode[] = documents
       .filter((document) => canvasId(document.canvasId) === activeCanvas)
       .map((document) => {
@@ -414,8 +443,8 @@ export function useCanvasNodes(
         return {
           id: document.id,
           type: 'document',
-          className: `${newFileNodes.has(document.id) ? 'new-file-node' : ''}${parent && sectionCollapsed(parent) ? ' section-member-hidden' : ''}`,
-          selectable: !(parent && sectionCollapsed(parent)),
+          className: `${newFileNodes.has(document.id) ? 'new-file-node' : ''}${hiddenInside(parent) ? ' section-member-hidden' : ''}`,
+          selectable: !hiddenInside(parent),
           position: {
             x: document.x - (parent?.x ?? 0) + (image?.x ?? 0),
             y: document.y - (parent?.y ?? 0) + (image?.y ?? 0),
@@ -470,7 +499,7 @@ export function useCanvasNodes(
             aiUsage: materialUsage(projectAiQueue, document.relativePath),
             propertyVisibility: propertyVisibilityFor(document.id),
             authorshipKey: `${personalScope}:${document.id}:${document.modifiedAt}`,
-            sectionHidden: !!(parent && sectionCollapsed(parent)),
+            sectionHidden: !!hiddenInside(parent),
             statuses: statusSettings.value,
             workflowDisabled:
               workflowBusy ||
@@ -552,9 +581,7 @@ export function useCanvasNodes(
             (m) => m.id === preview.sourceId || m.path === preview.sourcePath,
           ),
         );
-        const sectionHidden = !!(
-          parentSection && sectionCollapsed(parentSection)
-        );
+        const sectionHidden = hiddenInside(parentSection);
         const baseWindow = previewWindows[preview.relativePath] ?? {
           x: previewX,
           y: previewY + index * (520 + NEW_FILE_GAP),

@@ -27,7 +27,7 @@ export function applyCommand<K extends CommandName>(
   input: CommandInput<K>,
   environment?: CommandEnvironment,
 ): { files: Snapshot; result: CommandOutput<K> } {
-  return applyExternalCommand(files, channel, input, environment) as {
+  return reduceCollaboration(files, channel, input, environment, true) as {
     files: Snapshot;
     result: CommandOutput<K>;
   };

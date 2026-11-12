@@ -258,10 +258,13 @@ export class CanvasSelectionActions {
     return this.run(
       [
         ...targets.documents.map((doc) => doc.relativePath),
-        ...targets.sections.flatMap((section) => [
-          section.relativePath,
-          ...section.members.map((member) => member.path),
-        ]),
+        ...targets.sections.flatMap(
+          (section) =>
+            section.affected?.map((item) => item.path) ?? [
+              section.relativePath,
+              ...section.members.map((member) => member.path),
+            ],
+        ),
       ],
       async (ports, guard, writable, scope) => {
         await ports.flush(guard);
@@ -297,6 +300,13 @@ export class CanvasSelectionActions {
                   sectionId: section.id,
                   relativePath: section.relativePath,
                   deleteMembers: true,
+                  ...(section.affected
+                    ? {
+                        expectedPaths: section.affected.map(
+                          (item) => item.path,
+                        ),
+                      }
+                    : {}),
                 },
               })),
               ...(targets.drawings.length

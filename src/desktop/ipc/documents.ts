@@ -5,6 +5,16 @@ import type { DocumentEditingService } from '../../application/editing/document-
 import type { CanvasDocument } from '../../contracts/documents';
 import type { CanvasSection } from '../../contracts/canvas';
 import type { DocumentNameService } from '../../application/editing/document-name-service';
+import type { LocalCommandService } from '../../application/editing/command-service';
+
+function hasSectionHierarchy(sections: CanvasSection[], path?: string) {
+  const section = sections.find((item) => item.relativePath === path);
+  return (
+    !!section &&
+    (section.parentSectionId !== undefined ||
+      sections.some((item) => item.parentSectionId === section.id))
+  );
+}
 
 export function registerDocumentIpc(
   handle: IpcRegistrar,
@@ -14,16 +24,27 @@ export function registerDocumentIpc(
     scope: () => string;
     creation: () => LocalCreationService;
     section: () => LocalSectionService;
+    sectionCommands: () => LocalCommandService;
     documents: () => Promise<CanvasDocument[]>;
     sections: () => Promise<CanvasSection[]>;
   },
 ) {
-  handle('sections:delete', (_event, input) =>
-    services.section().delete(input),
-  );
-  handle('sections:update-layout', (_event, input) =>
-    services.section().updateLayout(input),
-  );
+  handle('sections:delete', async (_event, input) => {
+    const commands = services.sectionCommands();
+    const sections = await services.sections();
+    return input?.expectedPaths ||
+      hasSectionHierarchy(sections, input?.relativePath)
+      ? commands.execute('sections:delete', input)
+      : services.section().delete(input);
+  });
+  handle('sections:update-layout', async (_event, input) => {
+    const commands = services.sectionCommands();
+    const sections = await services.sections();
+    return input?.membership ||
+      hasSectionHierarchy(sections, input?.relativePath)
+      ? commands.execute('sections:update-layout', input)
+      : services.section().updateLayout(input);
+  });
   handle('documents:create-idea', (_event, input) =>
     services.creation().createIdea(input),
   );

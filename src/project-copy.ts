@@ -1,3 +1,4 @@
+import { sectionBranch, sectionTree } from './core/editing/section-tree.ts';
 import { documentName } from './core/documents/file-name.ts';
 import path from 'node:path';
 import { GameBuildLimits } from './contracts/game-build.ts';
@@ -113,6 +114,7 @@ export function projectCopyBundle(
     previews = new Set<string>();
   const allDocuments = snapshotDocuments(files),
     allSections = snapshotSections(files);
+  const hierarchy = sectionTree(allSections);
   const addDocument = (member: { id: string; path: string }) => {
     const doc = allDocuments.find(
       (item) => item.relativePath === member.path && item.id === member.id,
@@ -129,8 +131,11 @@ export function projectCopyBundle(
     );
     if (!section || section.canvasId !== selection.canvasId)
       throw Error('복사할 섹션이 변경되었습니다.');
-    sections.add(section.relativePath);
-    section.members.forEach(addDocument);
+    for (const child of sectionBranch(hierarchy, section)) {
+      if (sections.has(child.relativePath)) continue;
+      sections.add(child.relativePath);
+      child.members.forEach(addDocument);
+    }
   }
   for (const relative of selection.previews) {
     if (!isPreviewPath(relative))
@@ -400,6 +405,9 @@ export function importProjectCopy(
     ...bundle.sections,
     ...bundle.previews.map(htmlSourcePath),
   ];
+  const copiedSectionParents = sectionTree(
+    snapshotSections(normalized),
+  ).parents;
   const bounds = rawDocuments.map(
     (key) => matter(present(normalized, key)).data,
   );
@@ -530,6 +538,14 @@ export function importProjectCopy(
     }
     if (data.asset)
       metadata.asset = { ...data.asset, path: paths.get(data.asset.path) };
+    if (
+      from.startsWith('sections/') &&
+      typeof data.parent_section_id === 'string'
+    ) {
+      const parent = copiedSectionParents.get(String(data.id ?? from));
+      if (parent) metadata.parent_section_id = ids.get(parent.id);
+      else delete metadata.parent_section_id;
+    }
     if (data.members)
       metadata.members = data.members.map(
         (member: { id: string; path: string }) => {

@@ -1,8 +1,7 @@
 import { Trash2 } from 'lucide-react';
-import type { CanvasSection } from '../../contracts/canvas';
 import type { DrawingObject } from '../../contracts/drawing-types';
 import { isPreviewPath, previewDeletionTarget } from '../../preview-output';
-import type { DeletionItem } from './selection-plan';
+import type { DeletionItem, SectionDeleteTarget } from './selection-plan';
 
 export function SelectionDeleteDialogs({
   part,
@@ -21,7 +20,7 @@ export function SelectionDeleteDialogs({
   deletePrompt: DeletionItem | null;
   deleteManyPrompt: DeletionItem[] | null;
   deleteDrawingTargets: DrawingObject[];
-  deleteSectionTargets: CanvasSection[];
+  deleteSectionTargets: SectionDeleteTarget[];
   editBusy: boolean;
   pathLocked: (path: string) => boolean;
   setDeletePrompt: (value: null) => void;
@@ -46,7 +45,10 @@ export function SelectionDeleteDialogs({
               선택 항목{' '}
               {deleteManyPrompt.length +
                 deleteDrawingTargets.length +
-                deleteSectionTargets.length}
+                deleteSectionTargets.reduce(
+                  (count, section) => count + (section.affected?.length ?? 1),
+                  0,
+                )}
               개를 삭제할까요?
             </h2>
             <p>
@@ -59,7 +61,19 @@ export function SelectionDeleteDialogs({
                 <li key={doc.id}>{doc.title}</li>
               ))}
               {deleteSectionTargets.map((s) => (
-                <li key={s.id}>{s.title} 섹션과 내부 파일</li>
+                <li key={s.id}>
+                  {s.title} 섹션과 내부 파일
+                  {s.affected && (
+                    <ul className="section-delete-list">
+                      {s.affected.slice(1).map((item) => (
+                        <li key={item.path}>
+                          {item.kind === 'section' ? '섹션' : '파일'} ·{' '}
+                          {item.title}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
               ))}
               {!!deleteDrawingTargets.length && (
                 <li>그림 {deleteDrawingTargets.length}개</li>
@@ -73,7 +87,14 @@ export function SelectionDeleteDialogs({
                 className="button-danger"
                 disabled={
                   editBusy ||
-                  deleteManyPrompt.some((doc) => pathLocked(doc.relativePath))
+                  deleteManyPrompt.some((doc) =>
+                    pathLocked(doc.relativePath),
+                  ) ||
+                  deleteSectionTargets.some(
+                    (section) =>
+                      pathLocked(section.relativePath) ||
+                      section.affected?.some((item) => pathLocked(item.path)),
+                  )
                 }
                 onClick={() => void confirmDeleteMany()}
               >

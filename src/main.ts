@@ -870,7 +870,13 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
   const input = (
     channel === 'layouts:update' ? { updates: args[0] } : args[0]
   ) as Record<string, unknown>;
-  const reduced = reduceCollaboration(before, channel, input);
+  const reduced = reduceCollaboration(
+    before,
+    channel,
+    input,
+    undefined,
+    !projectSessions.client,
+  );
   assertAiMutation(lock, before, reduced.files, channel, input);
 };
 const activeCodexRuns = new Map<string, AiRunCoordinator>();
@@ -1937,7 +1943,9 @@ const handle = (
         'documents:update-layout',
         'sections:update-layout',
         'documents:set-color',
-      ].includes(channel) && layoutInput?.relativePath;
+      ].includes(channel) &&
+      layoutInput?.relativePath &&
+      !(args[0] as { membership?: unknown })?.membership;
     const operation = compact
       ? propertyQueue.submit(
           `${requestSession?.sessionId ?? ''}:${channel}:${layoutInput.relativePath}:${layoutInput.position}:${layoutInput.size}`,
@@ -2375,7 +2383,7 @@ const registerIpc = () => {
       save: (input, check) => savePreviewHtml(input, mainWindow!, root, check),
     }).export(relative);
   });
-  registerEditingIpc(handle, () => {
+  const localEditingCommands = () => {
     const root = requireWorkspace(),
       session = projectSessions.ref;
     const assertCurrent = () => projectSessions.assertCurrent(session);
@@ -2394,7 +2402,8 @@ const registerIpc = () => {
         notifyWorkspaceChanged,
       ),
     );
-  });
+  };
+  registerEditingIpc(handle, localEditingCommands);
 
   const { read: readQueuedDocument, write: writeQueuedDocument } =
     registerDocumentIpc(handle, {
@@ -2413,6 +2422,7 @@ const registerIpc = () => {
       },
       documents: listDocuments,
       sections: listSections,
+      sectionCommands: localEditingCommands,
       section: () => {
         const root = requireWorkspace(),
           session = projectSessions.ref;

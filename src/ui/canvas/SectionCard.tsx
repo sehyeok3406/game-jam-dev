@@ -10,6 +10,7 @@ type SectionNodeData = {
   kind: 'section';
   locked: boolean;
   section: CanvasSection;
+  childCount?: number;
   onResize: (
     section: CanvasSection,
     x: number,
@@ -57,6 +58,7 @@ const SectionCardContent = memo(function SectionCardContent({
           <Frame size={15} />
           <strong>{section.title}</strong>
           <span>{section.members.length}개 파일</span>
+          {!!data.childCount && <span>하위 {data.childCount}개</span>}
         </div>
         <div className="section-card__file">
           <button

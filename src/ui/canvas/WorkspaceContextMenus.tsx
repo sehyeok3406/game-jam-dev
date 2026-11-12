@@ -76,10 +76,9 @@ interface Props {
   >;
   sectionCollapsed: (section: CanvasSection) => boolean;
   sectionLocked: (section: CanvasSection) => boolean;
+  openChildSection?: (section: CanvasSection) => void;
   setSectionActionPrompt: (
-    value: import('react').SetStateAction<
-      import('./section-actions.ts').SectionActionPrompt | null
-    >,
+    value: import('./section-actions.ts').SectionActionPrompt,
   ) => void;
   overlapMenu: { x: number; y: number; ids: string[] } | null;
   nodes: CanvasNode[];
@@ -146,6 +145,7 @@ export function WorkspaceContextMenus({
   setSectionContextMenu,
   sectionCollapsed,
   sectionLocked,
+  openChildSection,
   setSectionActionPrompt,
   overlapMenu,
   nodes,
@@ -478,6 +478,19 @@ export function WorkspaceContextMenus({
           <div className="context-menu-title">
             {sectionContextMenu.section.title}
           </div>
+          {openChildSection && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={sectionLocked(sectionContextMenu.section)}
+              onClick={() => {
+                openChildSection(sectionContextMenu.section);
+                setSectionContextMenu(null);
+              }}
+            >
+              <Frame size={16} /> 하위 섹션 만들기
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -519,9 +532,7 @@ export function WorkspaceContextMenus({
             <Ungroup size={16} />
             <span>
               <strong>섹션 해제</strong>
-              <small>
-                파일 {sectionContextMenu.section.members.length}개는 그대로 유지
-              </small>
+              <small>내부 항목을 한 단계 위로 이동</small>
             </span>
           </button>
           <button
@@ -540,10 +551,7 @@ export function WorkspaceContextMenus({
             <Trash2 size={16} />
             <span>
               <strong>섹션과 파일 삭제</strong>
-              <small>
-                안의 파일 {sectionContextMenu.section.members.length}개도 함께
-                삭제
-              </small>
+              <small>하위 섹션과 내부 파일을 함께 삭제</small>
             </span>
           </button>
         </div>

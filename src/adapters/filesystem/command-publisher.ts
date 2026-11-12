@@ -20,6 +20,67 @@ export function filesystemCommandPublisher(
 ): CommandPublisher {
   return {
     publish: async (channel, plan) => {
+      const removed = Object.entries(plan.changes)
+        .filter(([, value]) => value === null)
+        .map(([relative]) => relative);
+      if (
+        channel === 'sections:delete' ||
+        (channel === 'canvas:batch' &&
+          removed.some((path) => path.startsWith('sections/')) &&
+          removed.every(
+            (path) =>
+              !path.startsWith('output/') && !path.startsWith('.game-builds/'),
+          ))
+      ) {
+        const resume = await effects.pauseWatcher();
+        const deleted: string[] = [];
+        try {
+          const touched = Object.keys(plan.changes);
+          const actual = await repository.capture(touched);
+          if (
+            touched.some(
+              (relative) => actual[relative] !== plan.before[relative],
+            )
+          )
+            throw Error('외부 변경을 발견했습니다. 섹션을 다시 확인해주세요.');
+          for (const relative of removed) {
+            if (
+              (await repository.capture([relative]))[relative] !==
+              plan.before[relative]
+            )
+              throw Error(
+                '외부 변경을 발견했습니다. 섹션을 다시 확인해주세요.',
+              );
+            await trashDeletedFiles(
+              root,
+              { [relative]: plan.before[relative] },
+              {},
+              effects.trashItem,
+            );
+            deleted.push(relative);
+          }
+          await repository.apply(
+            plan.before,
+            Object.fromEntries(
+              Object.entries(plan.changes).filter(
+                ([, value]) => value !== null,
+              ),
+            ),
+          );
+        } catch (error) {
+          if (deleted.length)
+            await repository.apply(
+              {},
+              Object.fromEntries(
+                deleted.map((relative) => [relative, plan.before[relative]]),
+              ),
+            );
+          throw error;
+        } finally {
+          await resume();
+        }
+        return;
+      }
       if (channel === 'results:move' || channel === 'results:organize') {
         const resume = await effects.pauseWatcher();
         let rollback: (() => Promise<void>) | undefined;

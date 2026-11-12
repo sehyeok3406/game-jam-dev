@@ -171,6 +171,16 @@ export async function sectionUiScenarios({
       `!!document.querySelector('button[title^="실행 취소"]:not(:disabled)')`,
     );
     await shortcut('1', ['shift']);
+    const documentNode = `[data-id="${doc.id}"]`;
+    await wait(
+      `!!document.querySelector(${JSON.stringify(documentNode + ' .file-node-surface, ' + documentNode + ' .document-card__header')})`,
+    );
+    await js(
+      `document.querySelector(${JSON.stringify(documentNode + ' button.file-node-surface')})?.click()`,
+    );
+    await wait(
+      `!!document.querySelector(${JSON.stringify(documentNode + ' .document-card__header')}) && !!document.querySelector('[data-id="section:${first.id}"]')`,
+    );
     await pause(400);
     const geometry = await js(
       `(()=>{const n=document.querySelector('[data-id="'+${JSON.stringify(doc.id)}+'"] .document-card__header'),r=n.getBoundingClientRect(),s=document.querySelector('[data-id="section:${first.id}"]').getBoundingClientRect();return {x:r.x+Math.min(60,r.width/3),y:r.y+Math.min(16,r.height/2),width:r.width,scale:s.width/500};})()`,

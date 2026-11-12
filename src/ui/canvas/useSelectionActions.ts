@@ -13,9 +13,8 @@ import {
   type SelectionScope,
   type SelectionActionPorts,
 } from './selection-actions.ts';
-import type { CanvasSection } from '../../contracts/canvas';
 import type { DrawingObject } from '../../contracts/drawing-types';
-import type { DeletionItem } from './selection-plan';
+import type { DeletionItem, SectionDeleteTarget } from './selection-plan';
 
 export function useSelectionScope(scope: SelectionScope): SelectionScope {
   const key = selectionScopeKey(scope);
@@ -134,7 +133,7 @@ export function useSelectionDeletePrompts(scope: SelectionScope) {
     DrawingObject[]
   >(key, []);
   const [deleteSectionTargets, setDeleteSectionTargets] = useScopedPrompt<
-    CanvasSection[]
+    SectionDeleteTarget[]
   >(key, []);
   return {
     deletePrompt,

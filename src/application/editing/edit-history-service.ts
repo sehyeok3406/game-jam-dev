@@ -48,7 +48,7 @@ export class LocalEditHistoryService {
     }
     const current = await this.repository.capture();
     const next = invertEdit(current, before, after, direction);
-    checkSnapshot(next);
+    checkSnapshot(next, true);
     await this.publisher.publish(
       current,
       next,

@@ -26,6 +26,8 @@
 
 `SharedWorkspaceReader`가 상세/목록 DTO, 개인별 접기 상태와 증분 canvas projection을 소유한다. `SharedEditingService`가 명령 전후 session 검사, mirror/trash 연결, 성공한 history receipt의 Undo 기록과 결과 DTO 변환을 소유한다. 서비스 port에는 root 경로나 인증 token을 전달하지 않는다.
 
+아래 표의 섹션 배치와 삭제는 평면 섹션 기준이다. 중첩 섹션은 LocalCommandService에서 이동·확장·삭제 대상을 계산하고 filesystem publisher를 통해 적용한다. [로컬 중첩 섹션](section-actions.md#로컬-중첩-섹션)
+
 | 명령                        | 기존 개인 로컬 경로                                          | 대표 검증/보존 차이                                                               |
 | --------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | `kanban:move-card`          | LocalCanvasService → LocalCommandService                     | expectedView/상태 변경                                                            |

@@ -21,6 +21,7 @@ export type SectionMember = {
   path: string;
 };
 export type CanvasSection = {
+  parentSectionId?: string;
   structureRevision?: number;
   canvasId?: string;
   revision?: number;
@@ -51,12 +52,14 @@ export type DeleteSectionInput = {
   sectionId: string;
   relativePath: string;
   deleteMembers: boolean;
+  expectedPaths?: string[];
 };
 export type DeleteSectionResult = {
   deletedDocumentCount: number;
   preservedDocumentCount: number;
 };
 export type CreateSectionInput = {
+  parentSectionId?: string;
   canvasId?: string;
   title: string;
   x: number;
@@ -75,6 +78,10 @@ export type SectionLayoutUpdate = {
   width: number;
   height: number;
   moveMembers?: boolean;
+  membership?: {
+    expectedParentId: string | null;
+    targetParentId: string | null;
+  };
 };
 export type MoveDocumentSectionInput = {
   revision?: number;

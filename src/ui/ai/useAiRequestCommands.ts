@@ -1,3 +1,4 @@
+import { sectionBranch, sectionTree } from '../../core/editing/section-tree.ts';
 import { NEW_FILE_GAP } from '../../canvas-placement.ts';
 import { canvasId } from '../../canvas-sheets.ts';
 import { textMaterialPath } from '../../canvas-text-materials.ts';
@@ -174,9 +175,12 @@ export function useAiRequestCommands(
     const selectedSections = sections.filter((section) =>
       selectedSectionIds.includes(section.id),
     );
+    const hierarchy = sectionTree(sections);
     const sectionMemberKeys = new Set(
       selectedSections.flatMap((section) =>
-        section.members.flatMap((member) => [member.id, member.path]),
+        sectionBranch(hierarchy, section).flatMap((child) =>
+          child.members.flatMap((member) => [member.id, member.path]),
+        ),
       ),
     );
     const sectionDocuments = documents.filter(

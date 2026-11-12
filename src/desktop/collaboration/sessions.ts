@@ -1,3 +1,4 @@
+import { snapshotSections } from '../../collaboration-model.ts';
 import {
   registeredSharedWorkspace,
   sharedWorkspaceLocations,
@@ -95,6 +96,12 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     const name = await localProjectName(root);
     assertCurrent();
     const files = await captureProject(root);
+    if (
+      snapshotSections(files).some(
+        (section) => section.parentSectionId !== undefined,
+      )
+    )
+      throw Error('중첩 섹션은 로컬 프로젝트에서만 사용할 수 있습니다.');
     assertCurrent();
     return { name, files };
   }

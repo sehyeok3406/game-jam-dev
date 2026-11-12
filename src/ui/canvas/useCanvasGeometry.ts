@@ -1,3 +1,8 @@
+import {
+  sectionAncestors,
+  sectionBranch,
+  sectionTree,
+} from '../../core/editing/section-tree.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawingBounds } from '../../drawing-geometry.ts';
 import type { DrawingCommand, DrawingObject } from '../../drawing-types.ts';
@@ -15,6 +20,7 @@ import type { DrawingCanvasNode } from '../drawing/DrawingNode';
 import type { CanvasNode } from '../workspace/workspace-types.ts';
 interface GeometryPorts {
   sections: CanvasSection[];
+  nestedSections?: boolean;
   api: import('../../contracts/app-api.ts').AppApi;
   loadProject: (fit?: boolean, throwOnError?: boolean) => Promise<void>;
   showError: (error: unknown) => void;
@@ -206,13 +212,14 @@ function createGeometryActions(
     height: number,
   ) => {
     try {
+      const parent = sectionTree(sections).parents.get(section.id);
       await api.editor.updateSectionLayout({
         relativePath: section.relativePath,
         revision: section.revision,
         objectId: section.id,
         structureRevision: section.structureRevision,
-        x,
-        y,
+        x: x + (parent?.x ?? 0),
+        y: y + (parent?.y ?? 0),
         width,
         height,
         moveMembers: false,
@@ -283,14 +290,15 @@ function createGeometryActions(
       (n) => n.data.kind !== 'kanban' && n.data.kind !== 'game-ui',
     );
     if (!movedNodes.length) return;
+    const tree = sectionTree(sections);
     if (
       blockAiFiles(
         movedNodes.flatMap((node) =>
           node.data.kind === 'section'
-            ? [
-                node.data.section.relativePath,
-                ...node.data.section.members.map((member) => member.path),
-              ]
+            ? sectionBranch(tree, node.data.section).flatMap((section) => [
+                section.relativePath,
+                ...section.members.map((member) => member.path),
+              ])
             : [
                 node.data.kind === 'document'
                   ? node.data.document.relativePath
@@ -341,26 +349,38 @@ function createGeometryActions(
         ),
       );
       const movedSections = movedNodes.filter(
-        (node): node is SectionCanvasNode => node.data.kind === 'section',
+        (node): node is SectionCanvasNode =>
+          node.data.kind === 'section' &&
+          !sectionAncestors(tree, node.data.section.id).some((parent) =>
+            movedSectionNodeIds.has(`section:${parent.id}`),
+          ),
       );
       const movedDocuments = movedNodes.filter(
         (node): node is DocumentCanvasNode =>
           node.data.kind === 'document' &&
-          (!node.parentId || !movedSectionNodeIds.has(node.parentId)),
+          (!node.parentId ||
+            (!movedSectionNodeIds.has(node.parentId) &&
+              !sectionAncestors(
+                tree,
+                node.parentId.slice('section:'.length),
+              ).some((parent) =>
+                movedSectionNodeIds.has(`section:${parent.id}`),
+              ))),
       );
 
       try {
         const updates: Parameters<typeof api.editor.updateLayouts>[0] = [];
         for (const sectionNode of movedSections) {
           const section = sectionNode.data.section;
+          const parent = tree.parents.get(section.id);
           updates.push({
             kind: 'section',
             objectId: section.id,
             structureRevision: section.structureRevision,
             relativePath: section.relativePath,
             revision: section.revision,
-            x: sectionNode.position.x,
-            y: sectionNode.position.y,
+            x: sectionNode.position.x + (parent?.x ?? 0),
+            y: sectionNode.position.y + (parent?.y ?? 0),
             width: sectionNode.measured?.width ?? section.width,
             height: sectionCollapsed(section)
               ? section.height
@@ -413,16 +433,58 @@ function createGeometryActions(
     const node = movedNodes[0];
     if (node.data.kind === 'section') {
       const section = node.data.section;
+      const parent = tree.parents.get(section.id) ?? null;
+      const x = node.position.x + (parent?.x ?? 0);
+      const y = node.position.y + (parent?.y ?? 0);
+      const width = node.measured?.width ?? section.width;
+      const height = sectionCollapsed(section)
+        ? section.height
+        : (node.measured?.height ?? section.height);
+      if (ports.nestedSections) {
+        const branch = new Set(
+          sectionBranch(tree, section).map((item) => item.id),
+        );
+        const target =
+          sections
+            .filter(
+              (item) =>
+                (item.canvasId ?? 'default') === activeCanvasRef.current &&
+                !branch.has(item.id) &&
+                !sectionCollapsed(item) &&
+                !sectionAncestors(tree, item.id).some(sectionCollapsed) &&
+                x + width / 2 >= item.x &&
+                x + width / 2 <= item.x + item.width &&
+                y + (node.measured?.height ?? height) / 2 >= item.y &&
+                y + (node.measured?.height ?? height) / 2 <=
+                  item.y + item.height,
+            )
+            .sort(
+              (a, b) =>
+                sectionAncestors(tree, b.id).length -
+                  sectionAncestors(tree, a.id).length ||
+                a.width * a.height - b.width * b.height,
+            )[0] ?? null;
+        if ((section.parentSectionId ?? null) !== (target?.id ?? null))
+          return {
+            document: section,
+            fromSection: parent,
+            toSection: target,
+            x,
+            y,
+            width,
+            height,
+          };
+      }
       try {
         await api.editor.updateSectionLayout({
           relativePath: section.relativePath,
           revision: section.revision,
           objectId: section.id,
           structureRevision: section.structureRevision,
-          x: node.position.x,
-          y: node.position.y,
-          width: node.measured?.width ?? section.width,
-          height: node.measured?.height ?? section.height,
+          x,
+          y,
+          width,
+          height,
           moveMembers: true,
         });
       } catch (error) {
@@ -431,8 +493,17 @@ function createGeometryActions(
       return;
     }
     if (node.data.kind !== 'document') return;
+    const currentCanvas = node.data.document.canvasId ?? 'default';
 
-    const membership = documentMembership(node as DocumentCanvasNode, sections);
+    const membership = documentMembership(
+      node as DocumentCanvasNode,
+      sections,
+      (section) =>
+        (section.canvasId ?? 'default') === currentCanvas &&
+        (!ports.nestedSections ||
+          (!sectionCollapsed(section) &&
+            !sectionAncestors(tree, section.id).some(sectionCollapsed))),
+    );
     if (membership) return membership;
     const { kind: _kind, ...layout } = documentDragLayout(
       node as DocumentCanvasNode,

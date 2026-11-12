@@ -7,6 +7,7 @@ type Props = {
   sectionDialogOpen: boolean;
   sectionTitle: string;
   createDocuments: CanvasDocument[];
+  createParent?: CanvasSection;
   setSectionDialogOpen: (open: boolean) => void;
   setSectionTitle: (title: string) => void;
   createSectionFromSelection: () => void;
@@ -24,6 +25,7 @@ export function SectionDialogs({
   sectionDialogOpen,
   sectionTitle,
   createDocuments,
+  createParent,
   setSectionDialogOpen,
   setSectionTitle,
   createSectionFromSelection,
@@ -67,7 +69,12 @@ export function SectionDialogs({
             </div>
             <div>
               <p>GROUP FILES</p>
-              <h2 id="section-dialog-title">선택 파일을 섹션으로 묶기</h2>
+              <h2 id="section-dialog-title">
+                {createParent && !createDocuments.length
+                  ? '하위 섹션 만들기'
+                  : '선택 파일을 섹션으로 묶기'}
+              </h2>
+              {createParent && <span>상위 섹션 · {createParent.title}</span>}
               <span>
                 섹션 Markdown에 파일 ID와 경로가 저장되며, 섹션을 선택하면 전체
                 파일이 AI 작업 범위에 포함됩니다.
@@ -101,12 +108,16 @@ export function SectionDialogs({
                 className="button-primary"
                 disabled={
                   busy ||
-                  !createDocuments.length ||
+                  (!createDocuments.length && !createParent) ||
+                  (!!createParent && pathLocked(createParent.relativePath)) ||
                   createDocuments.some((doc) => pathLocked(doc.relativePath))
                 }
                 onClick={() => void createSectionFromSelection()}
               >
-                <Frame size={15} /> {createDocuments.length}개 파일 묶기
+                <Frame size={15} />{' '}
+                {createDocuments.length
+                  ? `${createDocuments.length}개 파일 묶기`
+                  : '하위 섹션 만들기'}
               </button>
             </div>
           </section>
@@ -145,8 +156,8 @@ export function SectionDialogs({
                     : '파일을 이 섹션에서 제외할까요?'}
               </h2>
               <span id="membership-dialog-description">
-                <strong>{membershipPrompt.document.title}</strong> 파일의 섹션
-                소속과 캔버스 위치가 함께 저장됩니다.
+                <strong>{membershipPrompt.document.title}</strong>의 소속과
+                캔버스 위치를 함께 저장합니다.
               </span>
             </div>
             <div className="membership-dialog__route">
@@ -234,13 +245,25 @@ export function SectionDialogs({
               <span id="section-action-dialog-description">
                 <strong>{sectionActionPrompt.section.title}</strong>{' '}
                 {sectionActionPrompt.deleteMembers
-                  ? `섹션과 안에 있는 메모·파일 ${sectionActionPrompt.section.members.length}개를 Windows 휴지통으로 이동합니다.`
-                  : `섹션 정의만 Windows 휴지통으로 이동하며, 안에 있는 메모·파일 ${sectionActionPrompt.section.members.length}개는 캔버스에 그대로 남습니다.`}
+                  ? sectionActionPrompt.affected
+                    ? `섹션과 하위 섹션 ${sectionActionPrompt.affected.filter((item) => item.kind === 'section').length - 1}개, 파일 ${sectionActionPrompt.affected.filter((item) => item.kind === 'file').length}개를 Windows 휴지통으로 이동합니다.`
+                    : `섹션과 안에 있는 메모·파일 ${sectionActionPrompt.section.members.length}개를 Windows 휴지통으로 이동합니다.`
+                  : '섹션을 휴지통으로 이동합니다. 내부 파일과 하위 섹션은 한 단계 위로 올라갑니다.'}
               </span>
             </div>
             <div className="delete-dialog__path">
               <code>{sectionActionPrompt.section.relativePath}</code>
             </div>
+            {sectionActionPrompt.deleteMembers &&
+              sectionActionPrompt.affected && (
+                <ul className="section-delete-list" aria-label="삭제 대상">
+                  {sectionActionPrompt.affected.slice(1).map((item) => (
+                    <li key={item.path}>
+                      {item.kind === 'section' ? '섹션' : '파일'} · {item.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
             <div className="membership-dialog__actions">
               <button
                 type="button"

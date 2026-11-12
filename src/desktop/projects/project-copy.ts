@@ -1,3 +1,4 @@
+import { snapshotSections } from '../../collaboration-model.ts';
 import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import { hasGameBuilds } from '../../core/projects/game-build.ts';
 import fs from 'node:fs/promises';
@@ -168,6 +169,12 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
       },
       close: () => client.stop(),
       async publish(input) {
+        if (
+          snapshotSections(input.bundle.files).some(
+            (section) => section.parentSectionId !== undefined,
+          )
+        )
+          throw Error('중첩 섹션은 로컬 프로젝트로 복사해주세요.');
         if (
           hasGameBuilds(input.bundle.files) &&
           client.state.gameBuildStorageVersion !== 1

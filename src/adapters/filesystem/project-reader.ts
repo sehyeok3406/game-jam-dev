@@ -37,6 +37,9 @@ export function filesystemProjectReader(
     return {
       canvasId: canvasId(data.canvas_id),
       id: typeof data.id === 'string' ? data.id : relativePath,
+      ...(typeof data.parent_section_id === 'string'
+        ? { parentSectionId: data.parent_section_id }
+        : {}),
       title: typeof data.title === 'string' ? data.title : fallbackTitle,
       relativePath,
       x: number('x', 80),
