@@ -103,9 +103,9 @@
   color: var(--card-text);
   box-shadow: none;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--node-title-font-size, 13px);
   font-weight: 650;
-  line-height: 20px;
+  line-height: var(--node-title-line-height, 20px);
   letter-spacing: 0;
   text-align: left;
   text-overflow: ellipsis;
@@ -157,7 +157,7 @@
 .markdown-body {
   min-width: 0;
   color: var(--card-muted);
-  font-size: 12px;
+  font-size: var(--node-body-font-size, 12px);
   line-height: 1.62;
   overflow-wrap: anywhere;
 }
@@ -165,19 +165,19 @@
 .markdown-body h1 {
   margin: 0 0 10px;
   color: var(--card-text);
-  font-size: 24px;
+  font-size: 2em;
 }
 
 .markdown-body h2 {
   margin: 16px 0 8px;
   color: var(--card-text);
-  font-size: 20px;
+  font-size: calc(5em / 3);
 }
 
 .markdown-body h3 {
   margin: 13px 0 6px;
   color: var(--card-text);
-  font-size: 17px;
+  font-size: calc(17em / 12);
 }
 
 .markdown-body h4,
@@ -187,13 +187,13 @@
   color: var(--card-text);
 }
 .markdown-body h4 {
-  font-size: 15px;
+  font-size: 1.25em;
 }
 .markdown-body h5 {
-  font-size: 13px;
+  font-size: calc(13em / 12);
 }
 .markdown-body h6 {
-  font-size: 12px;
+  font-size: 1em;
 }
 .markdown-body ul ul {
   list-style-type: circle;
@@ -256,7 +256,7 @@
   border: 1px solid var(--card-line);
   border-collapse: collapse;
   color: var(--card-text);
-  font-size: 11px;
+  font-size: calc(11em / 12);
   line-height: 1.45;
 }
 
@@ -300,7 +300,7 @@
   padding: 0;
   color: var(--card-text);
   background: transparent;
-  font-size: 10px;
+  font-size: calc(5em / 6);
 }
 
 .markdown-body img {

@@ -25,6 +25,7 @@ import type {
   PreviewResult,
 } from '../../shared.ts';
 import { requireDesktopApi } from '../runtime/desktop-api.ts';
+import { CreateEmptySectionMenuItem } from './SelectionContextMenu';
 import {
   previewDeletionItem,
   type CanvasNode,
@@ -93,6 +94,8 @@ interface Props {
     } | null>
   >;
   contextMenu: ContextMenuState | null;
+  openEmptySection: (position: { x: number; y: number }) => void;
+  emptySectionBlockedReason?: string;
   openImport: (position?: { x: number; y: number }) => void;
   setContextMenu: import('react').Dispatch<
     import('react').SetStateAction<ContextMenuState | null>
@@ -152,6 +155,8 @@ export function WorkspaceContextMenus({
   setNodes,
   setOverlapMenu,
   contextMenu,
+  openEmptySection,
+  emptySectionBlockedReason,
   openImport,
   setContextMenu,
   addIdeaAt,
@@ -622,6 +627,12 @@ export function WorkspaceContextMenus({
           role="menu"
         >
           <div className="context-menu-title">이 위치에 만들기</div>
+          <CreateEmptySectionMenuItem
+            blockedReason={emptySectionBlockedReason}
+            open={() =>
+              openEmptySection({ x: contextMenu.flowX, y: contextMenu.flowY })
+            }
+          />
           <button
             type="button"
             role="menuitem"

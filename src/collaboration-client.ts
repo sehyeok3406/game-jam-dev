@@ -940,6 +940,12 @@ export class CollaborationClient {
         this.state.message ?? '삭제된 공동 프로젝트는 편집할 수 없습니다.',
       );
     return this.serial(async () => {
+      if (
+        channel === 'sections:create' &&
+        this.state.emptySections !== true &&
+        (input as { members?: unknown[] } | undefined)?.members?.length === 0
+      )
+        throw Error('빈 섹션을 만들려면 협업 서버를 업데이트해주세요.');
       if (channel === 'game-ui:apply' && this.state.gameUiVersion !== 2)
         throw new Error(
           '게임 UI 플러그인을 사용하려면 협업 서버를 업데이트해주세요.',

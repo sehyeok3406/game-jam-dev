@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import {
   fileNodeStyle,
+  MAX_NODE_FONT_SIZE,
   MIN_NODE_BODY,
+  MIN_NODE_FONT_SIZE,
   titleHeightFor,
   type FileNodeStyle,
 } from '../../core/canvas/file-node-style';
@@ -15,6 +17,19 @@ const dimensions = [
   { key: 'radius', label: '모서리 둥글기', min: 0, max: 48 },
   { key: 'titleHeight', label: '제목 높이', min: 38, max: 550 },
 ] as const;
+const fontDimensions = [
+  { key: 'markdownTitleSize', label: 'MD 제목 글씨 크기' },
+  { key: 'markdownBodySize', label: 'MD 본문 글씨 크기' },
+  { key: 'htmlTitleSize', label: 'HTML 제목 글씨 크기' },
+] as const;
+const settingsDimensions = [
+  ...dimensions,
+  ...fontDimensions.map((field) => ({
+    ...field,
+    min: MIN_NODE_FONT_SIZE,
+    max: MAX_NODE_FONT_SIZE,
+  })),
+];
 const colors = [
   { key: 'markdownTitle', label: 'MD 제목 배경색', fallback: '#f4f6f8' },
   { key: 'markdownBody', label: 'MD 본문 배경색', fallback: '#ffffff' },
@@ -175,9 +190,10 @@ export function FileNodeSettings({
           </small>
         </div>
         <div className="file-node-settings__fields">
-          {dimensions.map(({ key, label, min, max }) => {
+          {settingsDimensions.map(({ key, label, min, max }) => {
             const limit =
               key === 'titleHeight' ? effective.height - MIN_NODE_BODY : max;
+            const current = effective[key] ?? 13;
             return (
               <label key={key} className="file-node-settings__number">
                 <span>{label}</span>
@@ -186,7 +202,7 @@ export function FileNodeSettings({
                   type="range"
                   min={min}
                   max={limit}
-                  value={effective[key]}
+                  value={current}
                   onChange={(event) =>
                     change({ [key]: event.target.valueAsNumber })
                   }
@@ -197,9 +213,7 @@ export function FileNodeSettings({
                   min={min}
                   max={limit}
                   value={
-                    numericInput?.key === key
-                      ? numericInput.value
-                      : effective[key]
+                    numericInput?.key === key ? numericInput.value : current
                   }
                   onBlur={() => setNumericInput(undefined)}
                   onChange={(event) => {

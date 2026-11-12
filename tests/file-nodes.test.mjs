@@ -44,6 +44,22 @@ test('description edits preserve the standard image attachment and path', () => 
   assert.equal(imageDescription(body + '추가 본문', path), undefined);
 });
 
+test('node font settings preserve legacy fallbacks and normalize each size', () => {
+  const legacy = fileNodeStyle({ markdownTitle: '#ffffff' });
+  assert.equal(legacy.markdownTitleSize, undefined);
+  assert.equal(legacy.markdownBodySize, undefined);
+  assert.equal(legacy.htmlTitleSize, undefined);
+  const sized = fileNodeStyle({
+    markdownTitleSize: 24.6,
+    markdownBodySize: 2,
+    htmlTitleSize: 49,
+  });
+  assert.equal(sized.markdownTitleSize, 25);
+  assert.equal(sized.markdownBodySize, 10);
+  assert.equal(sized.htmlTitleSize, 32);
+  assert.deepEqual(fileNodeStyle(JSON.parse(JSON.stringify(sized))), sized);
+});
+
 test('routes use neighboring edges even when nodes reverse direction', () => {
   assert.match(
     fileNodeEdgePath(bounds(200, 0), bounds(0, 30)).d,

@@ -34,9 +34,24 @@ export function fileNodeVariables(
 ): CSSProperties {
   const title = kind === 'md' ? style.markdownTitle : style.htmlTitle;
   const body = kind === 'md' ? style.markdownBody : '';
+  const titleSize =
+    kind === 'md' ? style.markdownTitleSize : style.htmlTitleSize;
+  const bodySize = kind === 'md' ? style.markdownBodySize : undefined;
   return {
     '--node-radius': `${style.radius}px`,
     '--node-title-height': `${titleHeightFor(height, style.titleHeight)}px`,
+    ...(titleSize
+      ? {
+          '--node-title-font-size': `${titleSize}px`,
+          '--node-title-line-height': 1.1,
+        }
+      : {}),
+    ...(bodySize
+      ? {
+          '--node-body-font-size': `${bodySize}px`,
+          '--node-summary-line-height': 1.46,
+        }
+      : {}),
     ...(title
       ? { '--node-title-bg': title, '--node-title-fg': readableOn(title) }
       : {}),

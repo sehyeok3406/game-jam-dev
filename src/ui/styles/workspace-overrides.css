@@ -407,25 +407,25 @@
   background: transparent;
 }
 .markdown-editor .tiptap {
-  font-size: 15px;
+  font-size: var(--node-body-font-size, 15px);
   line-height: 1.75;
   padding: 10px;
 }
 .markdown-editor .tiptap h1 {
-  font-size: 27px;
+  font-size: 1.8em;
 }
 .markdown-editor .tiptap h2 {
-  font-size: 23px;
+  font-size: calc(23em / 15);
 }
 .markdown-editor .tiptap h3 {
-  font-size: 20px;
+  font-size: calc(4em / 3);
 }
 .markdown-editor textarea {
   flex: 1 1 0;
   min-height: 0;
   width: 100%;
   resize: none;
-  font-size: 14px;
+  font-size: var(--node-body-font-size, 14px);
   line-height: 1.8;
   padding: 12px;
   color: var(--text);

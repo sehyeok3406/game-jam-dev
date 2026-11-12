@@ -1013,10 +1013,7 @@ export function reduceCollaboration(
         doc = read(member.path);
       return { id: doc.data.id ?? doc.relative, path: doc.relative };
     });
-    if (
-      (!members.length && !parent) ||
-      new Set(members.map((member) => member.path)).size !== members.length
-    )
+    if (new Set(members.map((member) => member.path)).size !== members.length)
       throw new Error('섹션 구성원을 확인해주세요.');
     if (
       members.some(

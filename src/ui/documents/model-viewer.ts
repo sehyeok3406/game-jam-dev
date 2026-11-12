@@ -8,10 +8,12 @@ import {
   LoopOnce,
   LoopRepeat,
   LoadingManager,
+  MOUSE,
   PerspectiveCamera,
   Scene,
   SkeletonHelper,
   Sphere,
+  TOUCH,
   Vector3,
   WebGLRenderer,
   type AnimationAction,
@@ -341,6 +343,11 @@ export async function startModelViewer(
         redraw();
       },
       fit,
+      pan(enabled: boolean) {
+        orbit.enablePan = enabled;
+        orbit.mouseButtons.LEFT = enabled ? MOUSE.PAN : MOUSE.ROTATE;
+        orbit.touches.ONE = enabled ? TOUCH.PAN : TOUCH.ROTATE;
+      },
       select,
       loop(value: boolean) {
         repeat = value;

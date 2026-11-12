@@ -14,6 +14,8 @@
 
 ## 기존 평면 섹션
 
+빈 캔버스 우클릭 메뉴의 **새 섹션 만들기**는 클릭 좌표를 확인 창에 보존하고 기존 `sections:create` 명령에 420×280 크기와 빈 구성원 목록을 전달한다. 생성된 섹션을 선택하며 기존 편집 기록에서 취소·다시 실행할 수 있다. 공동 프로젝트에서는 서버가 `emptySections`를 제공할 때 활성화하고 이전 서버에서는 업데이트를 안내한다. 선택 파일로 만드는 섹션과 하위 섹션은 각각 기존 생성 경로를 사용한다.
+
 2026-10-21의 단계별 기능 단위다. 섹션 생성·단일 섹션 해제/파일 함께 삭제·드래그 후 멤버십 변경/취소를 WorkspaceScreen의 나머지 화면 명령에서 분리했다.
 
 - `section-actions.ts`의 `sectionCreationInput`은 기존 선택 문서의 bounds, 최소 420×280, 여백, 접힌 문서의 저장 높이와 기본 제목을 유지한다. `CanvasSectionActions`는 기존 세 IPC의 실행·reload·확인/선택/알림 인정 순서를 맡는다. 저장 원자성·휴지통·히스토리/Undo·협업 검증은 기존 application/desktop/server 경계에 남긴다.
@@ -26,6 +28,6 @@
 
 단위 검사는 bounds·원래 revision/삭제 플래그·문서/멤버 보호 경로·빠른 두 번 확정·입력 사본·지연 응답/오류·화면/세션 교체·권한·읽기 전용 취소·reload 실패를 확인한다. 실제 React StrictMode 검사는 생성/멤버십/삭제 확인의 왕복 만료와 이전 setter/busy 응답 격리를 확인한다.
 
-`section-ui-scenarios.mjs`를 실제 App fixture와 실제 Windows package가 공유한다. 키보드 선택과 실제 pointer drag를 사용해 생성/선택·해제/동반 삭제·취소/추가/이동/제외·한 번만 기록·Undo/Redo·캔버스 왕복 확인 만료를 확인한다. package는 실제 Markdown 본문/custom metadata와 membership의 완전 재시작 보존도 검사한다. 목적지 섹션 준비만 다른 fixture 문서를 멤버로 지정한 기존 API로 수행한다. native의 빈 섹션 생성 거절 정책을 유지한다. 파일 제거/복원 관측과 IPC·히스토리 완료를 구분해 실제 확인 창과 busy 종료를 기다린다. fixture의 HTML 창이 드래그 시작점을 덮지 않게 목적지를 배치하며 제품의 레이어 정책은 바꾸지 않는다.
+`section-ui-scenarios.mjs`를 실제 App fixture와 실제 Windows package가 공유한다. 키보드 선택과 실제 pointer drag를 사용해 생성/선택·해제/동반 삭제·취소/추가/이동/제외·한 번만 기록·Undo/Redo·캔버스 왕복 확인 만료를 확인한다. package는 실제 Markdown 본문/custom metadata와 membership의 완전 재시작 보존도 검사한다. 목적지 섹션 준비에는 기존 API를 사용하고, 빈 최상위 섹션 생성은 캔버스 메뉴에서 별도로 검사한다. 파일 제거/복원 관측과 IPC·히스토리 완료를 구분해 실제 확인 창과 busy 종료를 기다린다. fixture의 HTML 창이 드래그 시작점을 덮지 않게 목적지를 배치하며 제품의 레이어 정책은 바꾸지 않는다.
 
 섹션 이름 변경, pointer 배치 계산/저장, 최소화, clipboard paste 큐, AI/히스토리/inspector 등의 나머지 화면 명령과 조립은 R05 후속 범위다. 이번 단위로 R05 전체 완료를 선언하지 않는다. 실제 AI 계정·운영 서버·사용자 데이터·외부 서비스는 검사에 사용하지 않는다.

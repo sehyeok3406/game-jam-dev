@@ -840,6 +840,21 @@ async function checkFileNodes() {
     `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='노드 모양').click()`,
   );
   await wait('!!document.querySelector(".file-node-settings")');
+  assert.equal(
+    await js(`getComputedStyle(${query(compact + ' strong')}).fontSize`),
+    '13px',
+  );
+  await js(`{
+    const values = [['MD 제목 글씨 크기', 23], ['MD 본문 글씨 크기', 21], ['HTML 제목 글씨 크기', 17]];
+    for (const [label, value] of values) {
+      const input = [...document.querySelectorAll('.file-node-settings input[type=range]')].find(element => element.getAttribute('aria-label') === label);
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, String(value));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }`);
+  await wait(`getComputedStyle(document.querySelector('.file-node-settings .file-node-surface--md strong')).fontSize === '23px' &&
+    getComputedStyle(document.querySelector('.file-node-settings .file-node-summary')).fontSize === '21px' &&
+    getComputedStyle(document.querySelector('.file-node-settings .file-node-surface--html strong')).fontSize === '17px'`);
   await js(
     `{const input=document.querySelector('[aria-label="기본 너비"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'420');input.dispatchEvent(new Event('input',{bubbles:true}));}`,
   );
@@ -860,6 +875,10 @@ async function checkFileNodes() {
   await js(
     `document.querySelector('.file-node-settings button[aria-label="닫기"]').click()`,
   );
+  await wait('!document.querySelector(".file-node-settings")');
+  await wait(`getComputedStyle(${query(compact + ' strong')}).fontSize === '23px' &&
+    getComputedStyle(${query(compact + ' .file-node-summary')}).fontSize === '21px' &&
+    getComputedStyle(${query(html + ' strong')}).fontSize === '17px'`);
   for (const [relative, raw] of originals)
     assert.equal(await fs.readFile(path.join(game, relative), 'utf8'), raw);
   const image = '[data-id="picture"] .asset-node-surface';
@@ -1021,6 +1040,9 @@ try {
     await wait(
       `document.querySelector('[data-id="b"]:has(.file-node-surface)')?.style.width==='420px'`,
     );
+    await wait(`getComputedStyle(document.querySelector('[data-id="b"] .file-node-title strong')).fontSize === '23px' &&
+      getComputedStyle(document.querySelector('[data-id="b"] .file-node-summary')).fontSize === '21px' &&
+      getComputedStyle(document.querySelector('.file-node-surface--html .file-node-title strong')).fontSize === '17px'`);
     await wait(
       '!!document.querySelector(\'[data-id="a"] .file-node-expanded\')',
     );
@@ -1051,6 +1073,16 @@ try {
     await js(`${retry}?.click()`);
     await wait(
       `!!${nodeQuery('portrait')}.querySelector('.asset-node-fitted img')`,
+    );
+    await wait(`document.querySelector('[data-id="a"] .markdown-body') &&
+      getComputedStyle(document.querySelector('[data-id="a"] .markdown-body')).fontSize === '21px' &&
+      getComputedStyle(document.querySelector('[data-id="a"] .canvas-file-header__title')).fontSize === '23px'`);
+    await js(`document.querySelector('.file-node-surface--html').focus()`);
+    await key('Enter');
+    await wait(`document.querySelector('.preview-card.file-node-expanded .canvas-file-header__title') &&
+      getComputedStyle(document.querySelector('.preview-card.file-node-expanded .canvas-file-header__title')).fontSize === '17px'`);
+    console.log(
+      'PASS: independent MD and HTML fonts render in previews, saved cards and reopened Windows sessions',
     );
     console.log(
       'PASS: Windows package restores the collapsed state and image draft, and retries a missing image',

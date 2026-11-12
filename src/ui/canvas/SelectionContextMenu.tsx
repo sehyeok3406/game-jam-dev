@@ -1,6 +1,35 @@
-import { Copy, ArrowRight, Minimize2, Trash2, Link2 } from 'lucide-react';
+import {
+  Copy,
+  ArrowRight,
+  Frame,
+  Minimize2,
+  Trash2,
+  Link2,
+} from 'lucide-react';
 import { CardColorUnavailable } from './CardColorUnavailable';
 import type { SelectionMenuTargets } from './selection-menu-plan.ts';
+
+type EmptySectionAction = { open(): void; blockedReason?: string };
+
+export function CreateEmptySectionMenuItem({
+  open,
+  blockedReason,
+}: EmptySectionAction) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={!!blockedReason}
+      onClick={open}
+    >
+      <Frame size={16} />
+      <span>
+        <strong>새 섹션 만들기</strong>
+        <small>{blockedReason ?? '이 위치에 빈 섹션 만들기'}</small>
+      </span>
+    </button>
+  );
+}
 
 export function SelectionContextMenu({
   x,
@@ -10,6 +39,7 @@ export function SelectionContextMenu({
   canMove,
   canCopy,
   onCopy,
+  emptySection,
   onCopyLocation,
   onMove,
   onCollapse,
@@ -22,6 +52,7 @@ export function SelectionContextMenu({
   canMove: boolean;
   canCopy: boolean;
   onCopy(): void;
+  emptySection?: EmptySectionAction;
   onCopyLocation?: () => void;
   onMove(): void;
   onCollapse(): void;
@@ -47,6 +78,7 @@ export function SelectionContextMenu({
       }}
     >
       <div className="context-menu-title">{targets.count}개 선택됨</div>
+      {emptySection && <CreateEmptySectionMenuItem {...emptySection} />}
       {onCopyLocation && (
         <button type="button" role="menuitem" onClick={onCopyLocation}>
           <Link2 size={16} />

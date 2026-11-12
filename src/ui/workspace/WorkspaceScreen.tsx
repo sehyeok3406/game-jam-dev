@@ -779,6 +779,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     x: number;
     y: number;
     targets: SelectionMenuTargets;
+    emptySectionPosition?: { x: number; y: number };
   } | null>(selectionScopeKey(selectionScope), null);
   const [projectCopyPrompt, setProjectCopyPrompt] = useScopedPrompt<Omit<
     ProjectCopyRequest,
@@ -1464,6 +1465,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       ((!collaboration.connected && !collaboration.offlineSync) ||
         collaboration.accessDenied ||
         collaboration.role === 'viewer'));
+  const emptySectionBlockedReason =
+    collaboration.active && collaboration.emptySections !== true
+      ? '빈 섹션을 만들려면 협업 서버를 업데이트해주세요.'
+      : locked || editBusy
+        ? '현재 섹션을 만들 수 없습니다.'
+        : undefined;
   const aiFileLock = useMemo(
     () =>
       mergeAiFileLocks([
@@ -2199,6 +2206,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const createSectionFromSelection = () => {
     const prompt = createPrompt;
     if (!prompt) return;
+    if (prompt.position && emptySectionBlockedReason) return;
     return sectionActions.create(prompt, (section) => {
       if (sectionPromptsRef.current.createPrompt !== prompt) return;
       setCreatePrompt(null);
@@ -3487,7 +3495,17 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     home,
   ]);
 
+  const openEmptySection = (position: { x: number; y: number }) => {
+    if (emptySectionBlockedReason) return;
+    closeContextMenus();
+    setCreatePrompt({ title: '새 섹션', documents: [], position });
+  };
+
   const openCanvasMenu = (clientX: number, clientY: number) => {
+    const point = flowRef.current?.screenToFlowPosition({
+      x: clientX,
+      y: clientY,
+    });
     const chosen = contextSelection(nodes);
     if (chosen.length) {
       closeContextMenus();
@@ -3495,20 +3513,17 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         x: clientX,
         y: clientY,
         targets: selectionMenuTargets(chosen),
+        emptySectionPosition: point,
       });
       return;
     }
-    const point = flowRef.current?.screenToFlowPosition({
-      x: clientX,
-      y: clientY,
-    });
     if (!point) return;
     setDocumentContextMenu(null);
     setSectionContextMenu(null);
     setPreviewContextMenu(null);
     setContextMenu({
       screenX: Math.min(clientX, window.innerWidth - 282),
-      screenY: Math.min(clientY, window.innerHeight - 340),
+      screenY: Math.max(8, Math.min(clientY, window.innerHeight - 390)),
       flowX: point.x,
       flowY: point.y,
     });
@@ -4242,6 +4257,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           sectionCollapsed,
           sectionLocked,
           openChildSection,
+          openEmptySection,
+          emptySectionBlockedReason,
           setSectionActionPrompt: openSectionAction,
           overlapMenu,
           nodes,
@@ -4305,6 +4322,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
               : undefined
           }
           onCopy={() => beginProjectCopy(selectionContextMenu.targets)}
+          emptySection={
+            selectionContextMenu.emptySectionPosition && {
+              open: () =>
+                openEmptySection(selectionContextMenu.emptySectionPosition!),
+              blockedReason: emptySectionBlockedReason,
+            }
+          }
           onMove={() => {
             const targets = selectionContextMenu.targets;
             closeContextMenus();
@@ -4535,6 +4559,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         sectionTitle={sectionTitle}
         createDocuments={createPrompt?.documents ?? []}
         createParent={createPrompt?.parent}
+        createEmpty={!!createPrompt?.position}
+        createEmptyBlocked={!!emptySectionBlockedReason}
         setSectionDialogOpen={openSectionDialog}
         setSectionTitle={setSectionTitle}
         createSectionFromSelection={() => {

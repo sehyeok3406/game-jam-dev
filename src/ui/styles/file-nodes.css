@@ -51,7 +51,8 @@ button.file-node-surface:active:not(:disabled) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--node-title-font-size, 13px);
+  line-height: var(--node-title-line-height, normal);
 }
 .file-node-title small {
   font-size: 11px;
@@ -62,8 +63,8 @@ button.file-node-surface:active:not(:disabled) {
 .file-node-summary,
 .file-node-example__body {
   padding: 7px 12px;
-  font-size: 13px;
-  line-height: 19px;
+  font-size: var(--node-body-font-size, 13px);
+  line-height: var(--node-summary-line-height, 19px);
 }
 .file-node-summary {
   flex: 1;

@@ -35,6 +35,7 @@ export function serverCapabilities(
     scopedAiLocks: true,
     htmlComposition: true,
     canvasSheets: true,
+    emptySections: true,
     propertySync: true,
     deltaSync: true,
     eventStream: true,

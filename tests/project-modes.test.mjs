@@ -19,8 +19,50 @@ import { initialProjectSnapshot } from '../src/core/projects/initial-project.ts'
 import { ProjectHomeService } from '../src/application/projects/home-service.ts';
 import { createTextObject } from '../src/text-document.ts';
 import { applyDrawing, snapshotDrawings } from '../src/drawing-model.ts';
+import { snapshotSections } from '../src/collaboration-model.ts';
 
 const secret = () => randomBytes(32).toString('hex');
+
+test('shared empty sections require server support and round trip through history', async (t) => {
+  const f = await fixture(t);
+  const client = await f.share();
+  assert.equal(client.state.emptySections, true);
+  const input = {
+    x: 179,
+    y: -26,
+    width: 420,
+    height: 280,
+    members: [],
+    title: '빈 섹션',
+  };
+  delete client.state.emptySections;
+  await assert.rejects(
+    client.command('sections:create', input),
+    /협업 서버를 업데이트/,
+  );
+  assert.deepEqual(snapshotSections(client.files), []);
+  await client.refresh();
+  await client.command('sections:create', input);
+  const [section] = snapshotSections(client.files);
+  assert.deepEqual(
+    {
+      x: section.x,
+      y: section.y,
+      width: section.width,
+      height: section.height,
+      members: section.members,
+      title: section.title,
+    },
+    input,
+  );
+  assert.equal(section.parentSectionId, undefined);
+  const history = client.lastCommandHistoryId;
+  assert.ok(history);
+  await client.changeHistory(history, 'undo');
+  assert.deepEqual(snapshotSections(client.files), []);
+  await client.changeHistory(history, 'redo');
+  assert.equal(snapshotSections(client.files)[0].id, section.id);
+});
 const encryption = {
   isEncryptionAvailable: () => true,
   encryptString: (text) => Buffer.from(text).map((v) => v ^ 111),

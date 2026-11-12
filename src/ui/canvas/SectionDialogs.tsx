@@ -8,6 +8,8 @@ type Props = {
   sectionTitle: string;
   createDocuments: CanvasDocument[];
   createParent?: CanvasSection;
+  createEmpty?: boolean;
+  createEmptyBlocked?: boolean;
   setSectionDialogOpen: (open: boolean) => void;
   setSectionTitle: (title: string) => void;
   createSectionFromSelection: () => void;
@@ -26,6 +28,8 @@ export function SectionDialogs({
   sectionTitle,
   createDocuments,
   createParent,
+  createEmpty,
+  createEmptyBlocked,
   setSectionDialogOpen,
   setSectionTitle,
   createSectionFromSelection,
@@ -68,16 +72,19 @@ export function SectionDialogs({
               <Frame size={20} />
             </div>
             <div>
-              <p>GROUP FILES</p>
+              <p>{createEmpty ? 'NEW SECTION' : 'GROUP FILES'}</p>
               <h2 id="section-dialog-title">
-                {createParent && !createDocuments.length
-                  ? '하위 섹션 만들기'
-                  : '선택 파일을 섹션으로 묶기'}
+                {createEmpty
+                  ? '새 섹션 만들기'
+                  : createParent && !createDocuments.length
+                    ? '하위 섹션 만들기'
+                    : '선택 파일을 섹션으로 묶기'}
               </h2>
               {createParent && <span>상위 섹션 · {createParent.title}</span>}
               <span>
-                섹션 Markdown에 파일 ID와 경로가 저장되며, 섹션을 선택하면 전체
-                파일이 AI 작업 범위에 포함됩니다.
+                {createEmpty
+                  ? '선택한 위치에 빈 섹션을 만들고 파일을 나중에 추가할 수 있습니다.'
+                  : '섹션 Markdown에 파일 ID와 경로가 저장되며, 섹션을 선택하면 전체 파일이 AI 작업 범위에 포함됩니다.'}
               </span>
             </div>
             <label>
@@ -108,7 +115,8 @@ export function SectionDialogs({
                 className="button-primary"
                 disabled={
                   busy ||
-                  (!createDocuments.length && !createParent) ||
+                  (!createDocuments.length && !createParent && !createEmpty) ||
+                  (createEmpty && createEmptyBlocked) ||
                   (!!createParent && pathLocked(createParent.relativePath)) ||
                   createDocuments.some((doc) => pathLocked(doc.relativePath))
                 }
@@ -117,7 +125,9 @@ export function SectionDialogs({
                 <Frame size={15} />{' '}
                 {createDocuments.length
                   ? `${createDocuments.length}개 파일 묶기`
-                  : '하위 섹션 만들기'}
+                  : createEmpty
+                    ? '섹션 만들기'
+                    : '하위 섹션 만들기'}
               </button>
             </div>
           </section>

@@ -300,6 +300,44 @@ async function dragToParent(leaf, parent) {
 try {
   await boot();
   await enterWorkspace();
+  await wait('!!document.querySelector(".react-flow__pane")');
+  const expectedPosition = await js(`(() => {
+    const pane = document.querySelector('.react-flow__pane');
+    const rect = pane.closest('.react-flow').getBoundingClientRect();
+    const view = new DOMMatrix(getComputedStyle(document.querySelector('.react-flow__viewport')).transform);
+    const x = Math.floor(rect.left + rect.width * 0.73);
+    const y = Math.floor(rect.top + rect.height * 0.68);
+    pane.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2, clientX: x, clientY: y }));
+    return [Math.round((x - rect.left - view.e) / view.a), Math.round((y - rect.top - view.f) / view.d)];
+  })()`);
+  await wait('!!document.querySelector("[data-ui-id=canvas-menu]")');
+  await js(
+    `[...document.querySelectorAll('[data-ui-id=canvas-menu] button')].find(button => button.querySelector('strong')?.textContent === '새 섹션 만들기').click()`,
+  );
+  await wait(
+    `document.querySelector('#section-dialog-title')?.textContent === '새 섹션 만들기'`,
+  );
+  await js(
+    `document.querySelector('[data-ui-id=section-create] .button-primary').click()`,
+  );
+  await wait('!document.querySelector("[data-ui-id=section-create]")');
+  const [empty] = await call('listSections');
+  assert.deepEqual([empty.x, empty.y], expectedPosition);
+  assert.deepEqual(
+    [empty.width, empty.height, empty.members, empty.parentSectionId],
+    [420, 280, [], undefined],
+  );
+  await wait(
+    `!!document.querySelector('[data-id="section:${empty.id}"].selected')`,
+  );
+  await call('undo');
+  assert.deepEqual(await call('listSections'), []);
+  await call('redo');
+  assert.equal((await call('listSections'))[0].id, empty.id);
+  await call('undo');
+  console.log(
+    'PASS: Windows empty section creation at the pointer, selection, Undo and Redo',
+  );
   const result = process.argv.includes('--nested-only')
     ? await (async () => {
         const doc = (await call('listDocuments')).find(

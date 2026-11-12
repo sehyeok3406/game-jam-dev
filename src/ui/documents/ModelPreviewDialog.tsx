@@ -1,4 +1,13 @@
-import { Box, Grid3X3, Pause, Play, Repeat2, RotateCcw, X } from 'lucide-react';
+import {
+  Box,
+  Grid3X3,
+  Move,
+  Pause,
+  Play,
+  Repeat2,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModelAsset } from '../../contracts/documents';
@@ -28,6 +37,7 @@ export function ModelPreviewDialog({
   const [frame, setFrame] = useState({ time: 0, playing: false });
   const [clip, setClip] = useState(0);
   const [grid, setGrid] = useState(true);
+  const [pan, setPan] = useState(false);
   const [repeat, setRepeat] = useState(true);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -88,6 +98,7 @@ export function ModelPreviewDialog({
     setFrame({ time: 0, playing: false });
     setClip(0);
     setGrid(true);
+    setPan(false);
     setRepeat(true);
     setError('');
     setAttempt((previous) => previous + 1);
@@ -125,6 +136,7 @@ export function ModelPreviewDialog({
       <div className="model-viewer__stage">
         <div
           className="model-viewer__viewport"
+          data-pan={pan || undefined}
           ref={host}
           role="region"
           aria-label="3D 모델 조작 영역"
@@ -144,6 +156,18 @@ export function ModelPreviewDialog({
           <button
             type="button"
             disabled={!ready}
+            aria-pressed={pan}
+            title="드래그로 시점 이동"
+            onClick={() => {
+              setPan(!pan);
+              player.current?.pan(!pan);
+            }}
+          >
+            <Move size={15} /> Pan
+          </button>
+          <button
+            type="button"
+            disabled={!ready}
             onClick={() => player.current?.fit()}
           >
             <RotateCcw size={15} /> 시점 초기화
@@ -151,7 +175,7 @@ export function ModelPreviewDialog({
         </div>
         {ready && (
           <small className="model-viewer__gesture">
-            드래그로 회전 · 휠로 확대·축소
+            {pan ? '드래그로 시점 이동' : '드래그로 회전'} · 휠로 확대·축소
           </small>
         )}
         {!ready && (

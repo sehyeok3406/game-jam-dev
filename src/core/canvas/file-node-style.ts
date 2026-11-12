@@ -6,6 +6,9 @@ export type FileNodeStyle = CompactSize & {
   markdownTitle: string;
   markdownBody: string;
   htmlTitle: string;
+  markdownTitleSize?: number;
+  markdownBodySize?: number;
+  htmlTitleSize?: number;
 };
 
 export const DEFAULT_FILE_NODE_STYLE: FileNodeStyle = {
@@ -21,6 +24,8 @@ export const DEFAULT_FILE_NODE_STYLE: FileNodeStyle = {
 export const MIN_COMPACT_WIDTH = 180;
 export const MIN_COMPACT_HEIGHT = 88;
 export const MIN_NODE_BODY = 50;
+export const MIN_NODE_FONT_SIZE = 10;
+export const MAX_NODE_FONT_SIZE = 32;
 
 function dimension(value: unknown, fallback: number, min: number, max: number) {
   return typeof value === 'number' && Number.isFinite(value)
@@ -47,6 +52,12 @@ function color(value: unknown) {
   return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value) ? value : '';
 }
 
+function fontSize(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? dimension(value, 13, MIN_NODE_FONT_SIZE, MAX_NODE_FONT_SIZE)
+    : undefined;
+}
+
 export function fileNodeStyle(
   value: Partial<FileNodeStyle> = {},
 ): FileNodeStyle {
@@ -63,6 +74,9 @@ export function fileNodeStyle(
     markdownTitle: color(value.markdownTitle),
     markdownBody: color(value.markdownBody),
     htmlTitle: color(value.htmlTitle),
+    markdownTitleSize: fontSize(value.markdownTitleSize),
+    markdownBodySize: fontSize(value.markdownBodySize),
+    htmlTitleSize: fontSize(value.htmlTitleSize),
   };
 }
 

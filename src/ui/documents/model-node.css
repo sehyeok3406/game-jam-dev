@@ -212,6 +212,10 @@ dialog.model-viewer::backdrop {
   cursor: grabbing;
 }
 
+.model-viewer__viewport[data-pan] canvas {
+  cursor: move;
+}
+
 .model-viewer__tools {
   position: absolute;
   z-index: 1;

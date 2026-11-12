@@ -22,6 +22,7 @@ export type SectionCreatePrompt = {
   documents: CanvasDocument[];
   parent?: CanvasSection;
   occupied?: Pick<CanvasSection, 'x' | 'width'>[];
+  position?: { x: number; y: number };
 };
 export type SectionRenamePrompt = { section: CanvasSection; title: string };
 
@@ -121,22 +122,24 @@ export class CanvasSectionActions {
     prompt: SectionCreatePrompt,
     acknowledge: (section: CanvasSection) => void,
   ) {
+    const { canvasId } = this.read().scope;
+    const position =
+      prompt.position ??
+      (prompt.parent && {
+        x:
+          Math.max(
+            prompt.parent.x,
+            ...(prompt.occupied ?? []).map((item) => item.x + item.width),
+          ) + 48,
+        y: prompt.parent.y + 72,
+      });
     const input =
-      sectionCreationInput(
-        prompt.documents,
-        prompt.title,
-        this.read().scope.canvasId,
-      ) ??
-      (prompt.parent
+      sectionCreationInput(prompt.documents, prompt.title, canvasId) ??
+      (position
         ? {
             title: prompt.title.trim() || '새 섹션',
-            canvasId: this.read().scope.canvasId,
-            x:
-              Math.max(
-                prompt.parent.x,
-                ...(prompt.occupied ?? []).map((item) => item.x + item.width),
-              ) + 48,
-            y: prompt.parent.y + 72,
+            canvasId,
+            ...position,
             width: 420,
             height: 280,
             members: [],
@@ -163,7 +166,7 @@ export class CanvasSectionActions {
         ports.notice(
           section.members.length
             ? `'${section.title}' 섹션에 ${section.members.length}개 파일을 묶었습니다.`
-            : `'${section.title}' 하위 섹션을 만들었습니다.`,
+            : `'${section.title}' ${prompt.parent ? '하위 섹션' : '섹션'}을 만들었습니다.`,
         );
       },
     );
