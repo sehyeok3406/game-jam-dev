@@ -213,8 +213,9 @@ test('tracked HTML is restorable, while an untracked companion keeps the existin
   assert.equal((await f.repository.capture())[html], content);
   const folder = path.dirname(path.join(f.root, html));
   await fs.mkdir(path.join(folder, 'untracked-empty'));
+  const recyclePath = await fs.realpath(folder);
   await remove();
-  assert.deepEqual(f.recycle, [folder]);
+  assert.deepEqual(f.recycle, [recyclePath]);
   assert.deepEqual(await f.service.list(project), []);
   assert.ok(
     (

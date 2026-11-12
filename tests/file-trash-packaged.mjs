@@ -8,6 +8,7 @@ import {
   stop,
   wait,
   js,
+  send,
   root,
   profile,
   game,
@@ -48,10 +49,27 @@ async function clickButton(root, label) {
 
 async function removeImage() {
   await wait(`!!${node}?.querySelector('img')`);
-  await js(`(() => {
-    const card = ${node}, r = card.getBoundingClientRect();
-    card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.x + 6, clientY: r.y + 6 }));
-  })()`);
+  const fit = `document.querySelector('button[aria-label="캔버스 전체 맞춤"]')`;
+  await wait(`!!${fit}`);
+  await js(`${fit}.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  const hit = `(() => {
+    const card = ${node}, r = card.querySelector('img').getBoundingClientRect();
+    const x = Math.round(r.x + r.width / 2), y = Math.round(r.y + r.height / 2);
+    return card.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+  })()`;
+  await wait(`!!${hit}`);
+  const { x, y } = await js(hit);
+  for (const type of ['mousePressed', 'mouseReleased']) {
+    await send('Input.dispatchMouseEvent', {
+      type,
+      x,
+      y,
+      button: 'right',
+      buttons: type === 'mousePressed' ? 2 : 0,
+      clickCount: 1,
+    });
+  }
   const action = `[...document.querySelectorAll('[role="menuitem"]')].find(item => item.querySelector('strong')?.textContent.trim() === '삭제')`;
   await wait(`!!${action}`);
   await js(`${action}.click()`);
@@ -65,7 +83,7 @@ async function openFileBin() {
   const bin = `[...document.querySelectorAll('.home-sidebar-bottom button')].find(button => button.textContent.trim().startsWith('휴지통'))`;
   const home = `document.querySelector('button[title="프로젝트 홈으로 돌아가기"]')`;
   await wait(`!!${bin} || !!${home}`);
-  if (!(await js(`!!${bin}`))) await js(`${home}.click()`);
+  await js(`if (!${bin}) ${home}?.click()`);
   await wait(`!!${bin}`);
   await js(`${bin}.click()`);
   await wait(
@@ -101,9 +119,6 @@ try {
       visible,
     );
   }
-  await js(
-    `document.querySelector('button[title="프로젝트 홈으로 돌아가기"]').click()`,
-  );
   await openFileBin();
   await stop(true);
   await boot(false);
@@ -115,9 +130,6 @@ try {
   await clickButton('.project-trash-modal header button', '닫기');
   await js(`document.querySelector('.home-project-open').click()`);
   await removeImage();
-  await js(
-    `document.querySelector('button[title="프로젝트 홈으로 돌아가기"]').click()`,
-  );
   await openFileBin();
   await clickButton('[aria-label="파일 휴지통"] button', '휴지통에서 제거…');
   await clickButton('.project-trash-confirm button', '제거');
