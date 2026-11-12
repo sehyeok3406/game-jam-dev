@@ -43,6 +43,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
   const { document } = data;
   const activation = useSelectedFileNodeClick();
   const assetPath = document.asset?.path;
+  const titleLabel = assetPath ? '이미지 이름' : '문서 제목';
   const reportImageEditing = useImageDescriptionPresentation();
   const copyBlock = locationSharing?.anchors
     ? (blockId: string) =>
@@ -245,20 +246,20 @@ const DocumentCardContent = memo(function DocumentCardContent({
       >
         <header className="document-card__header canvas-file-header">
           <div className="canvas-file-header__name">
-            {description ? (
-              <strong className="document-card__title canvas-file-header__title">
-                {document.title}
-              </strong>
-            ) : editing ? (
+            {editing ? (
               <input
                 className="document-card__title canvas-file-header__title nodrag nowheel"
                 ref={titleRef}
                 onCompositionStart={() => setComposing(true)}
                 onCompositionEnd={() => setComposing(false)}
                 onKeyDown={handleEditorKeyDown}
-                aria-label="문서 제목"
+                aria-label={titleLabel}
                 aria-invalid={saveFailed || undefined}
-                title="Enter로 이름·파일명 변경 · Esc로 이름 변경 취소"
+                title={
+                  assetPath
+                    ? 'Enter로 이미지 이름 저장 · Esc로 이름 변경 취소'
+                    : 'Enter로 이름·파일명 변경 · Esc로 이름 변경 취소'
+                }
                 value={title}
                 readOnly={data.locked || nameSaving}
                 onChange={(event) => updateTitle(event.target.value)}
@@ -381,8 +382,11 @@ const DocumentCardContent = memo(function DocumentCardContent({
                   locked={data.locked}
                   owner={editorOwner}
                   title={title}
-                  onTitle={description ? undefined : updateTitle}
+                  titleLabel={titleLabel}
+                  titleReadOnly={nameSaving}
+                  onTitle={updateTitle}
                   status={editStatus}
+                  saveError={taskError || queueState?.error}
                   onSave={() => void save().catch(() => undefined)}
                   onFinish={() => void finishEdit().catch(() => undefined)}
                   initialFocus={editFocus}

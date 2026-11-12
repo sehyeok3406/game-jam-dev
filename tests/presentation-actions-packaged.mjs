@@ -189,6 +189,7 @@ const originals = await Promise.all(
   ]),
 );
 const fileNodesOnly = process.argv.includes('--file-nodes');
+const imageNamesOnly = process.argv.includes('--image-names');
 const imagePath = 'assets/images/wide.png';
 const imageDocument = path.join(game, 'docs', 'picture.md');
 const imageBody = `![불러온 이미지](../${imagePath})\n\n## 이미지 용도\n\n게임 에셋\n\n## 설명\n\n초기 설명\n\n원본 이미지: \`${imagePath}\`\n`;
@@ -197,7 +198,7 @@ const wideImage =
   'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAECAYAAAC6Jt6KAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2AgB8hN+P+fWEx7DQBvzVgtcyg/0wAAAABJRU5ErkJggg==';
 const tallImage =
   'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAMCAYAAABFohwTAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2DABuQm/P8Pw0NHAABTrlgt0bibAQAAAABJRU5ErkJggg==';
-if (fileNodesOnly) {
+if (fileNodesOnly || imageNamesOnly) {
   const fixtures = [
     ['picture', imagePath, '스프라이트', 1100, wideImage],
     ['portrait', 'assets/images/tall.png', '세로형', 1320, tallImage],
@@ -205,25 +206,31 @@ if (fileNodesOnly) {
   await fs.mkdir(path.join(game, 'assets', 'images'), { recursive: true });
   for (const [id, asset, title, x, bytes] of fixtures) {
     const png = Buffer.from(bytes, 'base64');
+    const body = imageBody.replaceAll(imagePath, asset);
     await fs.writeFile(path.join(game, asset), png);
     await fs.writeFile(
       path.join(game, 'docs', id + '.md'),
-      matter.stringify(imageBody.replaceAll(imagePath, asset), {
-        id,
-        title,
-        type: 'image',
-        x,
-        y: 740,
-        width: 180,
-        height: 160,
-        asset: {
-          path: asset,
-          purpose: 'asset',
-          originalName: path.basename(asset),
-          mime: 'image/png',
-          bytes: png.length,
+      matter.stringify(
+        imageNamesOnly && id === 'portrait'
+          ? body.replace('초기 설명', '초기 설명\n\n[설명 문서](portrait.md)')
+          : body,
+        {
+          id,
+          title,
+          type: 'image',
+          x,
+          y: 740,
+          width: 180,
+          height: 160,
+          asset: {
+            path: asset,
+            purpose: 'asset',
+            originalName: path.basename(asset),
+            mime: 'image/png',
+            bytes: png.length,
+          },
         },
-      }),
+      ),
     );
   }
   const neighbor = 'same-section';
@@ -551,13 +558,17 @@ async function checkImageOperations(square) {
   await wait(
     `Promise.all(['picture','portrait'].map(id=>window.gameCanvas.getDocument('docs/'+id+'.md'))).then(docs=>docs.every(doc=>doc.width===180&&doc.height===160))`,
   );
+  await wait(
+    `parseFloat(${nodeQuery('picture')}.style.width) === 180 && parseFloat(${nodeQuery('portrait')}.style.height) === 160`,
+  );
   await clearCanvasSelection();
   for (const id of ['picture', 'portrait'])
     await clickAt(await center(nodeQuery(id)), 8);
   await wait(`!!document.querySelector('.selection-arrange-menu summary')`);
-  await js(
-    `document.querySelector('.selection-arrange-menu summary').click();[...document.querySelectorAll('.selection-arrange-menu button')].find(button=>button.textContent.trim()==='위쪽 맞춤').click();`,
-  );
+  await js(`document.querySelector('.selection-arrange-menu summary').click()`);
+  const alignTop = `document.querySelector('.selection-arrange-menu[open] button[aria-label="위쪽 맞춤"]:not(:disabled)')`;
+  await wait(`!!${alignTop}`);
+  await js(`${alignTop}.click()`);
   await wait(
     `Math.abs(${nodeQuery('picture')}.getBoundingClientRect().top-${nodeQuery('portrait')}.getBoundingClientRect().top)<=1`,
   );
@@ -584,6 +595,156 @@ async function checkImageOperations(square) {
   assert.deepEqual([saved.width, saved.height], [180, 160]);
   console.log(
     'PASS: single and mixed image resize, undo, visual alignment and section movement save through document layouts',
+  );
+}
+
+async function openImageEditor(id) {
+  const image = `${nodeQuery(id)}?.querySelector('.asset-node-surface')`;
+  const name = `${nodeQuery(id)}?.querySelector('input[aria-label="이미지 이름"]')`;
+  await wait(`${image}?.querySelector('img')?.naturalWidth > 0`);
+  await js(`${image}.click()`);
+  await wait(`!!${name} && !${name}.readOnly`);
+  await wait(
+    `${nodeQuery(id)}?.querySelector('.tiptap') === document.activeElement`,
+  );
+  return name;
+}
+
+async function replaceImageName(input, name) {
+  await js(`${input}.focus(); ${input}.select()`);
+  await send('Input.insertText', { text: name });
+  await wait(`${input}.value === ${JSON.stringify(name)}`);
+}
+
+async function checkLocalImageName() {
+  const original = 'docs/portrait.md';
+  const name = '새 이미지 이름';
+  const renamed = `docs/${name}.md`;
+  const newDocument = `window.gameCanvas.listDocuments().then(docs => docs.find(doc => doc.relativePath === ${JSON.stringify(renamed)}))`;
+  const asset = 'assets/images/tall.png';
+  const originalAsset = await fs.readFile(path.join(game, asset));
+  await js(
+    `document.querySelector('button[aria-label="캔버스 전체 맞춤"]').click()`,
+  );
+  const field = await openImageEditor('portrait');
+  assert.equal(await js(`${field}.value`), '세로형');
+  await replaceImageName(field, '잘못된/이미지');
+  await key('Enter');
+  await wait(
+    `${nodeQuery('portrait')}.querySelector('[role="alert"]')?.textContent.includes('문자')`,
+  );
+  assert.equal(await js(`${field}.value`), '잘못된/이미지');
+  await js(`${field}.focus()`);
+  await key('Escape');
+  await wait(`!${field}`);
+  assert.equal((await call('getDocument', original)).title, '세로형');
+
+  await openImageEditor('portrait');
+  const focusButton = `document.querySelector('button[aria-label="집중 편집"]')`;
+  await wait(`!!${focusButton}`);
+  await js(`${focusButton}.click()`);
+  const focusField = `document.querySelector('[aria-label="집중 편집 이미지 이름"]')`;
+  await wait(
+    `document.activeElement === document.querySelector('.editor-focus-dialog .tiptap')`,
+  );
+  await wait(`!!${focusField} && !${focusField}.readOnly`);
+  await replaceImageName(focusField, 'picture');
+  await key('Enter');
+  await wait(
+    `document.querySelector('.editor-focus-dialog [role="alert"]')?.textContent.includes('같은 이름')`,
+  );
+  await replaceImageName(focusField, name);
+  await key('s', ['control']);
+  await wait(newDocument);
+  await wait(
+    `!!${focusField} && !${focusField}.readOnly && document.querySelector('.editor-focus-dialog [role="status"]')?.textContent === '저장됨'`,
+  );
+  await js(`${focusField}.focus()`);
+  await key('Enter');
+  await wait(`!document.querySelector('.editor-focus-dialog') && !${field}`);
+
+  const renamedFile = path.join(game, renamed);
+  const saved = matter(await fs.readFile(renamedFile, 'utf8'));
+  assert.equal(saved.data.title, name);
+  assert.equal(saved.data.id, 'portrait');
+  assert.equal(saved.data.asset.path, asset);
+  assert.match(saved.content, /\[설명 문서\]\(새%20이미지%20이름\.md\)/);
+  assert.match(
+    saved.content,
+    /!\[불러온 이미지\]\(\.\.\/assets\/images\/tall\.png\)/,
+  );
+  assert.deepEqual(await fs.readFile(path.join(game, asset)), originalAsset);
+  await assert.rejects(fs.access(path.join(game, original)), {
+    code: 'ENOENT',
+  });
+
+  const undo = `document.querySelector('button[title^="실행 취소"]:not(:disabled)')`;
+  const redo = `document.querySelector('button[aria-label="다시 실행"]:not(:disabled)')`;
+  await wait(`!!${undo}`);
+  await js(`${undo}.click()`);
+  await wait(
+    `window.gameCanvas.listDocuments().then(docs => docs.some(doc => doc.relativePath === '${original}' && doc.title === '세로형'))`,
+  );
+  await wait(`!!${redo}`);
+  await js(`${redo}.click()`);
+  await wait(newDocument);
+  await stop(true);
+  await boot();
+  await enterWorkspace();
+  await wait(
+    `${nodeQuery('portrait')}?.querySelector('img')?.alt === ${JSON.stringify(name)}`,
+  );
+  assert.equal((await call('getDocument', renamed)).asset.path, asset);
+  console.log(
+    'PASS: local image name and description links survive validation, cancel, undo, redo and restart with original image bytes.',
+  );
+}
+
+async function checkSharedImageName({ owner, href, sharedPath }) {
+  const picture = nodeQuery('picture');
+  const original = await call('getDocument', sharedPath);
+  const sharedName = '공동 이미지 이름';
+  const sharedRenamed = `docs/${sharedName}.md`;
+  const field = await openImageEditor('picture');
+  const description = `${picture}.querySelector('.tiptap')`;
+  await wait(`!!${description}`);
+  const previousDescription = await js(`${description}.innerText`);
+  const nextDescription = '공동 편집한 이미지 설명';
+  await js(`{
+    const editor = ${description}, range = document.createRange();
+    editor.focus(); range.selectNodeContents(editor);
+    getSelection().removeAllRanges(); getSelection().addRange(range);
+  }`);
+  await send('Input.insertText', { text: nextDescription });
+  await wait(`${description}.innerText === ${JSON.stringify(nextDescription)}`);
+  await replaceImageName(field, sharedName);
+  await key('Enter');
+  await wait(
+    `!${field} && ${picture}?.querySelector('img')?.alt === ${JSON.stringify(sharedName)}`,
+  );
+  const peer = new CollaborationClient(owner.credentials, () => {});
+  try {
+    await peer.refresh();
+    const shared = matter(peer.files[sharedRenamed]);
+    assert.equal(shared.data.title, sharedName);
+    assert.equal(shared.data.id, 'picture');
+    assert.equal(shared.data.asset.path, imagePath);
+    assert.equal(
+      shared.content.trim(),
+      original.body.replace(previousDescription, nextDescription),
+    );
+    assert.equal(peer.files[sharedPath], undefined);
+    assert.equal(peer.files[imagePath], `data:image/png;base64,${wideImage}`);
+  } finally {
+    peer.stop();
+  }
+  await stop(true);
+  await boot(href);
+  await wait(
+    `${picture}?.querySelector('img')?.alt === ${JSON.stringify(sharedName)}`,
+  );
+  console.log(
+    'PASS: shared image rename keeps the original asset and resolves the existing location link after reconnect.',
   );
 }
 
@@ -682,6 +843,10 @@ async function checkSharedImage() {
     await boot(href);
     const picture = nodeQuery('picture');
     await wait(`!!${picture}?.querySelector('.asset-node-fitted img')`);
+    if (imageNamesOnly) {
+      await checkSharedImageName({ owner, href, sharedPath });
+      return;
+    }
     await wait(`${picture}.classList.contains('selected')`);
     await pause();
     await resizeImage('picture', 30, 10);
@@ -1083,7 +1248,10 @@ async function checkFileNodes() {
 try {
   await boot();
   await enterWorkspace();
-  if (fileNodesOnly) {
+  if (imageNamesOnly) {
+    await checkLocalImageName();
+    await checkSharedImage();
+  } else if (fileNodesOnly) {
     await checkFileNodes();
     await stop(true);
     const portraitPath = path.join(game, 'assets/images/tall.png');
@@ -1235,7 +1403,7 @@ try {
   console.error(
     'Presentation UI failure state:',
     await js(
-      `({notice:document.querySelector('.status-toast')?.textContent,dialog:document.querySelector('[aria-modal=true]')?.textContent,disabled:document.querySelector('[data-ui-id=membership] .button-primary')?.disabled,undoDisabled:document.querySelector('button[title^="실행 취소"]')?.disabled,selected:[...document.querySelectorAll('.react-flow__node.selected')].map(node=>node.dataset.id),nodes:${fileNodesOnly}?[...document.querySelectorAll('.react-flow__node')].map(node=>({id:node.dataset.id,bounds:node.getBoundingClientRect().toJSON(),layer:getComputedStyle(node).zIndex,text:node.innerText.slice(0,100)})):undefined})`,
+      `({notice:document.querySelector('.status-toast')?.textContent,dialog:document.querySelector('[aria-modal=true]')?.textContent,active:document.activeElement?.outerHTML.slice(0,200),disabled:document.querySelector('[data-ui-id=membership] .button-primary')?.disabled,undoDisabled:document.querySelector('button[title^="실행 취소"]')?.disabled,selected:[...document.querySelectorAll('.react-flow__node.selected')].map(node=>node.dataset.id),nodes:${fileNodesOnly || imageNamesOnly}?[...document.querySelectorAll('.react-flow__node')].map(node=>({id:node.dataset.id,bounds:node.getBoundingClientRect().toJSON(),layer:getComputedStyle(node).zIndex,text:node.innerText.slice(0,160)})):undefined})`,
     ).catch(() => undefined),
   );
   throw error;

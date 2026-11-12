@@ -51,8 +51,11 @@ type Props = {
   locked: boolean;
   owner: string;
   title: string;
-  onTitle?: (title: string) => void;
+  titleLabel: string;
+  titleReadOnly: boolean;
+  onTitle: (title: string) => void;
   status: string;
+  saveError?: string;
   onFinish: () => void;
   onSave: () => void;
   onCompositionChange?: (value: boolean) => void;
@@ -67,8 +70,11 @@ export function MarkdownEditor({
   locked,
   owner,
   title,
+  titleLabel,
+  titleReadOnly,
   onTitle,
   status,
+  saveError,
   onFinish,
   onSave,
   onCompositionChange,
@@ -1419,7 +1425,8 @@ export function MarkdownEditor({
               </header>
               <input
                 className="editor-focus-title"
-                aria-label="집중 편집 문서 제목"
+                aria-label={`집중 편집 ${titleLabel}`}
+                aria-invalid={!!saveError || undefined}
                 value={title}
                 onCompositionStart={() => {
                   composing.current = true;
@@ -1429,13 +1436,31 @@ export function MarkdownEditor({
                   composing.current = false;
                   onCompositionChange?.(false);
                 }}
-                readOnly={locked || !onTitle}
-                onChange={(e) => onTitle?.(e.target.value)}
+                readOnly={locked || titleReadOnly}
+                onChange={(e) => onTitle(e.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== 'Enter' ||
+                    event.nativeEvent.isComposing ||
+                    composing.current ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    locked ||
+                    titleReadOnly ||
+                    event.repeat
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onFinish();
+                }}
               />
               {toolbar}
               {content}
               <footer>
-                <span role="status">{status}</span>
+                <span role={saveError ? 'alert' : 'status'}>
+                  {saveError || status}
+                </span>
                 <button type="button" onClick={closeFocus}>
                   캔버스로
                 </button>

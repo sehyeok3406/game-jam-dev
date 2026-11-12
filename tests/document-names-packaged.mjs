@@ -79,6 +79,11 @@ const replaceName = async (name) => {
 };
 try {
   await boot();
+  const compact = `[data-id="native-name"] .file-node-surface`;
+  await wait(
+    `!!document.querySelector('${selector}') || !!document.querySelector('${compact}')`,
+  );
+  await js(`document.querySelector('${compact}')?.click()`);
   await wait(`!!document.querySelector('${selector}')`);
   // Opening may finish applying initial workflow metadata after the first card mount.
   await new Promise((resolve) => setTimeout(resolve, 600));

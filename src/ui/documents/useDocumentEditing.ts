@@ -343,6 +343,18 @@ export function useDocumentEditing(data: DocumentEditingInput) {
                 };
                 setTitle(result.document.title);
               }
+              // Adopt remapped links from the rename when the editor has not
+              // changed its body during the save.
+              if (
+                latestRef.current.body === requested.body &&
+                latestRef.current.body !== result.document.body
+              ) {
+                latestRef.current = {
+                  ...latestRef.current,
+                  body: result.document.body,
+                };
+                setBody(result.document.body);
+              }
               if (editorDraftMatches(latestRef.current, savedRef.current)) {
                 await api.saves.setEditorDraft(
                   current.draftKey,
