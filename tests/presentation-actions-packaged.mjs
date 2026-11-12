@@ -965,7 +965,9 @@ async function checkFileNodes() {
   await wait(`!!${query('[data-id="picture"].selected .asset-node-surface')}`);
   await pointerAt(image, 0, true);
   await pause();
-  await wait(`!!${query('[data-id="picture"].selected:not(.dragging) .asset-node-surface')}`);
+  await wait(
+    `!!${query('[data-id="picture"].selected:not(.dragging) .asset-node-surface')}`,
+  );
   await pointerAt(image);
   const editor = '[data-id="picture"] .tiptap';
   await wait(`!!${query(editor)}`);
