@@ -1,5 +1,13 @@
-import { memo, useMemo, type CSSProperties, type MouseEvent } from 'react';
-import { NodeResizeControl } from '@xyflow/react';
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react';
+import { NodeResizeControl, useNodeId, useStoreApi } from '@xyflow/react';
 import { FileText, Gamepad2 } from 'lucide-react';
 import {
   MIN_COMPACT_HEIGHT,
@@ -15,7 +23,7 @@ export type FileNodeDisplay = {
   size: CompactSize;
 };
 
-export function opensFileNode(event: MouseEvent<HTMLElement>) {
+function opensFileNode(event: MouseEvent<HTMLElement>) {
   return (
     !event.shiftKey &&
     !event.ctrlKey &&
@@ -25,6 +33,71 @@ export function opensFileNode(event: MouseEvent<HTMLElement>) {
       '.app-shell--material-picker, .app-shell:not(.app-shell--tool-select)',
     )
   );
+}
+
+export function useSelectedFileNodeClick() {
+  const id = useNodeId();
+  const flow = useStoreApi();
+  const pointer = useRef<AbortController | null>(null);
+  const released = useRef(false);
+  useEffect(() => () => pointer.current?.abort(), []);
+
+  return {
+    onPointerDownCapture(event: PointerEvent<HTMLElement>) {
+      pointer.current?.abort();
+      released.current = false;
+      if (!id || event.button !== 0 || !opensFileNode(event)) return;
+      const { nodeLookup, nodes } = flow.getState();
+      // React Flow can select on mousedown. Capture the selection before it.
+      if (
+        !nodeLookup.get(id)?.selected ||
+        nodes.some((node) => node.selected && node.id !== id)
+      )
+        return;
+
+      const { pointerId, clientX, clientY, currentTarget, pointerType } = event;
+      const gesture = new AbortController();
+      pointer.current = gesture;
+      const options = { capture: true, signal: gesture.signal };
+      const moved = (next: globalThis.PointerEvent) =>
+        Math.hypot(next.clientX - clientX, next.clientY - clientY) >
+        (pointerType === 'touch' ? 4 : 1);
+      window.addEventListener(
+        'pointermove',
+        (next) => {
+          if (next.pointerId === pointerId && moved(next)) gesture.abort();
+        },
+        options,
+      );
+      window.addEventListener(
+        'pointerup',
+        (next) => {
+          if (next.pointerId !== pointerId) return;
+          released.current =
+            !moved(next) &&
+            next.target instanceof Node &&
+            currentTarget.contains(next.target);
+          gesture.abort();
+        },
+        options,
+      );
+      window.addEventListener(
+        'pointercancel',
+        (next) => {
+          if (next.pointerId === pointerId) gesture.abort();
+        },
+        options,
+      );
+      window.addEventListener('blur', () => gesture.abort(), options);
+    },
+    canOpen(event: MouseEvent<HTMLElement>) {
+      // Keyboard activation (including assistive technology) opens directly.
+      const activate = event.detail === 0 || released.current;
+      released.current = false;
+      pointer.current?.abort();
+      return activate && opensFileNode(event);
+    },
+  };
 }
 
 export function fileNodeVariables(
@@ -88,6 +161,7 @@ export const FileNodeSurface = memo(function FileNodeSurface({
   selected,
   locked,
   hidden,
+  activation,
   onOpen,
   onResize,
 }: {
@@ -98,6 +172,7 @@ export const FileNodeSurface = memo(function FileNodeSurface({
   selected?: boolean;
   locked?: boolean;
   hidden?: boolean;
+  activation?: ReturnType<typeof useSelectedFileNodeClick>;
   onOpen?: () => void;
   onResize?: (width: number, height: number) => void;
 }) {
@@ -131,6 +206,7 @@ export const FileNodeSurface = memo(function FileNodeSurface({
           style={style}
           inert={hidden || undefined}
           aria-label={`${title} 펼치기`}
+          onPointerDownCapture={activation?.onPointerDownCapture}
           onKeyDown={(event) => {
             if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat)
               return;
@@ -139,7 +215,8 @@ export const FileNodeSurface = memo(function FileNodeSurface({
             event.currentTarget.click();
           }}
           onClick={(event) => {
-            if (opensFileNode(event)) onOpen();
+            if (activation ? activation.canOpen(event) : opensFileNode(event))
+              onOpen();
           }}
         >
           {inner}

@@ -34,8 +34,6 @@
   max-width: 62%;
 }
 .canvas-text-summary {
-  width: 100%;
-  height: 100%;
   overflow: hidden;
 }
 .kanban-board-content > .canvas-detail-region {

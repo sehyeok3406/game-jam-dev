@@ -221,8 +221,16 @@ dialog.model-viewer::backdrop {
   z-index: 1;
   top: 12px;
   right: 12px;
+  left: 12px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 7px;
+  pointer-events: none;
+}
+
+.model-viewer__tools button {
+  pointer-events: auto;
 }
 
 .model-viewer button:disabled {

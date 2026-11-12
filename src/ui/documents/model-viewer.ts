@@ -10,6 +10,7 @@ import {
   LoadingManager,
   MOUSE,
   PerspectiveCamera,
+  PropertyBinding,
   Scene,
   SkeletonHelper,
   Sphere,
@@ -103,6 +104,40 @@ function disposeObjects(roots: Object3D[]) {
   for (const material of materials) material.dispose();
   for (const texture of textures) texture.dispose();
   for (const image of images) image.close();
+}
+
+function clipMotionRoot(model: Object3D, clip: AnimationClip) {
+  let root: Object3D | undefined;
+  let rootDepth = Infinity;
+  for (const track of clip.tracks) {
+    if (!track.name.endsWith('.position') || track.ValueTypeName !== 'vector')
+      continue;
+    const { nodeName, objectName } = PropertyBinding.parseTrackName(track.name);
+    if (objectName) continue;
+    const node = PropertyBinding.findNode(model, nodeName) as Object3D | null;
+    if (!node) continue;
+
+    let depth = 0;
+    let onRootChain = true;
+    for (let item = node; item !== model && item.parent; item = item.parent) {
+      onRootChain &&= item.parent.children.length === 1;
+      depth++;
+    }
+    if (
+      !onRootChain &&
+      !/(hips|pelvis|root(?:motion)?|armature)$/i.test(node.name)
+    )
+      continue;
+    if (depth >= rootDepth) continue;
+    const { values } = track;
+    if (
+      !values.some((value, index) => Math.abs(value - values[index % 3]) > 1e-6)
+    )
+      continue;
+    root = node;
+    rootDepth = depth;
+  }
+  return root;
 }
 
 export async function startModelViewer(
@@ -247,6 +282,28 @@ export async function startModelViewer(
     let previous = 0;
     mixer = new AnimationMixer(model);
     const animator = mixer;
+    const modelRoot = model;
+    const motionRoots = clips.map((clip) => clipMotionRoot(modelRoot, clip));
+    let motionRoot: Object3D | undefined;
+    let following = false;
+    const motionOrigin = new Vector3();
+    const lastMotion = new Vector3();
+    const motion = new Vector3();
+    const shift = new Vector3();
+    const followOffset = new Vector3();
+
+    function moveCamera(delta: Vector3) {
+      camera.position.add(delta);
+      orbit.target.add(delta);
+    }
+    function followMotion() {
+      if (!following || !motionRoot) return;
+      motionRoot.getWorldPosition(motion);
+      shift.subVectors(motion, lastMotion);
+      moveCamera(shift);
+      followOffset.add(shift);
+      lastMotion.copy(motion);
+    }
 
     redraw = () => surface.render(world, camera);
     orbit.addEventListener('change', () => redraw());
@@ -259,6 +316,12 @@ export async function startModelViewer(
         .copy(sphere.center)
         .addScaledVector(new Vector3(1, 0.55, 1.4).normalize(), distance);
       orbit.target.copy(sphere.center);
+      followOffset.set(0, 0, 0);
+      if (following && motionRoot) {
+        motionRoot.getWorldPosition(lastMotion);
+        followOffset.subVectors(lastMotion, motionOrigin);
+        moveCamera(followOffset);
+      }
       orbit.update();
       redraw();
     };
@@ -284,6 +347,7 @@ export async function startModelViewer(
       if (!playing || signal.aborted) return;
       animator.update(Math.min(0.08, (now - previous) / 1000));
       previous = now;
+      followMotion();
       redraw();
       notify();
       if (playing) frame = requestAnimationFrame(tick);
@@ -308,6 +372,11 @@ export async function startModelViewer(
       if (action) action.clampWhenFinished = true;
       configureLoop();
       animator.update(0);
+      if (following) moveCamera(shift.copy(followOffset).negate());
+      followOffset.set(0, 0, 0);
+      motionRoot = motionRoots[index];
+      motionRoot?.getWorldPosition(motionOrigin);
+      lastMotion.copy(motionOrigin);
       redraw();
       notify();
     }
@@ -348,6 +417,10 @@ export async function startModelViewer(
         orbit.mouseButtons.LEFT = enabled ? MOUSE.PAN : MOUSE.ROTATE;
         orbit.touches.ONE = enabled ? TOUCH.PAN : TOUCH.ROTATE;
       },
+      follow(enabled: boolean) {
+        following = enabled;
+        if (enabled) motionRoot?.getWorldPosition(lastMotion);
+      },
       select,
       loop(value: boolean) {
         repeat = value;
@@ -357,6 +430,7 @@ export async function startModelViewer(
         if (!action) return;
         action.time = Math.min(time, action.getClip().duration);
         animator.update(0);
+        followMotion();
         redraw();
         notify();
       },

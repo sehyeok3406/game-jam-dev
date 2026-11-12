@@ -14,7 +14,7 @@ import {
 } from '../editor/location-anchor.ts';
 import { useLocationSharing } from '../locations/LocationSharingContext.ts';
 import {
-  NodeResizer,
+  NodeResizeControl,
   NodeToolbar,
   Position,
   useReactFlow,
@@ -63,6 +63,9 @@ type TextNodeProps = Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'> & {
   object: TextObject;
 };
 
+const measuredTextHeight = (element: HTMLElement) =>
+  Math.min(100_000, Math.max(42, element.offsetHeight));
+
 export const TextDrawingNode = memo(function TextDrawingNode(
   props: TextNodeProps,
 ) {
@@ -71,6 +74,9 @@ export const TextDrawingNode = memo(function TextDrawingNode(
     nodeId = useNodeId();
   const visit = useOptionalCanvasViewport();
   const selected = useCanvasSoleSelection(!!props.selected);
+  const fallbackHeight =
+    (nodeId && flow.getNode(nodeId)?.measured?.height) ||
+    props.object.transform.height;
   const [active, setActive] = useState(selected),
     [requested, setRequested] = useState(false);
   const lastPointer = useRef<{ time: number; x: number; y: number } | null>(
@@ -110,6 +116,7 @@ export const TextDrawingNode = memo(function TextDrawingNode(
         key={`${visit?.viewKey}:${props.data.scope}:${props.object.generation}`}
         {...props}
         selected={selected}
+        fallbackHeight={fallbackHeight}
         requested={requested}
         consume={() => setRequested(false)}
         release={() => {
@@ -125,7 +132,6 @@ export const TextDrawingNode = memo(function TextDrawingNode(
   return (
     <div
       className="canvas-text-wrapper"
-      style={{ width: '100%', height: '100%' }}
       onMouseDownCapture={(event) => {
         if (
           !props.data.locked &&
@@ -172,6 +178,8 @@ function ReadableCanvasText({
   data,
   activate,
 }: TextNodeProps & { activate: () => void }) {
+  const flow = useReactFlow();
+  const nodeId = useNodeId();
   const geometry = object.geometry;
   const html = useCanvasResource(
     `text:${object.id}`,
@@ -187,6 +195,11 @@ function ReadableCanvasText({
     [html.managed, geometry.document, geometry.align],
   );
   const value = html.managed ? html.value : standalone;
+  const placeholderHeight =
+    value === undefined
+      ? (nodeId && flow.getNode(nodeId)?.measured?.height) ||
+        object.transform.height
+      : undefined;
   return (
     <div
       className="canvas-text-node canvas-text-summary"
@@ -199,6 +212,7 @@ function ReadableCanvasText({
           textAlign: geometry.align,
           '--canvas-text-align': geometry.align,
           opacity: object.style.opacity,
+          height: placeholderHeight,
         } as import('react').CSSProperties
       }
       onDoubleClick={(event) => {
@@ -227,17 +241,18 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
   data,
   selected,
   object,
+  fallbackHeight,
   requested,
   consume,
   release,
 }: TextNodeProps & {
   requested: boolean;
+  fallbackHeight: number;
   consume: () => void;
   release: () => void;
 }) {
   const { api } = useRuntime();
   const locationSharing = useLocationSharing();
-  const flow = useReactFlow();
   const [editing, setEditing] = useState(false),
     [error, setError] = useState('');
   const [geometry, setGeometry] = useState(object.geometry);
@@ -335,16 +350,7 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
           await backup();
           const height = editor.isDestroyed
             ? latest.current.object.transform.height
-            : Math.min(
-                100_000,
-                Math.max(
-                  42,
-                  Math.ceil(
-                    editor.view.dom.getBoundingClientRect().height /
-                      flow.getZoom(),
-                  ),
-                ),
-              );
+            : measuredTextHeight(editor.view.dom);
           const current = latest.current.object;
           const acknowledged =
             current.kind === 'text' &&
@@ -535,34 +541,6 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
     }, 40);
     return () => clearTimeout(focus);
   }, [editor, editing, data.locked, loaded]);
-  useEffect(() => {
-    if (!editor) return;
-    const observer = new ResizeObserver(() => {
-      if (
-        !editingSession.current ||
-        !ready.current ||
-        data.locked ||
-        saving.current
-      )
-        return;
-      const height = Math.max(
-        42,
-        Math.ceil(
-          editor.view.dom.getBoundingClientRect().height / flow.getZoom(),
-        ),
-      );
-      if (Math.abs(height - latest.current.object.transform.height) > 1) {
-        dirty.current = true;
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(
-          () => void callbacks.current.flush().catch(() => undefined),
-          450,
-        );
-      }
-    });
-    observer.observe(editor.view.dom);
-    return () => observer.disconnect();
-  }, [editor, data.locked]);
   const startEditing = () => {
     if (!data.locked) {
       editingSession.current = true;
@@ -595,10 +573,11 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
     startEditing();
     fn();
   };
+  const canResize = selected && !editing && !data.locked && loaded && !!editor;
   return (
     <div
       ref={root}
-      className={`canvas-text-node${editing ? ' canvas-text-node--editing nodrag nopan nowheel' : ''}`}
+      className={`canvas-text-node${editing ? ' canvas-text-node--editing nodrag nopan nowheel' : ''}${canResize ? ' canvas-text-node--selected' : ''}`}
       style={
         {
           fontSize: geometry.fontSize,
@@ -607,6 +586,7 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
           textAlign: geometry.align,
           '--canvas-text-align': geometry.align,
           opacity: object.style.opacity,
+          minHeight: loaded && editor ? undefined : fallbackHeight,
         } as import('react').CSSProperties
       }
       aria-label="캔버스 텍스트"
@@ -854,25 +834,32 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
           </button>
         </div>
       </NodeToolbar>
-      <NodeResizer
-        isVisible={!!selected && !editing && !data.locked}
-        minWidth={80}
-        minHeight={42}
-        onResizeEnd={(_event, position) => {
-          void data
-            .onSave({
-              id: object.id,
-              generation: object.generation,
-              transform: {
-                x: position.x,
-                y: position.y,
-                width: position.width,
-                height: position.height,
-              },
-            })
-            .catch((failure) => setError(String(failure)));
-        }}
-      />
+      {canResize &&
+        (['left', 'right'] as const).map((side) => (
+          <NodeResizeControl
+            key={side}
+            position={side}
+            resizeDirection="horizontal"
+            className="nodrag"
+            minWidth={80}
+            onResizeEnd={(_event, { x, width }) => {
+              if (!root.current || !editor || editor.isDestroyed) return;
+              // Measure against the final wrap width even if the last resize
+              // event has yet to reach the controlled React Flow node.
+              const element = root.current;
+              element.style.width = `${width}px`;
+              const height = measuredTextHeight(editor.view.dom);
+              element.style.removeProperty('width');
+              void data
+                .onSave({
+                  id: object.id,
+                  generation: object.generation,
+                  transform: { x, width, height },
+                })
+                .catch((failure) => setError(String(failure)));
+            }}
+          />
+        ))}
       <EditorContent editor={editor} />
       {editing && editor?.isEmpty && (
         <span className="canvas-text-placeholder">텍스트 입력</span>

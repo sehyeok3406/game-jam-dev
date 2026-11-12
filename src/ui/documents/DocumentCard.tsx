@@ -19,7 +19,7 @@ import { ProjectImage } from './ProjectImage';
 import {
   FileNodeSurface,
   fileNodeVariables,
-  opensFileNode,
+  useSelectedFileNodeClick,
 } from '../canvas/FileNodeSurface';
 import { imageDescription } from '../../core/canvas/image-description';
 import { fittedImage, imageResizeRange } from '../../core/canvas/image-layout';
@@ -41,6 +41,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
   const { api, capabilities } = useRuntime();
   const locationSharing = useLocationSharing();
   const { document } = data;
+  const activation = useSelectedFileNodeClick();
   const assetPath = document.asset?.path;
   const reportImageEditing = useImageDescriptionPresentation();
   const copyBlock = locationSharing?.anchors
@@ -136,6 +137,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
         selected={selected}
         hidden={data.sectionHidden}
         locked={data.layoutLocked}
+        activation={activation}
         onOpen={data.onOpenFileNode}
         onResize={data.onResizeFileNode}
       />
@@ -172,9 +174,10 @@ const DocumentCardContent = memo(function DocumentCardContent({
           tabIndex={0}
           aria-label={`${document.title} 설명 편집`}
           inert={data.sectionHidden || undefined}
+          onPointerDownCapture={activation.onPointerDownCapture}
           onClick={(event) => {
             if (
-              opensFileNode(event) &&
+              activation.canOpen(event) &&
               !(event.target as Element).closest('button')
             )
               void startEdit();

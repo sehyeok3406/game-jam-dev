@@ -734,6 +734,37 @@ async function checkFileNodes() {
   const selector = '[data-id="b"]';
   const compact = `${selector} .file-node-surface`;
   const query = (value) => `document.querySelector(${JSON.stringify(value)})`;
+  const pointerAt = async (surface, modifiers = 0, drag = false) => {
+    const visiblePoint = `(() => {
+      const target = ${query(surface)}, r = target.getBoundingClientRect();
+      const pane = target.classList.contains('react-flow__pane');
+      const fractions = pane ? [0.1, 0.25, 0.5, 0.75, 0.9] : [0.5, 0.25, 0.75];
+      for (const dy of fractions) for (const dx of fractions) {
+        const x = Math.round(r.x + r.width * dx), y = Math.round(r.y + r.height * dy);
+        const hit = document.elementFromPoint(x, y);
+        if (pane ? target === hit : target.contains(hit)) return { x, y };
+      }
+      return null;
+    })()`;
+    await wait(visiblePoint);
+    const point = await js(visiblePoint);
+    const mouse = (type, x = point.x) =>
+      send('Input.dispatchMouseEvent', {
+        type,
+        x,
+        y: point.y,
+        modifiers,
+        button: 'left',
+        buttons: type === 'mouseReleased' ? 0 : 1,
+        clickCount: 1,
+      });
+    await mouse('mousePressed');
+    if (drag) {
+      await mouse('mouseMoved', point.x + 25);
+      await mouse('mouseMoved');
+    }
+    await mouse('mouseReleased');
+  };
   const extraCanvas = 'qa-node-settings';
   const extraLabel = '노드 설정 검사 탭';
   const sheets = await call('getCanvasSheets');
@@ -767,6 +798,20 @@ async function checkFileNodes() {
   await wait('!!document.querySelector("[data-file-edge=reference]")');
   await key('G', ['shift']);
   await wait('!document.querySelector("[data-file-edge=reference]")');
+
+  await js(`${query('button[aria-label="캔버스 전체 맞춤"]')}.click()`);
+  await pointerAt('.react-flow__pane');
+  await wait(`!${query(selector)}.classList.contains('selected')`);
+  await pointerAt(compact);
+  await wait(`!!${query(selector + '.selected .file-node-surface')}`);
+  await pointerAt(compact, 8); // Shift toggles selection without opening.
+  await wait(`!${query(selector)}.classList.contains('selected')`);
+  await pointerAt(compact);
+  await wait(`!!${query(selector + '.selected .file-node-surface')}`);
+  await pointerAt(compact);
+  await wait(`!!${query(selector + ' .file-node-expanded')}`);
+  await js(`${query(selector + ' button[aria-label="접기"]')}.click()`);
+  await wait(`!!${query(compact)}`);
 
   const html = '.file-node-surface--html';
   await wait(`!!${query(html)}`);
@@ -914,7 +959,14 @@ async function checkFileNodes() {
     `[...document.querySelectorAll('[role=menuitem]')].some(b=>b.textContent==='원본 파일 보기')`,
   );
   await key('Escape');
-  await js(`${query(image)}.click()`);
+  await pointerAt('.react-flow__pane');
+  await wait(`!${query('[data-id="picture"]')}.classList.contains('selected')`);
+  await pointerAt(image);
+  await wait(`!!${query('[data-id="picture"].selected .asset-node-surface')}`);
+  await pointerAt(image, 0, true);
+  await pause();
+  await wait(`!!${query('[data-id="picture"].selected:not(.dragging) .asset-node-surface')}`);
+  await pointerAt(image);
   const editor = '[data-id="picture"] .tiptap';
   await wait(`!!${query(editor)}`);
   assert.equal(await js(`${query(editor)}.innerText`), '초기 설명');

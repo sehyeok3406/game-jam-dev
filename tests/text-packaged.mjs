@@ -147,6 +147,16 @@ const enterProject = async () => {
   );
   await wait('!!document.querySelector(".bottom-toolbar")');
 };
+const drawingFile = path.join(game, '.canvas/drawings/default.json');
+const textBounds = `(() => {
+  const content = document.querySelector('.canvas-text-node .tiptap');
+  const node = content?.closest('.react-flow__node');
+  if (!node) return null;
+  const minimap = [...document.querySelectorAll('.react-flow__minimap-node')]
+    .find(item => item.dataset.nodeId === node.dataset.id);
+  return { height: node.offsetHeight, content: content.offsetHeight,
+    width: node.offsetWidth, minimapHeight: Number(minimap?.getAttribute('height')) };
+})()`;
 try {
   await boot();
   const initial = await js('window.gameCanvas.selfHost.getSelfHost()');
@@ -158,6 +168,7 @@ try {
   );
   await enterProject();
   await key('t', 'KeyT', 84);
+  await wait(`!!document.querySelector('.app-shell--tool-text')`);
   const point = await js(
     `(()=>{for(let y=250;y<700;y+=100)for(let x=500;x<1100;x+=100)if(document.elementFromPoint(x,y)?.classList.contains('react-flow__pane'))return {x,y};throw Error('No empty canvas point')})()`,
   );
@@ -237,14 +248,14 @@ try {
   const expected = await js(
     'window.gameCanvas.listDrawings().then(o=>o[0].geometry)',
   );
-  const disk = JSON.parse(
-    await fs.readFile(path.join(game, '.canvas/drawings/default.json'), 'utf8'),
-  );
+  const disk = JSON.parse(await fs.readFile(drawingFile, 'utf8'));
   assert.equal(disk.version, 3);
   assert.deepEqual(disk.objects[0].geometry, expected);
   await screenshot('lists');
   await js('window.gameCanvas.selfHost.setSelfHostAutoStart(true)');
   await stop(true);
+  disk.objects[0].transform.height = 640;
+  await fs.writeFile(drawingFile, JSON.stringify(disk));
   await boot();
   await wait('!!document.querySelector(".self-host-dialog[open]")');
   await wait(
@@ -262,7 +273,16 @@ try {
   await js('window.gameCanvas.selfHost.setSelfHostAutoStart(false)');
   await js(`document.querySelector('[aria-label="서버 관리 닫기"]').click()`);
   await enterProject();
-  await wait('!!document.querySelector(".canvas-text-node")');
+  if (!(await js('!!document.querySelector(".react-flow__minimap")')))
+    await js(`document.querySelector('[aria-label="미니맵 전환"]')?.click()`);
+  await wait(`(() => { const box = ${textBounds};
+    return box && box.height === box.content && box.height === box.minimapHeight && box.height < 640;
+  })()`);
+  assert.equal(
+    JSON.parse(await fs.readFile(drawingFile, 'utf8')).objects[0].transform
+      .height,
+    640,
+  );
   assert.deepEqual(
     await js('window.gameCanvas.listDrawings().then(o=>o[0].geometry)'),
     expected,
@@ -284,6 +304,48 @@ try {
     'right',
   );
   await screenshot('alignment-reopened');
+  const wide = await js(textBounds);
+  const pointOn = (selector) =>
+    js(`(() => {
+    const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  })()`);
+  const mouse = (type, point) =>
+    send('Input.dispatchMouseEvent', {
+      type,
+      ...point,
+      button: 'left',
+      buttons: type === 'mouseReleased' ? 0 : 1,
+      clickCount: 1,
+    });
+  const textPoint = await pointOn('.canvas-text-node .tiptap');
+  await mouse('mousePressed', textPoint);
+  await mouse('mouseReleased', textPoint);
+  await wait(
+    '!!document.querySelector(".canvas-text-node--selected .react-flow__resize-control.right")',
+  );
+  const selected = await js(textBounds);
+  assert.equal(selected.height, wide.height);
+  const handle = await pointOn(
+    '.canvas-text-node--selected .react-flow__resize-control.right',
+  );
+  const zoom = await js(
+    'new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a',
+  );
+  const narrower = {
+    ...handle,
+    x: Math.round(handle.x - (wide.width - 100) * zoom),
+  };
+  await mouse('mousePressed', handle);
+  await mouse('mouseMoved', narrower);
+  await mouse('mouseReleased', narrower);
+  await wait(`(() => { const box = ${textBounds};
+    return box.width < 115 && box.height > ${wide.height} && box.height === box.content && box.height === box.minimapHeight;
+  })()`);
+  const narrow = await js(textBounds);
+  await wait(
+    `window.gameCanvas.listDrawings().then(o => Math.abs(o[0].transform.width - ${narrow.width}) <= 1 && o[0].transform.height === ${narrow.height})`,
+  );
   await stop(true);
   await boot();
   assert.equal(
@@ -304,6 +366,8 @@ try {
         bulletsAndNumbering: true,
         independentParagraphAlignment: true,
         markerAlignment: true,
+        measuredLegacyBoundsAndMinimap: true,
+        wrapWidthResize: true,
         diskPersistence: true,
         fullRestart: true,
         autoStartOnOpensManagement: true,

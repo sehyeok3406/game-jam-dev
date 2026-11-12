@@ -6,6 +6,7 @@ import {
   Play,
   Repeat2,
   RotateCcw,
+  Video,
   X,
 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -38,6 +39,7 @@ export function ModelPreviewDialog({
   const [clip, setClip] = useState(0);
   const [grid, setGrid] = useState(true);
   const [pan, setPan] = useState(false);
+  const [follow, setFollow] = useState(false);
   const [repeat, setRepeat] = useState(true);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -99,6 +101,7 @@ export function ModelPreviewDialog({
     setClip(0);
     setGrid(true);
     setPan(false);
+    setFollow(false);
     setRepeat(true);
     setError('');
     setAttempt((previous) => previous + 1);
@@ -164,6 +167,18 @@ export function ModelPreviewDialog({
             }}
           >
             <Move size={15} /> Pan
+          </button>
+          <button
+            type="button"
+            disabled={!ready || !current}
+            aria-pressed={follow}
+            title="애니메이션에서 모델의 이동을 카메라로 따라가기"
+            onClick={() => {
+              setFollow(!follow);
+              player.current?.follow(!follow);
+            }}
+          >
+            <Video size={15} /> Follow Camera
           </button>
           <button
             type="button"

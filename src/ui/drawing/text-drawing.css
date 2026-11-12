@@ -11,6 +11,9 @@
   cursor: text;
   outline: 1px solid #3b82f6;
 }
+.canvas-text-node--selected {
+  outline: 1px solid var(--selection);
+}
 .canvas-text-node .tiptap {
   padding: 4px;
   min-height: 42px;

@@ -718,7 +718,10 @@ export function useCanvasNodes(
         type: 'drawing',
         className: 'canvas-drawing-node',
         position: { x: bounds.x, y: bounds.y },
-        style: { width: bounds.width, height: bounds.height },
+        style:
+          o.kind === 'text'
+            ? { width: bounds.width }
+            : { width: bounds.width, height: bounds.height },
         zIndex: o.layer === 'annotation' ? 4 : 1,
         draggable: !locked,
         data: {
