@@ -26,13 +26,28 @@ export function registerDocumentIpc(
     section: () => LocalSectionService;
     sectionCommands: () => LocalCommandService;
     documents: () => Promise<CanvasDocument[]>;
+    audioUrl?: (
+      event: Parameters<Parameters<IpcRegistrar>[1]>[0],
+      relative: string,
+    ) => Promise<string> | undefined;
     sections: () => Promise<CanvasSection[]>;
   },
 ) {
   handle('sections:delete', async (_event, input) => {
     const commands = services.sectionCommands();
     const sections = await services.sections();
+    const section = sections.find(
+      (item) => item.relativePath === input?.relativePath,
+    );
+    const members = new Set(section?.members.map((item) => item.id));
+    const containsAudio =
+      input?.deleteMembers === true &&
+      members.size > 0 &&
+      (await services.documents()).some(
+        (doc) => doc.audio && members.has(doc.id),
+      );
     return input?.expectedPaths ||
+      containsAudio ||
       hasSectionHierarchy(sections, input?.relativePath)
       ? commands.execute('sections:delete', input)
       : services.section().delete(input);
@@ -57,8 +72,11 @@ export function registerDocumentIpc(
   handle('tasks:create', (_event, input) =>
     services.creation().createTask(input),
   );
-  handle('assets:read', (_event, relative) =>
-    services.editing().asset(relative),
+  handle(
+    'assets:read',
+    (event, relative) =>
+      services.audioUrl?.(event, relative) ??
+      services.editing().asset(relative),
   );
   handle('documents:list', () => services.documents());
   handle('sections:list', () => services.sections());

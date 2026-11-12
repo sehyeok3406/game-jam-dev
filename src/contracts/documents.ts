@@ -45,6 +45,7 @@ export type CanvasDocument = {
   backgroundColor?: CardColor;
   htmlSource?: string;
   asset?: ImageAsset;
+  audio?: AudioAsset;
   assetVersion?: number;
   revision?: number;
   id: string;
@@ -66,6 +67,11 @@ export type ImageAsset = {
   purpose: 'asset' | 'diagram';
   originalName: string;
   mime: string;
+  bytes: number;
+};
+export type AudioAsset = {
+  path: string;
+  originalName: string;
   bytes: number;
 };
 export type SaveDocumentInput = {

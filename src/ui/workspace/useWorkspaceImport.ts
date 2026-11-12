@@ -1,5 +1,9 @@
 import type { ReactFlowInstance } from '@xyflow/react';
 import { useRef } from 'react';
+import {
+  audioExtension,
+  MAX_AUDIO_BATCH_BYTES,
+} from '../../core/projects/audio-assets.ts';
 import type { WorkspaceState } from '../../shared.ts';
 import {
   selectionScopeKey,
@@ -108,28 +112,42 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
       contextId: workspace.clipboardContextId,
     };
     try {
+      const nativeDrop = drop?.files.some((file) => audioExtension(file.name))
+        ? drop.files
+        : undefined;
       if (
         drop &&
         (!drop.files.length ||
           drop.files.length > 20 ||
-          drop.files.reduce((sum, file) => sum + file.size, 0) > 12_000_000)
+          drop.files.reduce(
+            (sum, file) => sum + (audioExtension(file.name) ? 0 : file.size),
+            0,
+          ) > 12_000_000 ||
+          drop.files.reduce(
+            (sum, file) => sum + (audioExtension(file.name) ? file.size : 0),
+            0,
+          ) > MAX_AUDIO_BATCH_BYTES)
       )
         throw new Error(
-          '한 번에 최대 20개 파일, 총 12MB까지 불러올 수 있습니다.',
+          '한 번에 최대 20개, 사운드 합계 256MiB와 다른 파일 합계 12MB까지 불러올 수 있습니다.',
         );
-      const files = drop
-        ? await Promise.all(
-            drop.files.map(async (file) => ({
-              name: file.name,
-              bytes: new Uint8Array(await file.arrayBuffer()),
-            })),
-          )
-        : undefined;
+      const files =
+        drop && !nativeDrop
+          ? await Promise.all(
+              drop.files.map(async (file) => ({
+                name: file.name,
+                bytes: new Uint8Array(await file.arrayBuffer()),
+              })),
+            )
+          : undefined;
       if (!isCurrent()) return;
-      const imported = await requireDesktopApi(api).importFiles({
-        ...destination,
-        ...(files ? { files } : {}),
-      });
+      const imported = await requireDesktopApi(api).importFiles(
+        {
+          ...destination,
+          ...(files ? { files } : {}),
+        },
+        nativeDrop,
+      );
       if (!isCurrent()) return;
       if (!imported.length) {
         setNotice('파일 선택을 취소했습니다.');

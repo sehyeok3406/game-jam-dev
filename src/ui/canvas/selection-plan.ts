@@ -7,7 +7,7 @@ import type { SectionActionPrompt } from './section-actions.ts';
 
 export type DeletionItem = Pick<
   CanvasDocument,
-  'id' | 'title' | 'relativePath' | 'revision' | 'asset'
+  'id' | 'title' | 'relativePath' | 'revision' | 'asset' | 'audio'
 >;
 export type SelectionTargets = {
   documents: DeletionItem[];

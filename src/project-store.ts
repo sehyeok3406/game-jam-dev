@@ -9,6 +9,8 @@ import { isGameUiPath } from './game-ui-model.ts';
 import { GAME_UI_DIRECTORY } from './game-ui-types.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { planAudioChanges } from './adapters/filesystem/audio-assets.ts';
 import path from 'node:path';
 import { projectRelativeLocation } from './adapters/filesystem/project-location.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
@@ -458,7 +460,19 @@ export async function applyChanges(
       );
   }
   const written: string[] = [];
+  const createdAudio: string[] = [];
+  const removedAudio: { file: string; object: string }[] = [];
+  const assertApplying = () => {
+    if (shouldCancel()) throw new Error('결과 반영을 중지했습니다.');
+  };
+  const audio = await planAudioChanges(root, baseline, changes, assertApplying);
   try {
+    for (const { file, object } of audio.create) {
+      assertApplying();
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.copyFile(object, file, constants.COPYFILE_EXCL);
+      createdAudio.push(file);
+    }
     for (const [relative, content] of Object.entries(changes)) {
       if (shouldCancel()) throw new Error('결과 반영을 중지했습니다.');
       const absolute = await projectPath(root, relative);
@@ -508,7 +522,14 @@ export async function applyChanges(
       }
       written.push(relative);
     }
+    for (const asset of audio.remove) {
+      assertApplying();
+      await fs.unlink(asset.file);
+      removedAudio.push(asset);
+    }
   } catch (error) {
+    for (const { file, object } of removedAudio.reverse())
+      await fs.copyFile(object, file, constants.COPYFILE_EXCL);
     for (const relative of written.reverse()) {
       const absolute = await projectPath(root, relative);
       if (baseline[relative] === undefined)
@@ -520,6 +541,8 @@ export async function applyChanges(
           'utf8',
         );
     }
+    for (const file of createdAudio.reverse())
+      await fs.rm(file, { force: true });
     throw error;
   }
 }

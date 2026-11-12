@@ -15,6 +15,11 @@ import {
 import type { Snapshot } from './project-store.ts';
 import type { ImageAsset, ImportBatchInput } from './shared.ts';
 import { isResultAssetPath } from './result-files.ts';
+import {
+  audioAsset,
+  audioExtension,
+  MAX_AUDIO_BATCH_BYTES,
+} from './core/projects/audio-assets.ts';
 
 export const MAX_IMAGE_BYTES = 5_000_000;
 export const MAX_MARKDOWN_BYTES = 2_000_000;
@@ -126,6 +131,7 @@ export function buildFileImports(
   input: ImportBatchInput,
   environment: CommandEnvironment = { now: Date.now, id: randomUUID },
   existing: Snapshot = {},
+  local = false,
 ): Snapshot {
   if (
     !input ||
@@ -144,6 +150,12 @@ export function buildFileImports(
     );
   const additions: Snapshot = {};
   let total = 0;
+  let audioTotal = 0;
+  const columnSpacing = input.files.some(
+    (file) => typeof file?.name === 'string' && audioExtension(file.name),
+  )
+    ? 560
+    : 400;
   input.files.forEach((file, index) => {
     if (
       !file ||
@@ -167,7 +179,7 @@ export function buildFileImports(
       title,
       type: 'reference',
       status: 'imported',
-      x: Math.round(input.x) + (index % 4) * 400,
+      x: Math.round(input.x) + (index % 4) * columnSpacing,
       y: Math.round(input.y) + Math.floor(index / 4) * 360,
       width: 360,
       height: 320,
@@ -214,6 +226,20 @@ export function buildFileImports(
           `${file.name}: Markdown frontmatter를 읽을 수 없습니다.`,
         );
       }
+    } else if (audioExtension(file.name)) {
+      if (!local)
+        throw Error('사운드 파일은 로컬 프로젝트에서만 불러올 수 있습니다.');
+      const audio = audioAsset(JSON.parse(file.content));
+      if (!audio || audio.originalName !== file.name)
+        throw Error('불러올 사운드 파일 정보를 확인해주세요.');
+      audioTotal += audio.bytes;
+      if (audioTotal > MAX_AUDIO_BATCH_BYTES)
+        throw Error('한 번에 사운드 파일 합계 256MiB까지 불러올 수 있습니다.');
+      data.audio_asset = audio;
+      data.title = audio.originalName;
+      data.width = 520;
+      data.height = 205;
+      body = '';
     } else if (ext in IMAGE_MIMES) {
       if (/^clipboard-[0-9a-f-]{36}\.(png|jpg|webp|gif)$/i.test(file.name))
         data.title = '붙여넣은 이미지';

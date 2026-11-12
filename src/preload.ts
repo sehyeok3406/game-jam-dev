@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { GameCanvasApi } from './shared';
 import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import { selfHostPreload } from './features/self-host/preload';
@@ -211,7 +211,12 @@ const api: GameCanvasApi = {
     ipcRenderer.on('updates:release', wrapped);
     return () => ipcRenderer.removeListener('updates:release', wrapped);
   },
-  importFiles: (input) => ipcRenderer.invoke('files:import', input),
+  importFiles: (input, dropped) => {
+    const paths = dropped?.map((file) => webUtils.getPathForFile(file as File));
+    if (paths?.some((file) => !file))
+      throw Error('디스크에 있는 원본 파일을 드롭해주세요.');
+    return ipcRenderer.invoke('files:import', input, paths);
+  },
   markCanvasClipboard: (input) =>
     ipcRenderer.invoke('clipboard:canvas-copy', input),
   pasteCanvasClipboard: (input) =>

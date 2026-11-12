@@ -1,4 +1,8 @@
-import { snapshotSections } from '../../collaboration-model.ts';
+import {
+  snapshotDocuments,
+  snapshotSections,
+} from '../../collaboration-model.ts';
+import { stageProjectAudio } from '../../adapters/filesystem/audio-assets.ts';
 import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import { hasGameBuilds } from '../../core/projects/game-build.ts';
 import fs from 'node:fs/promises';
@@ -71,6 +75,9 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
         },
         close() {},
         async publish(input) {
+          const source = ports.sessions.root;
+          const session = ports.sessions.ref;
+          const sharedSource = !!ports.sessions.client;
           if (ports.trashed(id))
             throw Error('대상 프로젝트가 휴지통으로 이동되었습니다.');
           const historyId = `copy-${input.requestId}`;
@@ -98,6 +105,19 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
             'projects:import-copy',
             input,
           );
+          const audio = new Set(
+            snapshotDocuments(input.bundle.files).flatMap((document) =>
+              document.audio ? [document.audio.path] : [],
+            ),
+          );
+          if (audio.size) {
+            if (!source || !session || sharedSource)
+              throw Error('사운드 원본 프로젝트를 확인해주세요.');
+            const check = () => ports.sessions.assertCurrent(session);
+            for (const relative of audio)
+              await stageProjectAudio(root, source, relative, check);
+            check();
+          }
           await repository.apply(plan.before, plan.changes);
           try {
             await new UserEditRecorder(repository, editJournal, {
@@ -169,6 +189,12 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
       },
       close: () => client.stop(),
       async publish(input) {
+        if (
+          snapshotDocuments(input.bundle.files).some(
+            (document) => document.audio,
+          )
+        )
+          throw Error('사운드 노드는 로컬 프로젝트로 복사해주세요.');
         if (
           snapshotSections(input.bundle.files).some(
             (section) => section.parentSectionId !== undefined,

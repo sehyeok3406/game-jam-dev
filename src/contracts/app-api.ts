@@ -270,7 +270,10 @@ export type GameCanvasApi = {
   onUpdateChanged: (listener: (state: UpdateState) => void) => () => void;
   onUpdateRestartRequested: (listener: () => Promise<string[]>) => () => void;
   onUpdateRestartReleased: (listener: () => void) => () => void;
-  importFiles: (input: ImportFilesInput) => Promise<CanvasDocument[]>;
+  importFiles: (
+    input: ImportFilesInput,
+    droppedFiles?: unknown[],
+  ) => Promise<CanvasDocument[]>;
   markCanvasClipboard: (input: CanvasClipboardCopyInput) => Promise<void>;
   pasteCanvasClipboard: (
     input: CanvasClipboardPasteInput,

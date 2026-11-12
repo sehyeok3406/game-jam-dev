@@ -216,6 +216,7 @@ export class CanvasSelectionActions {
       id: document.id,
       relativePath: document.relativePath,
       title: document.title,
+      audio: !!document.audio,
     };
     return this.run([target.relativePath], async (ports, guard, writable) => {
       try {
@@ -237,7 +238,9 @@ export class CanvasSelectionActions {
         await ports.reload();
         guard();
         ports.notice(
-          `'${target.title}'${isPreviewPath(target.relativePath) ? ' HTML 결과와 관련 파일' : ' 파일'}을 휴지통으로 이동했습니다.`,
+          target.audio
+            ? `'${target.title}' 사운드 노드를 삭제했습니다.`
+            : `'${target.title}'${isPreviewPath(target.relativePath) ? ' HTML 결과와 관련 파일' : ' 파일'}을 휴지통으로 이동했습니다.`,
         );
       } catch (error) {
         guard();
@@ -333,9 +336,7 @@ export class CanvasSelectionActions {
         acknowledge();
         await ports.reload();
         guard();
-        ports.notice(
-          '선택한 파일·HTML 결과와 관련 파일을 휴지통으로 이동했습니다.',
-        );
+        ports.notice('선택한 파일과 HTML 결과를 삭제했습니다.');
       },
     );
   }

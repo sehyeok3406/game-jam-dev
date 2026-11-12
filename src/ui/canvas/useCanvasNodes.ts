@@ -398,7 +398,11 @@ export function useCanvasNodes(
         const temporary = findOpen || temporaryDocuments.includes(document.id);
         const collapsed =
           !temporary &&
-          (view ? !view.expanded : !document.asset && document.collapsed);
+          (document.audio && fileNodes
+            ? fileNodes.views[nodeKey]?.expanded === false
+            : view
+              ? !view.expanded
+              : !document.asset && document.collapsed);
         const effectiveDocument =
           document.collapsed === collapsed
             ? document
@@ -451,15 +455,22 @@ export function useCanvasNodes(
           },
           style: {
             width:
-              image?.width ?? (collapsed && view ? view.width : document.width),
+              image?.width ??
+              (collapsed && view && !document.audio
+                ? view.width
+                : document.width),
             height:
               image?.height ??
-              (collapsed ? (view?.height ?? 38) : document.height),
+              (collapsed
+                ? document.audio
+                  ? 94
+                  : (view?.height ?? 38)
+                : document.height),
           },
           parentId: parent ? sectionNodeId(parent.id) : undefined,
           zIndex: 2,
           dragHandle:
-            collapsed && view
+            collapsed && view && !document.audio
               ? '.file-node-drag'
               : document.asset
                 ? '.asset-node-surface, .document-card__header'

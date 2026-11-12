@@ -5,6 +5,7 @@ import {
   useImageDescriptionPresentation,
 } from '../canvas/CanvasItemResizer';
 import { useRuntime } from '../runtime/RuntimeProvider';
+import { AudioNode } from './AudioNode';
 import { cardColor } from '../../card-colors';
 import { FilePropertyBadges } from '../FileProperties';
 import { Maximize2, Minimize2, Info, Link2, Bot } from 'lucide-react';
@@ -622,5 +623,14 @@ export function DocumentCard({
   data,
   selected,
 }: NodeProps<DocumentCanvasNode>) {
+  if (data.document.audio)
+    return (
+      <AudioNode
+        key={`${data.saveScope}:${data.document.audio.path}`}
+        asset={data.document.audio}
+        data={data}
+        selected={selected}
+      />
+    );
   return <DocumentCardContent data={data} selected={selected} />;
 }

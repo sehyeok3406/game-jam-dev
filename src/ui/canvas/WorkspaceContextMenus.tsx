@@ -360,14 +360,16 @@ export function WorkspaceContextMenus({
               <small>문서가 저장된 폴더에서 MD 파일 선택</small>
             </span>
           </button>
-          {documentContextMenu.document.asset && (
+          {(documentContextMenu.document.asset ||
+            documentContextMenu.document.audio) && (
             <>
               <button
                 type="button"
                 role="menuitem"
                 disabled={!capabilities.nativeClipboard}
                 onClick={() => {
-                  const path = documentContextMenu.document.asset!.path;
+                  const path = (documentContextMenu.document.asset ??
+                    documentContextMenu.document.audio)!.path;
                   setDocumentContextMenu(null);
                   void requireDesktopApi(api).copyText(path).catch(showError);
                 }}
@@ -379,7 +381,8 @@ export function WorkspaceContextMenus({
                 role="menuitem"
                 disabled={!capabilities.localFiles}
                 onClick={() => {
-                  const path = documentContextMenu.document.asset!.path;
+                  const path = (documentContextMenu.document.asset ??
+                    documentContextMenu.document.audio)!.path;
                   setDocumentContextMenu(null);
                   void requireDesktopApi(api).revealPath(path).catch(showError);
                 }}
@@ -458,7 +461,11 @@ export function WorkspaceContextMenus({
             <Trash2 size={16} />
             <span>
               <strong>삭제</strong>
-              <small>확인 후 Windows 휴지통으로 이동</small>
+              <small>
+                {documentContextMenu.document.audio
+                  ? '삭제한 사운드는 편집 기록에서 복원'
+                  : '확인 후 Windows 휴지통으로 이동'}
+              </small>
             </span>
           </button>
         </div>

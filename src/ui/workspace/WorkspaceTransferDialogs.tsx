@@ -43,6 +43,7 @@ interface Props {
     value: import('react').SetStateAction<'asset' | 'diagram'>,
   ) => void;
   importError: string;
+  audioSupported: boolean;
   locked: boolean;
   importFiles: () => Promise<void>;
 }
@@ -65,6 +66,7 @@ export function WorkspaceTransferDialogs({
   imagePurpose,
   setImagePurpose,
   importError,
+  audioSupported,
   locked,
   importFiles,
 }: Props) {
@@ -187,9 +189,16 @@ export function WorkspaceTransferDialogs({
             </label>
             <small>
               MD 최대 2MB · HTML/HTM 최대 8MB · PNG/JPG/WebP/GIF 최대 5MB · 한
-              번에 20개 / 원본 합계 12MB. SVG는 지원하지 않습니다. Markdown의
-              외부 이미지와 상대경로 첨부는 자동으로 가져오지 않습니다.
+              번에 20개 / {audioSupported ? '사운드 외 파일 합계' : '원본 합계'}{' '}
+              12MB. SVG는 지원하지 않습니다. Markdown의 외부 이미지와 상대경로
+              첨부는 자동으로 가져오지 않습니다.
             </small>
+            {audioSupported && (
+              <small>
+                MP3 · PCM WAV · Ogg Vorbis/Opus는 사운드 노드로 추가합니다.
+                파일당 50 MiB, 한 번에 합계 256 MiB까지 불러올 수 있습니다.
+              </small>
+            )}
             <small>
               HTML은 CSS·JavaScript가 내부에 포함된 단일 파일을 권장합니다. 별도
               이미지·JS·CSS 파일이나 폴더는 함께 가져오지 않습니다. 신뢰하는

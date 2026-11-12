@@ -95,6 +95,12 @@ import {
   assertImportAccess,
 } from './application/editing/import-service';
 import { importSelectedFiles, readImportSources } from './desktop/import-files';
+import { stageAudio } from './adapters/filesystem/audio-assets';
+import { audioDigest } from './core/projects/audio-assets';
+import {
+  DesktopAudioProtocol,
+  registerAudioScheme,
+} from './desktop/audio-protocol';
 import { LocalCommandService } from './application/editing/command-service';
 import {
   filesystemCommandPublisher,
@@ -285,6 +291,8 @@ const locationLinkInbox = new LocationLinkInbox(() => {
     mainWindow.webContents.send('location-links:received');
 });
 // Electron scopes its singleton lock to userData, set above for isolated test users.
+registerAudioScheme();
+const audioProtocol = new DesktopAudioProtocol();
 const primaryLocationInstance = installLocationLinkProtocol({
   app,
   inbox: locationLinkInbox,
@@ -782,7 +790,8 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
     channel === 'clipboard:canvas-paste' ||
     context?.clipboardContextId ||
     (channel === 'files:import' &&
-      (args[0] as ImportFilesInput)?.files !== undefined)
+      ((args[0] as ImportFilesInput)?.files !== undefined ||
+        args[1] !== undefined))
   )
     assertClipboardContext(
       context?.scope,
@@ -1736,7 +1745,8 @@ const handle = (
       | undefined;
     if (
       channel === 'files:import' &&
-      (args[0] as ImportFilesInput)?.files !== undefined
+      ((args[0] as ImportFilesInput)?.files !== undefined ||
+        args[1] !== undefined)
     ) {
       if (!isUpdateSender(event))
         throw new Error('앱의 캔버스에서만 파일을 불러올 수 있습니다.');
@@ -2421,6 +2431,20 @@ const registerIpc = () => {
         });
       },
       documents: listDocuments,
+      audioUrl: (event, relative) => {
+        if (!audioDigest(relative)) return;
+        if (
+          !isUpdateSender(event) ||
+          projectSessions.client ||
+          !projectSessions.signal
+        )
+          throw Error('로컬 프로젝트의 캔버스에서 사운드를 열어주세요.');
+        return audioProtocol.url(
+          requireWorkspace(),
+          relative,
+          projectSessions.signal,
+        );
+      },
       sections: listSections,
       sectionCommands: localEditingCommands,
       section: () => {
@@ -2486,15 +2510,27 @@ const registerIpc = () => {
       );
     },
   );
-  handle('files:import', (_event, input: ImportFilesInput) => {
-    const session = projectSessions.ref;
-    return importSelectedFiles(
-      input,
-      applyImportedFiles,
-      () => projectSessions.assertCurrent(session),
-      () => assertImportAccess(projectSessions.client?.state),
-    );
-  });
+  handle(
+    'files:import',
+    (_event, input: ImportFilesInput, paths?: string[]) => {
+      const session = projectSessions.ref;
+      const root = requireWorkspace();
+      const check = () => projectSessions.assertCurrent(session);
+      return importSelectedFiles(
+        input,
+        applyImportedFiles,
+        check,
+        () => assertImportAccess(projectSessions.client?.state),
+        {
+          paths,
+          stageAudio: projectSessions.client
+            ? undefined
+            : (source, name, bytes) =>
+                stageAudio(root, source, name, bytes, check),
+        },
+      );
+    },
+  );
   const suspendProject = () => collaborationSessions.suspend();
   registerCollaborationSessionIpc(
     handle,
@@ -3195,6 +3231,7 @@ const createWindow = async () => {
 
 app.whenReady().then(async () => {
   if (!primaryLocationInstance || started) return;
+  audioProtocol.start();
   if (process.platform === 'win32' && app.isPackaged && !testProfile) {
     await repairWindowsBranding(
       process.execPath,

@@ -4,6 +4,7 @@ import matter from '../../markdown.ts';
 import type { CanvasDocument } from '../../contracts/documents.ts';
 import { canvasId } from '../../canvas-sheets.ts';
 import { imageAsset } from '../../file-assets.ts';
+import { audioAsset } from '../../core/projects/audio-assets.ts';
 import { cardColor } from '../../card-colors.ts';
 import { isPreviewPath } from '../../preview-output.ts';
 import { normalizeSources } from '../../core/documents/source-references.ts';
@@ -27,6 +28,7 @@ export const readDocument = async (
   const fallbackTitle = path.basename(absolutePath, '.md');
   const data = parsed.data as Record<string, unknown>;
   const asset = imageAsset(data.asset);
+  const audio = audioAsset(data.audio_asset);
   let assetVersion: number | undefined;
   if (asset) {
     try {
@@ -78,6 +80,7 @@ export const readDocument = async (
     backgroundColor: cardColor(data.background_color),
     sources: normalizeSources(data.sources),
     asset,
+    ...(audio && { audio }),
     systemId: typeof data.system_id === 'string' ? data.system_id : undefined,
     outputKey:
       typeof (data.document_output as { key?: unknown })?.key === 'string'

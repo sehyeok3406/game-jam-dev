@@ -2622,7 +2622,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     if (
       preview
         ? fileNodes.view(htmlNodeKey(preview)).expanded
-        : document && fileNodes.view(markdownNodeKey(document)).expanded
+        : document &&
+          (document.audio
+            ? fileNodes.views[markdownNodeKey(document)]?.expanded !== false
+            : fileNodes.view(markdownNodeKey(document)).expanded)
     )
       return;
     setTemporaryDocuments((current) =>
@@ -4376,6 +4379,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         />
       )}
       <WorkspaceTransferDialogs
+        audioSupported={capabilities.localFiles && !collaboration.active}
         {...{
           moveCanvasItems,
           saveResultFolder,

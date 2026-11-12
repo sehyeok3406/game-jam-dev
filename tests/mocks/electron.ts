@@ -18,6 +18,10 @@ export const ipcMain = Object.assign(new EventEmitter(), {
     handler: (...args: unknown[]) => Promise<unknown>,
   ) => handlers.set(channel, handler),
 });
+export const protocol = {
+  registerSchemesAsPrivileged: () => {},
+  handle: () => {},
+};
 export const app = Object.assign(new EventEmitter(), {
   getVersion: () => '0.10.1',
   getAppPath: () => process.cwd(),

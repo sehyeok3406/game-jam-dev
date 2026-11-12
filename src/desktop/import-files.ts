@@ -13,6 +13,18 @@ import type {
   ImportBatchInput,
   CanvasDocument,
 } from '../contracts/documents';
+import {
+  audioExtension,
+  MAX_AUDIO_BYTES,
+  MAX_AUDIO_BATCH_BYTES,
+} from '../core/projects/audio-assets.ts';
+import type { AudioAsset } from '../contracts/documents.ts';
+
+type StageAudio = (
+  source: string | Uint8Array,
+  name: string,
+  bytes: number,
+) => Promise<AudioAsset>;
 
 /** OS selection and decoding are desktop-only; publication is an application service. */
 export async function importSelectedFiles(
@@ -20,6 +32,7 @@ export async function importSelectedFiles(
   applyFiles: (input: ImportBatchInput) => Promise<CanvasDocument[]>,
   assertCurrent: () => void,
   authorize: () => void,
+  options?: { paths?: string[]; stageAudio?: StageAudio },
 ) {
   assertCurrent();
   if (
@@ -34,13 +47,15 @@ export async function importSelectedFiles(
     );
   authorize();
   const chosen =
-    input.files === undefined
+    input.files === undefined && options?.paths === undefined
       ? await dialog.showOpenDialog({
-          title: 'Markdown · HTML 게임 · 이미지 불러오기',
+          title: '프로젝트 파일 불러오기',
           properties: ['openFile', 'multiSelections'],
           filters: [
             {
-              name: 'Markdown · HTML · 이미지',
+              name: options?.stageAudio
+                ? 'Markdown · HTML · 이미지 · 사운드'
+                : 'Markdown · HTML · 이미지',
               extensions: [
                 'md',
                 'html',
@@ -50,6 +65,7 @@ export async function importSelectedFiles(
                 'jpeg',
                 'webp',
                 'gif',
+                ...(options?.stageAudio ? ['mp3', 'wav', 'ogg'] : []),
               ],
             },
           ],
@@ -70,10 +86,21 @@ export async function importSelectedFiles(
       ))
   )
     throw new CanvasError('GC-IMPORT-001', '불러올 파일 정보를 확인해주세요.');
-  const sources = chosen
-    ? chosen.filePaths.map((path) => ({ path }))
-    : input.files!;
-  const files = await readImportSources(sources, assertCurrent);
+  const paths = options?.paths ?? chosen?.filePaths;
+  if (
+    paths &&
+    (!Array.isArray(paths) ||
+      paths.some(
+        (value) => typeof value !== 'string' || !path.isAbsolute(value),
+      ))
+  )
+    throw Error('불러올 원본 파일을 확인해주세요.');
+  const sources = paths ? paths.map((path) => ({ path })) : input.files!;
+  const files = await readImportSources(
+    sources,
+    assertCurrent,
+    options?.stageAudio,
+  );
   const {
     files: _bytes,
     scope: _scope,
@@ -87,6 +114,7 @@ export async function importSelectedFiles(
 export async function readImportSources(
   sources: ({ path: string } | { name: string; bytes: Uint8Array })[],
   assertCurrent: () => void,
+  stageAudio?: StageAudio,
 ): Promise<ImportBatchInput['files']> {
   if (!sources.length || sources.length > 20)
     throw new CanvasError(
@@ -94,6 +122,7 @@ export async function readImportSources(
       '한 번에 최대 20개 파일을 선택해주세요.',
     );
   let total = 0;
+  let audioTotal = 0;
   const files: { name: string; content: string }[] = [];
   for (const source of sources) {
     assertCurrent();
@@ -104,25 +133,27 @@ export async function readImportSources(
           ? source.name
           : '',
       ext = path.extname(name).toLowerCase();
+    const isAudio = !!audioExtension(name);
     if (
       !name ||
       name.length > 200 ||
       /[\\/]/.test(name) ||
       [...name].some((character) => character.charCodeAt(0) < 32) ||
-      ![
-        '.md',
-        '.html',
-        '.htm',
-        '.png',
-        '.jpg',
-        '.jpeg',
-        '.webp',
-        '.gif',
-      ].includes(ext)
+      (!isAudio &&
+        ![
+          '.md',
+          '.html',
+          '.htm',
+          '.png',
+          '.jpg',
+          '.jpeg',
+          '.webp',
+          '.gif',
+        ].includes(ext))
     )
       throw new CanvasError(
         'GC-IMPORT-001',
-        `${name}: MD, HTML, HTM, PNG, JPG, WebP, GIF 파일만 지원합니다.`,
+        `${name}: MD, HTML, HTM, PNG, JPG, WebP, GIF, MP3, WAV, OGG 파일만 지원합니다.`,
       );
     const isHtml = ['.html', '.htm'].includes(ext);
     if ('bytes' in source && !(source.bytes instanceof Uint8Array))
@@ -136,6 +167,27 @@ export async function readImportSources(
           size: 'bytes' in source ? source.bytes.byteLength : 0,
           isFile: () => true,
         };
+    if (isAudio) {
+      if (!stageAudio)
+        throw Error(
+          '사운드 파일은 로컬 프로젝트의 불러오기 메뉴나 드롭으로 추가해주세요.',
+        );
+      if (
+        !stat.isFile() ||
+        stat.size > MAX_AUDIO_BYTES ||
+        (audioTotal += stat.size) > MAX_AUDIO_BATCH_BYTES
+      )
+        throw Error(
+          `${name}: 사운드는 파일당 50MiB, 한 번에 총 256MiB까지 불러올 수 있습니다.`,
+        );
+      const content = await stageAudio(
+        absolute ?? (source as { bytes: Uint8Array }).bytes,
+        name,
+        stat.size,
+      );
+      files.push({ name, content: JSON.stringify(content) });
+      continue;
+    }
     if (
       !stat.isFile() ||
       stat.size >

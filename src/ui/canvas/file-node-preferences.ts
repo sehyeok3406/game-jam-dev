@@ -43,9 +43,7 @@ export function useFileNodePreferences(
           ([id, value]) => {
             if (!value || typeof value !== 'object') return [];
             const view = value as Partial<View>;
-            return [
-              [id, { ...compactSize(view), expanded: view.expanded === true }],
-            ];
+            return [[id, { ...compactSize(view), expanded: view.expanded }]];
           },
         ),
       ) as Views,
@@ -77,7 +75,7 @@ export function useFileNodePreferences(
     const current = live.current.views;
     const value = {
       ...compactSize(current[id] ?? style),
-      expanded: current[id]?.expanded === true,
+      expanded: current[id]?.expanded,
       ...patch,
     };
     write({
@@ -127,7 +125,7 @@ export function useFileNodePreferences(
         ...Object.fromEntries(
           ids.map((id) => [
             id,
-            { ...compactSize(style), expanded: current[id]?.expanded === true },
+            { ...compactSize(style), expanded: current[id]?.expanded },
           ]),
         ),
       });

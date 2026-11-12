@@ -22,6 +22,7 @@ import {
 } from './core/projects/document-path.ts';
 import { importProjectCopy } from './project-copy.ts';
 import { layoutValues } from './core/editing/layout.ts';
+import { audioAsset } from './core/projects/audio-assets.ts';
 import {
   fitChildSections,
   sectionAncestors,
@@ -283,6 +284,8 @@ export function checkSnapshot(
   );
   const memberships = new Set<string>();
   for (const document of documents.values()) {
+    if (!local && document.audio)
+      throw Error('사운드 노드는 로컬 프로젝트에서만 사용할 수 있습니다.');
     if (
       document.type === 'image' &&
       (!document.asset || !(files as Snapshot)[document.asset.path])
@@ -314,6 +317,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
     )
     .map(([relativePath, raw]) => {
       const { data, content } = matter(raw);
+      const audio = audioAsset(data.audio_asset);
       const number = (key: string, fallback: number) =>
         Number.isFinite(data[key]) ? (data[key] as number) : fallback;
       return {
@@ -364,6 +368,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
             )
           : [],
         asset: imageAsset(data.asset),
+        ...(audio && { audio }),
         systemId:
           typeof data.system_id === 'string' ? data.system_id : undefined,
         outputKey:
@@ -633,7 +638,7 @@ export function reduceCollaboration(
   if (channel === 'files:import-batch') {
     const additions = layoutNewDocuments(
       files,
-      buildFileImports(input as ImportBatchInput, environment, files),
+      buildFileImports(input as ImportBatchInput, environment, files, local),
       {
         x: Number(input.x),
         y: Number(input.y),
