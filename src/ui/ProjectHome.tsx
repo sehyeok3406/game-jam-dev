@@ -4,6 +4,7 @@ import { version } from '../../package.json';
 import appIcon from '../../assets/icon.png';
 import {
   FolderOpen,
+  GitBranch,
   Plus,
   Users,
   Search,
@@ -43,6 +44,7 @@ import {
   type HomeDialog,
 } from './HomeOrganizationControls';
 import { WebViewerDialog } from './WebViewerDialog';
+import { GitHubSharingDialog } from './GitHubSharingDialog';
 import { previewState } from './debug/uiDebugPreviewState';
 import { SAMPLE_PROJECTS } from './debug/uiDebugFixtures';
 import { ConnectionInfoDialog } from './ConnectionInfoDialog';
@@ -85,6 +87,7 @@ export function ProjectHome({
   } | null>(null);
   const [connectionDialog, setConnectionDialog] = useState(false);
   const [webViewer, setWebViewer] = useState(!!previewState('web-viewer'));
+  const [githubSharing, setGitHubSharing] = useState(false);
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [organizationDialog, setOrganizationDialog] =
@@ -370,6 +373,11 @@ export function ProjectHome({
                 <Server size={16} /> 협업 서버 열기
               </button>
             )}
+          {capabilities.localFiles && (
+            <button onClick={() => setGitHubSharing(true)}>
+              <GitBranch size={16} /> GitHub 공유 안내
+            </button>
+          )}
           <button onClick={() => setWebViewer(true)}>
             <Globe2 size={16} /> 웹 뷰어
           </button>
@@ -398,6 +406,9 @@ export function ProjectHome({
           close={() => setTrashDialog(null)}
           changed={() => refresh(true)}
         />
+      )}
+      {githubSharing && (
+        <GitHubSharingDialog close={() => setGitHubSharing(false)} />
       )}
       {webViewer && (
         <WebViewerDialog

@@ -2,7 +2,7 @@ import type { EditHistoryPublisher } from '../../application/editing/edit-histor
 import type { CommandPublisher } from '../../application/editing/command-service.ts';
 import type { LocalProjectRepository } from '../../application/ports/local-project-repository.ts';
 import { trashDeletedFiles } from '../../result-deletion.ts';
-import { audioFromMarkdown } from './audio-assets.ts';
+import { localMediaFromMarkdown } from './local-media.ts';
 import {
   moveResultFiles,
   resultFileBaseline,
@@ -24,11 +24,11 @@ export function filesystemCommandPublisher(
       const removed = Object.entries(plan.changes)
         .filter(([, value]) => value === null)
         .map(([relative]) => relative);
-      const audioCards = new Set(
+      const mediaCards = new Set(
         removed.filter(
           (relative) =>
             relative.endsWith('.md') &&
-            audioFromMarkdown(plan.before[relative]),
+            localMediaFromMarkdown(plan.before[relative]),
         ),
       );
       if (
@@ -52,7 +52,7 @@ export function filesystemCommandPublisher(
           )
             throw Error('외부 변경을 발견했습니다. 섹션을 다시 확인해주세요.');
           for (const relative of removed.filter(
-            (item) => !audioCards.has(item),
+            (item) => !mediaCards.has(item),
           )) {
             if (
               (await repository.capture([relative]))[relative] !==
@@ -74,7 +74,7 @@ export function filesystemCommandPublisher(
             Object.fromEntries(
               Object.entries(plan.changes).filter(
                 ([relative, value]) =>
-                  value !== null || audioCards.has(relative),
+                  value !== null || mediaCards.has(relative),
               ),
             ),
           );
@@ -128,7 +128,7 @@ export function filesystemCommandPublisher(
             {
               ...plan.files,
               ...Object.fromEntries(
-                [...audioCards].map((relative) => [
+                [...mediaCards].map((relative) => [
                   relative,
                   plan.before[relative],
                 ]),
@@ -144,7 +144,7 @@ export function filesystemCommandPublisher(
           plan.before,
           Object.fromEntries(
             Object.entries(plan.changes).filter(
-              ([relative, raw]) => raw !== null || audioCards.has(relative),
+              ([relative, raw]) => raw !== null || mediaCards.has(relative),
             ),
           ),
         );

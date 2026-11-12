@@ -2,7 +2,6 @@ import type { AudioAsset } from '../../contracts/documents.ts';
 
 export const AUDIO_DIRECTORY = 'assets/audio';
 export const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
-export const MAX_AUDIO_BATCH_BYTES = 256 * 1024 * 1024;
 export const AUDIO_MIME = {
   mp3: 'audio/mpeg',
   wav: 'audio/wav',

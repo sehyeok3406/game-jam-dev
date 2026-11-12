@@ -99,8 +99,14 @@ export class DesktopCollaborationSessions implements CollaborationSessionPort {
     const name = await localProjectName(root);
     assertCurrent();
     const files = await captureProject(root);
-    if (snapshotDocuments(files).some((document) => document.audio))
-      throw Error('사운드 노드는 로컬 프로젝트에서만 사용할 수 있습니다.');
+    if (
+      snapshotDocuments(files).some(
+        (document) => document.audio || document.model,
+      )
+    )
+      throw Error(
+        '사운드와 3D 모델 노드는 로컬 프로젝트에서만 사용할 수 있습니다.',
+      );
     if (
       snapshotSections(files).some(
         (section) => section.parentSectionId !== undefined,

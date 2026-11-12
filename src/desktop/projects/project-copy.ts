@@ -2,7 +2,8 @@ import {
   snapshotDocuments,
   snapshotSections,
 } from '../../collaboration-model.ts';
-import { stageProjectAudio } from '../../adapters/filesystem/audio-assets.ts';
+import { stageProjectMedia } from '../../adapters/filesystem/local-media.ts';
+import { localMedia } from '../../core/projects/local-media.ts';
 import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import { hasGameBuilds } from '../../core/projects/game-build.ts';
 import fs from 'node:fs/promises';
@@ -105,17 +106,17 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
             'projects:import-copy',
             input,
           );
-          const audio = new Set(
-            snapshotDocuments(input.bundle.files).flatMap((document) =>
-              document.audio ? [document.audio.path] : [],
-            ),
+          const media = new Set(
+            snapshotDocuments(input.bundle.files)
+              .map(localMedia)
+              .flatMap((asset) => (asset ? [asset.path] : [])),
           );
-          if (audio.size) {
+          if (media.size) {
             if (!source || !session || sharedSource)
-              throw Error('사운드 원본 프로젝트를 확인해주세요.');
+              throw Error('미디어 원본 프로젝트를 확인해주세요.');
             const check = () => ports.sessions.assertCurrent(session);
-            for (const relative of audio)
-              await stageProjectAudio(root, source, relative, check);
+            for (const relative of media)
+              await stageProjectMedia(root, source, relative, check);
             check();
           }
           await repository.apply(plan.before, plan.changes);
@@ -191,10 +192,10 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
       async publish(input) {
         if (
           snapshotDocuments(input.bundle.files).some(
-            (document) => document.audio,
+            (document) => document.audio || document.model,
           )
         )
-          throw Error('사운드 노드는 로컬 프로젝트로 복사해주세요.');
+          throw Error('사운드와 3D 모델 노드는 로컬 프로젝트로 복사해주세요.');
         if (
           snapshotSections(input.bundle.files).some(
             (section) => section.parentSectionId !== undefined,

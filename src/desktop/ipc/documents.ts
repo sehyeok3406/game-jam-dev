@@ -26,7 +26,7 @@ export function registerDocumentIpc(
     section: () => LocalSectionService;
     sectionCommands: () => LocalCommandService;
     documents: () => Promise<CanvasDocument[]>;
-    audioUrl?: (
+    mediaUrl?: (
       event: Parameters<Parameters<IpcRegistrar>[1]>[0],
       relative: string,
     ) => Promise<string> | undefined;
@@ -40,14 +40,14 @@ export function registerDocumentIpc(
       (item) => item.relativePath === input?.relativePath,
     );
     const members = new Set(section?.members.map((item) => item.id));
-    const containsAudio =
+    const containsMedia =
       input?.deleteMembers === true &&
       members.size > 0 &&
       (await services.documents()).some(
-        (doc) => doc.audio && members.has(doc.id),
+        (doc) => (doc.audio || doc.model) && members.has(doc.id),
       );
     return input?.expectedPaths ||
-      containsAudio ||
+      containsMedia ||
       hasSectionHierarchy(sections, input?.relativePath)
       ? commands.execute('sections:delete', input)
       : services.section().delete(input);
@@ -75,7 +75,7 @@ export function registerDocumentIpc(
   handle(
     'assets:read',
     (event, relative) =>
-      services.audioUrl?.(event, relative) ??
+      services.mediaUrl?.(event, relative) ??
       services.editing().asset(relative),
   );
   handle('documents:list', () => services.documents());

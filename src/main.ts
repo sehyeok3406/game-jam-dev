@@ -95,12 +95,14 @@ import {
   assertImportAccess,
 } from './application/editing/import-service';
 import { importSelectedFiles, readImportSources } from './desktop/import-files';
-import { stageAudio } from './adapters/filesystem/audio-assets';
-import { audioDigest } from './core/projects/audio-assets';
+import { stageLocalMedia } from './adapters/filesystem/local-media';
+import { mediaLocation } from './core/projects/local-media';
+import { modelExtension } from './core/projects/model-assets';
 import {
-  DesktopAudioProtocol,
-  registerAudioScheme,
-} from './desktop/audio-protocol';
+  DesktopMediaProtocol,
+  registerMediaScheme,
+  resolveMediaFile,
+} from './desktop/media-protocol';
 import { LocalCommandService } from './application/editing/command-service';
 import {
   filesystemCommandPublisher,
@@ -291,8 +293,8 @@ const locationLinkInbox = new LocationLinkInbox(() => {
     mainWindow.webContents.send('location-links:received');
 });
 // Electron scopes its singleton lock to userData, set above for isolated test users.
-registerAudioScheme();
-const audioProtocol = new DesktopAudioProtocol();
+registerMediaScheme();
+const mediaProtocol = new DesktopMediaProtocol();
 const primaryLocationInstance = installLocationLinkProtocol({
   app,
   inbox: locationLinkInbox,
@@ -2431,15 +2433,17 @@ const registerIpc = () => {
         });
       },
       documents: listDocuments,
-      audioUrl: (event, relative) => {
-        if (!audioDigest(relative)) return;
+      mediaUrl: (event, relative) => {
+        if (!mediaLocation(relative)) return;
+        if (modelExtension(relative) === 'blend')
+          throw Error('Blend 원본은 연결된 Blender에서 열어주세요.');
         if (
           !isUpdateSender(event) ||
           projectSessions.client ||
           !projectSessions.signal
         )
-          throw Error('로컬 프로젝트의 캔버스에서 사운드를 열어주세요.');
-        return audioProtocol.url(
+          throw Error('로컬 프로젝트의 캔버스에서 미디어를 열어주세요.');
+        return mediaProtocol.url(
           requireWorkspace(),
           relative,
           projectSessions.signal,
@@ -2523,12 +2527,34 @@ const registerIpc = () => {
         () => assertImportAccess(projectSessions.client?.state),
         {
           paths,
-          stageAudio: projectSessions.client
+          stageMedia: projectSessions.client
             ? undefined
             : (source, name, bytes) =>
-                stageAudio(root, source, name, bytes, check),
+                stageLocalMedia(root, source, name, bytes, check),
         },
       );
+    },
+  );
+  handle(
+    'assets:open-blend',
+    async (event, relative: string, sessionId: string) => {
+      const session = projectSessions.ref;
+      if (
+        !isUpdateSender(event) ||
+        projectSessions.client ||
+        !session ||
+        session.sessionId !== sessionId ||
+        mediaLocation(relative)?.kind !== 'model' ||
+        modelExtension(relative) !== 'blend'
+      )
+        throw Error('현재 로컬 프로젝트의 Blender 원본을 선택해주세요.');
+      const { file } = await resolveMediaFile(requireWorkspace(), relative);
+      projectSessions.assertCurrent(session);
+      const error = await shell.openPath(file);
+      if (error)
+        throw Error(
+          'Blender를 설치하고 .blend 파일의 기본 앱으로 연결해주세요.',
+        );
     },
   );
   const suspendProject = () => collaborationSessions.suspend();
@@ -3231,7 +3257,7 @@ const createWindow = async () => {
 
 app.whenReady().then(async () => {
   if (!primaryLocationInstance || started) return;
-  audioProtocol.start();
+  mediaProtocol.start();
   if (process.platform === 'win32' && app.isPackaged && !testProfile) {
     await repairWindowsBranding(
       process.execPath,

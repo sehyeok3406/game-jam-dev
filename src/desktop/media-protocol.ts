@@ -3,17 +3,12 @@ import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { protocol } from 'electron';
-import {
-  AUDIO_MIME,
-  MAX_AUDIO_BYTES,
-  audioDigest,
-  audioExtension,
-} from '../core/projects/audio-assets.ts';
-import { inspectAudioFile } from '../adapters/filesystem/audio-assets.ts';
+import { mediaLocation } from '../core/projects/local-media.ts';
+import { inspectMediaFile } from '../adapters/filesystem/local-media.ts';
 import { projectPath } from '../project-store.ts';
 
-const scheme = 'gamejam-audio';
-export function registerAudioScheme() {
+const scheme = 'gamejam-media';
+export function registerMediaScheme() {
   protocol.registerSchemesAsPrivileged([
     {
       scheme,
@@ -28,7 +23,7 @@ export function registerAudioScheme() {
   ]);
 }
 
-function audioRange(header: string, size: number) {
+function mediaRange(header: string, size: number) {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header);
   if (!match || (!match[1] && !match[2])) return;
   const start = match[1]
@@ -45,31 +40,35 @@ function audioRange(header: string, size: number) {
     return { start, end };
 }
 
-/** Playback URLs grant one file from the active local project and expire at session end. */
-export class DesktopAudioProtocol {
+export async function resolveMediaFile(root: string, relative: string) {
+  const media = mediaLocation(relative);
+  if (!media) throw Error('미디어 원본 경로를 확인해주세요.');
+  const file = await projectPath(root, relative);
+  const info = await inspectMediaFile(file).catch((error) => {
+    if (error.code === 'ENOENT')
+      throw Error('프로젝트에서 미디어 원본을 찾을 수 없습니다.');
+    throw error;
+  });
+  if (info.pointer)
+    throw Error(
+      'Git LFS 원본이 필요합니다. 프로젝트 폴더에서 git lfs pull을 실행해주세요.',
+    );
+  if (info.bytes < 1 || info.bytes > media.maxBytes)
+    throw Error('미디어 파일 크기를 확인해주세요.');
+  return { file, ...media };
+}
+
+/** Preview URLs grant one file from the active local project and expire at session end. */
+export class DesktopMediaProtocol {
   private signal?: AbortSignal;
   private files = new Map<
     string,
-    { root: string; relative: string; mime: string }
+    { root: string; relative: string; mime: string; maxBytes: number }
   >();
   private tokens = new Map<string, string>();
 
   async url(root: string, relative: string, signal: AbortSignal) {
-    const extension = typeof relative === 'string' && audioExtension(relative);
-    if (!extension || !audioDigest(relative))
-      throw Error('사운드 원본 경로를 확인해주세요.');
-    const file = await projectPath(root, relative);
-    const info = await inspectAudioFile(file).catch((error) => {
-      if (error.code === 'ENOENT')
-        throw Error('프로젝트에서 사운드 원본을 찾을 수 없습니다.');
-      throw error;
-    });
-    if (info.pointer)
-      throw Error(
-        'Git LFS 원본이 필요합니다. 프로젝트 폴더에서 git lfs pull을 실행해주세요.',
-      );
-    if (info.bytes < 1 || info.bytes > MAX_AUDIO_BYTES)
-      throw Error('사운드 파일 크기를 확인해주세요.');
+    const { mime, maxBytes } = await resolveMediaFile(root, relative);
     signal.throwIfAborted();
     if (this.signal !== signal) {
       this.signal = signal;
@@ -89,7 +88,7 @@ export class DesktopAudioProtocol {
     if (!token) {
       token = randomUUID();
       this.tokens.set(relative, token);
-      this.files.set(token, { root, relative, mime: AUDIO_MIME[extension] });
+      this.files.set(token, { root, relative, mime, maxBytes });
     }
     return `${scheme}://local/${token}`;
   }
@@ -113,7 +112,7 @@ export class DesktopAudioProtocol {
         signal.aborted ||
         !stat?.isFile() ||
         stat.size < 1 ||
-        stat.size > MAX_AUDIO_BYTES
+        stat.size > asset.maxBytes
       )
         return new Response(null, { status: 404 });
       const headers = new Headers({
@@ -123,7 +122,7 @@ export class DesktopAudioProtocol {
         'cache-control': 'no-store',
       });
       const requested = request.headers.get('range');
-      const range = requested ? audioRange(requested, stat.size) : undefined;
+      const range = requested ? mediaRange(requested, stat.size) : undefined;
       if (requested && !range) {
         headers.set('content-range', `bytes */${stat.size}`);
         return new Response(null, { status: 416, headers });

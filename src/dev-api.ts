@@ -2108,6 +2108,9 @@ export function createDevGameCanvasApi(
         ) ?? { exists: false, relativePath: relative, content: '' },
       ),
     revealPath: async () => undefined,
+    openBlendSource: async () => {
+      throw Error('Blender 원본은 데스크톱 앱에서 열 수 있습니다.');
+    },
     getProjectLayout: async () => ({
       version: 1,
       canUpgrade: false,

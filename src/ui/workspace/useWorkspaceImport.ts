@@ -1,9 +1,7 @@
 import type { ReactFlowInstance } from '@xyflow/react';
 import { useRef } from 'react';
-import {
-  audioExtension,
-  MAX_AUDIO_BATCH_BYTES,
-} from '../../core/projects/audio-assets.ts';
+import { localMediaExtension } from '../../core/projects/local-media.ts';
+import { MAX_LOCAL_MEDIA_BATCH_BYTES } from '../../core/projects/model-assets.ts';
 import type { WorkspaceState } from '../../shared.ts';
 import {
   selectionScopeKey,
@@ -112,7 +110,9 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
       contextId: workspace.clipboardContextId,
     };
     try {
-      const nativeDrop = drop?.files.some((file) => audioExtension(file.name))
+      const nativeDrop = drop?.files.some((file) =>
+        localMediaExtension(file.name),
+      )
         ? drop.files
         : undefined;
       if (
@@ -120,16 +120,18 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
         (!drop.files.length ||
           drop.files.length > 20 ||
           drop.files.reduce(
-            (sum, file) => sum + (audioExtension(file.name) ? 0 : file.size),
+            (sum, file) =>
+              sum + (localMediaExtension(file.name) ? 0 : file.size),
             0,
           ) > 12_000_000 ||
           drop.files.reduce(
-            (sum, file) => sum + (audioExtension(file.name) ? file.size : 0),
+            (sum, file) =>
+              sum + (localMediaExtension(file.name) ? file.size : 0),
             0,
-          ) > MAX_AUDIO_BATCH_BYTES)
+          ) > MAX_LOCAL_MEDIA_BATCH_BYTES)
       )
         throw new Error(
-          '한 번에 최대 20개, 사운드 합계 256MiB와 다른 파일 합계 12MB까지 불러올 수 있습니다.',
+          '한 번에 최대 20개, 미디어 합계 256MiB와 다른 파일 합계 12MB까지 불러올 수 있습니다.',
         );
       const files =
         drop && !nativeDrop

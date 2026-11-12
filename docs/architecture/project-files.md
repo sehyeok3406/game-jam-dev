@@ -4,6 +4,8 @@
 
 사운드 노드는 MD와 `assets/audio/` 원본으로 구성한다. 파일 스냅샷과 편집 기록은 MD 참조를 다루며 filesystem repository가 원본을 생성·보존·복원한다. 공개할 프로젝트에는 MD와 활성 원본을 함께 포함하고 `.gamejam/local/`은 개인 기록으로 취급한다. [ADR 0010](decisions/0010-local-audio-assets.md)
 
+3D 노드는 같은 경로를 통해 `assets/models/`에 활성 원본을, `.gamejam/local/model-objects/`에 편집 기록에서 복원할 원본을 보관한다. 사운드와 모델을 함께 복사하거나 삭제할 때 동일한 미디어 저장 및 세션 경계를 사용한다. [ADR 0011](decisions/0011-local-model-viewer.md)
+
 ## 게임 제작 원본 보관 · 2026-11-01
 
 [게임 제작 계약](game-builds.md)의 `.game-builds/index.json`과 revision별 UTF-8 source·lock·notices·manifest를 기존 capture/materialize/apply/mirror/history에 포함한다. v2 실제 위치는 `.gamejam/project/builds`다. 명시적 구조 전환·raw stage/history의 기존 정책을 유지한다. node_modules·캐시를 프로젝트 데이터에 포함하지 않는다.

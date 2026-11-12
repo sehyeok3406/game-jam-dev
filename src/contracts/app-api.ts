@@ -423,6 +423,7 @@ export type GameCanvasApi = {
   cancelCodexRun: (runId: string) => Promise<void>;
   readPreview: (relativePath?: string) => Promise<PreviewResult>;
   revealPath: (relativePath: string) => Promise<void>;
+  openBlendSource: (relativePath: string, sessionId: string) => Promise<void>;
   openWorkspace: () => Promise<void>;
   copyText: (text: string) => Promise<void>;
   onWorkspaceChanged: (listener: () => void) => () => void;
@@ -573,6 +574,7 @@ export const APP_API_GROUPS = {
   cancelCodexRun: 'ai',
   readPreview: 'preview',
   revealPath: 'desktop',
+  openBlendSource: 'desktop',
   openWorkspace: 'desktop',
   copyText: 'desktop',
   onWorkspaceChanged: 'projects',

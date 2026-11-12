@@ -189,14 +189,16 @@ export function WorkspaceTransferDialogs({
             </label>
             <small>
               MD 최대 2MB · HTML/HTM 최대 8MB · PNG/JPG/WebP/GIF 최대 5MB · 한
-              번에 20개 / {audioSupported ? '사운드 외 파일 합계' : '원본 합계'}{' '}
-              12MB. SVG는 지원하지 않습니다. Markdown의 외부 이미지와 상대경로
-              첨부는 자동으로 가져오지 않습니다.
+              번에 20개 /{' '}
+              {audioSupported ? '문서·HTML·이미지 합계' : '원본 합계'} 12MB.
+              SVG는 지원하지 않습니다. Markdown의 외부 이미지와 상대경로 첨부는
+              자동으로 가져오지 않습니다.
             </small>
             {audioSupported && (
               <small>
-                MP3 · PCM WAV · Ogg Vorbis/Opus는 사운드 노드로 추가합니다.
-                파일당 50 MiB, 한 번에 합계 256 MiB까지 불러올 수 있습니다.
+                사운드(MP3 · PCM WAV · Ogg)와 3D 모델(GLB · FBX · OBJ)은 파일당
+                50 MiB, Blender 원본(BLEND)은 256 MiB까지 불러올 수 있습니다. 한
+                번에 불러오는 사운드와 3D 파일은 합계 256 MiB까지 지원합니다.
               </small>
             )}
             <small>

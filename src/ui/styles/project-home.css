@@ -810,6 +810,40 @@
 .web-viewer-dialog::backdrop {
   background: #0008;
 }
+
+.github-sharing-dialog {
+  width: min(660px, calc(100vw - 28px));
+  max-height: calc(100dvh - 28px);
+}
+
+.github-sharing-dialog ol {
+  display: grid;
+  gap: 8px;
+  margin-block: 14px;
+  padding-inline-start: 23px;
+}
+
+.github-sharing-dialog__file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.github-sharing-dialog__file button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.github-sharing-dialog pre {
+  margin: 7px 0 13px;
+  padding: 9px 11px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  user-select: text;
+}
 .web-viewer-dialog-heading {
   display: flex;
   align-items: center;

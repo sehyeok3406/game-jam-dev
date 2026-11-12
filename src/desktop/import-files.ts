@@ -12,19 +12,22 @@ import type {
   ImportFilesInput,
   ImportBatchInput,
   CanvasDocument,
+  AudioAsset,
+  ModelAsset,
 } from '../contracts/documents';
+import { MAX_AUDIO_BYTES } from '../core/projects/audio-assets.ts';
+import { localMediaExtension } from '../core/projects/local-media.ts';
 import {
-  audioExtension,
-  MAX_AUDIO_BYTES,
-  MAX_AUDIO_BATCH_BYTES,
-} from '../core/projects/audio-assets.ts';
-import type { AudioAsset } from '../contracts/documents.ts';
+  modelExtension,
+  modelSizeLimit,
+  MAX_LOCAL_MEDIA_BATCH_BYTES,
+} from '../core/projects/model-assets.ts';
 
-type StageAudio = (
+type StageMedia = (
   source: string | Uint8Array,
   name: string,
   bytes: number,
-) => Promise<AudioAsset>;
+) => Promise<AudioAsset | ModelAsset>;
 
 /** OS selection and decoding are desktop-only; publication is an application service. */
 export async function importSelectedFiles(
@@ -32,7 +35,7 @@ export async function importSelectedFiles(
   applyFiles: (input: ImportBatchInput) => Promise<CanvasDocument[]>,
   assertCurrent: () => void,
   authorize: () => void,
-  options?: { paths?: string[]; stageAudio?: StageAudio },
+  options?: { paths?: string[]; stageMedia?: StageMedia },
 ) {
   assertCurrent();
   if (
@@ -53,8 +56,8 @@ export async function importSelectedFiles(
           properties: ['openFile', 'multiSelections'],
           filters: [
             {
-              name: options?.stageAudio
-                ? 'Markdown · HTML · 이미지 · 사운드'
+              name: options?.stageMedia
+                ? 'Markdown · HTML · 이미지 · 사운드 · 3D'
                 : 'Markdown · HTML · 이미지',
               extensions: [
                 'md',
@@ -65,7 +68,9 @@ export async function importSelectedFiles(
                 'jpeg',
                 'webp',
                 'gif',
-                ...(options?.stageAudio ? ['mp3', 'wav', 'ogg'] : []),
+                ...(options?.stageMedia
+                  ? ['mp3', 'wav', 'ogg', 'glb', 'fbx', 'obj', 'blend']
+                  : []),
               ],
             },
           ],
@@ -99,7 +104,7 @@ export async function importSelectedFiles(
   const files = await readImportSources(
     sources,
     assertCurrent,
-    options?.stageAudio,
+    options?.stageMedia,
   );
   const {
     files: _bytes,
@@ -114,7 +119,7 @@ export async function importSelectedFiles(
 export async function readImportSources(
   sources: ({ path: string } | { name: string; bytes: Uint8Array })[],
   assertCurrent: () => void,
-  stageAudio?: StageAudio,
+  stageMedia?: StageMedia,
 ): Promise<ImportBatchInput['files']> {
   if (!sources.length || sources.length > 20)
     throw new CanvasError(
@@ -122,7 +127,7 @@ export async function readImportSources(
       '한 번에 최대 20개 파일을 선택해주세요.',
     );
   let total = 0;
-  let audioTotal = 0;
+  let mediaTotal = 0;
   const files: { name: string; content: string }[] = [];
   for (const source of sources) {
     assertCurrent();
@@ -133,13 +138,13 @@ export async function readImportSources(
           ? source.name
           : '',
       ext = path.extname(name).toLowerCase();
-    const isAudio = !!audioExtension(name);
+    const media = localMediaExtension(name);
     if (
       !name ||
       name.length > 200 ||
       /[\\/]/.test(name) ||
       [...name].some((character) => character.charCodeAt(0) < 32) ||
-      (!isAudio &&
+      (!media &&
         ![
           '.md',
           '.html',
@@ -153,7 +158,7 @@ export async function readImportSources(
     )
       throw new CanvasError(
         'GC-IMPORT-001',
-        `${name}: MD, HTML, HTM, PNG, JPG, WebP, GIF, MP3, WAV, OGG 파일만 지원합니다.`,
+        `${name}: 지원하는 문서, 이미지, 사운드 또는 3D 파일인지 확인해주세요.`,
       );
     const isHtml = ['.html', '.htm'].includes(ext);
     if ('bytes' in source && !(source.bytes instanceof Uint8Array))
@@ -167,20 +172,22 @@ export async function readImportSources(
           size: 'bytes' in source ? source.bytes.byteLength : 0,
           isFile: () => true,
         };
-    if (isAudio) {
-      if (!stageAudio)
+    if (media) {
+      if (!stageMedia)
         throw Error(
-          '사운드 파일은 로컬 프로젝트의 불러오기 메뉴나 드롭으로 추가해주세요.',
+          '사운드와 3D 파일은 로컬 프로젝트의 불러오기 메뉴나 드롭으로 추가해주세요.',
         );
+      const model = modelExtension(name);
+      const limit = model ? modelSizeLimit(model) : MAX_AUDIO_BYTES;
       if (
         !stat.isFile() ||
-        stat.size > MAX_AUDIO_BYTES ||
-        (audioTotal += stat.size) > MAX_AUDIO_BATCH_BYTES
+        stat.size > limit ||
+        (mediaTotal += stat.size) > MAX_LOCAL_MEDIA_BATCH_BYTES
       )
         throw Error(
-          `${name}: 사운드는 파일당 50MiB, 한 번에 총 256MiB까지 불러올 수 있습니다.`,
+          `${name}: 파일당 ${limit / (1024 * 1024)}MiB, 미디어는 한 번에 총 256MiB까지 불러올 수 있습니다.`,
         );
-      const content = await stageAudio(
+      const content = await stageMedia(
         absolute ?? (source as { bytes: Uint8Array }).bytes,
         name,
         stat.size,

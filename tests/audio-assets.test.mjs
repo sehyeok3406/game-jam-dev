@@ -5,9 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  stageAudio,
-  stageProjectAudio,
-} from '../src/adapters/filesystem/audio-assets.ts';
+  stageLocalMedia,
+  stageProjectMedia,
+} from '../src/adapters/filesystem/local-media.ts';
 import {
   checkSnapshot,
   snapshotDocuments,
@@ -56,7 +56,7 @@ test('local audio bytes survive copy, duplicate references and last-card restore
   const root = await workspace(t);
   const destination = await workspace(t);
   const bytes = pcmWave();
-  const asset = await stageAudio(
+  const asset = await stageLocalMedia(
     root,
     bytes,
     '테스트.wav',
@@ -76,7 +76,7 @@ test('local audio bytes survive copy, duplicate references and last-card restore
   assert.throws(() => checkSnapshot(first), /로컬 프로젝트/);
   await applyChanges(root, {}, first);
   await applyChanges(root, first, second);
-  await stageProjectAudio(destination, root, asset.path, () => {});
+  await stageProjectMedia(destination, root, asset.path, () => {});
   await applyChanges(destination, {}, first);
   assert.deepEqual(
     await fs.readFile(path.join(destination, asset.path)),
@@ -97,14 +97,14 @@ test('invalid audio never publishes and Git LFS pointers survive card removal', 
   const bytes = pcmWave();
   const check = () => {};
   await assert.rejects(
-    stageAudio(root, Buffer.alloc(60), 'fake.wav', 60, check),
+    stageLocalMedia(root, Buffer.alloc(60), 'fake.wav', 60, check),
     /지원하는 오디오 형식/,
   );
   assert.deepEqual(
     await fs.readdir(path.join(root, '.gamejam/local/audio-objects')),
     [],
   );
-  const asset = await stageAudio(
+  const asset = await stageLocalMedia(
     root,
     bytes,
     'original.wav',
@@ -121,7 +121,7 @@ test('invalid audio never publishes and Git LFS pointers survive card removal', 
     '\nsize 60\n';
   await fs.writeFile(binary, pointer);
   await assert.rejects(
-    stageProjectAudio(root, root, asset.path, check),
+    stageProjectMedia(root, root, asset.path, check),
     /git lfs pull/,
   );
   await applyChanges(root, first, { [relative]: null });

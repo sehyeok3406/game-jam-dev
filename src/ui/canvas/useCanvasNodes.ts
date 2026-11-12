@@ -398,7 +398,7 @@ export function useCanvasNodes(
         const temporary = findOpen || temporaryDocuments.includes(document.id);
         const collapsed =
           !temporary &&
-          (document.audio && fileNodes
+          ((document.audio || document.model) && fileNodes
             ? fileNodes.views[nodeKey]?.expanded === false
             : view
               ? !view.expanded
@@ -456,7 +456,7 @@ export function useCanvasNodes(
           style: {
             width:
               image?.width ??
-              (collapsed && view && !document.audio
+              (collapsed && view && !document.audio && !document.model
                 ? view.width
                 : document.width),
             height:
@@ -464,13 +464,15 @@ export function useCanvasNodes(
               (collapsed
                 ? document.audio
                   ? 94
-                  : (view?.height ?? 38)
+                  : document.model
+                    ? 54
+                    : (view?.height ?? 38)
                 : document.height),
           },
           parentId: parent ? sectionNodeId(parent.id) : undefined,
           zIndex: 2,
           dragHandle:
-            collapsed && view && !document.audio
+            collapsed && view && !document.audio && !document.model
               ? '.file-node-drag'
               : document.asset
                 ? '.asset-node-surface, .document-card__header'

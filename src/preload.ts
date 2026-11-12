@@ -321,6 +321,8 @@ const api: GameCanvasApi = {
   readPreview: (relativePath) =>
     ipcRenderer.invoke('preview:read', relativePath),
   revealPath: (relativePath) => ipcRenderer.invoke('path:reveal', relativePath),
+  openBlendSource: (relativePath, sessionId) =>
+    ipcRenderer.invoke('assets:open-blend', relativePath, sessionId),
   openWorkspace: () => ipcRenderer.invoke('workspace:open-folder'),
   copyText: (text) => ipcRenderer.invoke('clipboard:copy', text),
   onWorkspaceChanged: (listener) => {

@@ -2623,7 +2623,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       preview
         ? fileNodes.view(htmlNodeKey(preview)).expanded
         : document &&
-          (document.audio
+          (document.audio || document.model
             ? fileNodes.views[markdownNodeKey(document)]?.expanded !== false
             : fileNodes.view(markdownNodeKey(document)).expanded)
     )

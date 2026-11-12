@@ -361,7 +361,8 @@ export function WorkspaceContextMenus({
             </span>
           </button>
           {(documentContextMenu.document.asset ||
-            documentContextMenu.document.audio) && (
+            documentContextMenu.document.audio ||
+            documentContextMenu.document.model) && (
             <>
               <button
                 type="button"
@@ -369,7 +370,8 @@ export function WorkspaceContextMenus({
                 disabled={!capabilities.nativeClipboard}
                 onClick={() => {
                   const path = (documentContextMenu.document.asset ??
-                    documentContextMenu.document.audio)!.path;
+                    documentContextMenu.document.audio ??
+                    documentContextMenu.document.model)!.path;
                   setDocumentContextMenu(null);
                   void requireDesktopApi(api).copyText(path).catch(showError);
                 }}
@@ -382,7 +384,8 @@ export function WorkspaceContextMenus({
                 disabled={!capabilities.localFiles}
                 onClick={() => {
                   const path = (documentContextMenu.document.asset ??
-                    documentContextMenu.document.audio)!.path;
+                    documentContextMenu.document.audio ??
+                    documentContextMenu.document.model)!.path;
                   setDocumentContextMenu(null);
                   void requireDesktopApi(api).revealPath(path).catch(showError);
                 }}
@@ -462,8 +465,9 @@ export function WorkspaceContextMenus({
             <span>
               <strong>삭제</strong>
               <small>
-                {documentContextMenu.document.audio
-                  ? '삭제한 사운드는 편집 기록에서 복원'
+                {documentContextMenu.document.audio ||
+                documentContextMenu.document.model
+                  ? '삭제한 노드는 편집 기록에서 복원'
                   : '확인 후 Windows 휴지통으로 이동'}
               </small>
             </span>

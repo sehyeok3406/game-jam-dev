@@ -15,11 +15,12 @@ import {
 import type { Snapshot } from './project-store.ts';
 import type { ImageAsset, ImportBatchInput } from './shared.ts';
 import { isResultAssetPath } from './result-files.ts';
+import { audioAsset, audioExtension } from './core/projects/audio-assets.ts';
+import { localMediaExtension } from './core/projects/local-media.ts';
 import {
-  audioAsset,
-  audioExtension,
-  MAX_AUDIO_BATCH_BYTES,
-} from './core/projects/audio-assets.ts';
+  modelAsset,
+  MAX_LOCAL_MEDIA_BATCH_BYTES,
+} from './core/projects/model-assets.ts';
 
 export const MAX_IMAGE_BYTES = 5_000_000;
 export const MAX_MARKDOWN_BYTES = 2_000_000;
@@ -150,9 +151,9 @@ export function buildFileImports(
     );
   const additions: Snapshot = {};
   let total = 0;
-  let audioTotal = 0;
+  let mediaTotal = 0;
   const columnSpacing = input.files.some(
-    (file) => typeof file?.name === 'string' && audioExtension(file.name),
+    (file) => typeof file?.name === 'string' && localMediaExtension(file.name),
   )
     ? 560
     : 400;
@@ -226,19 +227,28 @@ export function buildFileImports(
           `${file.name}: Markdown frontmatter를 읽을 수 없습니다.`,
         );
       }
-    } else if (audioExtension(file.name)) {
+    } else if (localMediaExtension(file.name)) {
       if (!local)
-        throw Error('사운드 파일은 로컬 프로젝트에서만 불러올 수 있습니다.');
-      const audio = audioAsset(JSON.parse(file.content));
-      if (!audio || audio.originalName !== file.name)
-        throw Error('불러올 사운드 파일 정보를 확인해주세요.');
-      audioTotal += audio.bytes;
-      if (audioTotal > MAX_AUDIO_BATCH_BYTES)
-        throw Error('한 번에 사운드 파일 합계 256MiB까지 불러올 수 있습니다.');
-      data.audio_asset = audio;
-      data.title = audio.originalName;
-      data.width = 520;
-      data.height = 205;
+        throw Error(
+          '사운드와 3D 파일은 로컬 프로젝트에서만 불러올 수 있습니다.',
+        );
+      const isAudio = !!audioExtension(file.name);
+      const media = (isAudio ? audioAsset : modelAsset)(
+        JSON.parse(file.content),
+      );
+      if (!media || media.originalName !== file.name)
+        throw Error('불러올 미디어 파일 정보를 확인해주세요.');
+      mediaTotal += media.bytes;
+      if (mediaTotal > MAX_LOCAL_MEDIA_BATCH_BYTES)
+        throw Error('한 번에 미디어 파일 합계 256MiB까지 불러올 수 있습니다.');
+      data[isAudio ? 'audio_asset' : 'model_asset'] = media;
+      data.title = media.originalName;
+      data.width = isAudio ? 520 : 320;
+      data.height = isAudio
+        ? 205
+        : file.name.toLowerCase().endsWith('.blend')
+          ? 124
+          : 214;
       body = '';
     } else if (ext in IMAGE_MIMES) {
       if (/^clipboard-[0-9a-f-]{36}\.(png|jpg|webp|gif)$/i.test(file.name))

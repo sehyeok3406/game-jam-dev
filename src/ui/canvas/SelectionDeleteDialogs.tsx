@@ -52,9 +52,9 @@ export function SelectionDeleteDialogs({
               개를 삭제할까요?
             </h2>
             <p>
-              선택한 파일을 삭제하고 섹션의 멤버 목록에서도 제거합니다. 사운드
-              노드는 편집 기록에서 복원할 수 있습니다. HTML 결과는 전용 결과
-              폴더 안의 모든 파일과 창 설정·관리 문서를 함께 삭제합니다.
+              선택한 파일을 삭제하고 섹션의 멤버 목록에서도 제거합니다. 사운드와
+              3D 모델 노드는 편집 기록에서 복원할 수 있습니다. HTML 결과는 전용
+              결과 폴더 안의 모든 파일과 창 설정·관리 문서를 함께 삭제합니다.
             </p>
             <ul>
               {deleteManyPrompt.map((doc) => (
@@ -135,8 +135,8 @@ export function SelectionDeleteDialogs({
               </h2>
               <span id="delete-dialog-description">
                 <strong>{deletePrompt.title}</strong>
-                {deletePrompt.audio
-                  ? ' 사운드 노드를 삭제합니다. 편집 기록에서 복원할 수 있습니다.'
+                {deletePrompt.audio || deletePrompt.model
+                  ? ' 노드를 삭제합니다. 편집 기록에서 복원할 수 있습니다.'
                   : ' 파일을 Windows 휴지통으로 이동합니다.'}{' '}
                 섹션에 포함되어 있다면 멤버 목록에서도 제거됩니다.
                 {isPreviewPath(deletePrompt.relativePath) &&
@@ -171,7 +171,9 @@ export function SelectionDeleteDialogs({
                 onClick={() => void deleteDocument()}
               >
                 <Trash2 size={14} />{' '}
-                {deletePrompt.audio ? '사운드 삭제' : '휴지통으로 이동'}
+                {deletePrompt.audio || deletePrompt.model
+                  ? '노드 삭제'
+                  : '휴지통으로 이동'}
               </button>
             </div>
           </section>

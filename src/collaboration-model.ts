@@ -23,6 +23,7 @@ import {
 import { importProjectCopy } from './project-copy.ts';
 import { layoutValues } from './core/editing/layout.ts';
 import { audioAsset } from './core/projects/audio-assets.ts';
+import { modelAsset } from './core/projects/model-assets.ts';
 import {
   fitChildSections,
   sectionAncestors,
@@ -286,6 +287,8 @@ export function checkSnapshot(
   for (const document of documents.values()) {
     if (!local && document.audio)
       throw Error('사운드 노드는 로컬 프로젝트에서만 사용할 수 있습니다.');
+    if (!local && document.model)
+      throw Error('3D 모델 노드는 로컬 프로젝트에서만 사용할 수 있습니다.');
     if (
       document.type === 'image' &&
       (!document.asset || !(files as Snapshot)[document.asset.path])
@@ -318,6 +321,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
     .map(([relativePath, raw]) => {
       const { data, content } = matter(raw);
       const audio = audioAsset(data.audio_asset);
+      const model = audio ? undefined : modelAsset(data.model_asset);
       const number = (key: string, fallback: number) =>
         Number.isFinite(data[key]) ? (data[key] as number) : fallback;
       return {
@@ -369,6 +373,7 @@ export function snapshotDocuments(files: Snapshot): CanvasDocument[] {
           : [],
         asset: imageAsset(data.asset),
         ...(audio && { audio }),
+        ...(model && { model }),
         systemId:
           typeof data.system_id === 'string' ? data.system_id : undefined,
         outputKey:

@@ -9,28 +9,35 @@ import {
   AUDIO_DIRECTORY,
   MAX_AUDIO_BYTES,
   audioAsset,
-  audioDigest,
   audioExtension,
 } from '../../core/projects/audio-assets.ts';
+import { mediaLocation } from '../../core/projects/local-media.ts';
+import {
+  MODEL_DIRECTORY,
+  modelAsset,
+  modelExtension,
+  modelSizeLimit,
+} from '../../core/projects/model-assets.ts';
 import matter from '../../markdown.ts';
 import { projectPath } from '../../project-store.ts';
 
-const objects = '.gamejam/local/audio-objects';
+const objects = (kind: 'audio' | 'model') => `.gamejam/local/${kind}-objects`;
 const pointerPrefix = 'version https://git-lfs.github.com/spec/v1';
 const absent = (error: unknown) =>
   (error as NodeJS.ErrnoException).code === 'ENOENT';
 
-export function audioFromMarkdown(raw?: string) {
-  return raw && raw.includes('audio_asset:')
-    ? audioAsset(matter(raw).data.audio_asset)
-    : undefined;
+export function localMediaFromMarkdown(raw?: string) {
+  if (!raw || (!raw.includes('audio_asset:') && !raw.includes('model_asset:')))
+    return;
+  const { data } = matter(raw);
+  return audioAsset(data.audio_asset) ?? modelAsset(data.model_asset);
 }
 
-async function audioHeader(file: string) {
+async function mediaHeader(file: string) {
   const handle = await fs.open(file, 'r');
   try {
     const stat = await handle.stat();
-    if (!stat.isFile()) throw Error('사운드 원본 파일을 확인해주세요.');
+    if (!stat.isFile()) throw Error('미디어 원본 파일을 확인해주세요.');
     const buffer = Buffer.alloc(Math.min(stat.size, 65_536));
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     return { stat, header: buffer.subarray(0, bytesRead) };
@@ -39,8 +46,8 @@ async function audioHeader(file: string) {
   }
 }
 
-export async function inspectAudioFile(file: string) {
-  const { stat, header } = await audioHeader(file);
+export async function inspectMediaFile(file: string) {
+  const { stat, header } = await mediaHeader(file);
   return {
     bytes: stat.size,
     pointer:
@@ -81,11 +88,41 @@ function isAudioHeader(header: Buffer, extension: string) {
   return false;
 }
 
-async function objectPath(root: string, digest: string) {
-  return projectPath(root, `${objects}/${digest}`, true);
+function isModelHeader(header: Buffer, extension: string, bytes: number) {
+  if (extension === 'glb')
+    return (
+      header.length >= 20 &&
+      header.toString('ascii', 0, 4) === 'glTF' &&
+      header.readUInt32LE(4) === 2 &&
+      header.readUInt32LE(8) === bytes &&
+      header.readUInt32LE(12) <= bytes - 20 &&
+      header.toString('ascii', 16, 20) === 'JSON'
+    );
+  if (extension === 'fbx')
+    return (
+      header.toString('latin1', 0, 23) === 'Kaydara FBX Binary  \0\x1a\0' ||
+      /^(?:\s*;[^\r\n]*(?:\r?\n|$))*\s*FBXHeaderExtension\s*:/i.test(
+        header.toString('utf8'),
+      )
+    );
+  if (extension === 'blend')
+    return (
+      header.toString('ascii', 0, 7) === 'BLENDER' ||
+      (header.length > 4 &&
+        (header.readUInt32BE(0) === 0x28b52ffd ||
+          header.readUInt16BE(0) === 0x1f8b))
+    );
+  return !header.includes(0) && header.toString('utf8').trim().length > 0;
 }
 
-export async function stageAudio(
+async function objectPath(
+  root: string,
+  media: NonNullable<ReturnType<typeof mediaLocation>>,
+) {
+  return projectPath(root, `${objects(media.kind)}/${media.digest}`, true);
+}
+
+export async function stageLocalMedia(
   root: string,
   source: string | Uint8Array,
   name: string,
@@ -93,15 +130,22 @@ export async function stageAudio(
   check: () => void,
   expectedDigest?: string,
 ) {
-  const extension = audioExtension(name);
-  if (!extension || expectedBytes <= 0 || expectedBytes > MAX_AUDIO_BYTES)
+  const audio = audioExtension(name);
+  const model = modelExtension(name);
+  if (!audio && !model) throw Error('지원하는 미디어 파일인지 확인해주세요.');
+  const maxBytes = model ? modelSizeLimit(model) : MAX_AUDIO_BYTES;
+  if (
+    !Number.isSafeInteger(expectedBytes) ||
+    expectedBytes <= 0 ||
+    expectedBytes > maxBytes
+  )
     throw Error(
-      `${name}: MP3, PCM WAV, Ogg Vorbis·Opus를 파일당 50MiB까지 불러올 수 있습니다.`,
+      `${name}: 파일당 ${maxBytes / (1024 * 1024)}MiB까지 불러올 수 있습니다.`,
     );
   check();
   const temporary = await projectPath(
     root,
-    `${objects}/${randomUUID()}.tmp`,
+    `${objects(audio ? 'audio' : 'model')}/${randomUUID()}.tmp`,
     true,
   );
   await fs.mkdir(path.dirname(temporary), { recursive: true });
@@ -134,10 +178,16 @@ export async function stageAudio(
       (expectedDigest && digest !== expectedDigest)
     )
       throw Error(`${name}: 원본 파일이 변경되었습니다.`);
-    const { header } = await audioHeader(temporary);
-    if (!isAudioHeader(header, extension))
-      throw Error(`${name}: 지원하는 오디오 형식의 파일인지 확인해주세요.`);
-    const destination = await objectPath(root, digest);
+    const { header } = await mediaHeader(temporary);
+    const supported = audio
+      ? isAudioHeader(header, audio)
+      : isModelHeader(header, model!, bytes);
+    if (!supported)
+      throw Error(
+        `${name}: 지원하는 ${audio ? '오디오' : '3D 모델'} 형식의 파일인지 확인해주세요.`,
+      );
+    const relative = `${audio ? AUDIO_DIRECTORY : MODEL_DIRECTORY}/${digest}.${audio ?? model}`;
+    const destination = await objectPath(root, mediaLocation(relative)!);
     check();
     // Exclusive publication keeps an older history object's bytes intact.
     await fs
@@ -146,7 +196,7 @@ export async function stageAudio(
         if (error.code !== 'EEXIST') throw error;
       });
     return {
-      path: `${AUDIO_DIRECTORY}/${digest}.${extension}`,
+      path: relative,
       originalName: name,
       bytes,
     };
@@ -155,30 +205,30 @@ export async function stageAudio(
   }
 }
 
-export async function stageProjectAudio(
+export async function stageProjectMedia(
   root: string,
   sourceRoot: string,
   relative: string,
   check: () => void,
 ) {
-  const digest = audioDigest(relative);
-  if (!digest) throw Error('사운드 파일 경로를 확인해주세요.');
+  const media = mediaLocation(relative);
+  if (!media) throw Error('미디어 파일 경로를 확인해주세요.');
   const absolute = await projectPath(sourceRoot, relative);
-  const info = await inspectAudioFile(absolute);
+  const info = await inspectMediaFile(absolute);
   if (info.pointer)
-    throw Error('원본 사운드 파일을 받으려면 git lfs pull을 실행해주세요.');
-  await stageAudio(
+    throw Error('미디어 원본을 받으려면 git lfs pull을 실행해주세요.');
+  await stageLocalMedia(
     root,
     absolute,
     path.basename(relative),
     info.bytes,
     check,
-    digest,
+    media.digest,
   );
 }
 
 /** Document snapshots contain references only. Change the active binary once per digest. */
-export async function planAudioChanges(
+export async function planLocalMediaChanges(
   root: string,
   baseline: Snapshot,
   changes: Record<string, string | null>,
@@ -188,8 +238,8 @@ export async function planAudioChanges(
     removed = new Set<string>();
   for (const [relative, raw] of Object.entries(changes)) {
     if (!relative.endsWith('.md')) continue;
-    const before = audioFromMarkdown(baseline[relative])?.path;
-    const after = audioFromMarkdown(raw ?? undefined)?.path;
+    const before = localMediaFromMarkdown(baseline[relative])?.path;
+    const after = localMediaFromMarkdown(raw ?? undefined)?.path;
     if (before === after) continue;
     if (before) removed.add(before);
     if (after) added.add(after);
@@ -199,7 +249,7 @@ export async function planAudioChanges(
     for (const [relative, raw] of Object.entries(baseline)) {
       if (Object.hasOwn(changes, relative) || !relative.endsWith('.md'))
         continue;
-      const asset = audioFromMarkdown(raw);
+      const asset = localMediaFromMarkdown(raw);
       if (asset) removed.delete(asset.path);
     }
   const create: { file: string; object: string }[] = [];
@@ -216,25 +266,25 @@ export async function planAudioChanges(
       )
     )
       continue;
-    const object = await objectPath(root, audioDigest(relative)!);
+    const object = await objectPath(root, mediaLocation(relative)!);
     await fs.access(object).catch(() => {
       throw Error(
-        '사운드 원본을 찾을 수 없습니다. Git LFS 또는 로컬 프로젝트 기록을 확인해주세요.',
+        '미디어 원본을 찾을 수 없습니다. Git LFS 또는 로컬 프로젝트 기록을 확인해주세요.',
       );
     });
     create.push({ file, object });
   }
   for (const relative of removed) {
     const file = await projectPath(root, relative);
-    const info = await inspectAudioFile(file).catch((error) => {
+    const info = await inspectMediaFile(file).catch((error) => {
       if (!absent(error)) throw error;
       return undefined;
     });
     if (!info || info.pointer) continue;
-    await stageProjectAudio(root, root, relative, check);
+    await stageProjectMedia(root, root, relative, check);
     remove.push({
       file,
-      object: await objectPath(root, audioDigest(relative)!),
+      object: await objectPath(root, mediaLocation(relative)!),
     });
   }
   return { create, remove };
