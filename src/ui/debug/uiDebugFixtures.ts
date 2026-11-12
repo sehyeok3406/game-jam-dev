@@ -446,6 +446,7 @@ export function createUiPreviewApi(
         : structuredClone(SAMPLE_PROJECTS);
     },
     listProjectTrash: async () => [],
+    listFileTrash: async () => [],
     listProjectFolders: async () => [{ id: 'ui-folder', name: '게임잼 기획' }],
     getCanvasChanges: async () => null,
     getCanvasSheets: async () => ({

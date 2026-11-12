@@ -256,8 +256,8 @@ export function SectionDialogs({
                 <strong>{sectionActionPrompt.section.title}</strong>{' '}
                 {sectionActionPrompt.deleteMembers
                   ? sectionActionPrompt.affected
-                    ? `섹션과 하위 섹션 ${sectionActionPrompt.affected.filter((item) => item.kind === 'section').length - 1}개, 파일 ${sectionActionPrompt.affected.filter((item) => item.kind === 'file').length}개를 Windows 휴지통으로 이동합니다.`
-                    : `섹션과 안에 있는 메모·파일 ${sectionActionPrompt.section.members.length}개를 Windows 휴지통으로 이동합니다.`
+                    ? `섹션과 하위 섹션 ${sectionActionPrompt.affected.filter((item) => item.kind === 'section').length - 1}개, 파일 ${sectionActionPrompt.affected.filter((item) => item.kind === 'file').length}개를 삭제합니다.`
+                    : `섹션과 안에 있는 메모·파일 ${sectionActionPrompt.section.members.length}개를 삭제합니다.`
                   : '섹션을 휴지통으로 이동합니다. 내부 파일과 하위 섹션은 한 단계 위로 올라갑니다.'}
               </span>
             </div>

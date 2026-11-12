@@ -6,6 +6,7 @@ import type {
   SharedProjectLifecycle,
 } from '../shared';
 import { projectStorageKey } from '../project-trash-keys';
+import type { FileTrashEntry } from '../contracts/file-trash';
 const message = (e: unknown) =>
   e instanceof Error
     ? e.message.replace(/^Error invoking remote method '[^']+': /, '')
@@ -248,12 +249,20 @@ export function ProjectTrashPanel({
     [remote, setRemote] = useState<
       { entry: ProjectEntry; state: SharedProjectLifecycle }[]
     >([]);
+  const [tab, setTab] = useState<'projects' | 'files'>('projects');
+  const [files, setFiles] = useState<FileTrashEntry[]>();
+  const [removeFile, setRemoveFile] = useState<FileTrashEntry>();
+  const [fileError, setFileError] = useState('');
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [purge, setPurge] = useState<{ id: string; name: string; team: boolean }>();
   const [name, setName] = useState(''),
     [discard, setDiscard] = useState(false);
   const refresh = async () => {
+    setFileError('');
+    const fileList = api.projects
+      .listFileTrash()
+      .then(setFiles, (error) => setFileError(message(error)));
     setItems(await api.projects.listProjectTrash());
     const results = await Promise.allSettled(
       projects
@@ -274,6 +283,7 @@ export function ProjectTrashPanel({
       setError(
         '일부 서버의 휴지통 상태를 확인하지 못했습니다. 서버 연결·버전을 확인해주세요.',
       );
+    await fileList;
   };
   useEffect(() => {
     void refresh().catch((e) => setError(message(e)));
@@ -287,6 +297,7 @@ export function ProjectTrashPanel({
       await changed();
       await refresh();
       setPurge(undefined);
+      setRemoveFile(undefined);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -300,138 +311,259 @@ export function ProjectTrashPanel({
     await api.projects.acknowledgeProjectRestore(id);
   };
   return (
-    <TrashModal title="프로젝트 휴지통" busy={busy} close={close}>
-      <p>
-        7일 보관 후 영구 삭제됩니다. 보관 중에는 디스크 공간을 계속 사용합니다.
-      </p>
-      <button
-        disabled={busy}
-        onClick={() => void run(() => api.projects.retryProjectTrash())}
-      >
-        상태 새로고침 · 정리 재시도
-      </button>
-      <div className="project-trash-list">
-        <h3>이 PC</h3>
-        {!items.length && <p>휴지통이 비어 있습니다.</p>}
-        {items.map((item) => (
-          <article key={item.trashId}>
-            <strong>{item.name}</strong>
-            <p>
-              {item.kind === 'shared' ? '공동 프로젝트 사본' : '로컬 프로젝트'}{' '}
-              · {stageLabel[item.stage]}
-            </p>
-            <p className="project-trash-path">{item.originalPath}</p>
-            <p>영구 삭제 예정: {date(item.expiresAt)}</p>
-            {item.error && <p role="alert">{item.error}</p>}
-            <div className="home-dialog-actions">
-              <button
-                disabled={
-                  busy ||
-                  (item.stage !== 'restoring' &&
-                    (item.stage !== 'retained' ||
-                      item.expiresAt! <= Date.now()))
-                }
-                onClick={() => void run(() => restore(item.trashId))}
-              >
-                복원
-              </button>
-              <button
-                className="button-danger"
-                disabled={busy || !['retained', 'purging'].includes(item.stage)}
-                onClick={() => {
-                  setPurge({ id: item.trashId, name: item.name, team: false });
-                  setName('');
-                  setDiscard(false);
-                }}
-              >
-                지금 영구 삭제…
-              </button>
-            </div>
-          </article>
-        ))}
-        <h3>서버 — 관리자</h3>
-        {!remote.length && <p>보관 중인 서버 프로젝트가 없습니다.</p>}
-        {remote.map(({ entry, state }) => (
-          <article key={entry.id}>
-            <strong>{entry.name}</strong>
-            <p>
-              {entry.serverUrl} ·{' '}
-              {state.status === 'purged' ? '영구 삭제됨' : '팀 전체 접근 중단'}
-            </p>
-            <p>영구 삭제 예정: {date(state.expiresAt)}</p>
-            {state.error && <p role="alert">{state.error}</p>}
-            <div className="home-dialog-actions">
-              <button
-                disabled={
-                  busy ||
-                  !['trashed', 'restoring'].includes(state.status) ||
-                  state.expiresAt! <= Date.now()
-                }
-                onClick={() =>
-                  void run(() => api.projects.restoreSharedProject(entry.id))
-                }
-              >
-                팀 프로젝트 복원
-              </button>
-              <button
-                className="button-danger"
-                disabled={busy || state.status === 'purged'}
-                onClick={() => {
-                  setPurge({ id: entry.id, name: entry.name, team: true });
-                  setName('');
-                  setDiscard(false);
-                }}
-              >
-                서버 원본 영구 삭제…
-              </button>
-            </div>
-          </article>
-        ))}
+    <TrashModal title="휴지통" busy={busy} close={close}>
+      <div className="project-trash-tabs" role="group" aria-label="휴지통 종류">
+        <button
+          type="button"
+          aria-pressed={tab === 'projects'}
+          disabled={busy}
+          onClick={() => setTab('projects')}
+        >
+          프로젝트
+        </button>
+        <button
+          type="button"
+          aria-pressed={tab === 'files'}
+          disabled={busy}
+          onClick={() => setTab('files')}
+        >
+          파일
+        </button>
       </div>
-      {purge && (
-        <section className="project-trash-confirm">
-          <h3>“{purge.name}” 영구 삭제</h3>
+      {tab === 'projects' ? (
+        <>
           <p>
-            {purge.team
-              ? '서버 자료는 복원할 수 없습니다. 팀원 PC의 사본은 유지됩니다.'
-              : '미반영 작업을 포함한 보관 자료를 복구할 수 없습니다.'}
+            7일 보관 후 영구 삭제됩니다. 보관 중에는 디스크 공간을 계속
+            사용합니다.
           </p>
-          <label>
-            프로젝트 이름
-            <input
-              value={name}
-              disabled={busy}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <label className="project-trash-check">
-            <input
-              type="checkbox"
-              checked={discard}
-              disabled={busy}
-              onChange={(e) => setDiscard(e.target.checked)}
-            />
-            영구 삭제와 복구 불가를 확인했습니다.
-          </label>
-          <div className="home-dialog-actions">
-            <button disabled={busy} onClick={() => setPurge(undefined)}>
-              취소
-            </button>
-            <button
-              className="button-danger"
-              disabled={busy || name !== purge.name || !discard}
-              onClick={() =>
-                void run(() =>
-                  purge.team
-                    ? api.projects.purgeSharedProject(purge.id, name)
-                    : api.projects.purgeProjectTrash(purge.id, name, discard),
-                )
-              }
-            >
-              영구 삭제
-            </button>
+          <button
+            disabled={busy}
+            onClick={() => void run(() => api.projects.retryProjectTrash())}
+          >
+            상태 새로고침 · 정리 재시도
+          </button>
+          <div className="project-trash-list">
+            <h3>이 PC</h3>
+            {!items.length && <p>휴지통이 비어 있습니다.</p>}
+            {items.map((item) => (
+              <article key={item.trashId}>
+                <strong>{item.name}</strong>
+                <p>
+                  {item.kind === 'shared'
+                    ? '공동 프로젝트 사본'
+                    : '로컬 프로젝트'}{' '}
+                  · {stageLabel[item.stage]}
+                </p>
+                <p className="project-trash-path">{item.originalPath}</p>
+                <p>영구 삭제 예정: {date(item.expiresAt)}</p>
+                {item.error && <p role="alert">{item.error}</p>}
+                <div className="home-dialog-actions">
+                  <button
+                    disabled={
+                      busy ||
+                      (item.stage !== 'restoring' &&
+                        (item.stage !== 'retained' ||
+                          item.expiresAt! <= Date.now()))
+                    }
+                    onClick={() => void run(() => restore(item.trashId))}
+                  >
+                    복원
+                  </button>
+                  <button
+                    className="button-danger"
+                    disabled={
+                      busy || !['retained', 'purging'].includes(item.stage)
+                    }
+                    onClick={() => {
+                      setPurge({
+                        id: item.trashId,
+                        name: item.name,
+                        team: false,
+                      });
+                      setName('');
+                      setDiscard(false);
+                    }}
+                  >
+                    지금 영구 삭제…
+                  </button>
+                </div>
+              </article>
+            ))}
+            <h3>서버 — 관리자</h3>
+            {!remote.length && <p>보관 중인 서버 프로젝트가 없습니다.</p>}
+            {remote.map(({ entry, state }) => (
+              <article key={entry.id}>
+                <strong>{entry.name}</strong>
+                <p>
+                  {entry.serverUrl} ·{' '}
+                  {state.status === 'purged'
+                    ? '영구 삭제됨'
+                    : '팀 전체 접근 중단'}
+                </p>
+                <p>영구 삭제 예정: {date(state.expiresAt)}</p>
+                {state.error && <p role="alert">{state.error}</p>}
+                <div className="home-dialog-actions">
+                  <button
+                    disabled={
+                      busy ||
+                      !['trashed', 'restoring'].includes(state.status) ||
+                      state.expiresAt! <= Date.now()
+                    }
+                    onClick={() =>
+                      void run(() =>
+                        api.projects.restoreSharedProject(entry.id),
+                      )
+                    }
+                  >
+                    팀 프로젝트 복원
+                  </button>
+                  <button
+                    className="button-danger"
+                    disabled={busy || state.status === 'purged'}
+                    onClick={() => {
+                      setPurge({ id: entry.id, name: entry.name, team: true });
+                      setName('');
+                      setDiscard(false);
+                    }}
+                  >
+                    서버 원본 영구 삭제…
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
-        </section>
+          {purge && (
+            <section className="project-trash-confirm">
+              <h3>“{purge.name}” 영구 삭제</h3>
+              <p>
+                {purge.team
+                  ? '서버 자료는 복원할 수 없습니다. 팀원 PC의 사본은 유지됩니다.'
+                  : '미반영 작업을 포함한 보관 자료를 복구할 수 없습니다.'}
+              </p>
+              <label>
+                프로젝트 이름
+                <input
+                  value={name}
+                  disabled={busy}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+              <label className="project-trash-check">
+                <input
+                  type="checkbox"
+                  checked={discard}
+                  disabled={busy}
+                  onChange={(e) => setDiscard(e.target.checked)}
+                />
+                영구 삭제와 복구 불가를 확인했습니다.
+              </label>
+              <div className="home-dialog-actions">
+                <button disabled={busy} onClick={() => setPurge(undefined)}>
+                  취소
+                </button>
+                <button
+                  className="button-danger"
+                  disabled={busy || name !== purge.name || !discard}
+                  onClick={() =>
+                    void run(() =>
+                      purge.team
+                        ? api.projects.purgeSharedProject(purge.id, name)
+                        : api.projects.purgeProjectTrash(
+                            purge.id,
+                            name,
+                            discard,
+                          ),
+                    )
+                  }
+                >
+                  영구 삭제
+                </button>
+              </div>
+            </section>
+          )}
+        </>
+      ) : (
+        <>
+          <p>로컬 프로젝트에서 삭제한 파일을 7일 동안 복원할 수 있습니다.</p>
+          <div className="project-trash-list" aria-label="파일 휴지통">
+            {!fileError &&
+              (!files ? (
+                <p role="status">파일 휴지통을 불러오는 중…</p>
+              ) : (
+                !files.length && <p>보관 중인 파일이 없습니다.</p>
+              ))}
+            {files?.map((item) => (
+              <article key={item.id}>
+                <strong>{item.projectName}</strong>
+                <ul>
+                  {item.files.map((file) => (
+                    <li key={file.path}>
+                      {file.name}{' '}
+                      <span className="project-trash-path">{file.path}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p>보관 기한 {date(item.expiresAt)}</p>
+                <div className="home-dialog-actions">
+                  <button
+                    disabled={busy || item.expiresAt <= Date.now()}
+                    onClick={() =>
+                      void run(() =>
+                        api.projects.restoreFileTrash(item.projectId, item.id),
+                      )
+                    }
+                  >
+                    복원
+                  </button>
+                  <button
+                    className="button-danger"
+                    disabled={busy}
+                    onClick={() => setRemoveFile(item)}
+                  >
+                    휴지통에서 제거…
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {fileError && (
+            <p className="home-error" role="alert">
+              {fileError}
+            </p>
+          )}
+          {removeFile && (
+            <section className="project-trash-confirm">
+              <h3>“{removeFile.files[0].name}” 휴지통에서 제거</h3>
+              <p>
+                휴지통의 복원 사본을 지웁니다. 기존 편집 기록은 프로젝트에
+                보관됩니다.
+              </p>
+              <div className="home-dialog-actions">
+                <button
+                  disabled={busy}
+                  onClick={() => setRemoveFile(undefined)}
+                >
+                  취소
+                </button>
+                <button
+                  className="button-danger"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(() =>
+                      api.projects.purgeFileTrash(
+                        removeFile.projectId,
+                        removeFile.id,
+                        true,
+                      ),
+                    )
+                  }
+                >
+                  제거
+                </button>
+              </div>
+            </section>
+          )}
+        </>
       )}
       {error && (
         <p className="home-error" role="alert">

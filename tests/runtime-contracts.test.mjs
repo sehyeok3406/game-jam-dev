@@ -37,7 +37,9 @@ test('grouped bridge forwards arguments, binding, rejection and unsubscribe with
     },
   };
   const api = groupBridge(bridge);
-  assert.equal(Object.keys(APP_API_GROUPS).length, 147);
+  assert.equal(Object.keys(APP_API_GROUPS).length, 150);
+  for (const method of ['listFileTrash', 'restoreFileTrash', 'purgeFileTrash'])
+    assert.equal(APP_API_GROUPS[method], 'projects');
   assert.equal(APP_API_GROUPS.openBlendSource, 'desktop');
   assert.equal(APP_API_GROUPS.locationLinks, 'desktop');
   assert.equal(APP_API_GROUPS.exportPreviewHtml, 'desktop');

@@ -31,6 +31,7 @@ import type {
   SetDocumentCollapsedInput,
 } from './documents.ts';
 import type { EditorDraft } from './drafts.ts';
+import type { FileTrashEntry } from './file-trash.ts';
 import type {
   DocumentSaveRequest,
   DocumentSaveState,
@@ -199,6 +200,13 @@ export type GameCanvasApi = {
     storage: Record<string, string>,
   ) => Promise<string>;
   listProjectTrash: () => Promise<ProjectTrashEntry[]>;
+  listFileTrash: () => Promise<FileTrashEntry[]>;
+  restoreFileTrash: (projectId: string, id: string) => Promise<void>;
+  purgeFileTrash: (
+    projectId: string,
+    id: string,
+    confirmed: boolean,
+  ) => Promise<void>;
   restoreProjectTrash: (id: string) => Promise<Record<string, string>>;
   acknowledgeProjectRestore: (id: string) => Promise<void>;
   purgeProjectTrash: (
@@ -467,6 +475,9 @@ export const APP_API_GROUPS = {
   prepareProjectTrash: 'projects',
   trashProject: 'projects',
   listProjectTrash: 'projects',
+  listFileTrash: 'projects',
+  restoreFileTrash: 'projects',
+  purgeFileTrash: 'projects',
   restoreProjectTrash: 'projects',
   acknowledgeProjectRestore: 'projects',
   purgeProjectTrash: 'projects',

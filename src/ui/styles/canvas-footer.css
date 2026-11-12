@@ -284,6 +284,15 @@
 .project-trash-modal p {
   line-height: 1.6;
 }
+.project-trash-tabs {
+  display: flex;
+  gap: 6px;
+  margin-block: 12px;
+}
+.project-trash-tabs [aria-pressed='true'] {
+  background: var(--selection-soft);
+  border-color: var(--selection);
+}
 .project-trash-path {
   overflow-wrap: anywhere;
   user-select: text;

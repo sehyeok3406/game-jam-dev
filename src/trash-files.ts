@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-export const TRASH_RETENTION = 7 * 24 * 60 * 60 * 1000;
+export { TRASH_RETENTION } from './contracts/file-trash.ts';
 export const canonical = (p: string) => {
   const resolved = path.resolve(p);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;

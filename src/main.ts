@@ -104,6 +104,8 @@ import {
   resolveMediaFile,
 } from './desktop/media-protocol';
 import { LocalCommandService } from './application/editing/command-service';
+import { FileTrashService } from './application/editing/file-trash-service';
+import { filesystemFileTrash } from './adapters/filesystem/file-trash';
 import {
   filesystemCommandPublisher,
   filesystemHistoryPublisher,
@@ -561,6 +563,47 @@ const userEdits = (
     editJournal,
     { id: historyId, now: Date.now },
   );
+const fileTrashAt = (root: string, assertCurrent: () => void = () => {}) =>
+  new FileTrashService(
+    filesystemFileTrash(root),
+    filesystemProjectRepository(root, assertCurrent),
+    { now: Date.now, id: randomUUID },
+  );
+const localFileTrashProjects = () =>
+  projectLibrary
+    .list()
+    .flatMap((entry) =>
+      entry.kind === 'local' &&
+      entry.root &&
+      !entry.transitionPending &&
+      !projectTrash?.hasRoot(entry.root)
+        ? [{ id: entry.id, name: entry.name, root: entry.root }]
+        : [],
+    );
+const registeredFileTrash = (id: string) => {
+  const session = projectSessions.ref;
+  const target = localFileTrashProjects().find((entry) => entry.id === id);
+  if (!target) throw Error('파일을 보관한 로컬 프로젝트를 찾을 수 없습니다.');
+  const assertCurrent = () => {
+    projectSessions.assertCurrent(session);
+    if (
+      projectLibrary.get(id).root !== target.root ||
+      projectTrash.hasRoot(target.root)
+    )
+      throw Error('프로젝트 위치가 변경되었습니다. 휴지통을 다시 열어주세요.');
+  };
+  return fileTrashAt(target.root, assertCurrent);
+};
+const maintainFileTrash = async () => {
+  for (const entry of localFileTrashProjects()) {
+    try {
+      await fileTrashAt(entry.root).maintain();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        console.error('파일 휴지통 정리 실패', error);
+    }
+  }
+};
 let draftStore: EditorDraftStore;
 let documentSaveQueue: DocumentSaveQueue;
 const documentSaveScope = () => projectSessions.saveScope;
@@ -2404,6 +2447,7 @@ const registerIpc = () => {
       root,
       repository,
       projectFileEffects(session),
+      fileTrashAt(root, assertCurrent),
     );
     return new LocalCommandService(
       repository,
@@ -2713,10 +2757,35 @@ const registerIpc = () => {
     },
     startViewer: () => desktopBootstrap.startViewer(),
   });
-  registerProjectIpc(handle, homeProjects, (event) => {
-    if (!isUpdateSender(event))
-      throw new Error('앱의 홈 화면에서 실행해주세요.');
-  });
+  registerProjectIpc(
+    handle,
+    homeProjects,
+    (event) => {
+      if (!isUpdateSender(event))
+        throw new Error('앱의 홈 화면에서 실행해주세요.');
+    },
+    {
+      listFileTrash: async () => {
+        const entries = await Promise.all(
+          localFileTrashProjects().map(async (entry) => {
+            try {
+              return await fileTrashAt(entry.root).list(entry);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+              throw error;
+            }
+          }),
+        );
+        return entries.flat().sort((a, b) => b.expiresAt - a.expiresAt);
+      },
+      restoreFileTrash: async (projectId, id) => {
+        await registeredFileTrash(projectId).restore(id);
+        notifyWorkspaceChanged();
+      },
+      purgeFileTrash: (projectId, id, confirmed) =>
+        registeredFileTrash(projectId).purge(id, confirmed),
+    },
+  );
   const locationService = new LocationLinkService({
     projects: () =>
       projectLibrary.list().map((entry) => ({
@@ -3428,10 +3497,12 @@ app.whenReady().then(async () => {
   );
   await projectTrash.load();
   await projectTrash.maintain();
+  await maintainFileTrash();
   const trashTimer = setInterval(() => {
-    void enqueueMutation(() => projectTrash.maintain()).catch((error) =>
-      console.error('휴지통 정리 실패', error),
-    );
+    void enqueueMutation(async () => {
+      await projectTrash.maintain();
+      await maintainFileTrash();
+    }).catch((error) => console.error('휴지통 정리 실패', error));
   }, 30_000);
   trashTimer.unref();
   desktopBootstrap.startViewer();

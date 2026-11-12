@@ -1,4 +1,5 @@
 import { ServerLimits } from './contracts/server-limits.ts';
+import { collectDeletedImageAssets } from './asset-reference-safety.ts';
 import { GameBuildLimits } from './contracts/game-build.ts';
 import {
   isGameBuildPath,
@@ -449,6 +450,28 @@ function array(value: unknown): unknown[] {
   if (!Array.isArray(value) || value.length > 500)
     throw new Error('항목 목록이 올바르지 않습니다.');
   return value;
+}
+
+export function reduceLocalCollaboration(
+  files: Snapshot,
+  channel: string,
+  input: unknown,
+  environment?: CommandEnvironment,
+) {
+  const result = reduceCollaboration(files, channel, input, environment, true);
+  if (
+    [
+      'documents:delete',
+      'documents:delete-many',
+      'sections:delete',
+      'canvas:batch',
+    ].includes(channel)
+  ) {
+    const next = collectDeletedImageAssets(files, result.files);
+    if (next !== result.files) checkSnapshot(next, true);
+    return { ...result, files: next };
+  }
+  return result;
 }
 
 /** Pure reducer: never writes files; the server publishes the whole result atomically. */

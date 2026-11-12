@@ -36,18 +36,8 @@ export function registerDocumentIpc(
   handle('sections:delete', async (_event, input) => {
     const commands = services.sectionCommands();
     const sections = await services.sections();
-    const section = sections.find(
-      (item) => item.relativePath === input?.relativePath,
-    );
-    const members = new Set(section?.members.map((item) => item.id));
-    const containsMedia =
-      input?.deleteMembers === true &&
-      members.size > 0 &&
-      (await services.documents()).some(
-        (doc) => (doc.audio || doc.model) && members.has(doc.id),
-      );
     return input?.expectedPaths ||
-      containsMedia ||
+      input?.deleteMembers === true ||
       hasSectionHierarchy(sections, input?.relativePath)
       ? commands.execute('sections:delete', input)
       : services.section().delete(input);

@@ -4542,6 +4542,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <SelectionDeleteDialogs
         part="many"
+        collaborative={collaboration.active}
         deletePrompt={deletePrompt}
         deleteManyPrompt={deleteManyPrompt}
         deleteDrawingTargets={deleteDrawingTargets}
@@ -4587,6 +4588,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <SelectionDeleteDialogs
         part="single"
+        collaborative={collaboration.active}
         deletePrompt={deletePrompt}
         deleteManyPrompt={deleteManyPrompt}
         deleteDrawingTargets={deleteDrawingTargets}

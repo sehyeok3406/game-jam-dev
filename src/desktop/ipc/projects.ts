@@ -1,10 +1,15 @@
 import type { ProjectHomeService } from '../../application/projects/home-service.ts';
 import type { IpcRegistrar } from './types';
+import type { ProjectsApi } from '../../contracts/app-api.ts';
 
 export function registerProjectIpc(
   handle: IpcRegistrar,
   service: ProjectHomeService,
   assertHome: (event: Parameters<Parameters<IpcRegistrar>[1]>[0]) => void,
+  files?: Pick<
+    ProjectsApi,
+    'listFileTrash' | 'restoreFileTrash' | 'purgeFileTrash'
+  >,
 ) {
   handle('projects:register-selected', (event, token, name) => {
     assertHome(event);
@@ -49,6 +54,20 @@ export function registerProjectIpc(
   });
   handle('projects:trash-prepare', (_event, id) => service.prepareTrash(id));
   handle('projects:trash-list', () => service.listTrash());
+  if (files) {
+    handle('projects:trash-files-list', (event) => {
+      assertHome(event);
+      return files.listFileTrash();
+    });
+    handle('projects:trash-files-restore', (event, projectId, id) => {
+      assertHome(event);
+      return files.restoreFileTrash(projectId, id);
+    });
+    handle('projects:trash-files-purge', (event, projectId, id, confirmed) => {
+      assertHome(event);
+      return files.purgeFileTrash(projectId, id, confirmed);
+    });
+  }
   handle('projects:trash', (_event, token, storage) =>
     service.trash(token, storage),
   );

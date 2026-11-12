@@ -19,6 +19,7 @@ async function run() {
     'projects:list': api.listProjects,
     'projects:folders': api.listProjectFolders,
     'projects:trash-list': async () => [],
+    'projects:trash-files-list': async () => [],
     'projects:open': api.getWorkspace,
     'canvas:changes': api.getCanvasChanges,
     'canvases:list': api.getCanvasSheets,

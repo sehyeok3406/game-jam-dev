@@ -135,6 +135,11 @@ const api: GameCanvasApi = {
   trashProject: (token, storage) =>
     ipcRenderer.invoke('projects:trash', token, storage),
   listProjectTrash: () => ipcRenderer.invoke('projects:trash-list'),
+  listFileTrash: () => ipcRenderer.invoke('projects:trash-files-list'),
+  restoreFileTrash: (projectId, id) =>
+    ipcRenderer.invoke('projects:trash-files-restore', projectId, id),
+  purgeFileTrash: (projectId, id, confirmed) =>
+    ipcRenderer.invoke('projects:trash-files-purge', projectId, id, confirmed),
   restoreProjectTrash: (id) => ipcRenderer.invoke('projects:trash-restore', id),
   acknowledgeProjectRestore: (id) =>
     ipcRenderer.invoke('projects:trash-restore-ack', id),

@@ -698,6 +698,9 @@ export function createDevGameCanvasApi(
       throw Error('프로젝트 휴지통은 데스크톱 앱에서 사용해주세요.');
     },
     listProjectTrash: async () => [],
+    listFileTrash: async () => [],
+    restoreFileTrash: async () => {},
+    purgeFileTrash: async () => {},
     restoreProjectTrash: async () => ({}),
     acknowledgeProjectRestore: async () => {},
     purgeProjectTrash: async () => {},

@@ -473,7 +473,7 @@ export function WorkspaceContextMenus({
                 {documentContextMenu.document.audio ||
                 documentContextMenu.document.model
                   ? '삭제한 노드는 편집 기록에서 복원'
-                  : '확인 후 Windows 휴지통으로 이동'}
+                  : '확인 후 삭제'}
               </small>
             </span>
           </button>

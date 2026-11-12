@@ -5,6 +5,7 @@ import type { DeletionItem, SectionDeleteTarget } from './selection-plan';
 
 export function SelectionDeleteDialogs({
   part,
+  collaborative,
   deletePrompt,
   deleteManyPrompt,
   deleteDrawingTargets,
@@ -17,6 +18,7 @@ export function SelectionDeleteDialogs({
   confirmDeleteMany,
 }: {
   part: 'single' | 'many';
+  collaborative: boolean;
   deletePrompt: DeletionItem | null;
   deleteManyPrompt: DeletionItem[] | null;
   deleteDrawingTargets: DrawingObject[];
@@ -52,9 +54,11 @@ export function SelectionDeleteDialogs({
               개를 삭제할까요?
             </h2>
             <p>
-              선택한 파일을 삭제하고 섹션의 멤버 목록에서도 제거합니다. 사운드와
-              3D 모델 노드는 편집 기록에서 복원할 수 있습니다. HTML 결과는 전용
-              결과 폴더 안의 모든 파일과 창 설정·관리 문서를 함께 삭제합니다.
+              선택한 파일을 삭제하고 섹션의 멤버 목록에서도 제거합니다.{' '}
+              {collaborative
+                ? '공동 파일은 편집 기록에서 복원할 수 있습니다.'
+                : '로컬 문서와 에셋 노드는 홈의 파일 휴지통에서 복원할 수 있습니다.'}{' '}
+              HTML 결과는 관련 파일과 관리 문서를 함께 삭제합니다.
             </p>
             <ul>
               {deleteManyPrompt.map((doc) => (
@@ -135,12 +139,12 @@ export function SelectionDeleteDialogs({
               </h2>
               <span id="delete-dialog-description">
                 <strong>{deletePrompt.title}</strong>
-                {deletePrompt.audio || deletePrompt.model
-                  ? ' 노드를 삭제합니다. 편집 기록에서 복원할 수 있습니다.'
-                  : ' 파일을 Windows 휴지통으로 이동합니다.'}{' '}
+                {collaborative
+                  ? ' 공동 프로젝트에서 삭제합니다. 편집 기록에서 복원할 수 있습니다.'
+                  : isPreviewPath(deletePrompt.relativePath)
+                    ? ' 관련 파일을 함께 보관합니다. 앱이 추적하지 않는 파일을 포함한 결과 폴더는 Windows 휴지통으로 이동합니다.'
+                    : ' 홈의 파일 휴지통으로 이동합니다.'}{' '}
                 섹션에 포함되어 있다면 멤버 목록에서도 제거됩니다.
-                {isPreviewPath(deletePrompt.relativePath) &&
-                  ' 전용 결과 폴더 안의 모든 파일과 창 설정·관리 문서도 함께 삭제합니다.'}
               </span>
             </div>
             <div className="delete-dialog__path">
@@ -151,8 +155,9 @@ export function SelectionDeleteDialogs({
               </code>
               {deletePrompt.asset && (
                 <p>
-                  이미지 카드의 설명 문서만 삭제합니다. 다른 문서나 HTML에서
-                  참조할 수 있으므로 프로젝트 안의 이미지 원본은 유지됩니다.
+                  {collaborative
+                    ? '이미지 설명 문서를 삭제합니다. 원본은 공동 프로젝트에 보관됩니다.'
+                    : '다른 파일이 참조하는 원본은 프로젝트에 보존합니다. 마지막 참조를 삭제할 때 원본도 함께 보관합니다.'}
                 </p>
               )}
             </div>

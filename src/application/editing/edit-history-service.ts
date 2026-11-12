@@ -4,6 +4,18 @@ import type { EditJournal } from '../../edit-journal.ts';
 import type { CommandEnvironment } from '../../core/editing/environment.ts';
 import { invertEdit } from '../../edit-journal.ts';
 import { checkSnapshot } from '../../collaboration-model.ts';
+
+export function localHistoryInverse(
+  current: Snapshot,
+  before: Snapshot,
+  after: Snapshot,
+  direction: 'undo' | 'redo',
+) {
+  const next = invertEdit(current, before, after, direction);
+  checkSnapshot(next, true);
+  return next;
+}
+
 export interface EditHistoryPublisher {
   publish(before: Snapshot, after: Snapshot, paths: string[]): Promise<void>;
 }
@@ -47,8 +59,7 @@ export class LocalEditHistoryService {
       if (right !== null) after[file.relativePath] = right;
     }
     const current = await this.repository.capture();
-    const next = invertEdit(current, before, after, direction);
-    checkSnapshot(next, true);
+    const next = localHistoryInverse(current, before, after, direction);
     await this.publisher.publish(
       current,
       next,

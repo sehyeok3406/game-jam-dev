@@ -1,6 +1,9 @@
 import type { CommandEnvironment } from '../../core/editing/environment.ts';
 import type { LocalProjectRepository } from '../ports/local-project-repository.ts';
-import { reduceCollaboration } from '../../collaboration-model.ts';
+import {
+  reduceCollaboration,
+  reduceLocalCollaboration,
+} from '../../collaboration-model.ts';
 import {
   isCommandName,
   type CommandName,
@@ -27,7 +30,7 @@ export function applyCommand<K extends CommandName>(
   input: CommandInput<K>,
   environment?: CommandEnvironment,
 ): { files: Snapshot; result: CommandOutput<K> } {
-  return reduceCollaboration(files, channel, input, environment, true) as {
+  return reduceLocalCollaboration(files, channel, input, environment) as {
     files: Snapshot;
     result: CommandOutput<K>;
   };

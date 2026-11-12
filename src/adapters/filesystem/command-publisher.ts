@@ -3,6 +3,16 @@ import type { CommandPublisher } from '../../application/editing/command-service
 import type { LocalProjectRepository } from '../../application/ports/local-project-repository.ts';
 import { trashDeletedFiles } from '../../result-deletion.ts';
 import { localMediaFromMarkdown } from './local-media.ts';
+import type { FileTrashService } from '../../application/editing/file-trash-service.ts';
+import type { Snapshot } from '../../contracts/project.ts';
+import {
+  managedPreviewPaths,
+  previewDeletionTarget,
+} from '../../preview-output.ts';
+import { projectPath } from '../../project-store.ts';
+import { imageAsset } from '../../file-assets.ts';
+import matter from '../../markdown.ts';
+import fs from 'node:fs/promises';
 import {
   moveResultFiles,
   resultFileBaseline,
@@ -13,17 +23,96 @@ type FileEffects = {
   pauseWatcher: () => Promise<() => Promise<void>>;
   trashItem: (absolute: string) => Promise<void>;
 };
+
+async function trackedResultFolder(
+  root: string,
+  folder: string,
+  before: Snapshot,
+): Promise<boolean> {
+  const directory = await projectPath(root, folder);
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  if (!entries.length) return false;
+  for (const entry of entries) {
+    const relative = `${folder}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (!(await trackedResultFolder(root, relative, before))) return false;
+    } else if (!entry.isFile() || before[relative] === undefined) return false;
+  }
+  return true;
+}
+
 /** Native folder moves/recycle-bin behavior stays outside application/IPC handlers. */
 export function filesystemCommandPublisher(
   root: string,
   repository: LocalProjectRepository,
   effects: FileEffects,
+  fileTrash?: FileTrashService,
 ): CommandPublisher {
   return {
     publish: async (channel, plan) => {
       const removed = Object.entries(plan.changes)
         .filter(([, value]) => value === null)
         .map(([relative]) => relative);
+      if (
+        fileTrash &&
+        removed.length &&
+        [
+          'documents:delete',
+          'documents:delete-many',
+          'sections:delete',
+          'canvas:batch',
+        ].includes(channel)
+      ) {
+        const previews = managedPreviewPaths(plan.before).filter(
+          (relative) => plan.files[relative] === undefined,
+        );
+        const documents = removed.filter(
+          (relative) =>
+            /^(?:project\.md$|(?:docs|ideas)\/.+\.md$)/.test(relative) &&
+            !relative.startsWith('docs/html-sources/'),
+        );
+        const files = [
+          ...documents.map((relative) => ({
+            path: relative,
+            name: String(
+              matter(plan.before[relative]).data.title ??
+                relative.split('/').at(-1),
+            ),
+          })),
+          ...previews.map((relative) => ({
+            path: relative,
+            name: relative.split('/').at(-1)!,
+          })),
+        ];
+        const tracked = await Promise.all(
+          previews.map((relative) => {
+            const target = previewDeletionTarget(relative);
+            return (
+              target === relative ||
+              trackedResultFolder(root, target, plan.before)
+            );
+          }),
+        );
+        if (files.length && tracked.every(Boolean)) {
+          const images: Snapshot = {};
+          for (const relative of documents) {
+            const asset = imageAsset(matter(plan.before[relative]).data.asset);
+            if (
+              asset &&
+              plan.before[asset.path] !== undefined &&
+              plan.files[asset.path] !== undefined
+            )
+              images[asset.path] = plan.before[asset.path];
+          }
+          const resume = await effects.pauseWatcher();
+          try {
+            await fileTrash.move(plan.before, plan.files, files, images);
+          } finally {
+            await resume();
+          }
+          return;
+        }
+      }
       const mediaCards = new Set(
         removed.filter(
           (relative) =>
