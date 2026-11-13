@@ -13,7 +13,12 @@ import { decodeAsset, isAssetPath } from '../../../file-assets.ts';
 import { validateGameBuildSource } from '../../../core/ai/game-build-source.ts';
 
 export async function compileStandaloneGame(
-  options: { runtime: string; cacheRoot: string; assertCurrent(): void },
+  options: {
+    runtime: string;
+    cacheRoot: string;
+    assertCurrent(): void;
+    local?: boolean;
+  },
   source: GeneratedGameSource,
   inputs: Snapshot,
   dependencies: PreparedDependenciesV1 | null,
@@ -61,6 +66,7 @@ export async function compileStandaloneGame(
     await fs.writeFile(
       path.join(directory, 'build-input.json'),
       JSON.stringify({
+        local: options.local === true,
         source,
         assets,
         dependencyRoot,
@@ -76,25 +82,37 @@ export async function compileStandaloneGame(
           worker: 'builder.mjs',
           jobRoot: directory,
           payload: {},
-          outputBytes:
-            GameBuildLimits.htmlBytes * 2 + GameBuildLimits.metadataBytes,
+          outputBytes: options.local
+            ? 8192
+            : GameBuildLimits.htmlBytes * 2 + GameBuildLimits.metadataBytes,
           timeoutMs: 60_000,
         },
         signal,
       ),
-    ) as { result?: CompiledGame; error?: { message: string } };
+    ) as {
+      result?: Omit<CompiledGame, 'html'> & { html?: string };
+      error?: { message: string };
+    };
     signal.throwIfAborted();
     options.assertCurrent();
     if (response.error) throw Error(response.error.message);
     if (
       !response.result ||
       response.result.profile !== 'standalone-browser-v1' ||
-      response.result.toolsetSha256 !== runtime.sha256 ||
-      typeof response.result.html !== 'string' ||
-      Buffer.byteLength(response.result.html) > GameBuildLimits.htmlBytes
+      response.result.toolsetSha256 !== runtime.sha256
     )
       throw Error('게임 빌드 결과 형식·한도 오류');
-    return response.result;
+    const html = options.local
+      ? await fs.readFile(path.join(directory, 'built-game.html'), 'utf8')
+      : response.result.html;
+    signal.throwIfAborted();
+    options.assertCurrent();
+    if (
+      typeof html !== 'string' ||
+      (!options.local && Buffer.byteLength(html) > GameBuildLimits.htmlBytes)
+    )
+      throw Error('게임 빌드 결과 형식·한도 오류');
+    return { ...response.result, html };
   } finally {
     await cleanup();
   }

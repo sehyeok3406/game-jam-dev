@@ -107,7 +107,7 @@ export class LocalCreationService {
       .replace(/[:.]/g, '-');
     const id = `${input.thenImplement ? 'gamejam' : input.kind}-${stamp}-${environment.id().slice(0, 8)}`;
     const relative = `.ai/tasks/${id}.md`;
-    await project.apply(before, createTaskFiles(input, id, before));
+    await project.apply(before, createTaskFiles(input, id, before, true));
     return (await documents.read(relative)).document;
   }
 }

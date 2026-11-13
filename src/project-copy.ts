@@ -9,7 +9,10 @@ import {
   copyGameBuilds,
   validateGameBuilds,
 } from './core/projects/game-build.ts';
-import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
+import {
+  gameBuildCodec,
+  localGameBuildCodec,
+} from './adapters/node/game-build-codec.ts';
 import {
   allocateNamedDocumentPath,
   documentPathTitle,
@@ -95,6 +98,7 @@ function localReference(from: string, reference: string) {
 export function projectCopyBundle(
   files: Snapshot,
   selection: ProjectCopySelection,
+  local = false,
 ): ProjectCopyBundle {
   if (
     !selection ||
@@ -234,7 +238,7 @@ export function projectCopyBundle(
     }
   }
   Object.assign(collected, selectGameBuilds(files, previews));
-  validateGameBuilds(collected, gameBuildCodec);
+  validateGameBuilds(collected, local ? localGameBuildCodec : gameBuildCodec);
   if (!documents.size && !sections.size && !previews.size && !drawings.length)
     throw Error('복사할 자료를 선택해주세요.');
   return {
@@ -258,6 +262,7 @@ export function importProjectCopy(
   files: Snapshot,
   input: ProjectCopyImport,
   environment: CommandEnvironment,
+  local = false,
 ): { files: Snapshot; result: ProjectCopyResult } {
   if (
     !input ||
@@ -288,23 +293,29 @@ export function importProjectCopy(
     lists.some((list) => new Set(list).size !== list.length)
   )
     throw Error('복사 항목 수나 중복 선택을 확인해주세요.');
-  // Rebuild the bundle on the server: unlisted files/settings cannot be smuggled in.
+  // Rebuild at the destination so only listed files and dependencies can be copied.
   const normalized: Snapshot = {};
   for (const [relative, raw] of Object.entries(bundle.files)) {
     collaborationPath(relative);
-    if (typeof raw !== 'string' || Buffer.byteLength(raw) > 8_000_000)
+    if (
+      typeof raw !== 'string' ||
+      (!(local && isPreviewPath(relative)) &&
+        Buffer.byteLength(raw) > 8_000_000)
+    )
       throw Error('복사 파일 크기나 형식을 확인해주세요.');
     if (isAssetPath(relative)) decodeAsset(relative, raw);
     normalized[relative] = raw;
   }
   if (
-    Object.values(normalized).reduce(
-      (sum, raw) => sum + Buffer.byteLength(raw),
+    Object.entries(normalized).reduce(
+      (sum, [relative, raw]) =>
+        sum + (local && isPreviewPath(relative) ? 0 : Buffer.byteLength(raw)),
       0,
     ) > (hasGameBuilds(normalized) ? GameBuildLimits.snapshotBytes : 20_000_000)
   )
     throw Error('복사 자료의 전송 한도를 초과했습니다.');
-  validateGameBuilds(normalized, gameBuildCodec);
+  const codec = local ? localGameBuildCodec : gameBuildCodec;
+  validateGameBuilds(normalized, codec);
   const selectedBuilds = selectGameBuilds(normalized, new Set(bundle.previews));
   if (
     Object.keys(normalized).some(
@@ -625,7 +636,7 @@ export function importProjectCopy(
     paths,
     ids,
     environment.id,
-    gameBuildCodec,
+    codec,
   );
   const resultFiles = drawings.length
     ? applyDrawing(withBuilds, {

@@ -246,6 +246,7 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
       if (!ports.sessions.root) throw Error('원본 프로젝트를 열어주세요.');
       return captureProject(ports.sessions.root);
     },
+    localSource: () => !ports.sessions.client,
     assertReadable: ports.assertReadable,
   });
   handle('projects:copy-target', (event, id) => {

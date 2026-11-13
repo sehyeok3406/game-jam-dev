@@ -10,6 +10,7 @@ import {
 } from '../../contracts/game-build.ts';
 
 export type GameBuildCodec = {
+  localHtml?: boolean;
   byteLength: (text: string) => number;
   digest: (text: string) => string;
   isHtmlPath: (path: string) => boolean;
@@ -170,12 +171,18 @@ function checkLock(files: Snapshot, prefix: string) {
 /** Complete bundles only; staging fragments and caches are deliberately rejected. */
 export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
   if (hasGameBuilds(files)) {
-    const values = Object.values(files);
+    const entries = Object.entries(files);
     requireBuild(
-      values.length <= GameBuildLimits.files &&
-        values.every((v) => typeof v === 'string') &&
-        values.reduce((sum, v) => sum + codec.byteLength(v), 0) <=
-          GameBuildLimits.snapshotBytes,
+      entries.length <= GameBuildLimits.files &&
+        entries.every(([, value]) => typeof value === 'string') &&
+        entries.reduce(
+          (sum, [path, value]) =>
+            sum +
+            (codec.localHtml && codec.isHtmlPath(path)
+              ? 0
+              : codec.byteLength(value)),
+          0,
+        ) <= GameBuildLimits.snapshotBytes,
       '프로젝트 전송 한도 64MB·500개 파일',
     );
   }
@@ -341,7 +348,8 @@ export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
     );
     if (artifact.buildId === id) {
       requireBuild(
-        codec.byteLength(files[artifact.path]) <= GameBuildLimits.htmlBytes,
+        codec.localHtml ||
+          codec.byteLength(files[artifact.path]) <= GameBuildLimits.htmlBytes,
         'HTML 한도 8MB',
       );
       requireBuild(

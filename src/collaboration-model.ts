@@ -7,7 +7,10 @@ import {
   validateGameBuilds,
   deleteGameBuilds,
 } from './core/projects/game-build.ts';
-import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
+import {
+  gameBuildCodec,
+  localGameBuildCodec,
+} from './adapters/node/game-build-codec.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
 import { FILE_NAMES_PATH } from './contracts/document-names.ts';
 import { readFileNames } from './core/documents/name-registry.ts';
@@ -175,7 +178,10 @@ export function checkSnapshot(
   if (!files || typeof files !== 'object' || Array.isArray(files))
     throw new Error('문서 목록이 올바르지 않습니다.');
   readProjectLayout(files as Snapshot);
-  validateGameBuilds(files as Snapshot, gameBuildCodec);
+  validateGameBuilds(
+    files as Snapshot,
+    local ? localGameBuildCodec : gameBuildCodec,
+  );
   readFileNames(files as Snapshot);
   if ((files as Snapshot)[DOCUMENT_STATUSES_PATH])
     readStatuses((files as Snapshot)[DOCUMENT_STATUSES_PATH]);
@@ -215,19 +221,21 @@ export function checkSnapshot(
     if (paths.has(canonicalPath))
       throw new Error(`대소문자만 다른 파일 경로는 공유할 수 없습니다: ${key}`);
     paths.add(canonicalPath);
+    const localHtml = local && isPreviewPath(key);
     if (
       typeof value !== 'string' ||
-      Buffer.byteLength(value) >
-        (isAssetPath(key)
-          ? ServerLimits.assetEncodedBytes
-          : isPreviewPath(key)
-            ? ServerLimits.htmlBytes
-            : ServerLimits.markdownBytes)
+      (!localHtml &&
+        Buffer.byteLength(value) >
+          (isAssetPath(key)
+            ? ServerLimits.assetEncodedBytes
+            : isPreviewPath(key)
+              ? ServerLimits.htmlBytes
+              : ServerLimits.markdownBytes))
     )
       throw new Error(
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
-    bytes += Buffer.byteLength(value);
+    if (!localHtml) bytes += Buffer.byteLength(value);
     if (isGameBuildPath(key)) continue;
     if (isGameUiPath(key)) {
       readGameUi(value, key);
@@ -538,6 +546,7 @@ export function reduceCollaboration(
       files,
       value as import('./contracts/project-copy.ts').ProjectCopyImport,
       environment,
+      local,
     );
     validate(copied.files);
     return copied;
@@ -1176,6 +1185,7 @@ export function reduceCollaboration(
       },
       id,
       files,
+      local,
     );
     Object.assign(next, additions);
     const specification = matter(next[relative]);

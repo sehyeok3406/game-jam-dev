@@ -52,6 +52,7 @@ export function createTaskFiles(
   input: CreateTaskInput,
   id: string,
   files: Snapshot,
+  local = false,
 ): Snapshot {
   assertCanvas(files, input.canvasId);
   const requestSnapshot = input.inputPaths.some(isTextMaterial)
@@ -60,14 +61,24 @@ export function createTaskFiles(
   const text = prepareTextSources(files, input.inputPaths);
   input = { ...input, inputPaths: text.paths, requestSnapshot };
   files = { ...files, ...text.additions };
-  const source = prepareHtmlSource(files, input.inputPaths, input.sourceMode);
+  const source = prepareHtmlSource(
+    files,
+    input.inputPaths,
+    input.sourceMode,
+    local,
+  );
   return {
     ...text.additions,
     ...source?.additions,
-    [`.ai/tasks/${id}.md`]: createTaskPlan(input, id, {
-      ...files,
-      ...source?.additions,
-    }),
+    [`.ai/tasks/${id}.md`]: createTaskPlan(
+      input,
+      id,
+      {
+        ...files,
+        ...source?.additions,
+      },
+      local,
+    ),
   };
 }
 
@@ -76,6 +87,7 @@ export function createTaskPlan(
   input: CreateTaskInput,
   id: string,
   files: Snapshot,
+  local = false,
 ) {
   if (input.gameBuildVersion !== undefined && input.gameBuildVersion !== 1)
     throw new CanvasError('GC-AI-004', '지원하지 않는 게임 제작 버전입니다.');
@@ -166,7 +178,12 @@ export function createTaskPlan(
       'GC-AI-007',
       'HTML 분석 입력 모드가 올바르지 않습니다.',
     );
-  const source = prepareHtmlSource(files, input.inputPaths, input.sourceMode);
+  const source = prepareHtmlSource(
+    files,
+    input.inputPaths,
+    input.sourceMode,
+    local,
+  );
   const htmlInputs =
     source &&
     (input.sourceMode === 'html-compose' ||

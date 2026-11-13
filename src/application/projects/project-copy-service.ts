@@ -16,6 +16,7 @@ export interface ProjectCopyDestination {
 type Ports = {
   assertSource(session: ProjectSessionRef): void;
   source(): Promise<Snapshot>;
+  localSource?(): boolean;
   assertReadable(paths: string[]): void;
   destination(id: string): Promise<ProjectCopyDestination>;
 };
@@ -41,7 +42,7 @@ export class ProjectCopyService {
     p.assertSource(input.session);
     const files = await p.source();
     p.assertSource(input.session);
-    const bundle = projectCopyBundle(files, input.selection);
+    const bundle = projectCopyBundle(files, input.selection, p.localSource?.());
     p.assertReadable(Object.keys(bundle.files));
     const destination = await p.destination(input.targetId);
     try {

@@ -2,6 +2,7 @@ import type { ReactFlowInstance } from '@xyflow/react';
 import { useRef } from 'react';
 import { localMediaExtension } from '../../core/projects/local-media.ts';
 import { MAX_LOCAL_MEDIA_BATCH_BYTES } from '../../core/projects/model-assets.ts';
+import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { WorkspaceState } from '../../shared.ts';
 import {
   selectionScopeKey,
@@ -24,6 +25,7 @@ interface Ports {
   locked: boolean;
   onBlocked: () => void;
   workspace: WorkspaceState;
+  local: boolean;
   openWorkspace: () => Promise<void>;
   flowRef: import('react').RefObject<ReactFlowInstance<CanvasNode> | null>;
   api: import('../../contracts/app-api.ts').AppApi;
@@ -85,6 +87,7 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
       setNotice,
       locked,
       flowRef,
+      local,
       api,
       activeCanvasRef,
       loadProject,
@@ -110,8 +113,12 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
       contextId: workspace.clipboardContextId,
     };
     try {
-      const nativeDrop = drop?.files.some((file) =>
-        localMediaExtension(file.name),
+      const localHtml = (file: File) => local && /\.html?$/i.test(file.name);
+      // Native paths keep large on-disk HTML out of the renderer IPC payload.
+      const nativeDrop = drop?.files.some(
+        (file) =>
+          localMediaExtension(file.name) ||
+          (localHtml(file) && file.size > ServerLimits.htmlBytes),
       )
         ? drop.files
         : undefined;
@@ -121,7 +128,10 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
           drop.files.length > 20 ||
           drop.files.reduce(
             (sum, file) =>
-              sum + (localMediaExtension(file.name) ? 0 : file.size),
+              sum +
+              (localMediaExtension(file.name) || localHtml(file)
+                ? 0
+                : file.size),
             0,
           ) > 12_000_000 ||
           drop.files.reduce(
@@ -131,7 +141,9 @@ export function useWorkspaceImport(scope: SelectionScope, ports: () => Ports) {
           ) > MAX_LOCAL_MEDIA_BATCH_BYTES)
       )
         throw new Error(
-          '한 번에 최대 20개, 미디어 합계 256MiB와 다른 파일 합계 12MB까지 불러올 수 있습니다.',
+          local
+            ? '한 번에 최대 20개, 미디어 합계 256MiB와 Markdown·이미지 합계 12MB까지 불러올 수 있습니다.'
+            : '한 번에 최대 20개, 미디어 합계 256MiB와 다른 파일 합계 12MB까지 불러올 수 있습니다.',
         );
       const files =
         drop && !nativeDrop

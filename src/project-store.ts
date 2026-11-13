@@ -36,7 +36,10 @@ import {
   isGameBuildPath,
   validateGameBuilds,
 } from './core/projects/game-build.ts';
-import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
+import {
+  gameBuildCodec,
+  localGameBuildCodec,
+} from './adapters/node/game-build-codec.ts';
 async function readSnapshotFile(absolute: string, relative: string) {
   return isAssetPath(relative)
     ? encodeAsset(relative, await fs.readFile(absolute))
@@ -443,7 +446,7 @@ export async function applyChanges(
       if (value === null) delete candidate[key];
       else candidate[key] = value;
     }
-    validateGameBuilds(candidate, gameBuildCodec);
+    validateGameBuilds(candidate, localGameBuildCodec);
   }
   // Check every target before writing, and restore already-written targets if a write fails.
   for (const relative of Object.keys(changes)) {

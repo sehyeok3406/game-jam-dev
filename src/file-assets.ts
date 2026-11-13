@@ -190,7 +190,7 @@ export function buildFileImports(
     };
     let body: string;
     if (ext === 'html' || ext === 'htm') {
-      inspectImportedHtml(file.content, file.name);
+      inspectImportedHtml(file.content, file.name, local);
       const htmlPath = `output/inbox/${id}/v001/${documentName(title)}.html`;
       additions[htmlPath] = file.content;
       additions[htmlSourcePath(htmlPath)] = sourceMetadata(
@@ -204,7 +204,7 @@ export function buildFileImports(
         },
         environment.now,
       );
-      total += Buffer.byteLength(file.content);
+      if (!local) total += Buffer.byteLength(file.content);
       return;
     } else if (ext === 'md') {
       if (

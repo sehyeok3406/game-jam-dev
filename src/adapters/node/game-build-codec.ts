@@ -10,3 +10,8 @@ export const gameBuildCodec: GameBuildCodec = {
   isHtmlPath: isPreviewPath,
   isAssetPath,
 };
+
+export const localGameBuildCodec: GameBuildCodec = {
+  ...gameBuildCodec,
+  localHtml: true,
+};

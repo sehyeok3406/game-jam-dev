@@ -58,6 +58,8 @@
 
 대형 HTML의 navigation URL 전달은 작은 shell과 renderer IPC/srcdoc으로 교체했다. 리소스 준비·오류와 기존 예외/ResizeObserver 분류·timeout을 유지한다. 7.5MB 전달과 실제 Chrome/Edge의 단일 파일 실행을 검증했으며 최종 HTML 한도는 8MB를 유지한다. 관련한 현재 계약은 [제작 실행](../game-build-execution.md)을 따른다.
 
+로컬 HTML 용량 정책을 분리했다. 로컬 가져오기와 제작 결과에는 고정 HTML 크기 한도를 적용하지 않는다. 빌더는 로컬 HTML을 작업 파일로 돌려주고 실행 검사는 분할 IPC를 사용한다. 기존 로컬 저장·이력 형식을 재사용하며 공동 프로젝트의 파일·전송 한도는 그대로 적용한다. [제작 실행](../game-build-execution.md) · [게임 HTML 입출력](../game-build-transfer.md)
+
 3단계는 [공통 준비 서비스](../dependency-preparation.md)를 독립 구현하고 도구를 실제 package resource에 포함한다. 공급자에게 npm/셸 권한을 추가하는 대안 대신 기존 파일 도구를 재사용한다. npm install을 실행하는 대신 동봉 npm의 semver/tar로 공개 registry 배포본과 의존성 graph를 처리한다. 따라서 전체 npm 설치 의미론을 지원한다고 주장하지 않는다. 설치 hook·bundled/git/file/alias 의존성은 거절하고 선택 의존성은 제외/경고하며 공통 peer 충돌은 실패한다. 배포본의 고지 원문이 없는 패키지도 현재 지원하지 않는다. 라이선스 자료의 별도 확보 경로는 필요할 때 provenance·오프라인 재사용 정책과 함께 확장한다.
 
 캐시의 추출 node_modules를 재사용하는 대안은 로컬 변경이 다음 빌드에 섞일 수 있어 채택하지 않았다. 검증한 archive만 재사용하고 실행별 새 폴더에 추출한다. 기존 lock과 업그레이드 허용 목록은 앱이 소유해 AI가 생략하거나 임의 변경하지 못하게 한다. 사용자 인증/설정과 준비 worker 환경도 분리한다. 4단계에서 새 v2 요청에 최종 source bundle·HTML 검사·기존 반영을 연결했다. 과거 v1 coordinator 동작은 유지한다.

@@ -35,7 +35,7 @@ export async function importSelectedFiles(
   applyFiles: (input: ImportBatchInput) => Promise<CanvasDocument[]>,
   assertCurrent: () => void,
   authorize: () => void,
-  options?: { paths?: string[]; stageMedia?: StageMedia },
+  options?: { paths?: string[]; stageMedia?: StageMedia; local?: boolean },
 ) {
   assertCurrent();
   if (
@@ -105,6 +105,7 @@ export async function importSelectedFiles(
     sources,
     assertCurrent,
     options?.stageMedia,
+    options?.local,
   );
   const {
     files: _bytes,
@@ -120,6 +121,7 @@ export async function readImportSources(
   sources: ({ path: string } | { name: string; bytes: Uint8Array })[],
   assertCurrent: () => void,
   stageMedia?: StageMedia,
+  local = false,
 ): Promise<ImportBatchInput['files']> {
   if (!sources.length || sources.length > 20)
     throw new CanvasError(
@@ -161,6 +163,7 @@ export async function readImportSources(
         `${name}: 지원하는 문서, 이미지, 사운드 또는 3D 파일인지 확인해주세요.`,
       );
     const isHtml = ['.html', '.htm'].includes(ext);
+    const localHtml = local && isHtml;
     if ('bytes' in source && !(source.bytes instanceof Uint8Array))
       throw new CanvasError(
         'GC-IMPORT-001',
@@ -197,18 +200,21 @@ export async function readImportSources(
     }
     if (
       !stat.isFile() ||
-      stat.size >
-        (isHtml
-          ? MAX_HTML_BYTES
-          : ext === '.md'
-            ? MAX_MARKDOWN_BYTES
-            : MAX_IMAGE_BYTES)
+      (!localHtml &&
+        stat.size >
+          (isHtml
+            ? MAX_HTML_BYTES
+            : ext === '.md'
+              ? MAX_MARKDOWN_BYTES
+              : MAX_IMAGE_BYTES))
     )
       throw new CanvasError(
         isHtml ? 'GC-IMPORT-003' : 'GC-IMPORT-001',
-        `${name}: Markdown은 최대 2MB, HTML은 최대 8MB, 이미지는 최대 5MB까지 불러올 수 있습니다.`,
+        local
+          ? `${name}: 파일을 확인해주세요. Markdown은 최대 2MB, 이미지는 최대 5MB까지 불러올 수 있습니다.`
+          : `${name}: Markdown은 최대 2MB, HTML은 최대 8MB, 이미지는 최대 5MB까지 불러올 수 있습니다.`,
       );
-    total += stat.size;
+    if (!localHtml) total += stat.size;
     if (total > 12_000_000)
       throw new CanvasError(
         'GC-IMPORT-001',

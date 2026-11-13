@@ -146,14 +146,14 @@ import는 inert parser로 형식·크기·외부 참조를 검사한다. embedde
 
 | 항목                            | stage1의 초기 구현 목표값      | 근거·주의                                                         |
 | ------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
-| 최종 HTML                       | 8,000,000 bytes 유지           | URL 전송은 4단계에서 교체. 16MB 확대는 별도 검증·활성화 대상      |
+| 최종 HTML                       | 공동 8,000,000 bytes           | 로컬 HTML에는 고정 크기 제한을 두지 않는다                        |
 | source 한 파일                  | 2,000,000 bytes                | 모델 출력·정적 분석 비용 제한. 현재 문서 한도와 별개 필드         |
 | source 묶음                     | 16,000,000 bytes / 64개 source | 허용 출력 계약·누적 비용 제한. 패키지 전체 저장에 사용하지 않음   |
 | 기존 이미지 원본                | 5,000,000 bytes 유지           | 가져오기 형식과 encoding 검사 재사용                              |
 | 한 snapshot/명령의 기술 payload | 64,000,000 bytes               | synthetic JSON roundtrip 측정. 전체 동시 HTTP/DB 부하 보장은 아님 |
 | HTTP body                       | 72,000,000 bytes               | envelope 포함 여유. 기존 endpoint도 크기 수신 전에 상한 검사      |
 
-이 값은 **저장 v1의 구현값**이다. 파일은 총 500개, lock/notices/manifest/index 각각 2MB다. 원본 marker가 없는 legacy snapshot은 20MB, HTTP는 storage header가 없으면 기존 22MB를 유지한다. 새 앱은 `X-Game-Build-Storage-Version:1`을 전송하며 해당 HTTP 상한은 72MB다. marker만으로 HTML 8MB 제한이 늘어나지는 않는다.
+이 값은 **저장 v1의 구현값**이다. 파일은 총 500개, lock/notices/manifest/index 각각 2MB다. 원본 marker가 없는 legacy snapshot은 20MB, HTTP는 storage header가 없으면 기존 22MB를 유지한다. 새 앱은 `X-Game-Build-Storage-Version:1`을 전송하며 해당 HTTP 상한은 72MB다. 로컬 검증에서 관리 대상 HTML은 snapshot 바이트 합계에서 제외한다. 파일 형식·해시·기록 연결 검사와 나머지 바이트·파일 수 한도는 유지한다.
 
 HTTP는 Content-Length를 읽기 전에 검사하고 chunked body도 누적 검사한다. 서버별 최대 4개 POST·총 96MB의 body 예약을 유지하며 초과는 `REQUEST_CAPACITY`(503, Retry-After)로 거절한다. JSON 파싱·프로젝트 큐·commit·응답 전송이 끝날 때까지, 연결이 먼저 끊겨도 업무가 끝날 때까지 예약을 보유한다. 이 값은 전체 프로세스 RSS 상한이 아니다. 실제 60,857,902바이트·32 revision의 HTTP→SQLite→백업 복원을 검증했고 측정 RSS와 부하 한계는 1단계 보고서에 기록한다.
 

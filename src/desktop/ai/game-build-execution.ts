@@ -21,6 +21,7 @@ import { compileStandaloneGame } from '../../adapters/node/game-preparation/comp
 import { createGameDependencyPreparation } from './dependency-preparation.ts';
 
 type Options = {
+  local?: boolean;
   runtime: string;
   cacheRoot: string;
   executor: AiExecutor;

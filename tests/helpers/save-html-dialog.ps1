@@ -1,4 +1,4 @@
-﻿param([int]$TargetProcessId,[string]$Destination,[switch]$Cancel)
+﻿param([int]$TargetProcessId,[string]$Destination,[switch]$Cancel,[switch]$Open)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding
 Add-Type -AssemblyName UIAutomationClient
@@ -32,10 +32,11 @@ try {
   $handle=[IntPtr]$dialogElement.Current.NativeWindowHandle
   if(!$Cancel){
     $script:nameHandle=[IntPtr]::Zero
+    $script:filenameControlId=if($Open){1148}else{1001}
     $callback=[GameJamSaveDialog+EnumProc]{param($child,$data)
       $class=New-Object System.Text.StringBuilder 256
       [void][GameJamSaveDialog]::GetClassName($child,$class,256)
-      if($class.ToString() -eq 'Edit' -and [GameJamSaveDialog]::GetDlgCtrlID($child) -eq 1001){$script:nameHandle=$child}
+      if($class.ToString() -eq 'Edit' -and [GameJamSaveDialog]::GetDlgCtrlID($child) -eq $script:filenameControlId){$script:nameHandle=$child}
       return $true
     }
     for($attempt=0;$attempt -lt 100;$attempt++){

@@ -642,6 +642,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     importFiles,
     dropFiles,
   } = useWorkspaceImport(selectionScope, () => ({
+    local: !collaboration.active,
     capabilities,
     setNotice,
     locked,

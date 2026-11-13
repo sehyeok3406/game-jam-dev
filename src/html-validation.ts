@@ -8,7 +8,11 @@ import { readMultiplayerManifest } from './multiplayer/contract';
 import { validateMultiplayerRuntime } from './multiplayer/runtime-validation';
 import { loadValidationFrame } from './desktop/ai/validation-frame.ts';
 
-export async function validateHtml(content: string, relativePath?: string) {
+export async function validateHtml(
+  content: string,
+  relativePath?: string,
+  local = false,
+) {
   const normalized = withMultiplayerSdk(
     inspectHtml(content, relativePath).normalized,
   );
@@ -77,7 +81,7 @@ export async function validateHtml(content: string, relativePath?: string) {
   try {
     await Promise.race([
       (async () => {
-        await loadValidationFrame(validator, instrumented, randomUUID());
+        await loadValidationFrame(validator, instrumented, randomUUID(), local);
         await new Promise((resolve) => setTimeout(resolve, 900));
         const gameCode = errors[0]?.message.match(/\[(GC-MP-\d{3})\]/)?.[1];
         if (isPlayCode(gameCode)) {

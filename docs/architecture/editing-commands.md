@@ -12,7 +12,7 @@
 
 ## 캔버스 외부 입력과 빈 텍스트 정리 (2026-10-29)
 
-외부 파일 드롭은 브라우저 `File`을 이름·`Uint8Array` DTO로 읽어 기존 `files:import`를 사용한다. 드롭 입력에는 시작 saveScope/clipboardContextId를 전달하고 IPC 진입과 mutation 큐 안에서 다시 검증한다. desktop의 `readImportSources`가 선택창·드롭·클립보드 파일의 확장자/크기/UTF-8/이미지 검사를 함께 수행하고 `FileImportService`가 기존 `files:import-batch`로 게시한다. renderer가 전달한 파일 목록에서 로컬 경로를 받지 않는다. 폴더·미지원 파일·검증 실패가 포함되면 배치 전체를 반영하지 않는다. 파일 수 20개·총 12MB·MD 2MB·HTML 8MB·이미지 5MB 제한과 단일 HTML 가져오기 정책을 유지한다.
+외부 파일 드롭은 기존 `files:import`를 사용한다. 일반 파일은 이름·`Uint8Array` DTO로 읽고, 미디어와 큰 로컬 HTML은 preload가 브라우저 `File`의 디스크 경로를 전달한다. 드롭 입력에는 시작 saveScope/clipboardContextId를 전달하고 IPC 진입과 mutation 큐 안에서 다시 검증한다. desktop의 `readImportSources`가 선택창·드롭·클립보드 파일의 확장자/크기/UTF-8/이미지 검사를 함께 수행하고 `FileImportService`가 기존 `files:import-batch`로 게시한다. 폴더·미지원 파일·검증 실패가 포함되면 배치 전체를 반영하지 않는다. 로컬 HTML은 파일당 크기 검사와 12MB 합산에서 제외한다. 공동 HTML은 8MB이며 파일 수 20개·MD 2MB·이미지 5MB 제한과 단일 HTML 가져오기 정책은 계속 적용한다.
 
 클립보드는 내부 복사 토큰 → 로컬 파일 URI 목록 → 이미지 → 일반 텍스트 순서로 해석한다. Windows 탐색기 FileDrop은 Electron이 제공하는 `text/uri-list`로 읽고 원본을 바꾸지 않는다. 파일/이미지는 기존 클립보드 요청 중복 방지·세션 검사·저장 후 히스토리 인정/실패 복구 경로를 함께 사용한다. 텍스트는 HTML/Markdown으로 실행·해석하지 않고 텍스트 문서 스키마로 변환한 뒤 기존 그림 생성 명령/저장 큐로 새 텍스트 상자를 만든다. 입력란 안의 붙여넣기는 기존 입력 소유권을 유지한다.
 

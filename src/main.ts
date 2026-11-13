@@ -71,7 +71,10 @@ import {
 } from './application/ai/queue-service';
 import { AiRunService } from './application/ai/run-service';
 import { desktopGameBuildExecution } from './desktop/ai/game-build-execution.ts';
-import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
+import {
+  gameBuildCodec,
+  localGameBuildCodec,
+} from './adapters/node/game-build-codec.ts';
 import { aiRunPrompt } from './application/ai/run-prompt';
 import { fileStageWorkspace } from './desktop/ai/stage-workspace';
 import { NodeAiExecutor } from './desktop/ai/node-executor';
@@ -1140,7 +1143,7 @@ const setWorkspace = async (root: string) => {
   await lifecycle.preserve('switch-project');
   await projectSessions.activate(await fs.realpath(root));
   const activeRoot = requireWorkspace();
-  await recoverProjectLayout(activeRoot);
+  await recoverProjectLayout(activeRoot, undefined, true);
   await ensureWorkspace();
   await filesystemProjectRepository(activeRoot).recover();
   await saveSettings();
@@ -1285,11 +1288,12 @@ const startCodexRun = async (
     input.taskPath,
     workspace,
     filesystemProjectRepository(root),
-    validateHtml,
+    (html, relative) => validateHtml(html, relative, !client),
     Date.now,
     gameBuildTask(baseline[input.taskPath])
       ? {
           execution: desktopGameBuildExecution({
+            local: !client,
             runtime: path.join(
               app.isPackaged
                 ? process.resourcesPath
@@ -1306,7 +1310,7 @@ const startCodexRun = async (
             progress: (message) => events.emit('running', 'status', message),
           }),
           executor: aiExecutorFor(input.providerId),
-          codec: gameBuildCodec,
+          codec: client ? gameBuildCodec : localGameBuildCodec,
           id: randomUUID,
         }
       : undefined,
@@ -2073,6 +2077,7 @@ const handle = (
 
 function projectPreviewService(root: string, assertCurrent: () => void) {
   return new ProjectPreviewService({
+    local: !projectSessions.client,
     project: filesystemProjectRepository(root, assertCurrent),
     files: filesystemTextFiles(root, assertCurrent),
     mutate: (action) => enqueueMutation(action),
@@ -2348,6 +2353,8 @@ const registerIpc = () => {
           ? await readImportSources(
               contents.paths.map((path) => ({ path })),
               () => assertClipboardContext(input.scope, input.contextId),
+              undefined,
+              !projectSessions.client,
             )
           : contents.files;
       const documents = await applyImportedFiles(
@@ -2417,7 +2424,8 @@ const registerIpc = () => {
     if (!isUpdateSender(event))
       throw Error('허용되지 않은 내보내기 요청입니다.');
     const root = requireWorkspace(),
-      session = projectSessions.ref;
+      session = projectSessions.ref,
+      local = !projectSessions.client;
     const assertCurrent = () => projectSessions.assertCurrent(session);
     return new PreviewExportService({
       assertCurrent,
@@ -2433,7 +2441,7 @@ const registerIpc = () => {
       },
       validate: (path, content) => {
         assertPreviewPath(path);
-        inspectImportedHtml(content, path);
+        inspectImportedHtml(content, path, local);
       },
       save: (input, check) => savePreviewHtml(input, mainWindow!, root, check),
     }).export(relative);
@@ -2571,6 +2579,7 @@ const registerIpc = () => {
         () => assertImportAccess(projectSessions.client?.state),
         {
           paths,
+          local: !projectSessions.client,
           stageMedia: projectSessions.client
             ? undefined
             : (source, name, bytes) =>
@@ -2895,7 +2904,8 @@ const registerIpc = () => {
         assertCurrent();
       },
       pause: projectFileEffects(ref).pauseWatcher,
-      install: (files) => installProjectLayout(root, files, assertCurrent),
+      install: (files) =>
+        installProjectLayout(root, files, assertCurrent, !client),
       upgradeShared: async () => {
         await client!.refresh();
         assertCurrent();
@@ -2919,7 +2929,7 @@ const registerIpc = () => {
           finishedAt: Date.now(),
         });
       },
-      validate: checkSnapshot,
+      validate: (files) => checkSnapshot(files, !client),
       changed: notifyWorkspaceChanged,
       markdown: layoutMarkdownCodec,
       links: remapLayoutMarkdown,

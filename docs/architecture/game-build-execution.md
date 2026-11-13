@@ -65,7 +65,7 @@ source stage는 프로젝트 밖 실행별 임시 디렉터리다. 선택한 입
 
 5단계의 [원본 수정·버전·복원](game-build-editing.md)은 이 제작 port에 기존 source/lock/문서 baseline을 전달한다. source stage에 수정 가능한 사본을 준비하고 일반 문서/HTML 단계의 출력 권한과 보존 원본의 불변성은 유지한다. 공동 v2 실행에는 `gameBuildVersion:1`과 별도로 `gameBuildEditingVersion:1`을 협상한다.
 
-앱 resource의 `builder.mjs`를 동봉 Node로 실행한다. 사용자 설정·npm script·lifecycle·임의 plugin을 읽거나 실행하지 않는다. 빌드 입력과 source는 앱 전용 cache의 실행별 `.work-*` 안에 두고 worker 종료 뒤 삭제한다. 준비 단계의 추출 폴더는 빌드가 끝날 때까지 유지한 뒤 정리한다. 빌드는 60초, 응답과 최종 HTML은 별도 한도를 가진다. 준비와 빌드의 toolset digest가 다르면 실패한다. worker에 정적으로 번들된 파서/CSS 처리 의존성은 실제 bundle 모듈 목록에서 수집한 라이선스·저작자 원문을 THIRD-PARTY-NOTICES.txt에 동봉한다.
+앱 resource의 `builder.mjs`를 동봉 Node로 실행한다. 사용자 설정·npm script·lifecycle·임의 plugin을 읽거나 실행하지 않는다. 빌드 입력과 source는 앱 전용 cache의 실행별 `.work-*` 안에 두고 worker 종료 뒤 삭제한다. 준비 단계의 추출 폴더는 빌드가 끝날 때까지 유지한 뒤 정리한다. 빌드는 60초다. 로컬 빌더는 작업 폴더에 HTML을 쓰고 stdout에 도구 정보만 반환한다. 공동 빌더는 기존 응답과 HTML 한도를 사용한다. 준비와 빌드의 toolset digest가 다르면 실패한다. worker에 정적으로 번들된 파서/CSS 처리 의존성은 실제 bundle 모듈 목록에서 수집한 라이선스·저작자 원문을 THIRD-PARTY-NOTICES.txt에 동봉한다.
 
 Rolldown의 browser 조건으로 선언된 source와 검증한 package graph만 해석한다. source의 절대/URL/file/Node import, graph 밖 package 읽기, 지원하지 않는 파일 형식이나 분할 리소스를 거절한다. 정적 해석 후에도 남은 동적 import는 Acorn으로 검사해 거절한다. 외부 plugin/config를 로드하는 기능은 없다.
 
@@ -73,11 +73,11 @@ Rolldown의 browser 조건으로 선언된 source와 검증한 package graph만 
 
 module import를 하나의 IIFE로 합치되 HTML의 inline `type="module"`로 넣어 원래 module script의 실행 시점을 유지한다. entry가 head에 있어도 DOM 분석 뒤 실행되고 DOMContentLoaded 전에 초기화한다. script/style 종료 문자열과 비실행 JSON은 HTML을 탈출하지 않도록 이스케이프한다. 고지 원문과 lock/toolset/profile provenance도 비실행 JSON에 포함한다.
 
-초기 `standalone-browser-v1`은 DOM/CSS/Canvas2D/WebGL와 내장 리소스를 대상으로 한다. HTML 자체의 CSP에서 외부 연결·worker·object·form/base를 제한하고 eval/WASM 실행 권한을 추가하지 않는다. 외부 runtime/CDN/프로젝트 경로/node_modules 없이 실행되어야 한다. package 확보나 source 파일 허용이 브라우저 호환성 인증은 아니다. 최종 HTML 한도는 **기존 8MB 유지**다.
+초기 `standalone-browser-v1`은 DOM/CSS/Canvas2D/WebGL와 내장 리소스를 대상으로 한다. HTML 자체의 CSP에서 외부 연결·worker·object·form/base를 제한하고 eval/WASM 실행 권한을 추가하지 않는다. 외부 runtime/CDN/프로젝트 경로/node_modules 없이 실행되어야 한다. package 확보나 source 파일 허용이 브라우저 호환성 인증은 아니다. 로컬 최종 HTML에는 고정 크기 제한을 두지 않는다. 공동 최종 HTML은 8MB다.
 
 ## 실행 검사와 저장
 
-`validateHtml`은 HTML 전체를 data URL에 넣지 않는다. 작은 격리 shell을 연 뒤 renderer IPC로 sandbox iframe의 srcdoc에 전달한다. readiness는 실행별 channel과 frame의 window identity를 함께 확인한다. 이미지 decode/font 준비·리소스 오류, 기존 JavaScript 예외/Promise 거절/console 오류와 ResizeObserver 분류·8초 timeout을 유지한다. 온라인 검사용 harness의 큰 게임 문자열도 navigation URL 대신 renderer IPC로 전달한다. 실제 player shell은 기존처럼 작은 shell과 bootstrap IPC를 사용한다.
+`validateHtml`은 작은 격리 shell을 연 뒤 renderer IPC로 sandbox iframe의 srcdoc에 전달한다. 큰 로컬 HTML은 512Ki UTF-16 코드 단위씩 전달해 renderer에서 합친다. readiness는 실행별 channel과 frame의 window identity를 함께 확인한다. 이미지 decode/font 준비·리소스 오류, 기존 JavaScript 예외/Promise 거절/console 오류와 ResizeObserver 분류·8초 timeout을 유지한다. 온라인 검사용 harness의 큰 게임 문자열도 renderer IPC로 전달한다. 실제 player shell은 기존처럼 작은 shell과 bootstrap IPC를 사용한다.
 
 이 검사는 초기 실행·리소스 확인이다. 전체 규칙·의미적 요구 준수·모든 입력/장시간 플레이·비주얼 품질의 자동 판정은 아니다. sandbox/CSP를 OS 수준의 코드 보안 sandbox나 악의적 게임에 대한 완전한 검사로 표현하지 않는다.
 

@@ -19,7 +19,10 @@ const profile = path.join(
 );
 const game = path.join(root, 'game');
 const external = path.join(root, '탐색기 파일.md');
+const largeHtml = path.join(root, '탐색기 대형 HTML.html');
+const largeHtmlContents = `<!doctype html><html><body>탐색기 HTML<!--${'x'.repeat(13_000_000)}--></body></html>`;
 await fs.writeFile(external, '# 탐색기 파일 붙여넣기\n\n원본 보존');
+await fs.writeFile(largeHtml, largeHtmlContents);
 await fs.mkdir(game, { recursive: true });
 await fs.writeFile(
   path.join(game, 'project.md'),
@@ -55,7 +58,7 @@ const helper = spawn(electron, ['tests/clipboard-helper.electron.mjs'], {
     ...process.env,
     QA_CLIPBOARD_PORT: String(clipboardPort),
     QA_CLIPBOARD_TOKEN: token,
-    QA_CLIPBOARD_FILES: JSON.stringify([external]),
+    QA_CLIPBOARD_FILES: JSON.stringify([external, largeHtml]),
   },
 });
 let diagnostic = '';
@@ -82,6 +85,7 @@ const writeClipboard = async (operation) => {
   assert.equal(r.ok, true, await r.text());
 };
 let ws;
+const largeHtmlOnly = process.env.GAMEJAM_BUILD_LARGE_LOCAL === '1';
 try {
   let helperReady = false;
   for (let i = 0; i < 100; i++) {
@@ -184,187 +188,209 @@ try {
   await wait('!!document.querySelector(".home-project-open")');
   await js('document.querySelector(".home-project-open").click()');
   await wait('!!document.querySelector(".react-flow__pane")');
-  await focusCanvas();
-  await writeClipboard('image');
-  await key('v');
-  await waitImages(1);
-  await wait(
-    'document.querySelectorAll(".project-image").length===1 && document.querySelector(".project-image").naturalWidth===1',
-  );
-  const first = (await images())[0];
-  assert.equal(first.title, '붙여넣은 이미지');
-  assert.ok((await fs.readFile(path.join(game, first.asset.path))).length > 24);
-  await wait(
-    'document.querySelectorAll(".react-flow__node-document.selected").length === 1',
-  );
-  await focusCanvas();
-  await key('c');
-  await wait('document.body.textContent.includes("복사했습니다.")');
-  await key('v');
-  await waitImages(2);
-  assert.equal(
-    new Set((await images()).map((d) => d.asset.path)).size,
-    1,
-    'Internal copy references the existing original',
-  );
-  await writeClipboard('text');
-  await focusCanvas();
-  await key('v');
-  await wait('document.querySelectorAll(".canvas-text-node").length===1');
-  assert.ok(
-    (await js('window.gameCanvas.listDrawings()')).some(
-      (o) => o.kind === 'text' && o.geometry.document.includes('external text'),
-    ),
-  );
-  assert.equal((await images()).length, 2);
-  await writeClipboard('bitmap');
-  await key('v');
-  await waitImages(3);
-  assert.equal(
-    new Set((await images()).map((d) => d.asset.path)).size,
-    2,
-    'External bitmap replaces the stale internal selection',
-  );
-  await focusCanvas();
-  await key('z');
-  await waitImages(2);
-  await js('window.gameCanvas.redo()');
-  await waitImages(3);
-  await writeClipboard('browser-image');
-  await focusCanvas();
-  await key('v');
-  await waitImages(4);
-  await wait('document.querySelectorAll(".project-image").length===4');
-  await writeClipboard('image');
-  // Normal title input owns Ctrl+V and must not create a canvas image.
-  await js(
-    'document.querySelector(".document-card--idea .document-card__content").click()',
-  );
-  await wait(`!!document.querySelector('input[aria-label="문서 제목"]')`);
-  await sleep(150); // Wait for the editor's initial caret-focus animation frame.
-  await js(`document.querySelector('input[aria-label="문서 제목"]').focus()`);
-  assert.equal(
-    await js('document.activeElement?.tagName'),
-    'INPUT',
-    'Title input must own paste',
-  );
-  await key('v');
-  await sleep(250);
-  assert.equal((await images()).length, 4);
-  await focusCanvas();
-  const screenshot = await send('Page.captureScreenshot', { format: 'png' });
-  await fs.mkdir(path.resolve('out/qa'), { recursive: true });
-  await fs.writeFile(
-    path.resolve('out/qa/clipboard-packaged.png'),
-    Buffer.from(screenshot.data, 'base64'),
-  );
-  await send('Page.reload');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.type==="image").length===4)',
-  );
-  const data = await images();
-  assert.ok(
-    data.every((d) => d.asset?.path && d.body.includes('assets/images/')),
-  );
-  const oldContext = await js(
-    'window.gameCanvas.getWorkspace().then(w=>w.clipboardContextId)',
-  );
-  const exited = new Promise((resolve) => child.once('exit', resolve));
-  // Normal window closing flushes Chromium's new profile encryption key too.
-  void js('window.close()').catch(() => undefined);
-  let exitTimer;
-  try {
-    await Promise.race([
-      exited,
-      new Promise((_, reject) => {
-        exitTimer = setTimeout(
-          () => reject(Error('Packaged app did not close normally')),
-          10_000,
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(exitTimer);
-  }
-  ws.close();
-  debugPort = await port();
-  diagnostic = '';
-  child = startApp();
-  target = undefined;
-  for (let i = 0; i < 160; i++) {
+  const pasteFiles = async () => {
+    await writeClipboard('files');
+    await focusCanvas();
+    await key('v');
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("탐색기 파일 붙여넣기"))&&d.some(x=>x.htmlSource?.endsWith("/탐색기 대형 HTML.html")))',
+    );
+    const pastedHtml = await js(
+      'window.gameCanvas.listDocuments().then(d=>d.find(x=>x.htmlSource?.endsWith("/탐색기 대형 HTML.html")).htmlSource)',
+    );
+    assert.equal(
+      await fs.readFile(path.join(game, pastedHtml), 'utf8'),
+      largeHtmlContents,
+    );
+    assert.match(await fs.readFile(external, 'utf8'), /원본 보존/);
+  };
+  if (largeHtmlOnly) {
+    await pasteFiles();
+    console.log(
+      'PASS: packaged native Windows file clipboard imports a 13MB HTML file byte-for-byte',
+    );
+  } else {
+    await focusCanvas();
+    await writeClipboard('image');
+    await key('v');
+    await waitImages(1);
+    await wait(
+      'document.querySelectorAll(".project-image").length===1 && document.querySelector(".project-image").naturalWidth===1',
+    );
+    const first = (await images())[0];
+    assert.equal(first.title, '붙여넣은 이미지');
+    assert.ok(
+      (await fs.readFile(path.join(game, first.asset.path))).length > 24,
+    );
+    await wait(
+      'document.querySelectorAll(".react-flow__node-document.selected").length === 1',
+    );
+    await focusCanvas();
+    await key('c');
+    await wait('document.body.textContent.includes("복사했습니다.")');
+    await key('v');
+    await waitImages(2);
+    assert.equal(
+      new Set((await images()).map((d) => d.asset.path)).size,
+      1,
+      'Internal copy references the existing original',
+    );
+    await writeClipboard('text');
+    await focusCanvas();
+    await key('v');
+    await wait('document.querySelectorAll(".canvas-text-node").length===1');
+    assert.ok(
+      (await js('window.gameCanvas.listDrawings()')).some(
+        (o) =>
+          o.kind === 'text' && o.geometry.document.includes('external text'),
+      ),
+    );
+    assert.equal((await images()).length, 2);
+    await writeClipboard('bitmap');
+    await key('v');
+    await waitImages(3);
+    assert.equal(
+      new Set((await images()).map((d) => d.asset.path)).size,
+      2,
+      'External bitmap replaces the stale internal selection',
+    );
+    await focusCanvas();
+    await key('z');
+    await waitImages(2);
+    await js('window.gameCanvas.redo()');
+    await waitImages(3);
+    await writeClipboard('browser-image');
+    await focusCanvas();
+    await key('v');
+    await waitImages(4);
+    await wait('document.querySelectorAll(".project-image").length===4');
+    await writeClipboard('image');
+    // Normal title input owns Ctrl+V and must not create a canvas image.
+    await js(
+      'document.querySelector(".document-card--idea .document-card__content").click()',
+    );
+    await wait(`!!document.querySelector('input[aria-label="문서 제목"]')`);
+    await sleep(150); // Wait for the editor's initial caret-focus animation frame.
+    await js(`document.querySelector('input[aria-label="문서 제목"]').focus()`);
+    assert.equal(
+      await js('document.activeElement?.tagName'),
+      'INPUT',
+      'Title input must own paste',
+    );
+    await key('v');
+    await sleep(250);
+    assert.equal((await images()).length, 4);
+    await focusCanvas();
+    const screenshot = await send('Page.captureScreenshot', { format: 'png' });
+    await fs.mkdir(path.resolve('out/qa'), { recursive: true });
+    await fs.writeFile(
+      path.resolve('out/qa/clipboard-packaged.png'),
+      Buffer.from(screenshot.data, 'base64'),
+    );
+    await send('Page.reload');
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.type==="image").length===4)',
+    );
+    const data = await images();
+    assert.ok(
+      data.every((d) => d.asset?.path && d.body.includes('assets/images/')),
+    );
+    const oldContext = await js(
+      'window.gameCanvas.getWorkspace().then(w=>w.clipboardContextId)',
+    );
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    // Normal window closing flushes Chromium's new profile encryption key too.
+    void js('window.close()').catch(() => undefined);
+    let exitTimer;
     try {
-      const pages = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(
-        (r) => r.json(),
-      );
-      target = pages.find(
-        (p) => p.type === 'page' && p.url.includes('index.html'),
-      );
-      if (target) break;
-    } catch {}
-    await sleep(100);
+      await Promise.race([
+        exited,
+        new Promise((_, reject) => {
+          exitTimer = setTimeout(
+            () => reject(Error('Packaged app did not close normally')),
+            10_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(exitTimer);
+    }
+    ws.close();
+    debugPort = await port();
+    diagnostic = '';
+    child = startApp();
+    target = undefined;
+    for (let i = 0; i < 160; i++) {
+      try {
+        const pages = await fetch(
+          `http://127.0.0.1:${debugPort}/json/list`,
+        ).then((r) => r.json());
+        target = pages.find(
+          (p) => p.type === 'page' && p.url.includes('index.html'),
+        );
+        if (target) break;
+      } catch {}
+      await sleep(100);
+    }
+    assert.ok(
+      target,
+      `Package must restart (exit ${child.exitCode}): ${diagnostic}`,
+    );
+    ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      ws.addEventListener('open', resolve, { once: true });
+      ws.addEventListener('error', reject, { once: true });
+    });
+    ws.addEventListener('message', onMessage);
+    await wait('!!window.gameCanvas');
+    await waitImages(4);
+    await wait(
+      'document.querySelectorAll(".project-image").length===4 && Array.from(document.querySelectorAll(".project-image")).every(i=>i.naturalWidth>0)',
+    );
+    assert.deepEqual(
+      (await images()).map((d) => d.id).sort(),
+      data.map((d) => d.id).sort(),
+    );
+    assert.notEqual(
+      await js(
+        'window.gameCanvas.getWorkspace().then(w=>w.clipboardContextId)',
+      ),
+      oldContext,
+    );
+    await focusCanvas();
+    await js(
+      `(()=>{const data=new DataTransfer();data.items.add(new File(['# 드롭 문서 본문'],'native-drop.md',{type:'text/markdown'}));data.items.add(new File(['<!doctype html><html><body>드롭 HTML</body></html>'],'native-drop.html',{type:'text/html'}));const p=document.querySelector('.react-flow__pane'),r=p.getBoundingClientRect();p.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+r.height/2,dataTransfer:data}));})()`,
+    );
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("드롭 문서 본문"))&&d.some(x=>x.htmlSource))',
+    );
+    const dropped = await js(
+      'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.body.includes("드롭 문서 본문")||x.htmlSource))',
+    );
+    assert.equal(dropped.length, 2);
+    for (const d of dropped)
+      assert.ok((await fs.readFile(path.join(game, d.relativePath))).length);
+    await js('window.gameCanvas.undo()');
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>!d.some(x=>x.body.includes("드롭 문서 본문")))',
+    );
+    await js('window.gameCanvas.redo()');
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("드롭 문서 본문")))',
+    );
+    await pasteFiles();
+    await js('window.gameCanvas.undo()');
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>!d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
+    );
+    await js('window.gameCanvas.redo()');
+    await wait(
+      'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
+    );
+    console.log(
+      'PASS: packaged native Ctrl+V, internal copy precedence, external text/bitmap/Chromium copy, title focus, undo/redo, reload and full process restart persistence',
+    );
   }
-  assert.ok(
-    target,
-    `Package must restart (exit ${child.exitCode}): ${diagnostic}`,
-  );
-  ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve, { once: true });
-    ws.addEventListener('error', reject, { once: true });
-  });
-  ws.addEventListener('message', onMessage);
-  await wait('!!window.gameCanvas');
-  await waitImages(4);
-  await wait(
-    'document.querySelectorAll(".project-image").length===4 && Array.from(document.querySelectorAll(".project-image")).every(i=>i.naturalWidth>0)',
-  );
-  assert.deepEqual(
-    (await images()).map((d) => d.id).sort(),
-    data.map((d) => d.id).sort(),
-  );
-  assert.notEqual(
-    await js('window.gameCanvas.getWorkspace().then(w=>w.clipboardContextId)'),
-    oldContext,
-  );
-  await focusCanvas();
-  await js(
-    `(()=>{const data=new DataTransfer();data.items.add(new File(['# 드롭 문서 본문'],'native-drop.md',{type:'text/markdown'}));data.items.add(new File(['<!doctype html><html><body>드롭 HTML</body></html>'],'native-drop.html',{type:'text/html'}));const p=document.querySelector('.react-flow__pane'),r=p.getBoundingClientRect();p.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+r.height/2,dataTransfer:data}));})()`,
-  );
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("드롭 문서 본문"))&&d.some(x=>x.htmlSource))',
-  );
-  const dropped = await js(
-    'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.body.includes("드롭 문서 본문")||x.htmlSource))',
-  );
-  assert.equal(dropped.length, 2);
-  for (const d of dropped)
-    assert.ok((await fs.readFile(path.join(game, d.relativePath))).length);
-  await js('window.gameCanvas.undo()');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>!d.some(x=>x.body.includes("드롭 문서 본문")))',
-  );
-  await js('window.gameCanvas.redo()');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("드롭 문서 본문")))',
-  );
-  await writeClipboard('files');
-  await focusCanvas();
-  await key('v');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
-  );
-  assert.match(await fs.readFile(external, 'utf8'), /원본 보존/);
-  await js('window.gameCanvas.undo()');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>!d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
-  );
-  await js('window.gameCanvas.redo()');
-  await wait(
-    'window.gameCanvas.listDocuments().then(d=>d.some(x=>x.body.includes("탐색기 파일 붙여넣기")))',
-  );
-  console.log(
-    'PASS: packaged native Ctrl+V, internal copy precedence, external text/bitmap/Chromium copy, title focus, undo/redo, reload and full process restart persistence',
-  );
 } finally {
   ws?.close();
   child.kill();

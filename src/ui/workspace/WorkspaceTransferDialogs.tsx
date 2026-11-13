@@ -188,9 +188,10 @@ export function WorkspaceTransferDialogs({
               </select>
             </label>
             <small>
-              MD 최대 2MB · HTML/HTM 최대 8MB · PNG/JPG/WebP/GIF 최대 5MB · 한
-              번에 20개 /{' '}
-              {audioSupported ? '문서·HTML·이미지 합계' : '원본 합계'} 12MB.
+              MD 최대 2MB ·{' '}
+              {audioSupported ? 'HTML/HTM 크기 제한 없음' : 'HTML/HTM 최대 8MB'}{' '}
+              · PNG/JPG/WebP/GIF 최대 5MB · 한 번에 20개 /{' '}
+              {audioSupported ? 'Markdown·이미지 합계' : '원본 합계'} 12MB.
               SVG는 지원하지 않습니다. Markdown의 외부 이미지와 상대경로 첨부는
               자동으로 가져오지 않습니다.
             </small>

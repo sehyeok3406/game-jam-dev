@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   root,
   profile,
@@ -13,15 +14,21 @@ import {
   js,
   send,
   pause,
+  wait,
   appProcessId,
+  packageFrameSessions,
 } from './helpers/packaged-canvas.mjs';
 import { gamejamTaskInput } from '../src/gamejam-request.ts';
-import { captureProject } from '../src/project-store.ts';
+import { applyChanges, captureProject } from '../src/project-store.ts';
 import {
+  appendGameBuild,
   readGameBuildIndex,
   readGameBuild,
 } from '../src/core/projects/game-build.ts';
-import { gameBuildCodec as codec } from '../src/adapters/node/game-build-codec.ts';
+import {
+  gameBuildCodec,
+  localGameBuildCodec,
+} from '../src/adapters/node/game-build-codec.ts';
 import matter from '../src/markdown.ts';
 import { readClientCache } from '../src/client-cache.ts';
 const call = async (method, ...args) => {
@@ -44,11 +51,15 @@ const call = async (method, ...args) => {
 };
 const editing = process.env.GAMEJAM_BUILD_EDITING === '1';
 const transfer = process.env.GAMEJAM_BUILD_TRANSFER === '1';
+const largeLocal = process.env.GAMEJAM_BUILD_LARGE_LOCAL === '1';
+const codec = largeLocal ? localGameBuildCodec : gameBuildCodec;
 const evidenceDirectory = transfer
   ? 'out/game-build-stage6'
   : editing
     ? 'out/game-build-stage5'
-    : 'out/game-build-stage4';
+    : largeLocal
+      ? 'out/large-local-html'
+      : 'out/game-build-stage4';
 await fs.mkdir(evidenceDirectory, { recursive: true });
 const bin = path.join(root, 'mock-bin'),
   cli = path.join(bin, 'node_modules/@anthropic-ai/claude-code/cli.js');
@@ -84,6 +95,16 @@ let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
   fs.writeFileSync('source/style.css','body{margin:0;background:#0e1828;color:white;font-family:sans-serif;display:grid;place-content:center;height:100vh}canvas{border:2px solid #88e0ad}img{width:24px;height:24px}');
   fs.writeFileSync('source/index.html','<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>숲의 이동</title><script type="module" src="./main.js"></script></head><body><h1>숲의 이동</h1><canvas width="480" height="280"></canvas><img id="hero" src="gamejam:asset/hero"><p>← → 이동 · 목숨 7개 · 전투 금지</p></body></html>');
   fs.writeFileSync('source-plan.json',JSON.stringify({version:1,entry:'main.js',html:'index.html',files:['main.js','style.css','index.html'],assets:[{key:'hero',path:'assets/images/hero.gif'}]}));
+  if(args.includes('build-large')){
+    const plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
+    for(let n=0;n<9;n++){
+      const filename='large-'+n+'.js';
+      plan.files.push(filename);
+      fs.writeFileSync('source/'+filename,'globalThis.largeFixture ??= []; globalThis.largeFixture.push('+JSON.stringify(String(n).repeat(1500000))+');');
+      fs.appendFileSync('source/main.js','\\nimport "./'+filename+'";');
+    }
+    fs.writeFileSync('source-plan.json',JSON.stringify(plan));
+  }
   if(args.includes('reimport-html')){
     const taskFile=fs.readdirSync('.ai/tasks').find(p=>p.endsWith('.md'));
     const task=matter(fs.readFileSync('.ai/tasks/'+taskFile,'utf8')).data;
@@ -313,6 +334,42 @@ async function execute(modelId, options = {}) {
   );
   return { artifact, saved, files, event };
 }
+async function useFileDialog(
+  pending,
+  destination,
+  cancel = false,
+  open = false,
+) {
+  const process = spawn(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-STA',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      path.resolve('tests/helpers/save-html-dialog.ps1'),
+      '-TargetProcessId',
+      String(appProcessId()),
+      ...(cancel ? ['-Cancel'] : ['-Destination', destination]),
+      ...(open ? ['-Open'] : []),
+    ],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let diagnostic = '';
+  for (const stream of [process.stdout, process.stderr])
+    stream.on('data', (d) => {
+      diagnostic = (diagnostic + d).slice(-4000);
+    });
+  const closed = new Promise((resolve, reject) => {
+    process.once('error', reject);
+    process.once('close', (code) =>
+      code === 0 ? resolve() : reject(Error(diagnostic)),
+    );
+  });
+  const [result] = await Promise.all([pending, closed]);
+  return result;
+}
 async function nativeExport(
   relativePath,
   destination,
@@ -334,34 +391,7 @@ async function nativeExport(
         `(()=>{const title=[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(relativePath)}));if(!title)throw Error('preview missing');const button=title.closest('.preview-card').querySelector('[aria-label="게임 HTML 내보내기"]');if(!button)throw Error('export action missing');button.click();return true;})()`,
       )
     : call('exportPreviewHtml', relativePath);
-  const process = spawn(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-STA',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      path.resolve('tests/helpers/save-html-dialog.ps1'),
-      '-TargetProcessId',
-      String(appProcessId()),
-      ...(cancel ? ['-Cancel'] : ['-Destination', destination]),
-    ],
-    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
-  );
-  let diagnostic = '';
-  for (const stream of [process.stdout, process.stderr])
-    stream.on('data', (d) => {
-      diagnostic = (diagnostic + d).slice(-4000);
-    });
-  const closed = new Promise((resolve, reject) => {
-    process.once('error', reject);
-    process.once('close', (code) =>
-      code === 0 ? resolve() : reject(Error(diagnostic)),
-    );
-  });
-  const [result] = await Promise.all([pending, closed]);
-  return result;
+  return useFileDialog(pending, destination, cancel);
 }
 const transfers = [];
 async function roundTrip(previous, label) {
@@ -493,8 +523,184 @@ async function roundTrip(previous, label) {
     label,
   );
 }
-try {
+async function verifyLargeLocalHtml() {
+  const local = await execute('build-large');
+  assert.ok(local.saved.manifest.output.bytes > 12_000_000);
+  const relative = local.artifact.path;
+  const previewState = (file) =>
+    js(
+      `window.gameCanvas.listPreviews().then(items=>{const p=items.find(item=>item.relativePath===${JSON.stringify(file)});return p&&{kind:p.build.kind, length:p.content.length};})`,
+    );
+  assert.equal((await previewState(relative)).kind, 'source');
+  await execute('fail-local', { previous: local, expectFailure: true });
+  await call('restoreHistory', local.event.id, undefined, 'before');
+  assert.equal((await captureProject(game))[relative], undefined);
+  await call('restoreHistory', local.event.id, undefined, 'after');
+  assert.equal((await captureProject(game))[relative], local.files[relative]);
+
+  const destination = path.join(root, 'large-export.html');
+  assert.equal(await nativeExport(relative, destination), true);
+  assert.equal(await fs.readFile(destination, 'utf8'), local.files[relative]);
+  console.log('PASS: native export preserves large HTML bytes');
+  const imported = await useFileDialog(
+    js(
+      `window.gameCanvas.getWorkspace().then(w=>window.gameCanvas.importFiles({scope:w.saveScope,contextId:w.clipboardContextId,x:160,y:200,imagePurpose:'asset'}))`,
+    ),
+    destination,
+    false,
+    true,
+  );
+  const importedPath = imported.find((d) => d.htmlSource)?.htmlSource;
+  assert.ok(importedPath, 'native picker imports a large HTML file');
+  assert.equal(
+    await fs.readFile(path.join(game, importedPath), 'utf8'),
+    local.files[relative],
+  );
+  const nativeInput = await send('Runtime.evaluate', {
+    expression:
+      'document.body.appendChild(Object.assign(document.createElement("input"),{id:"large-drop-fixture",type:"file"}))',
+  });
+  await send('DOM.setFileInputFiles', {
+    files: [destination],
+    objectId: nativeInput.result.objectId,
+  });
+  await js(`(() => {
+    const input = document.querySelector('#large-drop-fixture');
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(input.files[0]);
+    document.querySelector('.react-flow').dispatchEvent(new DragEvent('drop',{bubbles:true,clientX:460,clientY:380,dataTransfer}));
+    input.remove();
+  })()`);
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.htmlSource?.endsWith("/large-export.html")).length===2)',
+  );
+
+  const target = await call('createProject', {
+    mode: 'local',
+    name: '대형 HTML 복사 대상',
+    parent: root,
+  });
+  const entry = (await call('listProjects')).find(
+    (p) => p.root === target.root,
+  );
+  const originalEntry = (await call('listProjects')).find(
+    (p) => p.root === game,
+  );
+  await call('openProject', originalEntry.id);
+  const workspace = await call('getWorkspace');
+  const copied = await call('copySelectionToProject', {
+    session: workspace.session,
+    targetId: entry.id,
+    requestId: randomUUID(),
+    canvasId: 'default',
+    selection: {
+      canvasId: 'default',
+      documents: [],
+      sections: [],
+      previews: [relative, importedPath],
+      drawings: [],
+    },
+  });
+  assert.equal(copied.count, 2);
+  const copiedHtml = copied.paths.filter((p) => p.endsWith('.html'));
+  assert.equal(copiedHtml.length, 2);
+  for (const file of copiedHtml)
+    assert.equal(
+      await fs.readFile(path.join(target.root, file), 'utf8'),
+      local.files[relative],
+    );
+
+  // Install a valid >64MB revision using the same manifest rules, then reopen it.
+  const artifact = { ...local.artifact, buildId: randomUUID() };
+  const prefix = `.game-builds/${artifact.buildId}`;
+  const oldPrefix = `.game-builds/${local.artifact.buildId}/`;
+  const files = await captureProject(game);
+  const html = files[relative].replace(
+    '</body>',
+    `<!--${'x'.repeat(65_000_000)}--></body>`,
+  );
+  const manifest = {
+    ...local.saved.manifest,
+    buildId: artifact.buildId,
+    output: {
+      pathAtCreation: relative,
+      bytes: codec.byteLength(html),
+      sha256: codec.digest(html),
+    },
+  };
+  const bundle = Object.fromEntries(
+    Object.entries(files)
+      .filter(([file]) => file.startsWith(oldPrefix))
+      .map(([file, content]) => [
+        `${prefix}/${file.slice(oldPrefix.length)}`,
+        content,
+      ]),
+  );
+  bundle[`${prefix}/manifest.json`] = JSON.stringify(manifest);
+  const candidate = appendGameBuild(files, bundle, artifact, html, codec);
+  await stop(true);
+  await applyChanges(
+    game,
+    files,
+    Object.fromEntries(
+      [...Object.keys(bundle), '.game-builds/index.json', relative].map(
+        (file) => [file, candidate[file]],
+      ),
+    ),
+  );
   await boot(true, env);
+  assert.deepEqual(await previewState(relative), {
+    kind: 'source',
+    length: html.length,
+  });
+  const preview = `document.querySelector(${JSON.stringify(`[data-id="preview:${relative}"]`)})`;
+  await wait(`!!${preview}`);
+  await js(`${preview}.querySelector('.file-node-surface--html')?.click()`);
+  await wait(`!!${preview}.querySelector('iframe')`);
+  await send('Page.enable');
+  await send('Target.setAutoAttach', {
+    autoAttach: true,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  const id = (await send('DOM.getDocument')).root.nodeId;
+  const { nodeId } = await send('DOM.querySelector', {
+    nodeId: id,
+    selector: `[data-id="preview:${relative}"] iframe`,
+  });
+  const { node } = await send('DOM.describeNode', { nodeId });
+  let world;
+  try {
+    world = await send('Page.createIsolatedWorld', {
+      frameId: node.frameId,
+      worldName: 'large-local-html-check',
+    });
+  } catch {
+    // Chromium may place an opaque-origin preview in an out-of-process frame.
+  }
+  let played = false;
+  for (let n = 0; n < 100 && !played; n++) {
+    for (const sessionId of world ? [undefined] : packageFrameSessions()) {
+      const result = await send(
+        'Runtime.evaluate',
+        {
+          expression:
+            "document.body?.dataset.lives==='7' && [...document.body.childNodes].some(node=>node.nodeType===8 && node.length===65000000)",
+          returnByValue: true,
+          ...(world ? { contextId: world.executionContextId } : {}),
+        },
+        sessionId,
+      ).catch(() => undefined);
+      if (result?.result?.value === true) played = true;
+    }
+    if (!played) await pause();
+  }
+  assert.ok(played, 'reopened >64MB canvas frame runs the game script');
+  console.log(
+    'PASS: large HTML build, history restore, native export/picker/drop, local copy and >64MB revision after restart',
+  );
+}
+async function verifyExistingBuilds() {
   const local = await execute('build-local');
   const edits = {};
   if (editing) {
@@ -626,6 +832,11 @@ try {
   console.log(
     'PASS: restart source preservation and same packaged shared-server lease/history path',
   );
+}
+try {
+  await boot(true, env);
+  if (largeLocal) await verifyLargeLocalHtml();
+  else await verifyExistingBuilds();
 } catch (cause) {
   console.error(
     'History:',

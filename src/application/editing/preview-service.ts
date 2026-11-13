@@ -13,6 +13,7 @@ import {
 import { describePreview, htmlSourceId } from '../../html-source.ts';
 
 type PreviewPorts = {
+  local?: boolean;
   project: LocalProjectRepository;
   files: ProjectTextFiles;
   mutate: (action: () => Promise<void>) => Promise<void>;
@@ -26,7 +27,7 @@ export class ProjectPreviewService {
   async list() {
     const files = await this.ports.project.capture();
     return managedPreviewPaths(files)
-      .map((path) => describePreview(files, path))
+      .map((path) => describePreview(files, path, this.ports.local))
       .sort((a, b) => a.version! - b.version!);
   }
   async read(relative = DEFAULT_PREVIEW_PATH) {

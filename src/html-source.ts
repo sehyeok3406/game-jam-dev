@@ -14,7 +14,10 @@ import type { PreviewResult } from './shared.ts';
 import { cardColor } from './card-colors.ts';
 import { validateHtmlInputs } from './html-inputs.ts';
 import { gameBuildStatus } from './core/projects/game-build-status.ts';
-import { gameBuildCodec } from './adapters/node/game-build-codec.ts';
+import {
+  gameBuildCodec,
+  localGameBuildCodec,
+} from './adapters/node/game-build-codec.ts';
 import { readFileNames } from './core/documents/name-registry.ts';
 import { previewVersion, resultLocation } from './preview-output.ts';
 
@@ -32,11 +35,20 @@ export const previewIdentity = (files: Snapshot, relative: string) =>
   )?.id ?? htmlSourceId(relative);
 
 /** Parse inertly, never evaluate scripts or fetch referenced resources. */
-export function inspectImportedHtml(content: string, name: string) {
-  if (Buffer.byteLength(content) > MAX_HTML_BYTES || content.includes('\0'))
+export function inspectImportedHtml(
+  content: string,
+  name: string,
+  local = false,
+) {
+  if (
+    content.includes('\0') ||
+    (!local && Buffer.byteLength(content) > MAX_HTML_BYTES)
+  )
     throw new CanvasError(
       'GC-IMPORT-003',
-      `${name}: HTML은 UTF-8 텍스트, 최대 8MB여야 합니다.`,
+      local
+        ? `${name}: HTML은 UTF-8 텍스트여야 합니다.`
+        : `${name}: HTML은 UTF-8 텍스트, 최대 8MB여야 합니다.`,
     );
   try {
     inspectHtml(content, name);
@@ -98,6 +110,7 @@ export function sourceMetadata(
 export function describePreview(
   files: Snapshot,
   relative: string,
+  local = false,
 ): PreviewResult {
   const recordPath = htmlSourcePath(relative);
   const nameEntry = readFileNames(files).entries.find(
@@ -114,7 +127,7 @@ export function describePreview(
   let warnings: string[] = [];
   if (data.html_source === relative) {
     try {
-      warnings = inspectImportedHtml(content, relative);
+      warnings = inspectImportedHtml(content, relative, local);
     } catch (error) {
       warnings = [error instanceof Error ? error.message : String(error)];
     }
@@ -135,7 +148,12 @@ export function describePreview(
       typeof data.canvas_placement_id === 'string'
         ? data.canvas_placement_id
         : undefined,
-    build: gameBuildStatus(files, relative, gameBuildCodec, matter),
+    build: gameBuildStatus(
+      files,
+      relative,
+      local ? localGameBuildCodec : gameBuildCodec,
+      matter,
+    ),
     canvasId: typeof data.canvas_id === 'string' ? data.canvas_id : 'default',
     statusPropertyEnabled:
       typeof data.status_property_enabled === 'boolean'
@@ -186,6 +204,7 @@ export function prepareHtmlSource(
   files: Snapshot,
   paths: string[],
   sourceMode?: string,
+  local = false,
 ): {
   additions: Snapshot;
   recordPath: string;
@@ -204,7 +223,7 @@ export function prepareHtmlSource(
     if (!htmlPaths.length)
       throw new CanvasError('GC-AI-007', '재료로 사용할 HTML을 선택해주세요.');
     const sources = [...new Set(htmlPaths)].map(
-      (path) => prepareHtmlSource(files, [path], 'html')!,
+      (path) => prepareHtmlSource(files, [path], 'html', local)!,
     );
     return {
       additions: Object.assign(
@@ -226,7 +245,7 @@ export function prepareHtmlSource(
     content = files[path];
   if (typeof content !== 'string')
     throw new CanvasError('GC-AI-007', '분석할 HTML 파일을 찾을 수 없습니다.');
-  inspectImportedHtml(content, path);
+  inspectImportedHtml(content, path, local);
   const recordPath = htmlSourcePath(path),
     id = previewIdentity(files, path);
   if (files[recordPath]) {

@@ -20,6 +20,7 @@ import { validateGameBuildSource } from '../../../core/ai/game-build-source.ts';
 import { validateDependencyLock } from '../../../core/ai/dependency-preparation.ts';
 
 type Input = {
+  local?: boolean;
   source: GeneratedGameSource;
   assets: Record<string, string>;
   dependencyRoot: string | null;
@@ -353,7 +354,7 @@ async function main(input: Input) {
   head.childNodes.unshift(...additions);
   const html =
     '<!doctype html>\n' + serialize(doc).replace(/^<!DOCTYPE html>/i, '');
-  if (Buffer.byteLength(html) > GameBuildLimits.htmlBytes)
+  if (!input.local && Buffer.byteLength(html) > GameBuildLimits.htmlBytes)
     fail('내장 HTML이 현재 8MB 한도를 초과합니다.');
   return { html, toolsetSha256: input.toolsetSha256, profile };
 }
@@ -362,7 +363,14 @@ try {
   const input = JSON.parse(
     await fs.readFile('build-input.json', 'utf8'),
   ) as Input;
-  process.stdout.write(JSON.stringify({ result: await main(input) }));
+  const result = await main(input);
+  if (input.local) {
+    const { html, ...metadata } = result;
+    await fs.writeFile('built-game.html', html, { flag: 'wx' });
+    process.stdout.write(JSON.stringify({ result: metadata }));
+  } else {
+    process.stdout.write(JSON.stringify({ result }));
+  }
 } catch (cause) {
   process.stdout.write(
     JSON.stringify({

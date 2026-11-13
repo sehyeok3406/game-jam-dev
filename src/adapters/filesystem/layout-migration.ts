@@ -40,6 +40,7 @@ export async function installProjectLayout(
   root: string,
   target: Snapshot,
   assertCurrent = () => {},
+  local = false,
 ) {
   assertCurrent();
   if (!readProjectLayout(target)) return;
@@ -97,8 +98,8 @@ export async function installProjectLayout(
   }
   if (journal.version !== 1 || !Array.isArray(journal.files))
     throw Error('파일 구조 이전 기록을 확인해주세요.');
-  checkSnapshot(journal.before);
-  checkSnapshot(journal.after);
+  checkSnapshot(journal.before, local);
+  checkSnapshot(journal.after, local);
   if (!readProjectLayout(journal.after))
     throw Error('파일 구조 이전 대상이 올바르지 않습니다.');
   const committed = await hasModernLayout(root);
@@ -247,6 +248,7 @@ export async function installProjectLayout(
 export async function recoverProjectLayout(
   root: string,
   assertCurrent = () => {},
+  local = false,
 ) {
   const filename = await projectPath(root, JOURNAL, true);
   const journal = await fs
@@ -256,5 +258,6 @@ export async function recoverProjectLayout(
       if (error.code === 'ENOENT') return null;
       throw error;
     });
-  if (journal) await installProjectLayout(root, journal.after, assertCurrent);
+  if (journal)
+    await installProjectLayout(root, journal.after, assertCurrent, local);
 }
