@@ -12,10 +12,11 @@ export function createDesktopRuntime(
     capabilities: Object.freeze({
       localFiles: true,
       localAiExecution: true,
-      selfHostManagement: !!bridge.selfHost,
+      selfHostManagement: false,
       appUpdates: true,
       nativeClipboard: true,
-      multiplayer: !!bridge.multiplayer,
+      multiplayer: false,
+      projectCollaboration: false,
     }),
     preferences,
   };

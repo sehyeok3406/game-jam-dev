@@ -53,6 +53,7 @@ export interface HomeSharedProjects {
   locationItems?(
     id: string,
   ): Promise<import('../../contracts/location-links.ts').LocationItem[]>;
+  existingDirectory?(id: string): Promise<string>;
   directory?(id: string): Promise<{ root: string; offline: boolean }>;
   cache(
     id: string,

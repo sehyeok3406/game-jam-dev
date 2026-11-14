@@ -190,6 +190,7 @@ async function fixture(t) {
     share,
     join,
     handover,
+    server,
     url,
   };
 }
@@ -384,6 +385,9 @@ test('an ambiguous detach response recovers from a restricted receipt; wrong pro
     ),
     /권한/,
   );
+  await f.modes.recoverCommittedLocal(f.libraryId);
+  assert.equal(f.library.list()[0].kind, 'shared');
+  assert.deepEqual(await f.files.read(key), attempt);
   await f.modes.recover(f.libraryId);
   assert.equal(f.library.list()[0].kind, 'local');
   assert.deepEqual(await f.files.ids('local-'), []);
@@ -406,9 +410,10 @@ test('local finalization failure after server commit is resumed without departin
   const key = (await f.files.ids('local-'))[0];
   assert.equal((await f.files.read(key)).committed, true);
   f.files.finish = finish;
-  await f.modes.recover();
+  await f.server.close();
+  await f.modes.recoverCommittedLocal();
   assert.equal(f.library.list()[0].kind, 'local');
-  await f.modes.recover();
+  await f.modes.recoverCommittedLocal();
   assert.equal(f.library.list().length, 1);
 });
 
@@ -449,6 +454,10 @@ test('creation response loss retries the same server identity and never creates 
   try {
     await assert.rejects(f.share(), /response lost/);
     assert.equal(f.library.list()[0].transitionPending, true);
+    const [creation] = await f.files.ids('create-');
+    await f.modes.recoverCommittedLocal();
+    assert.deepEqual(await f.files.ids('create-'), [creation]);
+    assert.equal(projectIds.length, 1);
     await f.modes.recover();
     assert.equal(projectIds.length, 2);
     assert.equal(projectIds[0], projectIds[1]);

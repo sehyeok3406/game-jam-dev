@@ -509,6 +509,16 @@ export class DocumentSaveQueue {
     this.documents.delete(id);
     this.publish({ ...this.state(entry), phase: 'discarded' });
   }
+  async pendingProjectFiles(matches: (scope: string) => boolean) {
+    await this.ready;
+    return [...this.entries.values()]
+      .filter(
+        (entry) =>
+          entry.savedSequence < entry.request.sequence &&
+          matches(entry.request.scope),
+      )
+      .map((entry) => entry.request.relativePath);
+  }
   hasPending() {
     return [...this.entries.values()].some(
       (e) => e.savedSequence < e.request.sequence,

@@ -4,7 +4,7 @@ import { atomicJson } from '../../trash-files.ts';
 
 export type LifecycleMarker = { status: string; version: number };
 /** Recovery guards supplement DB tombstones; failed writes remain retryable. */
-export async function createLifecycleStore(root: string) {
+export async function createLifecycleStore(root: string, projectId?: string) {
   const markers = new Map<string, LifecycleMarker>();
   const pending = new Map<string, LifecycleMarker>();
   const jobs = new Map<string, Promise<void>>();
@@ -17,6 +17,7 @@ export async function createLifecycleStore(root: string) {
     });
   for (const file of entries) {
     if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
+    if (projectId && file !== projectId + '.json') continue;
     const marker = JSON.parse(
       await fs.readFile(path.join(folder, file), 'utf8'),
     );

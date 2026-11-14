@@ -100,6 +100,7 @@ interface Ports {
     Map<string, (finish?: boolean) => Promise<void>>
   >;
   api: import('../../contracts/app-api.ts').AppApi;
+  multiplayerEnabled: boolean;
   effectiveAiRequest: import('../../gamejam-request').GamejamRequest | null;
   loadProject: (fit?: boolean, throwOnError?: boolean) => Promise<void>;
   submittingApproval: boolean;
@@ -453,6 +454,7 @@ export function useAiRequestCommands(
       const request = resolveGamejamRequest(
         {
           ...aiRequest,
+          ...(ports().multiplayerEnabled ? {} : { multiplayer: null }),
           nodePlacement: aiRequest.nodePlacement ?? ports().nodePlacement,
         },
         latestDocuments,

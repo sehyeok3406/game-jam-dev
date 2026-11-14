@@ -51,7 +51,11 @@ export function createLifecycleService(ports: Ports) {
     await ports.purgeStored(project.id, project.lifecycle!.version + 1);
     await ports.marker(project.id, 'purged', project.lifecycle!.version + 1);
     ports.remove(project.id);
-    return { projectId: project.id, status: 'purged' };
+    return {
+      projectId: project.id,
+      status: 'purged',
+      version: project.lifecycle!.version + 1,
+    };
   };
   const restoreProject = async (project: Project) => {
     if (
@@ -120,7 +124,20 @@ export function createLifecycleService(ports: Ports) {
     if (action === 'lifecycle') return projectLifecycle(project);
     if (action.startsWith('trash')) {
       ports.admin(member);
-      if (action === 'trash-status') return projectLifecycle(project);
+      if (action === 'trash-status')
+        return {
+          ...projectLifecycle(project),
+          conditionalTrashVersion: 1 as const,
+        };
+      if (
+        action !== 'trash' &&
+        input.expectedVersion !== undefined &&
+        input.expectedVersion !== (project.lifecycle?.version ?? 0)
+      )
+        throw new ApiError(
+          '프로젝트 상태가 바뀌었습니다. 다시 확인해주세요.',
+          409,
+        );
       if (action === 'trash-restore') return restoreProject(project);
       if (input.typedName !== project.name)
         throw new ApiError('프로젝트 이름을 정확히 입력해주세요.', 400);

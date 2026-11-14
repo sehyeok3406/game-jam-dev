@@ -6,6 +6,7 @@ export type ClientCapabilities = Readonly<{
   appUpdates: boolean;
   nativeClipboard: boolean;
   multiplayer: boolean;
+  projectCollaboration: boolean;
 }>;
 
 export type ServiceMode = 'self-host' | 'managed-beta' | 'managed';

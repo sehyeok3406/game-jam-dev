@@ -38,10 +38,14 @@ export class WebViewerService {
   private hashes = new Map<string, string>();
   private running: Promise<{ published: number; errors: string[] }> | null =
     null;
-  constructor(
-    private directory: string,
-    private encryption: Encryption,
-  ) {}
+  private directory: string;
+  private encryption: Encryption;
+  private localOnly: boolean;
+  constructor(directory: string, encryption: Encryption, localOnly = false) {
+    this.directory = directory;
+    this.encryption = encryption;
+    this.localOnly = localOnly;
+  }
   async settings(): Promise<ViewerSettings | null> {
     try {
       const bytes = await fs.readFile(
@@ -82,11 +86,23 @@ export class WebViewerService {
       .readFile(path.join(this.directory, 'web-viewer-status.json'), 'utf8')
       .then(JSON.parse)
       .catch(() => null);
+    let projects = settings?.projects ?? [];
+    if (this.localOnly && projects.length) {
+      const library = new ProjectLibrary(this.directory, this.encryption);
+      await library.load();
+      const localIds = new Set(
+        library
+          .list()
+          .filter((entry) => entry.kind === 'local')
+          .map((entry) => entry.id),
+      );
+      projects = projects.filter((id) => localIds.has(id));
+    }
     return {
       configured: !!settings,
       url: WEB_VIEWER_URL,
       accessCode: settings?.accessCode ?? '',
-      projects: settings?.projects ?? [],
+      projects,
       liveLocal: settings?.liveLocal ?? false,
       lastPublishedAt: status?.lastPublishedAt,
       errors: status?.errors ?? [],
@@ -106,7 +122,16 @@ export class WebViewerService {
     await library.load();
     let published = 0;
     const errors: string[] = [];
+    const registered = this.localOnly
+      ? new Set(
+          library
+            .list()
+            .filter((entry) => entry.kind === 'local')
+            .map((entry) => entry.id),
+        )
+      : null;
     for (const id of settings.projects) {
+      if (registered && !registered.has(id)) continue;
       try {
         const entry = library.get(id);
         if (!force && entry.kind === 'local' && !settings.liveLocal) continue;

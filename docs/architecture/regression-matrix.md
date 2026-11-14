@@ -1,5 +1,9 @@
 # 보존 동작과 검증 연결
 
+## 로컬 중심 Windows 패키지 · 2026-11-14
+
+`npm run package` 후 `node tests/local-first-packaged.mjs`와 `node tests/project-trash-packaged.mjs`를 실행한다. 전자는 격리된 공유 등록·캐시와 내장/외부 서버에서 시작 차단과 선택 정리를 검사하며 후자는 로컬 프로젝트의 휴지통 UI를 검사한다. `GAMEJAM_BUILD_EDITING=1`, `GAMEJAM_LOCAL_EXPORT=1`을 지정한 `node tests/game-build-execution-packaged.mjs`는 로컬 Git 프로젝트에서 모의 AI CLI, 실제 번들·검증, 기록 복원, 독립 실행 HTML 내보내기와 재시작을 검사한다. 아래 공유 UI와 서버 연동 패키지 시나리오는 종료 전 경로에 해당하며 현재의 공유 서버 서비스 검증은 `npm run test:server`에 포함된다.
+
 공유 위치 링크는 기본 `npm test`의 URL/세션·배율·앵커 왕복/복제/Undo/구버전 검사를 사용한다. `test:location-links:main`은 production main/IPC와 실제 임시 서버, `test:location-links:ui`는 빌드된 renderer의 스크롤/강조/복사 메뉴, package 뒤 `test:location-links:packaged`는 Windows 종료/실행 중 수신과 실제 OS 전달·극대/극소 도형/이미지를 확인한다. UUID 프로필·임시 서버만 사용하고 OS 프로토콜의 원래 등록을 복원한다. 한 PC 검사와 실제 두 PC/메신저 검증은 구분한다. 상세 경계는 [공유 위치 링크](location-links.md)를 따른다.
 
 7단계 실제 계정 검사는 사용자가 사용할 수 있는 Codex만 대상으로 한다. `GAMEJAM_REAL_CODEX=1` 환경에서 `node tests/game-build-codex-packaged.mjs <pixel|edit|neon|reimport|cancel>`을 명시적으로 실행한다. 기본 `npm test`에 유료/계정 호출을 넣지 않는다. `pixel`→`edit`→`reimport`는 앞 시나리오의 합성 snapshot을 사용하며 `neon`은 독립 공동 프로젝트를 만든다. `node tests/game-build-codex-browser.mjs <pixel|edit|neon|reimport> [초기 목숨]`으로 실제 내보낸 결과의 규칙·키 입력·원래 이미지 사용·승리/실패·재시작·외부 요청/오류를 확인한다. 고정 source 모의 응답으로 실제 AI 결과를 대체하지 않는다. 다른 AI 3종의 실제 계정 검증은 보류하고 공통 모의 검사와 구분한다. 진행과 발견 사항은 [7단계 기록](../audits/2026-11-03-game-build-stage7.md)을 따른다.

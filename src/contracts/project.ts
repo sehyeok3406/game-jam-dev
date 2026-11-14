@@ -12,6 +12,8 @@ export type ProjectEntry = {
   nameConflict?: boolean;
   folderNamePending?: boolean;
   transitionPending?: boolean;
+  sharedCopyRemoved?: boolean;
+  sharedCopyAvailable?: boolean;
   lifecycle?: SharedProjectLifecycle;
   id: string;
   name: string;
@@ -29,6 +31,7 @@ export type ProjectEntry = {
   folderId?: string;
 };
 export type SharedProjectLifecycle = {
+  conditionalTrashVersion?: 1;
   projectId: string;
   name?: string;
   status:

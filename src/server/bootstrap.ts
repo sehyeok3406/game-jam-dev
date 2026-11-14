@@ -80,6 +80,7 @@ import { assertAiFilesUnlocked, assertAiMutation } from '../ai-file-lock.ts';
 import { type Snapshot } from '../project-store.ts';
 import { rebuildAuthorship } from '../file-authorship.ts';
 type Options = {
+  cleanupProjectId?: string;
   storagePolicy?: import('../contracts/game-build.ts').ProjectStoragePolicy;
   dataDirectory: string;
   host?: string;
@@ -106,7 +107,18 @@ export async function createCollaborationServer(options: Options) {
   assertServiceMode(options.serviceMode ?? 'self-host', options.creationKey);
   const peer = createPeerIdentity(options.trustedProxies);
   let accepting = false;
+  const cleanupId = options.cleanupProjectId;
   const host = options.host ?? '127.0.0.1';
+  if (
+    cleanupId !== undefined &&
+    (!/^[a-f0-9-]{36}$/.test(cleanupId) ||
+      host !== '127.0.0.1' ||
+      options.port !== 0 ||
+      options.publicAccess ||
+      options.backup ||
+      options.trustedProxies?.length)
+  )
+    throw Error('공유 정리는 이 PC에서 한 프로젝트만 열 수 있습니다.');
   if (
     (options.publicAccess ||
       !['127.0.0.1', '::1', 'localhost'].includes(host)) &&
@@ -114,7 +126,10 @@ export async function createCollaborationServer(options: Options) {
   )
     throw new Error('외부 연결 서버에는 32자 이상의 creationKey가 필요합니다.');
   const root = path.resolve(options.dataDirectory);
-  await fs.mkdir(root, { recursive: true });
+  if (cleanupId) {
+    if (!(await fs.stat(root)).isDirectory())
+      throw Error('내장 서버 자료 폴더를 찾을 수 없습니다.');
+  } else await fs.mkdir(root, { recursive: true });
   const writer = await acquireWriter(root);
   const telemetry = createTelemetry(options.requestLog);
   try {
@@ -155,12 +170,18 @@ export async function createCollaborationServer(options: Options) {
     const { projects, locks, online, projectQueue, projectLocks } =
       createServerContext();
     let multiplayer: ReturnType<typeof attachMultiplayerServer> | undefined;
-    const lifecycleStore = await createLifecycleStore(root);
+    const lifecycleStore = await createLifecycleStore(root, cleanupId);
     const store = new SqliteProjectRepository<Project>(
       path.join(root, 'sync.sqlite'),
     );
     try {
-      const tombstones = new Map(await store.tombstones());
+      const tombstones = cleanupId
+        ? new Map<string, number>()
+        : new Map(await store.tombstones());
+      if (cleanupId) {
+        const version = await store.tombstone(cleanupId);
+        if (version !== undefined) tombstones.set(cleanupId, version);
+      }
       const checkpoints = createCheckpointStore(root);
       const events = new ProjectEvents({
         summary: (id) => ({
@@ -214,7 +235,7 @@ export async function createCollaborationServer(options: Options) {
           (!p.lifecycle ||
             ['active', 'trashing', 'restoring'].includes(p.lifecycle.status));
         const save = async () => {
-          synchronizeAiState(project, Date.now);
+          if (!cleanupId) synchronizeAiState(project, Date.now);
           await telemetry.save(() => persistence.persist(project));
         };
         const previous = projects.get(project.id);
@@ -225,7 +246,7 @@ export async function createCollaborationServer(options: Options) {
           return queue('project-names', async () => {
             try {
               assertProjectNameAvailable(
-                projects.values(),
+                cleanupId ? store.lifecycleNames() : projects.values(),
                 project.name,
                 project.id,
               );
@@ -237,18 +258,25 @@ export async function createCollaborationServer(options: Options) {
         await save();
       };
       try {
-        for (const project of await store.loadAll()) {
+        const selected = cleanupId ? await store.load(cleanupId) : null;
+        const loaded = cleanupId
+          ? selected
+            ? [selected]
+            : []
+          : await store.loadAll();
+        for (const project of loaded) {
           checkSnapshot(project.files);
           project.authorship ??= rebuildAuthorship(project.history);
-          if (project.job) project.job.expiresAt = 0;
+          if (!cleanupId && project.job) project.job.expiresAt = 0;
           projects.set(project.id, project);
-          persistence.track(project);
+          if (!cleanupId) persistence.track(project);
         }
       } catch (error) {
         await store.close();
         throw error;
       }
       for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+        if (cleanupId && cleanupId !== entry.name) continue;
         if (
           !entry.isDirectory() ||
           !/^[a-f0-9-]{36}$/.test(entry.name) ||
@@ -262,10 +290,10 @@ export async function createCollaborationServer(options: Options) {
           const project = await checkpoints.recover(entry.name);
           checkSnapshot(project.files);
           project.authorship ??= rebuildAuthorship(project.history);
-          if (project.job) {
+          if (!cleanupId && project.job) {
             project.job.expiresAt = 0;
           }
-          await store.commit(project);
+          if (!cleanupId) await store.commit(project);
           projects.set(project.id, project);
         } catch (error) {
           await store.close();
@@ -344,7 +372,7 @@ export async function createCollaborationServer(options: Options) {
         id: randomUUID,
         retention: TRASH_RETENTION,
       });
-      await projectLifecycleService.maintain();
+      if (!cleanupId) await projectLifecycleService.maintain();
       const identity = {
         now: Date.now,
         id: randomUUID,
@@ -496,14 +524,31 @@ export async function createCollaborationServer(options: Options) {
         assertActive,
         admin,
         expire: aiRun.expire,
-        lifecycle: projectLifecycleService.execute,
+        lifecycle: (project, member, action, input) => {
+          if (
+            cleanupId &&
+            action === 'trash-purge' &&
+            input.confirmTeam !== true
+          )
+            throw new ApiError('서버 원본의 영구 삭제를 확인해주세요.', 400);
+          return projectLifecycleService.execute(
+            project,
+            member,
+            action,
+            input,
+          );
+        },
         dispatch,
       });
       const run: typeof dispatchRequest = (...args) =>
         gate.run(() => dispatchRequest(...args));
       const actionHttp = {
         peer,
-        get: (id: string) => projects.get(id),
+        get: (id: string) => {
+          if (cleanupId && id !== cleanupId)
+            throw new ApiError('선택한 프로젝트만 관리할 수 있습니다.', 404);
+          return projects.get(id);
+        },
         unavailable,
         authenticate,
         limit,
@@ -511,50 +556,66 @@ export async function createCollaborationServer(options: Options) {
       };
       const server = http.createServer(
         createHttpHandler(
-          [
-            healthRoute(packageInfo.version, options.storagePolicy),
-            readyRoute(() => accepting && !gate.blocked),
-            eventsRoute(
-              {
-                authenticate: (id, token) => {
-                  const project = projects.get(id);
-                  if (!project) return unavailable(id);
-                  const member = authenticate(project, token);
-                  assertActive(project);
-                  return member;
-                },
-                limit,
-              },
-              events,
-            ),
-            multiplayerRoute({
-              get: (id) => projects.get(id),
-              authenticate,
-              assertActive,
-              limit,
-              control: (id, token, input) =>
-                multiplayer!.control(id, token, input),
-              record: (...args) => playDiagnostics.record(...args),
-            }),
-            projectsRoute({
-              peer,
-              limit,
-              validKey: (key) =>
-                !options.creationKey || same(key, digest(options.creationKey)),
-              create: (input) => gate.run(() => projectService.create(input)),
-              join: (input) => gate.run(() => projectService.join(input)),
-              inspectJoin: (input) =>
-                gate.run(() => projectService.inspectJoin(input)),
-              recover: (input) => gate.run(() => projectService.recover(input)),
-            }),
-            projectsActionRoute(actionHttp),
-            commandsRoute(actionHttp),
-            membersRoute(actionHttp),
-            historyRoute(actionHttp),
-            approvalsRoute(actionHttp),
-            aiRoute(actionHttp),
-            projectActionRoute(() => true, actionHttp),
-          ],
+          cleanupId
+            ? [
+                projectActionRoute(
+                  (action) =>
+                    [
+                      'trash-status',
+                      'trash',
+                      'trash-restore',
+                      'trash-purge',
+                    ].includes(action),
+                  actionHttp,
+                ),
+              ]
+            : [
+                healthRoute(packageInfo.version, options.storagePolicy),
+                readyRoute(() => accepting && !gate.blocked),
+                eventsRoute(
+                  {
+                    authenticate: (id, token) => {
+                      const project = projects.get(id);
+                      if (!project) return unavailable(id);
+                      const member = authenticate(project, token);
+                      assertActive(project);
+                      return member;
+                    },
+                    limit,
+                  },
+                  events,
+                ),
+                multiplayerRoute({
+                  get: (id) => projects.get(id),
+                  authenticate,
+                  assertActive,
+                  limit,
+                  control: (id, token, input) =>
+                    multiplayer!.control(id, token, input),
+                  record: (...args) => playDiagnostics.record(...args),
+                }),
+                projectsRoute({
+                  peer,
+                  limit,
+                  validKey: (key) =>
+                    !options.creationKey ||
+                    same(key, digest(options.creationKey)),
+                  create: (input) =>
+                    gate.run(() => projectService.create(input)),
+                  join: (input) => gate.run(() => projectService.join(input)),
+                  inspectJoin: (input) =>
+                    gate.run(() => projectService.inspectJoin(input)),
+                  recover: (input) =>
+                    gate.run(() => projectService.recover(input)),
+                }),
+                projectsActionRoute(actionHttp),
+                commandsRoute(actionHttp),
+                membersRoute(actionHttp),
+                historyRoute(actionHttp),
+                approvalsRoute(actionHttp),
+                aiRoute(actionHttp),
+                projectActionRoute(() => true, actionHttp),
+              ],
           async (request) => {
             if (request.method !== 'POST')
               throw new ApiError('지원하지 않는 요청입니다.', 404);
@@ -564,24 +625,26 @@ export async function createCollaborationServer(options: Options) {
           { accepting: () => accepting, observe: telemetry.observe },
         ),
       );
-      multiplayer = attachMultiplayerServer(
-        server,
-        (id, token) => {
-          if (!accepting) throw new ApiError('서버가 종료 중입니다.', 503);
-          const project = projects.get(id);
-          if (!project) throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
-          assertActive(project);
-          const member = authenticate(project, token);
-          return {
-            id: member.id,
-            nickname: member.nickname,
-            role: member.role,
-            files: project.files,
-          };
-        },
-        playDiagnostics,
-        announcePlayLobby,
-      );
+      if (!cleanupId)
+        multiplayer = attachMultiplayerServer(
+          server,
+          (id, token) => {
+            if (!accepting) throw new ApiError('서버가 종료 중입니다.', 503);
+            const project = projects.get(id);
+            if (!project)
+              throw new ApiError('프로젝트를 찾을 수 없습니다.', 404);
+            assertActive(project);
+            const member = authenticate(project, token);
+            return {
+              id: member.id,
+              nickname: member.nickname,
+              role: member.role,
+              files: project.files,
+            };
+          },
+          playDiagnostics,
+          announcePlayLobby,
+        );
       const backup = options.backup
         ? new BackupService({
             ...options.backup,
@@ -623,13 +686,17 @@ export async function createCollaborationServer(options: Options) {
             gate.stop();
           },
           drainAccepted: () => gate.drain(),
-          maintain: () => gate.run(projectLifecycleService.maintain),
+          maintain: () =>
+            cleanupId
+              ? Promise.resolve()
+              : gate.run(projectLifecycleService.maintain),
           exportDirty: () => {
-            if (!gate.blocked) persistence.exportDirty();
+            if (!cleanupId && !gate.blocked) persistence.exportDirty();
           },
           closeMultiplayer: () => multiplayer?.close(),
           closeEvents: () => events.close(),
-          flushDiagnostics: () => playDiagnostics.flush(),
+          flushDiagnostics: () =>
+            cleanupId ? Promise.resolve() : playDiagnostics.flush(),
           drain: () => projectQueue.drain(),
           waitCheckpoints: () => persistence.waitAll(),
           checkpointDirty: () => persistence.flush(),
@@ -640,7 +707,7 @@ export async function createCollaborationServer(options: Options) {
           },
           closeStore: async () => {
             try {
-              await writeStatus();
+              if (!cleanupId) await writeStatus();
               telemetry.close();
               await store.close();
             } finally {
@@ -650,9 +717,11 @@ export async function createCollaborationServer(options: Options) {
         },
       );
       accepting = true;
-      statusTimer = setInterval(() => void writeStatus(), 30000);
-      statusTimer.unref();
-      await writeStatus();
+      if (!cleanupId) {
+        statusTimer = setInterval(() => void writeStatus(), 30000);
+        statusTimer.unref();
+        await writeStatus();
+      }
       if (backup) {
         const interval = options.backup!.intervalMs ?? 86400000;
         if (

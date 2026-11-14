@@ -424,6 +424,14 @@ export class DesktopProjectModes {
     await p.files().remove('local-' + attempt.id);
     p.changed();
   }
+  async recoverCommittedLocal(libraryId?: string) {
+    const files = this.ports.files();
+    for (const key of await files.ids('local-')) {
+      const attempt = await files.read<LocalAttempt>(key);
+      if (attempt?.committed && (!libraryId || attempt.libraryId === libraryId))
+        await this.finish(attempt);
+    }
+  }
   async recover(libraryId?: string) {
     const p = this.ports;
     for (const key of await p.files().ids('local-')) {

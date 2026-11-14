@@ -6,8 +6,6 @@ import net from 'node:net';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createCollaborationServer } from '../src/collaboration-server.ts';
-import { CollaborationClient } from '../src/collaboration-client.ts';
 const root = await fs.mkdtemp(
   path.join(os.tmpdir(), 'gamejam-packaged-trash-'),
 );
@@ -54,7 +52,7 @@ const child = spawn(
   ],
   { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
 );
-let ws, server;
+let ws;
 let diagnostic = '';
 child.stderr.on(
   'data',
@@ -202,83 +200,6 @@ try {
   console.log(
     'PASS packaged local UI: cancel, real whole-folder move, retained state, draft/hidden-file restoration, typed permanent purge',
   );
-  server = await createCollaborationServer({
-    dataDirectory: path.join(root, 'server'),
-    port: 0,
-  });
-  const url = `http://127.0.0.1:${server.port}`;
-  const created = await CollaborationClient.create(
-    url,
-    '',
-    'owner',
-    '팀 원본 삭제 검증',
-    { 'project.md': '# server data' },
-  );
-  await js(
-    `window.gameCanvas.recoverCollaboration(${JSON.stringify({ serverUrl: url, projectId: created.credentials.projectId, recoveryKey: created.credentials.recoveryKey })})`,
-  );
-  await js('window.gameCanvas.goHome()');
-  await js('document.querySelector(".home-topbar button").click()');
-  await wait('document.querySelectorAll(".home-project-more").length===1');
-  await menu();
-  await click('공동 프로젝트 삭제 — 팀 전체…');
-  await wait('!!document.querySelector(".project-trash-modal input")');
-  await js('document.querySelector(".project-trash-modal input").focus()');
-  await send('Input.insertText', { text: '팀 원본 삭제 검증' });
-  await js(
-    'document.querySelector(".project-trash-modal input[type=checkbox]").click()',
-  );
-  await wait(
-    '!![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="팀 프로젝트 휴지통으로 이동"&&!b.disabled)',
-  );
-  await screenshot('trash-team-confirm.png');
-  await click('팀 프로젝트 휴지통으로 이동');
-  await wait('!document.querySelector(".project-trash-modal")');
-  await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
-  );
-  await wait(
-    '!![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="팀 프로젝트 복원"&&!b.disabled)',
-  );
-  await screenshot('trash-server-retained.png');
-  await click('팀 프로젝트 복원');
-  await wait(
-    '![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="팀 프로젝트 복원")',
-  );
-  const lifecycle = await js(
-    `window.gameCanvas.getSharedProjectLifecycle(${JSON.stringify('shared:' + created.credentials.projectId)})`,
-  );
-  assert.equal(lifecycle.status, 'active');
-  await click('닫기');
-  console.log(
-    'PASS packaged team UI: administrator recovery, typed team confirmation, server original retention, team access blocked and administrator restoration',
-  );
-  await menu();
-  await click('이 PC의 사본을 휴지통으로 이동…');
-  await wait(
-    '!![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="휴지통으로 이동"&&!b.disabled)',
-  );
-  await click('휴지통으로 이동');
-  await wait(
-    '!document.querySelector(".project-trash-modal") && !document.querySelector(".home-project-card")',
-  );
-  const onServer = await fs.stat(
-    path.join(root, 'server', created.credentials.projectId),
-  );
-  assert.ok(onServer.isDirectory());
-  await js(
-    '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.trim().startsWith("휴지통")).click()',
-  );
-  await wait(
-    '!![...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="복원"&&!b.disabled)',
-  );
-  await click('복원');
-  await wait('!document.querySelector(".project-trash-list article")');
-  await click('닫기');
-  console.log(
-    'PASS packaged shared local copy UI: cache and credentials restore while server original remains intact',
-  );
-
   await js(
     '[...document.querySelectorAll(".home-sidebar-bottom button")].find(b=>b.textContent.includes("라이트 모드"))?.click()',
   );
@@ -294,7 +215,6 @@ try {
     if (child.exitCode !== null) r();
     else child.once('exit', r);
   });
-  await server?.close();
   // Both targets are exact paths created for this test; verify containment before cleanup.
   assert.ok(
     profile.startsWith(

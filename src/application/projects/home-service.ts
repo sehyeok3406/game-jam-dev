@@ -9,6 +9,7 @@ import type {
 import { projectDirectoryName } from '../../core/projects/project-name.ts';
 
 type Ports = {
+  sharedProjectsRetired?: boolean;
   registry: HomeProjectRegistry;
   local: HomeLocalProjects;
   shared: HomeSharedProjects;
@@ -55,6 +56,14 @@ export class ProjectHomeService {
             entry.modifiedAt = cache.modifiedAt;
           } catch {
             /* A first connection may have no cache. */
+          }
+          if (p.sharedProjectsRetired) {
+            entry.sharedCopyAvailable =
+              !entry.sharedCopyRemoved &&
+              !!(await p.shared
+                .existingDirectory?.(entry.id)
+                .catch(() => null));
+            return entry;
           }
           if (refreshShared === true) {
             try {
@@ -120,6 +129,8 @@ export class ProjectHomeService {
   async rename(id: string, inputName: string, expectedName?: string) {
     const name = projectDirectoryName(inputName);
     const entry = this.ports.registry.get(id);
+    if (this.ports.sharedProjectsRetired && entry.kind === 'shared')
+      throw Error('공유 프로젝트 운영이 종료되었습니다.');
     if (name === entry.name) return;
     if (this.ports.registry.assertNameAvailable) await this.list();
     const run = () => this.renameNamed(id, name, expectedName);
@@ -157,6 +168,8 @@ export class ProjectHomeService {
   async open(id: string) {
     const p = this.ports;
     if (p.trash.hasProject(id)) throw Error('휴지통에서 먼저 복원해주세요.');
+    if (p.sharedProjectsRetired && p.registry.get(id).kind === 'shared')
+      throw Error('공유 프로젝트 운영이 종료되었습니다.');
     await p.beforeOpen?.(id);
     const entry = p.registry.get(id),
       current = p.session.current();
@@ -218,7 +231,7 @@ export class ProjectHomeService {
       );
     p.registry?.assertNameAvailable?.(name);
     if (typeof input !== 'string' && input.mode === 'shared') {
-      if (!p.createShared)
+      if (p.sharedProjectsRetired || !p.createShared)
         throw Error('이 환경에서는 공동 프로젝트를 생성할 수 없습니다.');
       return p.createShared({ ...input, name });
     }
@@ -259,6 +272,12 @@ export class ProjectHomeService {
       entry = p.registry.get(id);
     if (p.trash.hasProject(id)) throw Error('휴지통에서 먼저 복원해주세요.');
     if (entry.kind === 'shared') {
+      if (p.sharedProjectsRetired) {
+        if (!p.shared.existingDirectory || entry.sharedCopyRemoved)
+          throw Error('이 PC에 표시할 공유 사본이 없습니다.');
+        await p.reveal(await p.shared.existingDirectory(id));
+        return { offline: true };
+      }
       if (!p.shared.directory)
         throw Error('로컬 사본을 표시할 수 없는 환경입니다.');
       const result = await p.shared.directory(id);

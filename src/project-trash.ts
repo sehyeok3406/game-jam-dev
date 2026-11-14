@@ -50,18 +50,21 @@ export class ProjectTrash {
   private encryption: Encryption;
   private hooks: Hooks;
   private protectedPaths: string[];
+  private retainSharedServers: boolean;
   constructor(
     directory: string,
     library: ProjectLibrary,
     encryption: Encryption,
     hooks: Hooks,
     protectedPaths: string[] = [],
+    retainSharedServers = false,
   ) {
     this.directory = directory;
     this.library = library;
     this.encryption = encryption;
     this.hooks = hooks;
     this.protectedPaths = protectedPaths;
+    this.retainSharedServers = retainSharedServers;
   }
   private filename(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id))
@@ -114,6 +117,8 @@ export class ProjectTrash {
       )
         throw Error('휴지통 기록이 손상되었습니다.');
       this.records.set(record.trashId, record);
+      if (this.retainSharedServers && record.kind === 'shared')
+        await this.library.retainSharedServer(record.saved, false);
     }
   }
   list(): ProjectTrashEntry[] {
@@ -143,6 +148,8 @@ export class ProjectTrash {
   async prepare(id: string) {
     if (this.hasProject(id)) throw Error('이미 휴지통에 있는 프로젝트입니다.');
     const entry = this.library.get(id);
+    if (entry.sharedCopyRemoved)
+      throw Error('이 PC에 휴지통으로 이동할 공유 사본이 없습니다.');
     if (
       entry.kind === 'shared' &&
       !/^[a-f0-9-]{36}$/.test(entry.projectId ?? '')
@@ -255,7 +262,9 @@ export class ProjectTrash {
   private async finishMove(record: RecordEntry) {
     await moveChecked(record.originalPath, record.path, record.identity);
     await this.hooks.remove(record.saved, record.data);
-    await this.library.removeProject(record.projectId);
+    if (this.retainSharedServers && record.kind === 'shared')
+      await this.library.retainSharedServer(record.saved, true);
+    else await this.library.removeProject(record.projectId);
     record.stage = 'retained';
     record.trashedAt = Date.now();
     record.expiresAt = record.trashedAt + TRASH_RETENTION;
@@ -271,15 +280,23 @@ export class ProjectTrash {
       throw Error('복원 가능한 보관 기간이 아닙니다.');
     if (
       record.stage !== 'restoring' &&
-      this.library.list().some((e) => e.id === record.projectId)
+      this.library
+        .list()
+        .some((e) => e.id === record.projectId && !e.sharedCopyRemoved)
     )
       throw Error('같은 프로젝트가 이미 등록되어 있습니다.');
-    this.library.assertNameAvailable(record.saved.name, record.saved.id);
+    if (!this.retainSharedServers || record.kind === 'local')
+      this.library.assertNameAvailable(record.saved.name, record.saved.id);
     record.stage = 'restoring';
     await this.save(record);
     await moveChecked(record.path, record.originalPath, record.identity);
     await this.hooks.restore(record.saved, record.data);
-    await this.library.restoreEntry(record.saved);
+    const current = this.library.list().find((e) => e.id === record.projectId);
+    await this.library.restoreEntry({
+      ...record.saved,
+      lifecycle: current?.lifecycle ?? record.saved.lifecycle,
+      sharedCopyRemoved: undefined,
+    });
     return record.storage;
   }
   async acknowledgeRestore(id: string) {

@@ -98,6 +98,22 @@ export class SqliteProjectStore<T extends StoredProject> {
       } as T;
     });
   }
+  lifecycleNames() {
+    return this.db
+      .prepare(`
+      SELECT id, json_extract(value, '$.name') AS name,
+             json_extract(value, '$.lifecycle.status') AS status
+      FROM projects
+    `)
+      .all()
+      .map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        ...(typeof row.status === 'string'
+          ? { lifecycle: { status: row.status } }
+          : {}),
+      }));
+  }
   tombstone(id: string) {
     // A legacy read-only version 0 database may predate the tombstone table.
     if (
@@ -239,6 +255,9 @@ export class SqliteProjectRepository<
   }
   async commit(project: T) {
     this.store.save(project);
+  }
+  lifecycleNames() {
+    return this.store.lifecycleNames();
   }
   async tombstone(id: string) {
     return this.store.tombstone(id);

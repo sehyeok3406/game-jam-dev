@@ -190,6 +190,13 @@ void Promise.all([
 ]).then(counts=>document.body.dataset.media=counts.join(','));
 `)});
   }
+  if(args.includes('standalone-local')){
+    const plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
+    plan.assets=[];
+    fs.writeFileSync('source-plan.json',JSON.stringify(plan));
+    fs.writeFileSync('source/main.js',fs.readFileSync('source/main.js','utf8').replace("import assets from 'gamejam:assets';",'').replace("document.querySelector('#hero').src=assets.hero;",''));
+    fs.writeFileSync('source/index.html',fs.readFileSync('source/index.html','utf8').replace('<img id="hero" src="gamejam:asset/hero">',''));
+  }
   if(args.includes('build-large')){
     const plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
     for(let n=0;n<9;n++){
@@ -204,9 +211,13 @@ void Promise.all([
     const taskFile=fs.readdirSync('.ai/tasks').find(p=>p.endsWith('.md'));
     const task=matter(fs.readFileSync('.ai/tasks/'+taskFile,'utf8')).data;
     const html=fs.readFileSync(task.inputs.find(p=>p.endsWith('.html')),'utf8');
-    const embedded=html.match(new RegExp('data:image/gif;base64,[A-Za-z0-9+/=]+'))?.[0];if(!embedded)throw Error('exported image missing');
-    fs.writeFileSync('source/main.js',fs.readFileSync('source/main.js','utf8').replace(/dataset.lives='7'/g,"dataset.lives='9'").replace(/목숨 7개/g,'목숨 9개').replace("document.querySelector('#hero').src=assets.hero;",''));
-    fs.writeFileSync('source/index.html',fs.readFileSync('source/index.html','utf8').replace('gamejam:asset/hero',embedded).replace(/목숨 7개/g,'목숨 9개'));
+    const embedded=html.match(new RegExp('data:image/gif;base64,[A-Za-z0-9+/=]+'))?.[0];
+    const source=fs.readFileSync('source/main.js','utf8').replace(/dataset.lives='7'/g,"dataset.lives='9'").replace(/목숨 7개/g,'목숨 9개').replace("document.querySelector('#hero').src=assets.hero;",'');
+    let htmlSource=fs.readFileSync('source/index.html','utf8').replace(/목숨 7개/g,'목숨 9개');
+    if(embedded)htmlSource=htmlSource.replace('gamejam:asset/hero',embedded);
+    else htmlSource=htmlSource.replace('<img id="hero" src="gamejam:asset/hero">','');
+    fs.writeFileSync('source/main.js',source);
+    fs.writeFileSync('source/index.html',htmlSource);
     const plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));plan.assets=[];fs.writeFileSync('source-plan.json',JSON.stringify(plan));
   }
   }
@@ -250,6 +261,15 @@ await fs.writeFile(
     height: 260,
   }),
 );
+const git = spawn('git', ['init', '--quiet', game], { windowsHide: true });
+await new Promise((resolve, reject) => {
+  git.once('error', reject);
+  git.once('exit', (code) =>
+    code === 0
+      ? resolve()
+      : reject(Error('Git fixture could not be initialized')),
+  );
+});
 const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH };
 async function execute(modelId, options = {}) {
   const activeRoot = (await call('getWorkspace')).root;
@@ -280,6 +300,17 @@ async function execute(modelId, options = {}) {
     'createTask',
     gamejamTaskInput({
       organize: options.organize ?? modelId === 'build-local',
+      multiplayer:
+        modelId === 'standalone-local'
+          ? {
+              version: 1,
+              authority: 'host',
+              minPlayers: 2,
+              maxPlayers: 2,
+              sdkVersion: 1,
+              solo: true,
+            }
+          : undefined,
       implement: true,
       inputPaths: inputs,
       instructions: {
@@ -318,6 +349,16 @@ async function execute(modelId, options = {}) {
       y: 100,
     }),
   );
+  if (modelId === 'standalone-local') {
+    const taskSpec = matter(
+      await fs.readFile(path.join(activeRoot, task.relativePath), 'utf8'),
+    );
+    assert.equal(
+      taskSpec.data.multiplayer,
+      null,
+      'desktop IPC overrides online module selection',
+    );
+  }
   const started = await call('startCodexRun', {
     taskPath: task.relativePath,
     providerId: 'claude-cli',
@@ -433,14 +474,16 @@ async function execute(modelId, options = {}) {
     true,
   );
   const hero = saved.manifest.assets[0];
-  assert.equal(
-    hero.sha256,
-    hero.kind === 'image'
-      ? createHash('sha256')
-          .update(Buffer.from(image.split(',')[1], 'base64'))
-          .digest('hex')
-      : codec.digest(image),
-  );
+  if (modelId === 'standalone-local') assert.equal(hero, undefined);
+  else
+    assert.equal(
+      hero.sha256,
+      hero.kind === 'image'
+        ? createHash('sha256')
+            .update(Buffer.from(image.split(',')[1], 'base64'))
+            .digest('hex')
+        : codec.digest(image),
+    );
   if (modelId.includes('three') || glbPath || mediaPaths.length > 0)
     assert.equal(
       saved.lock.packages.find((p) => p.name === 'three').version,
@@ -449,7 +492,7 @@ async function execute(modelId, options = {}) {
   else assert.equal(saved.lock.packages.length, 0);
   assert.equal(
     files[artifact.path].split(image).length - 1,
-    hero.kind === 'image' ? 0 : 1,
+    !hero || hero.kind === 'image' ? 0 : 1,
   );
   await fs.writeFile(
     `${evidenceDirectory}/${modelId}.html`,
@@ -523,7 +566,6 @@ async function nativeExport(
     : call('exportPreviewHtml', relativePath);
   return useFileDialog(pending, destination, cancel);
 }
-const transfers = [];
 async function roundTrip(previous, label) {
   const destination = path.join(root, `export-${label}.html`);
   assert.equal(
@@ -548,6 +590,11 @@ async function roundTrip(previous, label) {
   );
   assert.equal(original.build.kind, 'source');
   assert.ok(original.build.documents.some((d) => d.state === 'unchanged'));
+  const previewCard = `[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(previous.artifact.path)}))?.closest('.preview-card')`;
+  await js(
+    `${previewCard}?.querySelector('button.file-node-surface')?.click()`,
+  );
+  await wait(`Boolean(${previewCard}?.querySelector('.game-build-summary'))`);
   const visibleFacts = await js(
     `(()=>{const title=[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(previous.artifact.path)}));const panel=title.closest('.preview-card').querySelector('.game-build-summary');if(!panel.open)panel.querySelector('summary').click();return panel.textContent;})()`,
   );
@@ -584,7 +631,7 @@ async function roundTrip(previous, label) {
       htmlResult: { mode: 'new' },
       instructions: {
         organize: '参考',
-        implement: '목숨 9개. 전투 금지. 가져온 이미지를 유지한 새 수정 버전.',
+        implement: '목숨 9개. 전투 금지. 가져온 화면을 유지한 새 수정 버전.',
       },
       resultName: '재가져오기-' + label,
       x: 0,
@@ -641,13 +688,6 @@ async function roundTrip(previous, label) {
     `${evidenceDirectory}/reimport-${label}.html`,
     preview.content,
   );
-  transfers.push({
-    label,
-    exportedBytes: bytes.length,
-    importedPath,
-    output,
-    build: preview.build,
-  });
   console.log(
     'PASS: native export UI/cancel → exact HTML → inert new import → new source build',
     label,
@@ -1055,6 +1095,7 @@ async function verifyLocalMedia() {
   );
 }
 async function verifyExistingBuilds() {
+  assert.ok((await fs.stat(path.join(game, '.git'))).isDirectory());
   const local = await execute('build-local');
   const edits = {};
   if (editing) {
@@ -1154,124 +1195,42 @@ async function verifyExistingBuilds() {
     readGameBuild(reopened, local.artifact.buildId, codec).sources['main.js'],
     local.saved.sources['main.js'],
   );
-  const internal = await call('startLocalCollaborationServer');
-  // Local revisions refer to media served from the PC. Seed a separate source
-  // project so the shared scenario exercises portable dependencies and assets.
-  const sharedSource = await call('createProject', {
-    name: '공동 게임 빌드 검사',
-    mode: 'local',
-    parent: root,
-  });
-  assert.ok(sharedSource.root?.startsWith(root + path.sep));
-  await applyChanges(
-    sharedSource.root,
-    await captureProject(sharedSource.root),
-    {
-      'project.md': reopened['project.md'],
-      'ideas/hero.md': reopened['ideas/hero.md'],
-      'assets/images/hero.gif': reopened['assets/images/hero.gif'],
-    },
+  await assert.rejects(
+    call('startLocalCollaborationServer'),
+    /종료|No handler/,
   );
-  await call('createCollaboration', {
-    serverUrl: internal.serverUrl,
-    serverKey: '',
-    nickname: '빌드 검사 관리자',
-  });
-  const shared = await execute(
-    process.env.GAMEJAM_PUBLIC_BUILD === '1' ? 'build-three' : 'build-local',
+  const project = await call('getWorkspace');
+  assert.equal(project.root, game);
+  assert.ok(
+    (await call('listPreviews')).some(
+      (item) => item.relativePath === local.artifact.path,
+    ),
   );
-  if (editing) {
-    edits.shared = await execute(
-      process.env.GAMEJAM_PUBLIC_BUILD === '1' ? 'edit-three' : 'edit-local',
-      { previous: shared },
-    );
-    await call('restoreHistory', edits.shared.event.id, undefined, 'before');
-    const workspace = await call('getWorkspace');
-    const awaitSharedBuild = async (buildId) => {
-      await wait(
-        `window.gameCanvas.listPreviews().then((items) => items.some((item) => item.relativePath === ${JSON.stringify(shared.artifact.path)} && item.build?.buildId === ${JSON.stringify(buildId)}))`,
+  if (process.env.GAMEJAM_LOCAL_EXPORT === '1' || transfer) {
+    const artifact = await execute('standalone-local', { organize: transfer });
+    if (transfer) {
+      await roundTrip(artifact, 'local');
+      console.log(
+        'PASS: local preview/source survives restart with collaboration unavailable',
       );
-      await pause();
-      let files;
-      for (let n = 0; n < 200; n++) {
-        files = (
-          await readClientCache(path.join(workspace.root, 'server-cache.json'))
-        ).files;
-        if (
-          readGameBuildIndex(files).artifacts.some(
-            (a) => a.path === shared.artifact.path && a.buildId === buildId,
-          )
-        )
-          return files;
-        await pause();
-      }
-      assert.fail(
-        'Restored server revision did not reach the durable client cache',
-      );
-    };
-    const restored = await awaitSharedBuild(shared.artifact.buildId);
-    assert.deepEqual(
-      readGameBuildIndex(restored).artifacts.find(
-        (a) => a.path === shared.artifact.path,
-      ),
-      shared.artifact,
-    );
-    await call('restoreHistory', edits.shared.event.id, undefined, 'after');
-    await awaitSharedBuild(edits.shared.artifact.buildId);
-    if (process.env.GAMEJAM_PUBLIC_BUILD === '1') {
-      const removed = await execute('remove-library', {
-        previous: edits.shared,
-        dependencyChanges: [{ action: 'remove', name: 'three' }],
-      });
-      assert.deepEqual(Object.keys(removed.saved.lock.roots), []);
-      assert.deepEqual(
-        readGameBuild(
-          removed.files,
-          edits.shared.artifact.buildId,
-          gameBuildCodec,
-        ).lock,
-        edits.shared.saved.lock,
-      );
+      return;
     }
+    const destination = path.join(root, 'local-only-export.html');
+    assert.equal(await nativeExport(artifact.artifact.path, destination), true);
+    assert.deepEqual(
+      await fs.readFile(destination),
+      Buffer.from(artifact.files[artifact.artifact.path]),
+    );
+    await fs.copyFile(
+      destination,
+      `${evidenceDirectory}/local-only-export.html`,
+    );
     console.log(
-      'PASS: shared exact dependency reuse and whole source/HTML restore through existing server history',
+      'PASS: native standalone HTML export matches the preview bytes',
     );
   }
-  if (transfer) await roundTrip(edits.shared ?? shared, 'shared');
-  const histories = await call('listHistory');
-  assert.ok(
-    histories.some(
-      (h) =>
-        h.status === 'completed' &&
-        h.files.some(
-          (f) =>
-            f.relativePath ===
-            `.game-builds/${shared.artifact.buildId}/source/main.js`,
-        ),
-    ),
-  );
-  await fs.writeFile(
-    `${evidenceDirectory}/package-evidence.json`,
-    JSON.stringify(
-      {
-        local: local.saved.manifest,
-        shared: shared.saved.manifest,
-        sharedLock: shared.saved.lock,
-        ...(editing
-          ? {
-              edits: Object.fromEntries(
-                Object.entries(edits).map(([k, v]) => [k, v.saved.manifest]),
-              ),
-            }
-          : {}),
-        ...(transfer ? { transfers } : {}),
-      },
-      null,
-      2,
-    ),
-  );
   console.log(
-    'PASS: restart source preservation and same packaged shared-server lease/history path',
+    'PASS: local preview/source survives restart with collaboration unavailable',
   );
 }
 try {

@@ -1,6 +1,7 @@
 import { sharedWorkspaceLocations } from './workspace-locations.ts';
 import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import path from 'node:path';
+import { checkAncestors, statDirectory } from '../../trash-files.ts';
 import {
   CollaborationClient,
   type CollaborationCredentials,
@@ -66,7 +67,12 @@ type Options = {
   userData: string;
   active(): CollaborationClient | null;
   internalServerUrl(): Promise<string>;
+  cleanup?: <T>(
+    projectId: string,
+    run: (url: string) => Promise<T>,
+  ) => Promise<T>;
   drainCache(): Promise<void>;
+  pendingFiles?(projectId: string): Promise<string[]>;
   // Injection is also used by transport tests; defaults are the existing authenticated client.
   fetch?: typeof CollaborationClient.fetch;
   client?(
@@ -90,13 +96,11 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
         : saved.serverUrl,
     };
   };
-  const cache = (id: string) =>
-    readClientCache(
-      path.join(
-        sharedWorkspacePath(options.userData, library.get(id)),
-        'server-cache.json',
-      ),
-    );
+  const cache = async (id: string) => {
+    const root = sharedWorkspacePath(options.userData, library.get(id));
+    if (options.cleanup) await checkAncestors(root);
+    return readClientCache(path.join(root, 'server-cache.json'));
+  };
   // Home reads have no active client.request() to negotiate drawing capabilities.
   const readState = (saved: CollaborationCredentials, metadataOnly = false) =>
     fetch(
@@ -122,6 +126,14 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
       )
         throw Error('프로젝트에 접근할 수 없습니다.');
       return locationIndex(result.files);
+    },
+    async existingDirectory(id) {
+      const entry = library.get(id);
+      const root = sharedWorkspacePath(options.userData, entry);
+      await checkAncestors(root);
+      if (entry.sharedCopyRemoved || !(await statDirectory(root)))
+        throw Error('이 PC에 표시할 공유 사본이 없습니다.');
+      return root;
     },
     async directory(id) {
       const assertSession = options.beginReveal?.() ?? (() => {});
@@ -235,38 +247,98 @@ export function desktopSharedProjects(options: Options): HomeSharedProjects {
       return { root, offline };
     },
     async cache(id) {
-      const cached = await cache(id);
+      const entry = library.get(id);
+      const cached = options.cleanup
+        ? await cache(id).catch(() => null)
+        : await cache(id);
+      const pending = new Set(await options.pendingFiles?.(entry.projectId!));
+      const work = cached?.offline ?? cached?.outgoing;
+      if (work?.local) {
+        const local = work.local;
+        for (const file of Object.keys({ ...work.base, ...local }))
+          if (work.base[file] !== local[file]) pending.add(file);
+      }
       return {
-        pendingChanges: cached.offline
-          ? Object.keys({
-              ...cached.offline.base,
-              ...cached.offline.local,
-            }).filter(
-              (key) => cached.offline!.base[key] !== cached.offline!.local[key],
-            ).length
-          : cached.outgoing
-            ? 1
-            : 0,
-        role: cached.state?.role,
-        createdAt: cached.state?.projectCreatedAt,
-        modifiedAt: cached.state?.projectModifiedAt,
+        pendingChanges:
+          pending.size || (cached?.outgoing ? 1 : cached ? 0 : undefined),
+        role: cached?.state?.role,
+        createdAt: cached?.state?.projectCreatedAt,
+        modifiedAt: cached?.state?.projectModifiedAt,
       };
     },
     async lifecycle(id, action, input = {}) {
-      const saved = await credentials(id);
-      try {
-        const result = (await fetch(
-          saved.serverUrl,
-          `/projects/${saved.projectId}/${action}`,
+      const entry = library.get(id);
+      const saved = options.cleanup ? entry.credentials : await credentials(id);
+      if (!saved) throw Error('저장된 관리자 자격을 찾을 수 없습니다.');
+      if (options.cleanup && !/^[a-f0-9-]{36}$/.test(saved.projectId))
+        throw Error('공동 프로젝트 ID가 올바르지 않습니다.');
+      const endpoint = (route: string) =>
+        `/projects/${saved.projectId}/${route}`;
+      const send = async (url: string) => {
+        if (!options.cleanup)
+          return (await fetch(
+            url,
+            endpoint(action),
+            input,
+            saved.token,
+          )) as SharedProjectLifecycle;
+        const status = (await fetch(
+          url,
+          endpoint('trash-status'),
+          {},
+          saved.token,
+        )) as SharedProjectLifecycle;
+        if (status.projectId !== saved.projectId)
+          throw Error('선택한 프로젝트와 서버 응답이 일치하지 않습니다.');
+        if (action === 'lifecycle') return status;
+        if (action !== 'trash' && status.conditionalTrashVersion !== 1)
+          throw Error(
+            '원본을 안전하게 복원하거나 영구 삭제하려면 협업 서버를 업데이트해주세요.',
+          );
+        const confirmation = input as {
+          expectedVersion?: number;
+          confirmTeam?: boolean;
+          typedName?: string;
+        };
+        if (
+          !Number.isSafeInteger(confirmation.expectedVersion) ||
+          confirmation.expectedVersion !== status.version ||
+          (action === 'trash'
+            ? status.status !== 'active'
+            : status.status === 'active')
+        )
+          throw Error('프로젝트 상태가 바뀌었습니다. 다시 확인해주세요.');
+        if (
+          action !== 'trash-restore' &&
+          (confirmation.confirmTeam !== true ||
+            confirmation.typedName !== status.name)
+        )
+          throw Error(
+            '프로젝트 이름과 서버 원본에 미치는 영향을 확인해주세요.',
+          );
+        return (await fetch(
+          url,
+          endpoint(action),
           input,
           saved.token,
         )) as SharedProjectLifecycle;
+      };
+      try {
+        const result =
+          options.cleanup && saved.internalServer
+            ? await options.cleanup(saved.projectId, send)
+            : await send(saved.serverUrl);
+        if (options.cleanup && result.projectId !== saved.projectId)
+          throw Error('선택한 프로젝트와 서버 응답이 일치하지 않습니다.');
         await library.updateLifecycle(id, result);
         return result;
       } catch (error) {
         const lifecycle = (error as { lifecycle?: SharedProjectLifecycle })
           .lifecycle;
-        if (action === 'lifecycle' && lifecycle) {
+        if (
+          action === 'lifecycle' &&
+          lifecycle?.projectId === saved.projectId
+        ) {
           await library.updateLifecycle(id, lifecycle);
           return lifecycle;
         }

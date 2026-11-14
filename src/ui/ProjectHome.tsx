@@ -72,6 +72,7 @@ export function ProjectHome({
   theme: 'dark' | 'light';
 }) {
   const { api, preferences, capabilities } = useRuntime();
+  const retired = !capabilities.projectCollaboration;
   const [addProject, setAddProject] = useState(false);
   const addDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -80,6 +81,7 @@ export function ProjectHome({
   }, [addProject]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [trash, setTrash] = useState(false);
+  const [serverProjectId, setServerProjectId] = useState<string>();
   const [trashCount, setTrashCount] = useState(0);
   const [trashDialog, setTrashDialog] = useState<{
     project: ProjectEntry;
@@ -357,7 +359,12 @@ export function ProjectHome({
           )}
         </div>
         <div className="home-sidebar-bottom">
-          <button onClick={() => setTrash(true)}>
+          <button
+            onClick={() => {
+              setServerProjectId(undefined);
+              setTrash(true);
+            }}
+          >
             <Trash2 size={16} /> 휴지통{' '}
             {trashCount > 0 && <span>{trashCount}</span>}
           </button>
@@ -395,6 +402,7 @@ export function ProjectHome({
       </aside>
       {trash && (
         <ProjectTrashPanel
+          initialServerProject={serverProjectId}
           projects={projects}
           close={() => setTrash(false)}
           changed={() => refresh(true)}
@@ -412,11 +420,15 @@ export function ProjectHome({
       )}
       {webViewer && (
         <WebViewerDialog
-          projects={projects}
+          projects={
+            retired
+              ? projects.filter((entry) => entry.kind === 'local')
+              : projects
+          }
           close={() => setWebViewer(false)}
         />
       )}
-      {connectionDialog && (
+      {!retired && connectionDialog && (
         <ConnectionInfoDialog
           close={() => setConnectionDialog(false)}
           changed={() => refresh()}
@@ -511,30 +523,34 @@ export function ProjectHome({
               </span>
               <ArrowRight size={16} />
             </button>
-            <button
-              disabled={busy}
-              onClick={() => {
-                setAddProject(false);
-                join();
-              }}
-            >
-              <Users size={19} />
-              <span>
-                <strong>초대 코드로 참여</strong>
-                <small>서버 주소 · 초대 코드 · 닉네임</small>
-              </span>
-              <ArrowRight size={16} />
-            </button>
+            {!retired && (
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setAddProject(false);
+                  join();
+                }}
+              >
+                <Users size={19} />
+                <span>
+                  <strong>초대 코드로 참여</strong>
+                  <small>서버 주소 · 초대 코드 · 닉네임</small>
+                </span>
+                <ArrowRight size={16} />
+              </button>
+            )}
           </div>
         </dialog>
-        <button
-          className="subtle-button home-connection-import"
-          disabled={busy}
-          onClick={() => setConnectionDialog(true)}
-        >
-          <ClipboardPaste size={15} /> 연결 정보 붙여넣기 · 기존 프로젝트 주소
-          갱신
-        </button>
+        {!retired && (
+          <button
+            className="subtle-button home-connection-import"
+            disabled={busy}
+            onClick={() => setConnectionDialog(true)}
+          >
+            <ClipboardPaste size={15} /> 연결 정보 붙여넣기 · 기존 프로젝트 주소
+            갱신
+          </button>
+        )}
         <div className="home-list-toolbar">
           <h2>
             {selectedFolder
@@ -702,7 +718,7 @@ export function ProjectHome({
                 </button>
                 <button
                   className="home-project-open"
-                  disabled={busy}
+                  disabled={busy || (retired && entry.kind === 'shared')}
                   onClick={() =>
                     void action(async () => {
                       await api.projects.openProject(entry.id);
@@ -725,30 +741,37 @@ export function ProjectHome({
                       ) : (
                         <HardDrive size={15} />
                       )}
-                      {entry.kind === 'shared' ? '공유 중' : '로컬'}
+                      {entry.kind === 'shared'
+                        ? retired
+                          ? '공유 종료 · 정리 가능'
+                          : '공유 중'
+                        : '로컬'}
                     </span>
                   </div>
                   <div className="home-project-details">
                     <h3>{entry.name}</h3>
-                    {entry.nameConflict && (
-                      <p className="home-pending">
-                        다른 프로젝트와 이름이 겹칩니다. 이름을 변경해주세요.
-                      </p>
-                    )}
-                    {entry.folderNamePending && (
+                    {entry.nameConflict &&
+                      (!retired || entry.kind !== 'shared') && (
+                        <p className="home-pending">
+                          다른 프로젝트와 이름이 겹칩니다. 이름을 변경해주세요.
+                        </p>
+                      )}
+                    {!retired && entry.folderNamePending && (
                       <p className="home-pending">
                         공유 사본의 폴더 이름을 정리할 수 있습니다.
                       </p>
                     )}
-                    {entry.lifecycle && entry.lifecycle.status !== 'active' && (
-                      <p className="home-pending">
-                        팀 프로젝트{' '}
-                        {entry.lifecycle.status === 'purged'
-                          ? '영구 삭제됨'
-                          : '삭제됨'}{' '}
-                        · 내 사본 보관
-                      </p>
-                    )}
+                    {!retired &&
+                      entry.lifecycle &&
+                      entry.lifecycle.status !== 'active' && (
+                        <p className="home-pending">
+                          팀 프로젝트{' '}
+                          {entry.lifecycle.status === 'purged'
+                            ? '영구 삭제됨'
+                            : '삭제됨'}{' '}
+                          · 내 사본 보관
+                        </p>
+                      )}
                     {entry.folderId && (
                       <p className="home-project-folder">
                         <Folder size={12} />
@@ -766,7 +789,13 @@ export function ProjectHome({
                     </p>
                     <div className="home-project-meta">
                       <span>
-                        {entry.kind === 'shared' ? (
+                        {entry.kind === 'shared' && retired ? (
+                          entry.sharedCopyAvailable ? (
+                            '이 PC에 사본 있음'
+                          ) : (
+                            '이 PC에 사본 없음'
+                          )
+                        ) : entry.kind === 'shared' ? (
                           <>
                             <Wifi size={13} />
                             {entry.role
@@ -795,14 +824,36 @@ export function ProjectHome({
                           : '날짜 정보 없음'}
                       </time>
                     </div>
-                    {!!entry.pendingChanges && (
+                    {retired && entry.kind === 'shared' ? (
                       <p className="home-pending">
-                        동기화 대기 · {entry.pendingChanges}개 파일
+                        서버 마지막 상태 ·{' '}
+                        {entry.lifecycle?.status === 'active'
+                          ? '사용 중'
+                          : entry.lifecycle?.status === 'purged'
+                            ? '영구 삭제'
+                            : entry.lifecycle?.status === 'trashed'
+                              ? '휴지통 보관'
+                              : entry.lifecycle
+                                ? '정리 중'
+                                : '확인 기록 없음'}
+                        <br />
+                        미동기화 자료 ·{' '}
+                        {entry.pendingChanges === undefined
+                          ? '확인 기록 없음'
+                          : entry.pendingChanges
+                            ? `${entry.pendingChanges}개 파일`
+                            : '없음'}
                       </p>
+                    ) : (
+                      !!entry.pendingChanges && (
+                        <p className="home-pending">
+                          동기화 대기 · {entry.pendingChanges}개 파일
+                        </p>
+                      )
                     )}
                   </div>
                 </button>
-                {entry.kind === 'shared' && (
+                {!retired && entry.kind === 'shared' && (
                   <button
                     className="home-server-edit"
                     disabled={busy}
@@ -838,12 +889,14 @@ export function ProjectHome({
             </p>
           </div>
         )}
-        <footer className="home-footer">
-          관리자·참여자 세션은 이 PC에 안전하게 기억됩니다.{' '}
-          <button onClick={recover} disabled={busy}>
-            세션을 잃었나요? 관리자 복구
-          </button>
-        </footer>
+        {!retired && (
+          <footer className="home-footer">
+            관리자·참여자 세션은 이 PC에 안전하게 기억됩니다.{' '}
+            <button onClick={recover} disabled={busy}>
+              세션을 잃었나요? 관리자 복구
+            </button>
+          </footer>
+        )}
       </section>
       {menu && (
         <HomeContextMenu
@@ -856,6 +909,7 @@ export function ProjectHome({
               ? [
                   {
                     label: '열기',
+                    disabled: retired && menu.project.kind === 'shared',
                     action: () =>
                       void action(async () => {
                         await api.projects.openProject(menu.project!.id);
@@ -866,7 +920,7 @@ export function ProjectHome({
                     label: '이름 변경',
                     disabled:
                       menu.project.kind === 'shared' &&
-                      menu.project.role !== 'admin',
+                      (retired || menu.project.role !== 'admin'),
                     title:
                       menu.project.kind === 'shared'
                         ? '공동 프로젝트 이름은 관리자만 온라인에서 변경할 수 있습니다.'
@@ -894,10 +948,26 @@ export function ProjectHome({
                       menu.project.kind === 'shared'
                         ? '이 PC의 사본을 휴지통으로 이동…'
                         : '휴지통으로 이동…',
+                    disabled:
+                      retired &&
+                      menu.project.kind === 'shared' &&
+                      !menu.project.sharedCopyAvailable,
                     action: () =>
                       setTrashDialog({ project: menu.project!, team: false }),
                   },
-                  ...(menu.project.kind === 'shared' &&
+                  ...(retired && menu.project.kind === 'shared'
+                    ? [
+                        {
+                          label: '서버 원본 관리…',
+                          action: () => {
+                            setServerProjectId(menu.project!.id);
+                            setTrash(true);
+                          },
+                        },
+                      ]
+                    : []),
+                  ...(!retired &&
+                  menu.project.kind === 'shared' &&
                   menu.project.role === 'admin'
                     ? [
                         {
@@ -915,18 +985,22 @@ export function ProjectHome({
                     : []),
                   {
                     label: '탐색기에서 표시',
+                    disabled:
+                      retired &&
+                      menu.project.kind === 'shared' &&
+                      !menu.project.sharedCopyAvailable,
                     action: () =>
                       void action(async () => {
                         const result = await requireDesktopApi(
                           api,
                         ).revealProject(menu.project!.id);
-                        if (result?.offline)
+                        if (!retired && result?.offline)
                           setError(
                             '서버의 최신 상태를 확인하지 못해 이 PC에 보관된 사본을 열었습니다.',
                           );
                       }),
                   },
-                  ...(menu.project.kind === 'shared'
+                  ...(!retired && menu.project.kind === 'shared'
                     ? [
                         {
                           label: '공유 사본 폴더 이름 정리',

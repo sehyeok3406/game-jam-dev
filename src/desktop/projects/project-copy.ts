@@ -34,6 +34,7 @@ type Ports = {
   sessions: DesktopProjectSessions<CollaborationClient>;
   library: ProjectLibrary;
   userData: string;
+  localOnly?: boolean;
   internalServerUrl(): Promise<string>;
   trashed(id: string): boolean;
   journals: Map<string, EditJournal>;
@@ -149,6 +150,7 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
         },
       };
     }
+    if (ports.localOnly) throw Error('공유 프로젝트 운영이 종료되었습니다.');
     if (!entry.credentials)
       throw Error('공유 프로젝트의 연결 정보가 없습니다.');
     const credentials = { ...entry.credentials };

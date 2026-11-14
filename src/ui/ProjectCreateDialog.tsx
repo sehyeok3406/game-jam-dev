@@ -16,7 +16,7 @@ export function ProjectCreateDialog({
   close(): void;
   opened(): Promise<void>;
 }) {
-  const { api, preferences } = useRuntime();
+  const { api, preferences, capabilities } = useRuntime();
   const [mode, setMode] = useState<'local' | 'shared'>('local');
   const [name, setName] = useState(initialName);
   const [touched, setTouched] = useState(false);
@@ -125,29 +125,35 @@ export function ProjectCreateDialog({
         }}
       >
         <h2 id="project-create-title">새 프로젝트</h2>
-        <p>작업 방식을 고르고 이름과 저장 위치를 확인한 뒤 완료하세요.</p>
-        <div
-          className="project-mode-options"
-          role="group"
-          aria-label="작업 방식"
-        >
-          <button
-            type="button"
-            disabled={busy}
-            aria-pressed={mode === 'local'}
-            onClick={() => setMode('local')}
+        <p>
+          {capabilities.projectCollaboration
+            ? '작업 방식을 고르고 이름과 저장 위치를 확인한 뒤 완료하세요.'
+            : '프로젝트 이름과 이 PC의 저장 위치를 선택하세요.'}
+        </p>
+        {capabilities.projectCollaboration && (
+          <div
+            className="project-mode-options"
+            role="group"
+            aria-label="작업 방식"
           >
-            로컬
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            aria-pressed={mode === 'shared'}
-            onClick={() => setMode('shared')}
-          >
-            공동
-          </button>
-        </div>
+            <button
+              type="button"
+              disabled={busy}
+              aria-pressed={mode === 'local'}
+              onClick={() => setMode('local')}
+            >
+              로컬
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              aria-pressed={mode === 'shared'}
+              onClick={() => setMode('shared')}
+            >
+              공동
+            </button>
+          </div>
+        )}
         <label>
           프로젝트 이름
           <input

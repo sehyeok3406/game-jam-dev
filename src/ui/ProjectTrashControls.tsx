@@ -54,7 +54,7 @@ function TrashModal({
           if (e.key === 'Tab') {
             const items = [
               ...(ref.current?.querySelectorAll<HTMLElement>(
-                'button:not(:disabled),input:not(:disabled)',
+                'button:not(:disabled),input:not(:disabled),select:not(:disabled)',
               ) ?? []),
             ];
             if (e.shiftKey && document.activeElement === items[0]) {
@@ -177,7 +177,7 @@ export function ProjectTrashDialog({
       <p>
         7일 동안 복원할 수 있습니다.{' '}
         {team
-          ? '서버가 꺼져 있으면 다음 서버 시작 시 영구 삭제됩니다.'
+          ? '외부 운영 서버는 자체 보관 정책에 따라 만료된 자료를 정리합니다.'
           : '앱이 꺼져 있으면 다음 실행 시 영구 삭제됩니다.'}{' '}
         기존 웹 뷰어 게시본은 남습니다.
       </p>
@@ -235,15 +235,21 @@ export function ProjectTrashDialog({
   );
 }
 export function ProjectTrashPanel({
+  initialServerProject,
   projects,
   close,
   changed,
 }: {
+  initialServerProject?: string;
   projects: ProjectEntry[];
   close(): void;
   changed(): Promise<void>;
 }) {
-  const { api, preferences } = useRuntime();
+  const { api, preferences, capabilities } = useRuntime();
+  const retired = !capabilities.projectCollaboration;
+  const [serverProject, setServerProject] = useState(
+    initialServerProject ?? '',
+  );
 
   const [items, setItems] = useState<ProjectTrashEntry[]>([]),
     [remote, setRemote] = useState<
@@ -255,7 +261,13 @@ export function ProjectTrashPanel({
   const [fileError, setFileError] = useState('');
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [purge, setPurge] = useState<{ id: string; name: string; team: boolean }>();
+    [purge, setPurge] = useState<{
+      id: string;
+      name: string;
+      team: boolean;
+      version?: number;
+      move?: boolean;
+    }>();
   const [name, setName] = useState(''),
     [discard, setDiscard] = useState(false);
   const refresh = async () => {
@@ -264,6 +276,10 @@ export function ProjectTrashPanel({
       .listFileTrash()
       .then(setFiles, (error) => setFileError(message(error)));
     setItems(await api.projects.listProjectTrash());
+    if (retired) {
+      await fileList;
+      return;
+    }
     const results = await Promise.allSettled(
       projects
         .filter((p) => p.kind === 'shared' && p.role === 'admin')
@@ -303,6 +319,29 @@ export function ProjectTrashPanel({
     } finally {
       setBusy(false);
     }
+  };
+  const readServer = async (id: string) => {
+    const entry = projects.find((p) => p.id === id && p.kind === 'shared');
+    if (!entry) return;
+    setRemote([]);
+    const state = await api.projects.getSharedProjectLifecycle(id);
+    setRemote([{ entry, state }]);
+  };
+  useEffect(() => {
+    if (retired && initialServerProject)
+      void run(() => readServer(initialServerProject));
+  }, [initialServerProject]);
+  const updateServer = async (
+    id: string,
+    operation: () => Promise<SharedProjectLifecycle>,
+  ) => {
+    const state = await operation();
+    setRemote((entries) =>
+      entries.map(({ entry, state: previous }) => ({
+        entry,
+        state: entry.id === id ? state : previous,
+      })),
+    );
   };
   const restore = async (id: string) => {
     const values = await api.projects.restoreProjectTrash(id);
@@ -390,28 +429,69 @@ export function ProjectTrashPanel({
               </article>
             ))}
             <h3>서버 — 관리자</h3>
-            {!remote.length && <p>보관 중인 서버 프로젝트가 없습니다.</p>}
+            {retired ? (
+              <>
+                <label>
+                  관리할 공유 프로젝트
+                  <select
+                    value={serverProject}
+                    disabled={busy}
+                    onChange={(event) => {
+                      setServerProject(event.target.value);
+                      setRemote([]);
+                      setPurge(undefined);
+                      setError('');
+                    }}
+                  >
+                    <option value="">프로젝트 선택</option>
+                    {projects
+                      .filter((entry) => entry.kind === 'shared')
+                      .map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.name} · {entry.serverUrl}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <button
+                  disabled={busy || !serverProject}
+                  onClick={() => void run(() => readServer(serverProject))}
+                >
+                  서버 상태 확인
+                </button>
+              </>
+            ) : (
+              !remote.length && <p>보관 중인 서버 프로젝트가 없습니다.</p>
+            )}
             {remote.map(({ entry, state }) => (
               <article key={entry.id}>
-                <strong>{entry.name}</strong>
+                <strong>{state.name ?? entry.name}</strong>
                 <p>
                   {entry.serverUrl} ·{' '}
                   {state.status === 'purged'
                     ? '영구 삭제됨'
-                    : '팀 전체 접근 중단'}
+                    : state.status === 'active'
+                      ? '사용 중'
+                      : '팀 전체 접근 중단'}
                 </p>
-                <p>영구 삭제 예정: {date(state.expiresAt)}</p>
+                {state.expiresAt && <p>보관 기한 {date(state.expiresAt)}</p>}
                 {state.error && <p role="alert">{state.error}</p>}
                 <div className="home-dialog-actions">
                   <button
                     disabled={
                       busy ||
                       !['trashed', 'restoring'].includes(state.status) ||
-                      state.expiresAt! <= Date.now()
+                      (state.status !== 'restoring' &&
+                        state.expiresAt! <= Date.now())
                     }
                     onClick={() =>
                       void run(() =>
-                        api.projects.restoreSharedProject(entry.id),
+                        updateServer(entry.id, () =>
+                          api.projects.restoreSharedProject(
+                            entry.id,
+                            state.version,
+                          ),
+                        ),
                       )
                     }
                   >
@@ -419,14 +499,24 @@ export function ProjectTrashPanel({
                   </button>
                   <button
                     className="button-danger"
-                    disabled={busy || state.status === 'purged'}
+                    disabled={
+                      busy || ['purged', 'restoring'].includes(state.status)
+                    }
                     onClick={() => {
-                      setPurge({ id: entry.id, name: entry.name, team: true });
+                      setPurge({
+                        id: entry.id,
+                        name: state.name ?? entry.name,
+                        team: true,
+                        version: state.version,
+                        move: state.status === 'active',
+                      });
                       setName('');
                       setDiscard(false);
                     }}
                   >
-                    서버 원본 영구 삭제…
+                    {state.status === 'active'
+                      ? '서버 원본을 휴지통으로 이동…'
+                      : '서버 원본 영구 삭제…'}
                   </button>
                 </div>
               </article>
@@ -434,11 +524,16 @@ export function ProjectTrashPanel({
           </div>
           {purge && (
             <section className="project-trash-confirm">
-              <h3>“{purge.name}” 영구 삭제</h3>
+              <h3>
+                “{purge.name}”{' '}
+                {purge.move ? '서버 휴지통으로 이동' : '영구 삭제'}
+              </h3>
               <p>
-                {purge.team
-                  ? '서버 자료는 복원할 수 없습니다. 팀원 PC의 사본은 유지됩니다.'
-                  : '미반영 작업을 포함한 보관 자료를 복구할 수 없습니다.'}
+                {purge.move
+                  ? '모든 팀원의 서버 접근이 중단됩니다. 서버 휴지통에서 7일 동안 복원할 수 있습니다.'
+                  : purge.team
+                    ? '서버 자료는 복원할 수 없습니다. 팀원 PC의 사본은 유지됩니다.'
+                    : '미반영 작업을 포함한 보관 자료를 복구할 수 없습니다.'}
               </p>
               <label>
                 프로젝트 이름
@@ -455,7 +550,9 @@ export function ProjectTrashPanel({
                   disabled={busy}
                   onChange={(e) => setDiscard(e.target.checked)}
                 />
-                영구 삭제와 복구 불가를 확인했습니다.
+                {purge.move
+                  ? '모든 팀원의 서버 접근 중단을 확인했습니다.'
+                  : '영구 삭제와 복구 불가를 확인했습니다.'}
               </label>
               <div className="home-dialog-actions">
                 <button disabled={busy} onClick={() => setPurge(undefined)}>
@@ -467,7 +564,21 @@ export function ProjectTrashPanel({
                   onClick={() =>
                     void run(() =>
                       purge.team
-                        ? api.projects.purgeSharedProject(purge.id, name)
+                        ? updateServer(purge.id, () =>
+                            purge.move
+                              ? api.projects.trashSharedProject(
+                                  purge.id,
+                                  name,
+                                  discard,
+                                  purge.version!,
+                                )
+                              : api.projects.purgeSharedProject(
+                                  purge.id,
+                                  name,
+                                  discard,
+                                  purge.version,
+                                ),
+                          )
                         : api.projects.purgeProjectTrash(
                             purge.id,
                             name,
@@ -476,7 +587,7 @@ export function ProjectTrashPanel({
                     )
                   }
                 >
-                  영구 삭제
+                  {purge.move ? '휴지통으로 이동' : '영구 삭제'}
                 </button>
               </div>
             </section>

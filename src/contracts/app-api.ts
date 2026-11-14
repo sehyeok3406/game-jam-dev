@@ -222,10 +222,15 @@ export type GameCanvasApi = {
     confirm: boolean,
     version: number,
   ) => Promise<SharedProjectLifecycle>;
-  restoreSharedProject: (id: string) => Promise<SharedProjectLifecycle>;
+  restoreSharedProject: (
+    id: string,
+    expectedVersion?: number,
+  ) => Promise<SharedProjectLifecycle>;
   purgeSharedProject: (
     id: string,
     name: string,
+    confirmTeam?: boolean,
+    expectedVersion?: number,
   ) => Promise<SharedProjectLifecycle>;
   resumeRestoredProject: () => Promise<CollaborationState>;
   listProjectFolders: () => Promise<ProjectFolder[]>;

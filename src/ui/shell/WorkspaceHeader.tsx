@@ -41,6 +41,7 @@ interface Props {
     appUpdates: boolean;
     nativeClipboard: boolean;
     multiplayer: boolean;
+    projectCollaboration: boolean;
   }>;
   setCollaborationTab: import('react').Dispatch<
     import('react').SetStateAction<'create' | 'join' | 'recover'>
@@ -172,32 +173,36 @@ export function WorkspaceHeader({
                 project={collaboration}
               />
             )}
-            <button
-              type="button"
-              className="collaboration-top-button"
-              onClick={() => {
-                setCollaborationTab('create');
-                setCollaborationOpen(true);
-              }}
-              title={
-                collaboration.active
-                  ? `${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'} · 참여자·초대 관리`
-                  : '초대 코드로 함께 작업하기'
-              }
-            >
-              <Users size={15} />
-              <span>
-                {collaboration.active
-                  ? `${collaboration.members.filter((member) => member.online).length}명 · ${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'}`
-                  : '함께 작업'}
-              </span>
-              {collaboration.active && (
-                <i
-                  className={`member-dot ${collaboration.connected ? 'online' : ''}`}
-                />
-              )}
-            </button>
-            <span className="toolbar-divider" />
+            {capabilities.projectCollaboration && (
+              <button
+                type="button"
+                className="collaboration-top-button"
+                onClick={() => {
+                  setCollaborationTab('create');
+                  setCollaborationOpen(true);
+                }}
+                title={
+                  collaboration.active
+                    ? `${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'} · 참여자·초대 관리`
+                    : '초대 코드로 함께 작업하기'
+                }
+              >
+                <Users size={15} />
+                <span>
+                  {collaboration.active
+                    ? `${collaboration.members.filter((member) => member.online).length}명 · ${collaboration.role ? ROLE_NAMES[collaboration.role] : '연결 중'}`
+                    : '함께 작업'}
+                </span>
+                {collaboration.active && (
+                  <i
+                    className={`member-dot ${collaboration.connected ? 'online' : ''}`}
+                  />
+                )}
+              </button>
+            )}
+            {capabilities.projectCollaboration && (
+              <span className="toolbar-divider" />
+            )}
             <button
               type="button"
               className="header-ai-action header-ai-action--primary"

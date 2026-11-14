@@ -1,3 +1,4 @@
+import { useRuntime } from '../runtime/RuntimeProvider';
 import { gamejamErrorId } from '../../gamejam-validation';
 import { editRequestInstructions } from '../../core/ai/task-instructions.ts';
 import { TASK_INSTRUCTION_TEMPLATE_VERSION } from '../../core/ai/instruction-templates.ts';
@@ -125,6 +126,7 @@ export function GamejamRequestFields({
   checkingCodex,
   refreshCodexStatus,
 }: RequestFieldsProps) {
+  const { capabilities } = useRuntime();
   const editablePreviews = previews.filter(
     (p) => !isImportedPreviewPath(p.relativePath),
   );
@@ -1049,8 +1051,10 @@ export function GamejamRequestFields({
           requiresChoice={multiplayerChoiceRequired}
           multiplayer={effectiveAiRequest?.multiplayer}
           implementing={aiRequest.implement}
-          onMultiplayerChange={(multiplayer) =>
-            setAiRequest({ ...aiRequest, multiplayer })
+          onMultiplayerChange={
+            capabilities.multiplayer
+              ? (multiplayer) => setAiRequest({ ...aiRequest, multiplayer })
+              : undefined
           }
         />
         <GamejamFieldErrors field="multiplayer" issues={aiRequestIssues} />

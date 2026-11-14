@@ -10,6 +10,7 @@ import { Puzzle } from 'lucide-react';
 import { ArrowRight } from 'lucide-react';
 import { DrawingToolButtons } from '../drawing/DrawingControls';
 import appIcon from '../../../assets/icon.png';
+import { useRuntime } from '../runtime/RuntimeProvider';
 import { MultiplayerLobby } from '../MultiplayerLobby';
 import { isQueuePending } from '../../ai-task-queue';
 import {
@@ -219,6 +220,7 @@ export function WorkspaceChrome({
   undoState,
   workspace,
 }: Props) {
+  const { capabilities } = useRuntime();
   return (
     <>
       <button
@@ -301,7 +303,7 @@ export function WorkspaceChrome({
             </button>
           </div>
           <div className="header-actions floating-surface">
-            {collaboration.active && (
+            {capabilities.multiplayer && collaboration.active && (
               <MultiplayerLobby
                 key={collaboration.projectId}
                 projectOnly
@@ -352,34 +354,37 @@ export function WorkspaceChrome({
                 </span>
               ) : null}
             </button>
-            <button
-              className="collaboration-top-button"
-              aria-label="협업 패널"
-              aria-expanded={dockPanel === 'collaboration'}
-              onClick={() =>
-                setDockPanel(
-                  dockPanel === 'collaboration' ? null : 'collaboration',
-                )
-              }
-            >
-              <Users size={16} />
-              <span>
-                협업
-                {collaboration.active
-                  ? ' · ' + collaboration.members.filter((m) => m.online).length
-                  : ''}
-                {collaboration.pendingRequests
-                  ? ' (' + collaboration.pendingRequests + ')'
-                  : ''}
-              </span>
-              {collaboration.active && (
-                <i
-                  className={
-                    'member-dot ' + (collaboration.connected ? 'online' : '')
-                  }
-                />
-              )}
-            </button>
+            {capabilities.projectCollaboration && (
+              <button
+                className="collaboration-top-button"
+                aria-label="협업 패널"
+                aria-expanded={dockPanel === 'collaboration'}
+                onClick={() =>
+                  setDockPanel(
+                    dockPanel === 'collaboration' ? null : 'collaboration',
+                  )
+                }
+              >
+                <Users size={16} />
+                <span>
+                  협업
+                  {collaboration.active
+                    ? ' · ' +
+                      collaboration.members.filter((m) => m.online).length
+                    : ''}
+                  {collaboration.pendingRequests
+                    ? ' (' + collaboration.pendingRequests + ')'
+                    : ''}
+                </span>
+                {collaboration.active && (
+                  <i
+                    className={
+                      'member-dot ' + (collaboration.connected ? 'online' : '')
+                    }
+                  />
+                )}
+              </button>
+            )}
             <button
               className="icon-button"
               aria-label="속성 패널"

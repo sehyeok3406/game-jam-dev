@@ -1,15 +1,8 @@
 import { SelectedProjectRegistration } from './application/projects/selected-project.ts';
-import { LocationLinkService } from './application/projects/location-link-service.ts';
-import { locationIndex } from './adapters/markdown/location-index.ts';
 import { LocationLinkInbox } from './desktop/location-link-inbox.ts';
 import { installLocationLinkProtocol } from './desktop/location-link-protocol.ts';
-import { registerLocationLinksIpc } from './desktop/ipc/location-links.ts';
-import { relocateWorkspaceSettings } from './adapters/filesystem/workspace-settings.ts';
 import { sharedWorkspacePath } from './adapters/filesystem/shared-workspace-locations.ts';
-import {
-  registeredSharedWorkspace,
-  sharedWorkspaceLocations,
-} from './desktop/projects/workspace-locations.ts';
+import { registeredSharedWorkspace } from './desktop/projects/workspace-locations.ts';
 import {
   UserEditRecorder,
   RecordedCommandPublisher,
@@ -85,7 +78,6 @@ import { filesystemTextFiles } from './adapters/filesystem/text-files';
 import { ProjectSettingsService } from './application/editing/settings-service';
 import { ProjectPreviewService } from './application/editing/preview-service';
 import { registerPreviewIpc } from './desktop/ipc/preview';
-import { registerDiscordApprovalIpc } from './desktop/ipc/discord-approval';
 import { exportGameUiPng } from './desktop/export-game-ui';
 import { savePreviewHtml } from './desktop/export-preview-html';
 import { PreviewExportService } from './application/editing/preview-export-service';
@@ -145,11 +137,6 @@ import { DocumentEditingService } from './application/editing/document-service';
 import { filesystemProjectRepository } from './adapters/filesystem/local-project-repository';
 import { DesktopProjectSessions } from './desktop/project-session';
 import { DesktopLifecycle } from './desktop/lifecycle';
-import {
-  DiscordApprovalService,
-  type DiscordApprovalContext,
-} from './discord-approval';
-import { DiscordApprovalStore } from './discord-approval-store';
 import { PropertyQueue } from './property-queue.ts';
 import { AiQueueStore } from './ai-queue-store.ts';
 import {
@@ -204,23 +191,17 @@ import { repairWindowsBranding } from './windows-branding';
 import { updateBlockers, type AppUpdateController } from './app-update';
 import started from 'electron-squirrel-startup';
 import chokidar from 'chokidar';
-import {
-  CollaborationClient,
-  serverAddress,
-  type CollaborationCredentials,
-} from './collaboration-client';
+import { CollaborationClient, serverAddress } from './collaboration-client';
 import { createCollaborationServer } from './collaboration-server';
-import { registerMultiplayerWindows } from './multiplayer/window-manager';
 import { WEB_VIEWER_URL } from './web-viewer';
 import { ProjectLibrary } from './project-library';
 import { ProjectTrash } from './project-trash';
 import { projectStorageKey } from './project-trash-keys';
-import { canonical } from './trash-files';
+import { canonical, inside } from './trash-files';
 import { invalidateClientCache } from './client-cache';
 import type { DocumentSaveRecord } from './document-save-queue';
 import type { EditorDraft } from './editor-drafts';
 import { parseConnectionInfo } from './connection-info';
-import { SELF_HOST_ENABLED } from './features/self-host/enabled';
 import { localProjectName } from './project-metadata';
 import { commandLabels, reduceCollaboration } from './collaboration-model';
 import matter from './markdown.ts';
@@ -235,13 +216,7 @@ import {
   readCanvasClipboard,
   type ClipboardContents,
 } from './clipboard-images';
-import {
-  testProfilePath,
-  TestUserLauncher,
-  MAX_TEST_WINDOWS,
-  decryptTestBootstrap,
-  TEST_BOOTSTRAP_KEY_ENV,
-} from './test-users';
+import { testProfilePath, TEST_BOOTSTRAP_KEY_ENV } from './test-users';
 import {
   captureProject,
   historyId,
@@ -254,7 +229,6 @@ import {
 import { taskHistoryRecord } from './ai-task-history';
 import { validateHtml } from './html-validation';
 import { presentWindow } from './window-presentation';
-import { isPreviewPath } from './preview-output';
 import type {
   CanvasDocument,
   CodexRunEvent,
@@ -265,7 +239,6 @@ import type {
   WorkspaceState,
   CollaborationState,
   CollaborationRole,
-  LaunchTestUsersInput,
   ImportFilesInput,
   ImportBatchInput,
   CanvasClipboardCopyInput,
@@ -290,7 +263,6 @@ if (defaultUserData !== configuredUserData) {
   app.setPath('sessionData', defaultUserData);
 }
 const testProfile = testProfilePath(defaultUserData, process.argv);
-const testBootstrapKey = process.env[TEST_BOOTSTRAP_KEY_ENV];
 delete process.env[TEST_BOOTSTRAP_KEY_ENV];
 if (testProfile) {
   mkdirSync(testProfile, { recursive: true });
@@ -317,8 +289,8 @@ const primaryLocationInstance = installLocationLinkProtocol({
   app,
   inbox: locationLinkInbox,
   argv: process.argv,
-  register:
-    app.isPackaged && !testProfile && process.platform === 'win32' && !started,
+  enabled: false,
+  register: false,
   focus: () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -327,11 +299,12 @@ const primaryLocationInstance = installLocationLinkProtocol({
   },
   invalid: () => locationLinkInbox.invalid(),
 });
-let testUserLauncher: TestUserLauncher | null = null;
 let appUpdates: AppUpdateController;
 const desktopBootstrap = new DesktopBootstrap(
   () => app.getPath('userData'),
   safeStorage,
+  {},
+  true,
 );
 let pendingAppOperations = 0;
 let updateRestartPrepared = false;
@@ -415,16 +388,8 @@ const registerUpdates = async () => {
           !!projectSessions.client?.outgoing,
         disconnected:
           !!projectSessions.client && !projectSessions.client.state.connected,
-        hostingGuests:
-          !!localCollaborationServer &&
-          !!projectSessions.client &&
-          (projectSessions.client.state.members.some(
-            (member) =>
-              member.online &&
-              member.id !== projectSessions.client?.state.memberId,
-          ) ||
-            projectSessions.client.state.locks.length > 0),
-        testWindows: !!testUserLauncher?.hasActiveWindows(),
+        hostingGuests: false,
+        testWindows: false,
       }),
     confirmRestart: async () => {
       if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -536,12 +501,6 @@ const lifecycle = new DesktopLifecycle({
 });
 let projectLibrary: ProjectLibrary;
 let projectTrash: ProjectTrash;
-let selfHost: import('./features/self-host/service').SelfHostService | null =
-  null;
-let selfHostLifecycle:
-  | import('./features/self-host/lifecycle').SelfHostLifecycle
-  | null = null;
-
 let clipboardContextId = randomUUID();
 let clipboardCopy: {
   copyId: string;
@@ -555,10 +514,6 @@ const resetClipboardContext = () => {
   clipboardRequests.clear();
 };
 
-let localCollaborationServer: Awaited<
-  ReturnType<typeof createCollaborationServer>
-> | null = null;
-const localCollaborationKey = randomUUID();
 let sharedRunId: string | null = null;
 const editJournals = new Map<string, EditJournal>();
 const journal = () => {
@@ -699,30 +654,30 @@ const collaborationSessions: DesktopCollaborationSessions =
         });
     },
     startWatcher: () => startWatcher(),
-    creation: async (input) => {
-      const internal =
-        !!localCollaborationServer &&
-        input.serverUrl === `http://127.0.0.1:${localCollaborationServer.port}`;
-      const key = internal
-        ? localCollaborationKey
-        : selfHost && selfHost.state.publicUrl === input.serverUrl
-          ? ((await selfHost.creationKey(input.serverUrl)) ?? input.serverKey)
-          : input.serverKey;
-      return { key, internal };
-    },
+    creation: async (input) => ({ key: input.serverKey, internal: false }),
     prepareLock: async (relative) => {
       if (!projectSessions.client && projectSessions.root)
         await localQueue(projectSessions.root);
       assertAiFilesUnlocked(currentAiFileLock(), [relative]);
     },
   });
-const internalServerUrl = async () => {
-  if (!localCollaborationServer)
-    localCollaborationServer = await createCollaborationServer({
-      dataDirectory: path.join(app.getPath('userData'), 'collaboration-server'),
-      creationKey: localCollaborationKey,
-    });
-  return `http://127.0.0.1:${localCollaborationServer.port}`;
+const internalServerUrl = async (): Promise<string> => {
+  throw Error('협업 서버 시작이 종료되었습니다.');
+};
+const embeddedCleanup = async <T>(
+  projectId: string,
+  run: (url: string) => Promise<T>,
+) => {
+  const server = await createCollaborationServer({
+    dataDirectory: path.join(app.getPath('userData'), 'collaboration-server'),
+    port: 0,
+    cleanupProjectId: projectId,
+  });
+  try {
+    return await run(`http://127.0.0.1:${server.port}`);
+  } finally {
+    await server.close();
+  }
 };
 let modeFiles: ProjectModeFiles | undefined;
 const chooseProjectParent = async () => {
@@ -754,8 +709,6 @@ const projectModes: DesktopProjectModes = new DesktopProjectModes({
   },
   changed: () => notifyWorkspaceChanged(),
 });
-const attachCollaboration = (credentials: CollaborationCredentials) =>
-  collaborationSessions.attach(credentials);
 let changeTimer: NodeJS.Timeout | null = null;
 let lastRunEvent: CodexRunEvent | null = null;
 let runPreparing = false;
@@ -986,13 +939,6 @@ const workspaceState = async (): Promise<WorkspaceState> => ({
 });
 
 const settingsPath = () => path.join(app.getPath('userData'), SETTINGS_FILE);
-const finishSharedFolderMove = async (from: string, to: string) => {
-  await draftStore.relocateRoot(from, to);
-  await relocateWorkspaceSettings(settingsPath(), from, to);
-  invalidateClientCache(from);
-  invalidateClientCache(to);
-};
-
 const saveSettings = async () => {
   await fs.mkdir(app.getPath('userData'), { recursive: true });
   await fs.writeFile(
@@ -1010,14 +956,25 @@ const saveSettings = async () => {
   );
 };
 
+const assertLocalProjectRoot = (root: string) => {
+  if (
+    projectLibrary.findRoot(root)?.kind === 'shared' ||
+    inside(path.join(app.getPath('userData'), 'shared-workspaces'), root)
+  )
+    throw Error('공유 프로젝트 운영이 종료되었습니다.');
+};
+
 const loadSettings = async () => {
   try {
     const raw = await fs.readFile(settingsPath(), 'utf8');
     const parsed = JSON.parse(raw) as { workspaceRoot?: string };
     if (parsed.workspaceRoot) {
       const stat = await fs.stat(parsed.workspaceRoot);
-      if (stat.isDirectory())
-        await projectSessions.activate(await fs.realpath(parsed.workspaceRoot));
+      if (stat.isDirectory()) {
+        const root = await fs.realpath(parsed.workspaceRoot);
+        assertLocalProjectRoot(root);
+        await projectSessions.activate(root);
+      }
     }
   } catch {
     await projectSessions.activate(null);
@@ -1138,17 +1095,9 @@ const sharedProjectMirror = (
 const setWorkspace = async (root: string) => {
   const canonicalRoot = await fs.realpath(root);
   const registered = projectLibrary.findRoot(canonicalRoot);
-  if (registered?.transitionPending) await projectModes.recover(registered.id);
-  const shared = projectLibrary.findRoot(canonicalRoot);
-  if (shared?.kind === 'shared' && shared.credentials) {
-    if (shared.credentials.internalServer)
-      shared.credentials.serverUrl = await internalServerUrl();
-    await collaborationSessions.attach(
-      shared.credentials,
-      shared.localRoot ?? null,
-    );
-    return workspaceState();
-  }
+  if (registered?.transitionPending)
+    await projectModes.recoverCommittedLocal(registered.id);
+  assertLocalProjectRoot(canonicalRoot);
   if (projectTrash?.hasRoot(root)) throw Error('휴지통에서 먼저 복원해주세요.');
   if (!registered)
     projectLibrary.assertNameAvailable(await localProjectName(canonicalRoot));
@@ -1821,6 +1770,34 @@ const handle = (
   listener: Parameters<typeof ipcMain.handle>[1],
 ) => {
   const invoke: Parameters<typeof ipcMain.handle>[1] = (event, ...args) => {
+    if (
+      (channel.startsWith('collaboration:') &&
+        ![
+          'collaboration:get',
+          'collaboration:lock',
+          'collaboration:unlock',
+          'collaboration:test-users',
+        ].includes(channel)) ||
+      /^(requests:|projects:(?:server$|folder-name$|connection-|location-))/.test(
+        channel,
+      )
+    )
+      throw Error('공유 프로젝트 운영이 종료되었습니다.');
+    if (channel === 'tasks:create' && args[0]) {
+      const input = args[0] as CreateTaskInput;
+      args[0] = {
+        ...input,
+        multiplayer: null,
+        thenImplement: input.thenImplement && {
+          ...input.thenImplement,
+          multiplayer: null,
+        },
+        requestSnapshot: input.requestSnapshot && {
+          ...input.requestSnapshot,
+          request: { ...input.requestSnapshot.request, multiplayer: null },
+        },
+      } satisfies CreateTaskInput;
+    }
     const requestSession = projectSessions.ref;
     const sessionBound =
       channel.startsWith('projects:layout-') ||
@@ -2194,49 +2171,6 @@ const applyImportedFiles = async (
   );
 };
 
-let discordApproval: DiscordApprovalService | null = null;
-let discordSettingsQueue: Promise<unknown> = Promise.resolve();
-const flushDiscordEditors = () =>
-  new Promise<void>((resolve, reject) => {
-    const window = mainWindow;
-    if (!window || window.isDestroyed()) {
-      reject(Error('Game Jam! 앱을 열어주세요.'));
-      return;
-    }
-    const id = randomUUID();
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(
-        Error(
-          '앱의 편집 내용을 저장하지 못했습니다. 앱 상태를 확인한 뒤 다시 승인해주세요.',
-        ),
-      );
-    }, 15_000);
-    const cleanup = () => {
-      clearTimeout(timeout);
-      ipcMain.off('discord-approval:prepared', done);
-    };
-    const done = (
-      event: Electron.IpcMainEvent,
-      replyId: string,
-      ok: boolean,
-    ) => {
-      if (
-        replyId !== id ||
-        event.sender !== window.webContents ||
-        event.senderFrame !== window.webContents.mainFrame
-      )
-        return;
-      cleanup();
-      if (ok) resolve();
-      else
-        reject(
-          Error('저장하지 못한 편집 내용이 있습니다. 앱에서 확인해주세요.'),
-        );
-    };
-    ipcMain.on('discord-approval:prepared', done);
-    window.webContents.send('discord-approval:prepare', id);
-  });
 const approvalExecution = (
   check: () => void,
   prepare: () => Promise<unknown>,
@@ -2253,115 +2187,7 @@ const approvalExecution = (
     reserve: enqueueAiTask,
     execute: prepareCodexRun,
   });
-const discordContext = (): DiscordApprovalContext | null => {
-  const client = projectSessions.client,
-    root = projectSessions.root;
-  if (
-    !client ||
-    !root ||
-    !client.state.connected ||
-    client.state.role !== 'admin' ||
-    client.state.accessDenied ||
-    client.state.awaitingResume ||
-    client.state.projectDeleted ||
-    client.state.requestApprovalVersion !== 1 ||
-    client.offline ||
-    client.outgoing ||
-    client.state.pendingChanges
-  )
-    return null;
-  const check = () => {
-    if (
-      projectSessions.client !== client ||
-      projectSessions.root !== root ||
-      !discordContext()
-    )
-      throw Error('연결한 프로젝트와 관리자 권한·동기화 상태를 확인해주세요.');
-  };
-  return {
-    serverUrl: client.credentials.serverUrl,
-    projectId: client.credentials.projectId,
-    memberId: client.state.memberId!,
-    projectName: client.state.projectName || '공동 프로젝트',
-    list: () => {
-      check();
-      return client.listApprovals();
-    },
-    read: (id) => {
-      check();
-      return client.readApproval(id);
-    },
-    documents: (id, revision, reviewToken) => {
-      check();
-      return client.readApprovalDocuments(id, revision, reviewToken);
-    },
-    feedback: async (id, revision, message, commandId) => {
-      check();
-      await client.mutateApproval('feedback', {
-        id,
-        revision,
-        message,
-        commandId,
-      });
-    },
-    start: async (approval, settings, authorized) => {
-      pendingAppOperations += 1;
-      try {
-        await approvalExecution(check, async () => {
-          await flushDiscordEditors();
-          await propertyQueue.flush();
-        }).start(
-          {
-            approval,
-            taskPath: '',
-            providerId: settings.providerId,
-            modelId: settings.modelId || null,
-            reasoningEffort: settings.reasoningEffort,
-          },
-          authorized,
-        );
-      } finally {
-        pendingAppOperations -= 1;
-      }
-    },
-  };
-};
-
 const registerIpc = () => {
-  registerDiscordApprovalIpc({
-    register: (channel, listener) => ipcMain.handle(channel, listener),
-    isSender: isUpdateSender,
-    service: () =>
-      (discordApproval ??= new DiscordApprovalService(
-        new DiscordApprovalStore(app.getPath('userData'), safeStorage),
-        discordContext,
-        async (action, failure) => {
-          const { DiscordBotTransport } = await import('./discord-transport');
-          return new DiscordBotTransport(action, failure);
-        },
-      )),
-    queue: () => discordSettingsQueue,
-    setQueue: (queue) => {
-      discordSettingsQueue = queue;
-    },
-    updatePrepared: () => updateRestartPrepared,
-  });
-  registerMultiplayerWindows({
-    preload: path.join(__dirname, 'multiplayer-player-preload.cjs'),
-    credentials: () =>
-      mainWindow && !mainWindow.isDestroyed()
-        ? projectSessions.client?.credentials
-        : undefined,
-    memberId: () => projectSessions.client?.state.memberId,
-    isMainSender: isUpdateSender,
-    currentHtml: async (relative) => {
-      if (typeof relative !== 'string' || !isPreviewPath(relative))
-        return undefined;
-      if (projectSessions.client) return projectSessions.client.files[relative];
-      if (!projectSessions.root) return undefined;
-      return desktopPaths().readPreview(relative);
-    },
-  });
   handle(
     'clipboard:canvas-copy',
     async (event, input: CanvasClipboardCopyInput) => {
@@ -2734,7 +2560,9 @@ const registerIpc = () => {
       const service = desktopBootstrap.webViewer();
       const settings = await service.settings();
       if (!settings) throw new Error('웹 뷰어 연결 설정이 필요합니다.');
-      for (const id of input.projects) projectLibrary.get(id);
+      for (const id of input.projects)
+        if (projectLibrary.get(id).kind !== 'local')
+          throw Error('로컬 프로젝트만 게시할 수 있습니다.');
       await service.save({
         ...settings,
         projects: [...new Set([...settings.projects, ...input.projects])],
@@ -2757,47 +2585,31 @@ const registerIpc = () => {
     },
   });
   const homeProjects = new ProjectHomeService({
+    sharedProjectsRetired: true,
     registerSelected: (token, name) => selectedProject.register(token, name),
-    tidySharedFolder: async (id) => {
-      if (
-        projectSessions.root ||
-        aiIsActive() ||
-        projectLibrary.get(id).transitionPending
-      )
-        throw Error('홈에서 프로젝트 작업을 마친 뒤 정리해주세요.');
-      await sharedWorkspaceLocations(
-        app.getPath('userData'),
-        projectLibrary,
-      ).rename(id, finishSharedFolderMove);
-    },
-    createShared: (input) => projectModes.createDirect(input),
-    beforeOpen: (id) => projectModes.recover(id),
+    beforeOpen: (id) => projectModes.recoverCommittedLocal(id),
     registry: homeProjectRegistry(projectLibrary),
-    local: filesystemHomeProjects,
+    local: {
+      ...filesystemHomeProjects,
+      create: async (parent, name) => {
+        if (typeof parent !== 'string' || !path.isAbsolute(parent))
+          throw Error('저장할 상위 폴더의 절대 경로를 선택해주세요.');
+        const root = await fs.realpath(parent);
+        assertLocalProjectRoot(root);
+        assertLocalProjectRoot(path.join(root, name));
+        return filesystemHomeProjects.create(root, name);
+      },
+    },
     shared: desktopSharedProjects({
-      beginReveal: () => {
-        const ref = projectSessions.ref;
-        return () => projectSessions.assertCurrent(ref);
-      },
-      prepareFiles: async (root, files, assertCurrent) => {
-        const effects =
-          projectSessions.root === root
-            ? projectFileEffects(projectSessions.ref)
-            : {
-                pauseWatcher: async () => async () => {},
-                trashItem: async (absolute: string) => {
-                  await shell.trashItem(absolute);
-                },
-              };
-        await new SharedProjectMirror(
-          filesystemSharedProjectFiles(root, effects, assertCurrent),
-          assertCurrent,
-        ).sync(files);
-      },
       library: projectLibrary,
       userData: app.getPath('userData'),
       active: () => projectSessions.client,
       internalServerUrl,
+      cleanup: embeddedCleanup,
+      pendingFiles: (id) =>
+        documentSaveQueue.pendingProjectFiles((scope) =>
+          scope.startsWith(`shared:${id}:`),
+        ),
       drainCache: async () => {
         await collaborationCache.drain();
       },
@@ -2811,21 +2623,10 @@ const registerIpc = () => {
       workspace: workspaceState,
       suspend: suspendProject,
       openLocal: setWorkspace,
-      openShared: async (id) => {
-        const entry = projectLibrary.get(id);
-        const credentials = entry.credentials!;
-        if (credentials.internalServer)
-          credentials.serverUrl = await internalServerUrl();
-        projectSessions.localRootBeforeShare = entry.localRoot ?? null;
-        await attachCollaboration(credentials);
-        return {
-          root: projectSessions.root,
-          name: projectSessions.client?.state.projectName ?? entry.name,
-        };
+      openShared: async () => {
+        throw Error('공유 프로젝트 운영이 종료되었습니다.');
       },
-      checkHost: async () => {
-        if (selfHost?.state.stage === 'ready') await selfHost.run('check');
-      },
+      checkHost: async () => {},
     },
     trash: {
       hasProject: (id) => projectTrash.hasProject(id),
@@ -2883,79 +2684,6 @@ const registerIpc = () => {
       purgeFileTrash: (projectId, id, confirmed) =>
         registeredFileTrash(projectId).purge(id, confirmed),
     },
-  );
-  const locationService = new LocationLinkService({
-    projects: () =>
-      projectLibrary.list().map((entry) => ({
-        ...entry,
-        current:
-          entry.kind === 'shared' &&
-          entry.projectId === projectSessions.client?.credentials.projectId &&
-          (entry.id === projectSessions.client?.credentials.libraryId ||
-            projectLibrary.get(entry.id).credentials?.token ===
-              projectSessions.client?.credentials.token),
-      })),
-    hasSession: (id) => !!projectLibrary.get(id).credentials,
-    current: () => ({
-      projectId: projectSessions.client?.credentials.projectId,
-      key: projectSessions.ref?.sessionId ?? 'home',
-    }),
-    verify: async (id) => {
-      const items = await homeProjects.verifyLocationAccess(id);
-      const entry = projectLibrary.get(id),
-        client = projectSessions.client;
-      if (
-        client &&
-        entry.projectId === client.credentials.projectId &&
-        (entry.id === client.credentials.libraryId ||
-          entry.credentials?.token === client.credentials.token)
-      )
-        await client.refresh();
-      return items;
-    },
-    open: async (id) => {
-      await homeProjects.open(id);
-      if (
-        projectLibrary.get(id).credentials?.token !==
-        projectSessions.client?.credentials.token
-      )
-        throw Error(
-          '다른 서버의 같은 프로젝트가 열려 있습니다. 홈에서 사용할 프로젝트를 먼저 열어주세요.',
-        );
-      await projectSessions.client?.refresh();
-      return workspaceState();
-    },
-    workspace: workspaceState,
-    items: () => locationIndex(projectSessions.client?.files ?? {}),
-    assertReady: () => {
-      const client = projectSessions.client;
-      if (
-        !client ||
-        !client.state.connected ||
-        client.state.accessDenied ||
-        client.state.projectDeleted ||
-        client.state.awaitingResume
-      )
-        throw Error(
-          '서버에 연결해 프로젝트 접근 권한을 확인한 뒤 다시 시도해주세요.',
-        );
-      if (client.offline || client.outgoing)
-        throw Error('미동기화 작업을 반영한 뒤 위치 링크를 사용해주세요.');
-    },
-  });
-  registerLocationLinksIpc(
-    handle,
-    (channel, listener) => {
-      ipcMain.handle(channel, listener);
-      return listener;
-    },
-    locationService,
-    locationLinkInbox,
-    (event) => {
-      if (!isUpdateSender(event))
-        throw Error('앱의 기본 화면에서 위치 링크를 사용해주세요.');
-    },
-    () => projectSessions.ref,
   );
   const projectLayoutService = (event: Electron.IpcMainInvokeEvent) => {
     const root = requireWorkspace(),
@@ -3039,6 +2767,7 @@ const registerIpc = () => {
     return projectLayoutService(event).upgrade();
   });
   registerProjectCopyIpc(handle, {
+    localOnly: true,
     sessions: projectSessions,
     library: projectLibrary,
     userData: app.getPath('userData'),
@@ -3056,48 +2785,12 @@ const registerIpc = () => {
     changed: notifyWorkspaceChanged,
   });
   handle('collaboration:test-users', async () => ({
-    supported: true,
+    supported: false,
     isTestUser: !!testProfile,
     nickname: testNickname,
-    maxWindows: MAX_TEST_WINDOWS,
-    windows:
-      (await testUserLauncher?.list(
-        projectSessions.client?.credentials.projectId,
-      )) ?? [],
+    maxWindows: 0,
+    windows: [],
   }));
-  handle(
-    'collaboration:launch-test-users',
-    async (_event, input: LaunchTestUsersInput) => {
-      if (testProfile || !projectSessions.client)
-        throw new CanvasError(
-          'GC-TEST-001',
-          '원래 관리자 창에서 공동 프로젝트에 연결한 뒤 실행해주세요.',
-        );
-      if (!safeStorage.isEncryptionAvailable())
-        throw new CanvasError(
-          'GC-TEST-001',
-          '이 PC에서 안전한 세션 저장을 사용할 수 없어 테스트 창을 실행하지 않습니다.',
-        );
-      testUserLauncher ??= new TestUserLauncher({
-        base: defaultUserData,
-        executable: process.execPath,
-        appPath: app.getAppPath(),
-        packaged: app.isPackaged,
-      });
-      return testUserLauncher.launch(projectSessions.client, input);
-    },
-  );
-  handle('collaboration:start-local-server', async () => {
-    if (!localCollaborationServer)
-      localCollaborationServer = await createCollaborationServer({
-        dataDirectory: path.join(
-          app.getPath('userData'),
-          'collaboration-server',
-        ),
-        creationKey: localCollaborationKey,
-      });
-    return { serverUrl: `http://127.0.0.1:${localCollaborationServer.port}` };
-  });
   handle('codex:active', () =>
     currentCodexRun() || runPreparing ? lastRunEvent : null,
   );
@@ -3140,7 +2833,9 @@ const registerIpc = () => {
       title: '게임 프로젝트 폴더 선택',
     });
     if (result.canceled || !result.filePaths[0]) return workspaceState();
-    return selectedProject.select(await fs.realpath(result.filePaths[0]));
+    const root = await fs.realpath(result.filePaths[0]);
+    assertLocalProjectRoot(root);
+    return selectedProject.select(root);
   });
   documentSaveQueue = new DocumentSaveQueue(
     new DocumentSaveStore(
@@ -3385,10 +3080,6 @@ const createWindow = async () => {
     });
     closingWindow.webContents.send('drafts:flush-request');
   });
-  selfHostLifecycle?.attach(closingWindow, () => {
-    draftsFlushed = false;
-    closing = false;
-  });
   closingWindow.on('show', () => {
     draftsFlushed = false;
     closing = false;
@@ -3441,50 +3132,25 @@ app.whenReady().then(async () => {
       if (typeof metadata.nickname === 'string')
         testNickname = metadata.nickname;
     } catch {
-      /* The isolated profile remains usable for manual invitation. */
+      /* The isolated profile remains usable for package verification. */
     }
   }
   await registerUpdates();
-  projectLibrary = new ProjectLibrary(app.getPath('userData'), safeStorage);
+  projectLibrary = new ProjectLibrary(
+    app.getPath('userData'),
+    safeStorage,
+    true,
+  );
   await projectLibrary.load();
   try {
-    await projectModes.recover();
+    await projectModes.recoverCommittedLocal();
   } catch (error) {
     console.error(
       '프로젝트 전환 복구 보류',
       error instanceof Error ? error.message : '복구 실패',
     );
   }
-  if (
-    SELF_HOST_ENABLED &&
-    !testProfile &&
-    process.platform === 'win32' &&
-    typeof app.getAppPath === 'function'
-  ) {
-    const feature = await desktopBootstrap.selfHost({
-      developmentRoot: path.resolve(__dirname, '../..'),
-      library: projectLibrary,
-      activeProject: () => projectSessions.client?.credentials.projectId,
-      window: () => mainWindow,
-      updatePrepared: () => updateRestartPrepared,
-      register: handle,
-    });
-    selfHost = feature.service;
-    selfHostLifecycle = feature.lifecycle;
-  }
   registerIpc();
-  for (const entry of projectLibrary
-    .list()
-    .filter((e) => e.kind === 'shared')) {
-    try {
-      await sharedWorkspaceLocations(
-        app.getPath('userData'),
-        projectLibrary,
-      ).recover(entry.id, finishSharedFolderMove);
-    } catch {
-      /* Keep this project's journal and original data; its home action can retry. */
-    }
-  }
   const scopeMatches = (
     entry: import('./project-library').SavedProject,
     scope: string,
@@ -3593,6 +3259,7 @@ app.whenReady().then(async () => {
         'GameCanvas-InternetHost',
       ),
     ],
+    true,
   );
   await projectTrash.load();
   await projectTrash.maintain();
@@ -3605,6 +3272,52 @@ app.whenReady().then(async () => {
   }, 30_000);
   trashTimer.unref();
   desktopBootstrap.startViewer();
+  try {
+    const { safeStorage } = await import('electron');
+    if (safeStorage?.isEncryptionAvailable()) {
+      const saved = await sessionStore().read();
+      if (saved.credentials) {
+        let name = '공동 프로젝트';
+        let role: CollaborationRole | undefined;
+        try {
+          const cached = await readClientCache(
+            path.join(
+              registeredSharedWorkspace(
+                app.getPath('userData'),
+                projectLibrary,
+                saved.credentials.projectId,
+                saved.credentials.serverUrl,
+              ),
+              'server-cache.json',
+            ),
+          );
+          name = cached.state.projectName ?? name;
+          role = cached.state.role;
+        } catch {
+          /* session remains selectable without cache */
+        }
+        if (
+          !projectLibrary
+            .list()
+            .some(
+              (entry) =>
+                entry.projectId === saved.credentials!.projectId &&
+                (saved.credentials!.internalServer ||
+                  entry.serverUrl === saved.credentials!.serverUrl),
+            )
+        )
+          await projectLibrary.rememberShared(
+            saved.credentials,
+            name,
+            role,
+            saved.localRoot,
+          );
+      }
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+      console.error('공동 프로젝트 세션 복원 실패', error);
+  }
   await loadSettings();
   if (projectSessions.root && projectTrash.hasRoot(projectSessions.root))
     await projectSessions.activate(null);
@@ -3617,98 +3330,12 @@ app.whenReady().then(async () => {
     await recoverInterruptedHistory(projectSessions.root);
     await startWatcher();
   }
-  try {
-    const { safeStorage } = await import('electron');
-    if (safeStorage?.isEncryptionAvailable()) {
-      let raw: string;
-      if (testProfile && testBootstrapKey) {
-        const bootstrapPath = path.join(testProfile, 'bootstrap.enc');
-        raw = decryptTestBootstrap(
-          await fs.readFile(bootstrapPath),
-          testBootstrapKey,
-        );
-        await fs.unlink(bootstrapPath);
-      } else {
-        raw = JSON.stringify(await sessionStore().read());
-      }
-      const saved = JSON.parse(raw) as {
-        credentials: CollaborationCredentials | null;
-        localRoot: string | null;
-      };
-      if (saved.credentials) {
-        if (projectTrash.hasSharedProject(saved.credentials.projectId))
-          saved.credentials = null;
-      }
-      if (saved.credentials) {
-        if (testProfile && saved.credentials.internalServer) {
-          try {
-            localCollaborationServer = await createCollaborationServer({
-              dataDirectory: path.join(
-                app.getPath('userData'),
-                'collaboration-server',
-              ),
-              creationKey: localCollaborationKey,
-            });
-          } catch (error) {
-            console.error('로컬 협업 서버 재시작 실패', error);
-          }
-        }
-        projectSessions.localRootBeforeShare = saved.localRoot;
-        if (testProfile) await attachCollaboration(saved.credentials);
-        else {
-          let name = '공동 프로젝트';
-          let role: CollaborationRole | undefined;
-          try {
-            const cached = await readClientCache(
-              path.join(
-                registeredSharedWorkspace(
-                  app.getPath('userData'),
-                  projectLibrary,
-                  saved.credentials.projectId,
-                  saved.credentials.serverUrl,
-                ),
-                'server-cache.json',
-              ),
-            );
-            name = cached.state.projectName ?? name;
-            role = cached.state.role;
-          } catch {
-            /* session remains selectable without cache */
-          }
-          if (
-            !projectLibrary
-              .list()
-              .some((entry) => entry.projectId === saved.credentials!.projectId)
-          )
-            await projectLibrary.rememberShared(
-              saved.credentials,
-              name,
-              role,
-              saved.localRoot,
-            );
-        }
-      }
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-      console.error('공동 프로젝트 세션 복원 실패', error);
-  }
   if (!testProfile) {
     await projectSessions.watcher?.close();
     projectSessions.setWatcher(null);
     await projectSessions.activate(null);
     projectSessions.localRootBeforeShare = null;
   }
-  discordApproval ??= new DiscordApprovalService(
-    new DiscordApprovalStore(app.getPath('userData'), safeStorage),
-    discordContext,
-    async (action, failure) => {
-      const { DiscordBotTransport } = await import('./discord-transport');
-      return new DiscordBotTransport(action, failure);
-    },
-  );
-  // Restore asynchronously; network outages must not delay showing the app.
-  discordSettingsQueue = discordApproval.resume();
   let presentationError: string | undefined;
   try {
     await createWindow();
@@ -3757,7 +3384,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   queueShutdown = true;
-  discordApproval?.stop();
   documentSaveQueue?.dispose();
   for (const error of desktopBootstrap.dispose())
     console.error('데스크톱 연결 종료 실패', error);
@@ -3765,5 +3391,4 @@ app.on('before-quit', () => {
     .preserve('quit')
     .then(() => projectSessions.close())
     .catch((error) => console.error('프로젝트 종료 보존 실패', error));
-  void localCollaborationServer?.close();
 });

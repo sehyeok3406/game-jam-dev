@@ -7,11 +7,13 @@ export function installLocationLinkProtocol(options: {
   inbox: LocationLinkInbox;
   argv: string[];
   register: boolean;
+  enabled?: boolean;
   focus(): void;
   invalid(): void;
 }) {
   const { app, inbox } = options;
   const receive = (href: string) => {
+    if (options.enabled === false) return;
     try {
       inbox.receive(href);
     } catch {

@@ -36,9 +36,15 @@ export class ProjectLibrary {
   private queue: Promise<unknown> = Promise.resolve();
   private registryQueue: Promise<void> = Promise.resolve();
   private nameReservations = new Set<string>();
-  constructor(directory: string, encryption: Encryption) {
+  private sharedProjectsRetired: boolean;
+  constructor(
+    directory: string,
+    encryption: Encryption,
+    sharedProjectsRetired = false,
+  ) {
     this.directory = directory;
     this.encryption = encryption;
+    this.sharedProjectsRetired = sharedProjectsRetired;
   }
   async load() {
     try {
@@ -89,6 +95,7 @@ export class ProjectLibrary {
             nameConflict: this.entries.some(
               (other) =>
                 other.id !== entry.id &&
+                (!this.sharedProjectsRetired || other.kind === 'local') &&
                 (!other.lifecycle || other.lifecycle.status === 'active') &&
                 projectNameKey(other.name) === projectNameKey(entry.name),
             ),
@@ -135,7 +142,13 @@ export class ProjectLibrary {
     }
   }
   assertNameAvailable(name: string, exceptId?: string) {
-    assertProjectNameAvailable(this.entries, name, exceptId);
+    assertProjectNameAvailable(
+      this.sharedProjectsRetired
+        ? this.entries.filter((entry) => entry.kind === 'local')
+        : this.entries,
+      name,
+      exceptId,
+    );
   }
   async observeName(id: string, name: string, role?: ProjectEntry['role']) {
     await this.upsert({ ...this.get(id), name, ...(role ? { role } : {}) });
@@ -316,9 +329,20 @@ export class ProjectLibrary {
     );
     await this.editHome({ type: 'remove-project', id });
   }
+  async retainSharedServer(entry: SavedProject, replace: boolean) {
+    if (entry.kind !== 'shared') return;
+    await this.modifyEntries(() => {
+      const current = this.entries.find((item) => item.id === entry.id);
+      if (current && !replace) return this.entries;
+      return [
+        ...this.entries.filter((item) => item.id !== entry.id),
+        { ...(current ?? entry), sharedCopyRemoved: true },
+      ];
+    });
+  }
   async restoreEntry(entry: SavedProject) {
-    this.assertNameAvailable(entry.name, entry.id);
-    await this.upsert(entry, true);
+    const reserveName = !this.sharedProjectsRetired || entry.kind === 'local';
+    await this.upsert(entry, reserveName);
     if (
       entry.folderId &&
       this.home.folders.some((f) => f.id === entry.folderId)

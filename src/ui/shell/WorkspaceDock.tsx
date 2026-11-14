@@ -1174,17 +1174,18 @@ export function WorkspaceDock({
               >
                 <RefreshCw size={16} /> 앱 업데이트
               </button>
-              {(!collaboration.active || collaboration.role === 'admin') && (
-                <button
-                  disabled={!api.desktop?.discordApproval}
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    setDiscordApprovalOpen(true);
-                  }}
-                >
-                  디스코드 알림 · 테스트
-                </button>
-              )}
+              {capabilities.projectCollaboration &&
+                (!collaboration.active || collaboration.role === 'admin') && (
+                  <button
+                    disabled={!api.desktop?.discordApproval}
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setDiscordApprovalOpen(true);
+                    }}
+                  >
+                    디스코드 알림 · 테스트
+                  </button>
+                )}
               <button onClick={() => void loadProject(false)}>
                 <RefreshCw size={16} /> 캔버스 새로고침
               </button>
@@ -1560,45 +1561,46 @@ export function WorkspaceDock({
               </div>
             </aside>
           )}
-          {dockPanel === 'collaboration' && (
-            <section className="canvas-collaboration">
-              <h3>협업</h3>
-              <p>
-                {collaboration.active
-                  ? collaboration.connected
-                    ? '공동 프로젝트에 연결되어 있습니다.'
-                    : '협업 연결을 확인해주세요.'
-                  : '함께 작업할 사람을 초대하세요.'}
-              </p>
-              <button
-                onClick={() => {
-                  setCollaborationTab('create');
-                  setCollaborationOpen(true);
-                }}
-              >
-                <Users size={16} /> 참여자 · 초대 관리
-              </button>
-              {collaboration.active && (
-                <button onClick={() => setApprovalInboxOpen(true)}>
-                  {collaboration.role === 'admin' ? '요청함' : '내 요청'}{' '}
-                  {collaboration.pendingRequests
-                    ? '(' + collaboration.pendingRequests + ')'
-                    : ''}
-                </button>
-              )}
-              {(!collaboration.active || collaboration.role === 'admin') && (
+          {capabilities.projectCollaboration &&
+            dockPanel === 'collaboration' && (
+              <section className="canvas-collaboration">
+                <h3>협업</h3>
+                <p>
+                  {collaboration.active
+                    ? collaboration.connected
+                      ? '공동 프로젝트에 연결되어 있습니다.'
+                      : '협업 연결을 확인해주세요.'
+                    : '함께 작업할 사람을 초대하세요.'}
+                </p>
                 <button
-                  aria-label="디스코드 알림 설정 및 테스트"
-                  onClick={() => setDiscordApprovalOpen(true)}
+                  onClick={() => {
+                    setCollaborationTab('create');
+                    setCollaborationOpen(true);
+                  }}
                 >
-                  디스코드 알림
+                  <Users size={16} /> 참여자 · 초대 관리
                 </button>
-              )}
-              {collaboration.active && (
-                <MultiplayerLobby key={collaboration.projectId} projectOnly />
-              )}
-            </section>
-          )}
+                {collaboration.active && (
+                  <button onClick={() => setApprovalInboxOpen(true)}>
+                    {collaboration.role === 'admin' ? '요청함' : '내 요청'}{' '}
+                    {collaboration.pendingRequests
+                      ? '(' + collaboration.pendingRequests + ')'
+                      : ''}
+                  </button>
+                )}
+                {(!collaboration.active || collaboration.role === 'admin') && (
+                  <button
+                    aria-label="디스코드 알림 설정 및 테스트"
+                    onClick={() => setDiscordApprovalOpen(true)}
+                  >
+                    디스코드 알림
+                  </button>
+                )}
+                {collaboration.active && (
+                  <MultiplayerLobby key={collaboration.projectId} projectOnly />
+                )}
+              </section>
+            )}
         </CanvasPanel>
       )}
     </>

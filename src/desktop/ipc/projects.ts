@@ -91,10 +91,16 @@ export function registerProjectIpc(
         expectedVersion,
       }),
   );
-  handle('projects:shared-restore', (_event, id) =>
-    service.lifecycle(id, 'trash-restore'),
+  handle('projects:shared-restore', (_event, id, expectedVersion) =>
+    service.lifecycle(id, 'trash-restore', { expectedVersion }),
   );
-  handle('projects:shared-purge', (_event, id, typedName) =>
-    service.lifecycle(id, 'trash-purge', { typedName }),
+  handle(
+    'projects:shared-purge',
+    (_event, id, typedName, confirmTeam, expectedVersion) =>
+      service.lifecycle(id, 'trash-purge', {
+        typedName,
+        confirmTeam,
+        expectedVersion,
+      }),
   );
 }

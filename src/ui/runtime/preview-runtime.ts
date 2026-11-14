@@ -17,6 +17,7 @@ export function createPreviewRuntime(
       appUpdates: true,
       nativeClipboard: true,
       multiplayer: !!fixture.multiplayer,
+      projectCollaboration: true,
     }),
     preferences,
   };

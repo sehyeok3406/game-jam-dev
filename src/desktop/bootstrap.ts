@@ -33,11 +33,17 @@ export class DesktopBootstrap {
     directory: () => string,
     encryption: ConstructorParameters<typeof WebViewerService>[1],
     factories: Partial<Factories> = {},
+    localViewerOnly = false,
   ) {
     this.directory = directory;
     this.encryption = encryption;
     this.factories = {
-      viewer: () => new WebViewerService(this.directory(), this.encryption),
+      viewer: () =>
+        new WebViewerService(
+          this.directory(),
+          this.encryption,
+          localViewerOnly,
+        ),
       updates: (options) => new AppUpdateController(options),
       host: async (options) => {
         const { registerSelfHost } =

@@ -6,6 +6,7 @@ import type {
   ProjectCopyResult,
 } from '../contracts/project-copy.ts';
 import type { ProjectEntry } from '../contracts/project.ts';
+import { useRuntime } from './runtime/RuntimeProvider';
 import { requireDesktopApi } from './runtime/desktop-api.ts';
 
 export function ProjectCopyDialog({
@@ -21,6 +22,7 @@ export function ProjectCopyDialog({
   onClose(): void;
   onOpen(id: string): Promise<void>;
 }) {
+  const { capabilities } = useRuntime();
   const [projects, setProjects] = useState<ProjectEntry[]>([]),
     [search, setSearch] = useState('');
   const [targetId, setTargetId] = useState(''),
@@ -39,7 +41,14 @@ export function ProjectCopyDialog({
     void api.projects
       .listProjects()
       .then((items) => {
-        if (live) setProjects(items.filter((item) => !item.current));
+        if (live)
+          setProjects(
+            items.filter(
+              (item) =>
+                !item.current &&
+                (capabilities.projectCollaboration || item.kind === 'local'),
+            ),
+          );
       })
       .catch((e) => {
         if (live) setError(String(e.message ?? e));
@@ -51,7 +60,7 @@ export function ProjectCopyDialog({
       live = false;
       mounted.current = false;
     };
-  }, [api]);
+  }, [api, capabilities.projectCollaboration]);
   useEffect(() => {
     let live = true;
     setTarget(null);

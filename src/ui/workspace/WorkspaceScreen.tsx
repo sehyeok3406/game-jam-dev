@@ -1492,6 +1492,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     ],
   );
   const multiplayerChoiceRequired =
+    capabilities.multiplayer &&
     !!aiRequest?.implement &&
     aiRequest.sourceMode === 'html-compose' &&
     !aiRequest.htmlResult?.basePath &&
@@ -1513,7 +1514,9 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   if (aiRequest) {
     try {
       effectiveAiRequest = resolveGamejamRequest(
-        aiRequest,
+        capabilities.multiplayer
+          ? aiRequest
+          : { ...aiRequest, multiplayer: null },
         documents,
         previews,
         drawing.items,
@@ -2234,6 +2237,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     startApprovalRequest,
     submitAiRequest,
   } = useAiRequestCommands(selectionScope, () => ({
+    multiplayerEnabled: capabilities.multiplayer,
     nodePlacement: {
       width: fileNodes.style.width,
       height: fileNodes.style.height,
@@ -3388,11 +3392,15 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       title: 'HTML 버전 비교',
       run: () => setCompareFirst(previews[0]?.relativePath ?? ''),
     },
-    {
-      id: 'invite',
-      title: '참여자 및 초대 코드',
-      run: () => setCollaborationOpen(true),
-    },
+    ...(capabilities.projectCollaboration
+      ? [
+          {
+            id: 'invite',
+            title: '참여자 및 초대 코드',
+            run: () => setCollaborationOpen(true),
+          },
+        ]
+      : []),
     {
       id: 'ai-settings',
       title: 'AI 연결 설정',

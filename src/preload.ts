@@ -1,74 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { GameCanvasApi } from './shared';
-import { SELF_HOST_ENABLED } from './features/self-host/enabled';
-import { selfHostPreload } from './features/self-host/preload';
-import { playFailure } from './multiplayer/errors';
-async function playInvoke(channel: string, input?: unknown) {
-  const result = await ipcRenderer.invoke(channel, input);
-  if (result?.playFailure) {
-    const failure = playFailure(result.playFailure);
-    throw Object.assign(
-      new Error(
-        `[${failure.code}] ${failure.message} [incident:${failure.id}]`,
-      ),
-      { failure },
-    );
-  }
-  return result;
-}
 
 const api: GameCanvasApi = {
-  locationLinks: {
-    create: (target, session) =>
-      ipcRenderer.invoke('projects:location-create', target, session),
-    open: (href, session, entryId) =>
-      ipcRenderer.invoke('projects:location-open', href, session, entryId),
-    pending: () => ipcRenderer.invoke('location-links:pending'),
-    acknowledge: (id) => ipcRenderer.invoke('location-links:acknowledge', id),
-    onReceived: (listener) => {
-      const wrapped = () => listener();
-      ipcRenderer.on('location-links:received', wrapped);
-      return () =>
-        ipcRenderer.removeListener('location-links:received', wrapped);
-    },
-  },
-  discordApproval: {
-    openHelp: (page) => ipcRenderer.invoke('discord-approval:help', page),
-    status: () => ipcRenderer.invoke('discord-approval:status'),
-    sendTest: () => ipcRenderer.invoke('discord-approval:test'),
-    configure: (input) =>
-      ipcRenderer.invoke('discord-approval:configure', input),
-    disconnect: () => ipcRenderer.invoke('discord-approval:disconnect'),
-    onPrepare: (listener) => {
-      const wrapped = async (_event: Electron.IpcRendererEvent, id: string) => {
-        try {
-          await listener();
-          ipcRenderer.send('discord-approval:prepared', id, true);
-        } catch {
-          ipcRenderer.send('discord-approval:prepared', id, false);
-        }
-      };
-      ipcRenderer.on('discord-approval:prepare', wrapped);
-      return () =>
-        ipcRenderer.removeListener('discord-approval:prepare', wrapped);
-    },
-  },
-  multiplayer: {
-    status: () => playInvoke('multiplayer:status'),
-    onLobbyChanged: (listener) => {
-      const wrapped = (
-        _event: Electron.IpcRendererEvent,
-        value: import('./multiplayer/types').PlayLobbyUpdate,
-      ) => listener(value);
-      ipcRenderer.on('multiplayer:lobby-changed', wrapped);
-      return () =>
-        ipcRenderer.removeListener('multiplayer:lobby-changed', wrapped);
-    },
-    control: (input) => playInvoke('multiplayer:control', input),
-    open: (roomId) => playInvoke('multiplayer:open', roomId),
-    diagnostics: (copy) => playInvoke('multiplayer:diagnostics', copy),
-    reportPreview: (input) => playInvoke('multiplayer:report-preview', input),
-  },
   getDocumentStatuses: () => ipcRenderer.invoke('document-statuses:get'),
   setFileStatusProperty: (input) =>
     ipcRenderer.invoke('files:set-status-property', input),
@@ -79,7 +12,6 @@ const api: GameCanvasApi = {
     ipcRenderer.invoke('document-statuses:save', input),
   setDocumentWorkflow: (input) =>
     ipcRenderer.invoke('documents:set-workflow', input),
-  ...(SELF_HOST_ENABLED ? { selfHost: selfHostPreload() } : {}),
   inspectConnectionInfo: (text) =>
     ipcRenderer.invoke('projects:connection-inspect', text),
   applyConnectionInfo: (text) =>
@@ -150,10 +82,10 @@ const api: GameCanvasApi = {
     ipcRenderer.invoke('projects:shared-lifecycle', id),
   trashSharedProject: (id, name, confirm, version) =>
     ipcRenderer.invoke('projects:shared-trash', id, name, confirm, version),
-  restoreSharedProject: (id) =>
-    ipcRenderer.invoke('projects:shared-restore', id),
-  purgeSharedProject: (id, name) =>
-    ipcRenderer.invoke('projects:shared-purge', id, name),
+  restoreSharedProject: (id, version) =>
+    ipcRenderer.invoke('projects:shared-restore', id, version),
+  purgeSharedProject: (id, name, confirm, version) =>
+    ipcRenderer.invoke('projects:shared-purge', id, name, confirm, version),
   resumeRestoredProject: () =>
     ipcRenderer.invoke('collaboration:resume-restored'),
   listProjectFolders: () => ipcRenderer.invoke('projects:folders'),
