@@ -167,7 +167,7 @@ test('a removed game revision keeps one recoverable image by content hash', asyn
     check,
   );
   assert.equal(create.length, 1);
-  assert.equal(create[0].file, original);
+  assert.equal(create[0].file, path.join(await fs.realpath(root), imagePath));
   assert.deepEqual(await fs.readFile(create[0].object), bytes);
 });
 
