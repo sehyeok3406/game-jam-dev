@@ -13,6 +13,7 @@ import { taskFileLock } from '../src/ai-file-lock.ts';
 import { AiRunService } from '../src/application/ai/run-service.ts';
 import { createGameBuildExecution } from '../src/application/ai/game-build-execution.ts';
 import { validateGameBuildSource } from '../src/core/ai/game-build-source.ts';
+import { isGameBuildAssetReference } from '../src/core/projects/game-build-assets.ts';
 import {
   readGameBuild,
   readGameBuildIndex,
@@ -243,6 +244,37 @@ test('source can declare an approved GLB without adding its binary to the snapsh
       Buffer.byteLength,
     ),
   );
+});
+test('project media references match their storage path and Blender output is content-addressed', () => {
+  const sha256 = 'a'.repeat(64);
+  const image = {
+    key: 'art',
+    kind: 'image',
+    path: 'assets/images/art.png',
+    sha256,
+    bytes: 64,
+  };
+  const audio = { ...image, kind: 'audio', path: `assets/audio/${sha256}.wav` };
+  const fbx = { ...image, kind: 'fbx', path: `assets/models/${sha256}.fbx` };
+  const blend = {
+    ...image,
+    kind: 'blend',
+    path: `assets/models/${sha256}.blend`,
+    runtime: {
+      path: `.gamejam/local/game-models/${sha256}.glb`,
+      sha256,
+      bytes: 40,
+    },
+  };
+  for (const asset of [image, audio, fbx, blend])
+    assert.equal(isGameBuildAssetReference(asset), true);
+  for (const asset of [
+    { ...image, path: 'assets/images/../art.png' },
+    { ...audio, sha256: 'b'.repeat(64) },
+    { ...fbx, kind: 'obj' },
+    { ...blend, runtime: { ...blend.runtime, path: image.path } },
+  ])
+    assert.equal(isGameBuildAssetReference(asset), false);
 });
 test('preparation, source and compile use one cancellation/session boundary and always close resources', async () => {
   const calls = [];

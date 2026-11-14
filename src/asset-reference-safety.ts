@@ -4,6 +4,10 @@ import matter from './markdown.ts';
 import type { Snapshot } from './project-store.ts';
 import { imageAsset } from './file-assets.ts';
 import { resolveAssetLink } from './asset-links.ts';
+import {
+  gameBuildAssetReferences,
+  isGameBuildManifestPath,
+} from './core/projects/game-build-assets.ts';
 
 const parser = unified().use(remarkParse);
 const normalize = (value: string) =>
@@ -58,6 +62,10 @@ function survivingReferences(files: Snapshot, candidates: Set<string>) {
   if (!candidates.size) return found;
   for (const [path, raw] of Object.entries(files)) {
     if (found.size === candidates.size) break;
+    if (isGameBuildManifestPath(path))
+      for (const asset of gameBuildAssetReferences(raw))
+        if (asset.kind === 'image' && candidates.has(asset.path))
+          found.set(asset.path, path);
     const source =
       /\.(?:css|js|mjs|json|svg|txt|html?)$/i.test(path) &&
       raw.startsWith('data:application/octet-stream;base64,')

@@ -75,11 +75,13 @@ module import를 하나의 IIFE로 합치되 HTML의 inline `type="module"`로 �
 
 초기 `standalone-browser-v1`은 DOM/CSS/Canvas2D/WebGL와 내장 리소스를 대상으로 한다. HTML 자체의 CSP에서 외부 연결·worker·object·form/base를 제한하고 eval/WASM 실행 권한을 추가하지 않는다. 외부 runtime/CDN/프로젝트 경로/node_modules 없이 실행되어야 한다. package 확보나 source 파일 허용이 브라우저 호환성 인증은 아니다. 로컬 최종 HTML에는 고정 크기 제한을 두지 않는다. 공동 최종 HTML은 8MB다.
 
-### 로컬 프로젝트 GLB 연결
+### 로컬 프로젝트 에셋 연결
 
-로컬 제작에서 선택한 모델 노드의 GLB는 `source-plan.json`의 `assets`에 프로젝트 상대 경로와 별칭으로 선언한다. AI는 파일명·경로·크기·해시를 받고, 게임 코드는 `import assets from 'gamejam:assets'`로 별칭에 해당하는 URL을 읽는다. 새 버전은 이전 manifest의 연결을 다시 사용할 수 있다. 실행 서비스는 선택하거나 이전 버전에서 연결한 GLB만 허용하며, 외부 버퍼나 텍스처가 필요한 GLB와 누락·변경된 원본은 거절한다.
+로컬 제작에서 선택한 이미지(PNG/JPEG/WebP/GIF), 사운드(MP3/PCM WAV/OGG), 모델(GLB/FBX/OBJ/BLEND)은 `source-plan.json`의 `assets`에 프로젝트 상대 경로와 별칭으로 선언한다. 제작 AI에는 파일명·경로·형식·크기·해시를 전달한다. 게임에서 `import assets from 'gamejam:assets'` 또는 HTML/CSS의 `gamejam:asset/KEY`로 사용한다. 기준 버전의 연결을 승계한다. 로컬 연결 이미지의 해시는 원본 바이너리 기준이며 예전에 저장한 HTML의 내장 이미지와 그 해시는 그대로 읽을 수 있다.
 
-빌더는 `local-assets-browser-v1`로 저장하고 게임 코드 앞에 앱에서 채울 자리를 둔다. 미리보기의 메인 프로세스는 현재 프로젝트와 HTML 경로·build ID를 검사하고, 해당 버전 manifest에 있는 GLB마다 현재 세션에 한해 유효한 임시 URL을 발급한다. 실행 검사는 전용 세션에 같은 연결을 설정한다. 파일 어댑터는 프로젝트 경로·크기·SHA-256·GLB 구조를 확인하고 원본을 스트리밍한다. CSP는 이 프로젝트 에셋 호스트와 GLB 내부 텍스처 디코딩용 blob 연결을 허용한다. 검증 프레임은 초기 fetch·응답 본문 읽기·이미지 디코딩 중 오류도 관찰한다.
+빌더는 `local-assets-browser-v1`로 저장한다. 미리보기는 현재 프로젝트와 HTML 경로·build ID를 확인하고 해당 버전의 에셋에만 세션 URL을 발급한다. 실행 검사는 전용 세션에 같은 연결을 설정한다. 파일 어댑터는 프로젝트 경로·크기·SHA-256·헤더를 확인하고 파일을 스트리밍한다. 사운드의 재생 위치 이동에는 바이트 범위 요청을 사용한다. CSP는 이 호스트를 이미지·미디어·데이터 연결에 허용하고 GLB 내부 텍스처용 blob 연결을 지원한다.
+
+GLB는 외부 버퍼·텍스처 없이 저장해야 한다. FBX는 내장 텍스처와 애니메이션을 읽을 수 있고 OBJ는 단독 형상 파일을 사용한다. BLEND는 설치된 Windows Blender로 게임에 연결할 GLB를 만들며 원본과 변환 결과의 경로·해시를 기록한다. 외부 파일 없이 열 수 있도록 Blender에서 프로젝트 리소스를 포함해야 한다. 변환은 자동 스크립트 실행과 온라인 모드를 끈 상태에서 실행한다. [Blender 명령행 옵션](https://docs.blender.org/manual/en/4.4/advanced/command_line/arguments.html)
 
 ## 실행 검사와 저장
 
@@ -98,5 +100,7 @@ module import를 하나의 IIFE로 합치되 HTML의 inline `type="module"`로 �
 `tests/game-build-workflow.test.mjs`, `server-ai-start`와 기존 회귀는 기본 `npm test`에 포함된다. 실제 동봉 도구는 `tests/game-build-runtime.mjs`, 실제 Windows IPC/CLI fixture/HTML 검사/로컬·공동 반영은 `tests/game-build-execution-packaged.mjs`로 확인한다. `GAMEJAM_PUBLIC_BUILD=1`은 후자에서 실제 공개 Three.js 다운로드·bundle을 추가하는 검증 옵션이며 제품 동작의 우회 옵션이 아니다. 계정·유료 AI 호출은 사용하지 않는다.
 
 `GAMEJAM_BUILD_TEST_GLB`에 단일 파일 GLB의 절대 경로를 지정하면 Windows 패키지에서 모델 가져오기, Three.js 빌드, 동일 원본을 쓰는 두 버전, 모델 노드 삭제, 히스토리 복원·재시작, 캔버스의 실제 WebGL 렌더링을 검사한다.
+
+`GAMEJAM_BUILD_TEST_AUDIO`, `GAMEJAM_BUILD_TEST_FBX`, `GAMEJAM_BUILD_TEST_OBJ`, `GAMEJAM_BUILD_TEST_BLEND`를 함께 지정하면 캔버스 이미지와 CSS 연결, 사운드 재생·바이트 범위, 애니메이션 FBX·OBJ·BLEND 로딩과 버전·삭제·복원을 검사한다.
 
 외부 단일 파일은 `tests/game-build-browser.mjs`로 Windows Chrome/Edge에서 확인한다. 실제 수행 결과와 모의 경계는 [4단계 보고서](../audits/2026-11-02-game-build-stage4.md)에 기록한다. source 기반 수정/버전/복원은 [5단계](game-build-editing.md), HTML 내보내기·재가져오기·상태 UI는 [6단계](game-build-transfer.md)에 연결했다. 실제 네 계정과 게임/아트 전체 품질 검증은 7단계다.

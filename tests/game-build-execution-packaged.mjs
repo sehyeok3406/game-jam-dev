@@ -1,5 +1,6 @@
 // Production IPC/executor/validator/storage with a local CLI fixture. No paid AI calls.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -53,7 +54,15 @@ const editing = process.env.GAMEJAM_BUILD_EDITING === '1';
 const transfer = process.env.GAMEJAM_BUILD_TRANSFER === '1';
 const largeLocal = process.env.GAMEJAM_BUILD_LARGE_LOCAL === '1';
 const glbPath = process.env.GAMEJAM_BUILD_TEST_GLB;
-const codec = largeLocal || glbPath ? localGameBuildCodec : gameBuildCodec;
+const mediaPaths = [
+  'GAMEJAM_BUILD_TEST_AUDIO',
+  'GAMEJAM_BUILD_TEST_FBX',
+  'GAMEJAM_BUILD_TEST_OBJ',
+  'GAMEJAM_BUILD_TEST_BLEND',
+]
+  .map((key) => process.env[key])
+  .filter(Boolean);
+const codec = localGameBuildCodec;
 const evidenceDirectory = transfer
   ? 'out/game-build-stage6'
   : editing
@@ -80,7 +89,7 @@ if(args.includes('--help')){console.log('--restricted --strict-mcp-config --tool
 if(args[0]==='auth')process.exit(0);
 if(!args.includes('--print'))process.exit(2);
 let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
- const three=args.some(a=>['build-three','edit-three','new-three','glb-three'].includes(a));
+ const three=args.some(a=>['build-three','edit-three','new-three','glb-three','media-three'].includes(a));
  if(fs.existsSync('.ai/tasks/dependency-response.json')){
   const r=JSON.parse(fs.readFileSync('.ai/tasks/dependency-response.json','utf8'));
   const previous=r.previousLock;
@@ -99,7 +108,7 @@ let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
   fs.writeFileSync('source/index.html','<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>숲의 이동</title><script type="module" src="./main.js"></script></head><body><h1>숲의 이동</h1><canvas width="480" height="280"></canvas><img id="hero" src="gamejam:asset/hero"><p>← → 이동 · 목숨 7개 · 전투 금지</p></body></html>');
   fs.writeFileSync('source-plan.json',JSON.stringify({version:1,entry:'main.js',html:'index.html',files:['main.js','style.css','index.html'],assets:[{key:'hero',path:'assets/images/hero.gif'}]}));
   if(args.includes('glb-three')){
-    const model=ctx.projectAssets[0], plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
+    const model=ctx.projectAssets.find(a=>a.kind==='glb'), plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
     if(fs.existsSync(model.path))throw Error('GLB bytes must stay in the project');
     plan.assets.push({key:'robot',path:model.path});
     fs.writeFileSync('source-plan.json',JSON.stringify(plan));
@@ -127,6 +136,33 @@ renderer.render(scene,camera);
 if (!renderer.info.render.triangles) throw Error('No model triangles drawn');
 document.body.dataset.model = String(renderer.info.render.triangles);
 });
+`)});
+  }
+  if(args.includes('media-three')){
+    const plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
+    if (!ctx.projectAssets.some(a=>a.kind==='image')) throw Error('missing image reference');
+    for(const asset of ctx.projectAssets){
+      if(fs.existsSync(asset.path)) throw Error('original bytes must stay in the project');
+      if(asset.kind!=='image') plan.assets.push({key:asset.kind,path:asset.path});
+    }
+    fs.writeFileSync('source-plan.json',JSON.stringify(plan));
+    fs.writeFileSync('source/style.css',fs.readFileSync('source/style.css','utf8')+'h1{background-image:url("gamejam:asset/hero")}');
+    fs.writeFileSync('source/index.html',fs.readFileSync('source/index.html','utf8').replace('</body>','<button id="listen">Play</button><audio id="sound" preload="metadata" src="gamejam:asset/audio"></audio></body>'));
+    fs.appendFileSync('source/main.js', ${JSON.stringify(`
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { LoadingManager } from 'three';
+const sound=document.querySelector('#sound');
+document.querySelector('#listen').onclick=()=>{sound.currentTime=0.25;void sound.play();};
+sound.addEventListener('timeupdate',()=>document.body.dataset.sound=String(sound.currentTime));
+sound.addEventListener('loadedmetadata',()=>document.body.dataset.duration=String(sound.duration));
+const manager=new LoadingManager().setURLModifier(url=>url===assets.fbx || /^(?:data:|blob:)/.test(url)?url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/X2QAAAAASUVORK5CYII=');
+void Promise.all([
+  new FBXLoader(manager).loadAsync(assets.fbx).then(g=>{if(!g.animations.length)throw Error('FBX animation missing');return g.animations.length;}),
+  new OBJLoader().loadAsync(assets.obj).then(g=>{if(!g.children.length)throw Error('OBJ geometry missing');return g.children.length;}),
+  new GLTFLoader().loadAsync(assets.blend).then(g=>{if(!g.scene.children.length)throw Error('Blender export empty');return g.scene.children.length;}),
+]).then(counts=>document.body.dataset.media=counts.join(','));
 `)});
   }
   if(args.includes('build-large')){
@@ -203,9 +239,18 @@ async function execute(modelId, options = {}) {
     'test must stay in its local project or isolated profile mirror',
   );
   const inputs = (await call('listDocuments'))
-    .filter((doc) => ['project', 'hero-card', options.modelId].includes(doc.id))
+    .filter((doc) =>
+      [
+        'project',
+        'hero-card',
+        ...(options.modelIds ?? (options.modelId ? [options.modelId] : [])),
+      ].includes(doc.id),
+    )
     .map((doc) => doc.relativePath);
-  assert.equal(inputs.length, options.modelId ? 3 : 2);
+  assert.equal(
+    inputs.length,
+    2 + (options.modelIds?.length ?? (options.modelId ? 1 : 0)),
+  );
   const task = await call(
     'createTask',
     gamejamTaskInput({
@@ -306,7 +351,11 @@ async function execute(modelId, options = {}) {
         artifact.buildId !== options.previous.artifact.buildId)
     ) {
       try {
-        saved = readGameBuild(files, artifact.buildId, codec);
+        saved = readGameBuild(
+          files,
+          artifact.buildId,
+          activeRoot === game ? localGameBuildCodec : gameBuildCodec,
+        );
         break;
       } catch {}
     }
@@ -347,7 +396,15 @@ async function execute(modelId, options = {}) {
     Object.values(files).some((raw) => raw.includes('목숨은 7개. 전투 금지.')),
     true,
   );
-  assert.equal(saved.manifest.assets[0].sha256, codec.digest(image));
+  const hero = saved.manifest.assets[0];
+  assert.equal(
+    hero.sha256,
+    hero.kind === 'image'
+      ? createHash('sha256')
+          .update(Buffer.from(image.split(',')[1], 'base64'))
+          .digest('hex')
+      : codec.digest(image),
+  );
   if (
     modelId.includes('three') ||
     saved.manifest.tool.profile === 'local-assets-browser-v1'
@@ -357,7 +414,10 @@ async function execute(modelId, options = {}) {
       '0.187.0',
     );
   else assert.equal(saved.lock.packages.length, 0);
-  assert.equal(files[artifact.path].split(image).length - 1, 1);
+  assert.equal(
+    files[artifact.path].split(image).length - 1,
+    hero.kind === 'image' ? 0 : 1,
+  );
   await fs.writeFile(
     `${evidenceDirectory}/${modelId}.html`,
     files[artifact.path],
@@ -737,22 +797,25 @@ async function verifyLargeLocalHtml() {
     'PASS: large HTML build, history restore, native export/picker/drop, local copy and >64MB revision after restart',
   );
 }
-async function verifyLocalGlb() {
+async function dropMedia(files) {
   const nativeInput = await send('Runtime.evaluate', {
     expression:
-      'document.body.appendChild(Object.assign(document.createElement("input"),{id:"glb-drop-fixture",type:"file"}))',
+      'document.body.appendChild(Object.assign(document.createElement("input"),{id:"glb-drop-fixture",type:"file",multiple:true}))',
   });
   await send('DOM.setFileInputFiles', {
-    files: [path.resolve(glbPath)],
+    files: files.map((file) => path.resolve(file)),
     objectId: nativeInput.result.objectId,
   });
   await js(`(() => {
     const input = document.querySelector('#glb-drop-fixture');
     const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(input.files[0]);
+    for(const file of input.files) dataTransfer.items.add(file);
     document.querySelector('.react-flow').dispatchEvent(new DragEvent('drop',{bubbles:true,clientX:460,clientY:380,dataTransfer}));
     input.remove();
   })()`);
+}
+async function verifyLocalGlb() {
+  await dropMedia([glbPath]);
   await wait('window.gameCanvas.listDocuments().then(d=>d.some(x=>x.model))');
   const card = (await call('listDocuments')).find((d) => d.model);
   const file = path.join(game, card.model.path);
@@ -821,7 +884,7 @@ async function verifyLocalGlb() {
     call('readGameAssetUrls', relative, second.artifact.buildId),
     /게임 버전이 변경되었습니다/,
   );
-  await assert.rejects(call('exportPreviewHtml', relative), /프로젝트 GLB/);
+  await assert.rejects(call('exportPreviewHtml', relative), /프로젝트 에셋/);
   await call('goHome');
   assert.equal(
     await js(`fetch(${JSON.stringify(stale)}).then(r=>r.ok,()=>false)`),
@@ -831,6 +894,92 @@ async function verifyLocalGlb() {
     'PASS: GLB source, two revisions, one active file, card deletion, restore, restart and actual WebGL rendering',
     original.size,
     triangles,
+  );
+}
+async function verifyLocalMedia() {
+  assert.equal(mediaPaths.length, 4);
+  await dropMedia(mediaPaths);
+  await wait(
+    'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.model||x.audio).length===4)',
+  );
+  const documents = await call('listDocuments');
+  const cards = documents.filter((doc) => doc.model || doc.audio);
+  const first = await execute('media-three', {
+    modelIds: cards.map((card) => card.id),
+  });
+  const second = await execute('media-three-edit', { previous: first });
+  assert.deepEqual(
+    first.saved.manifest.assets.map((asset) => asset.kind).sort(),
+    ['audio', 'blend', 'fbx', 'image', 'obj'],
+  );
+  const derived = first.saved.manifest.assets.find(
+    (asset) => asset.kind === 'blend',
+  ).runtime;
+  const models = path.join(game, path.dirname(derived.path));
+  assert.deepEqual(
+    (await fs.readdir(models)).filter((name) => name.endsWith('.glb')),
+    [path.basename(derived.path)],
+  );
+  await wait('window.gameCanvas.getActiveRun().then(run=>!run)');
+  for (const card of [
+    ...cards,
+    documents.find((doc) => doc.id === 'hero-card'),
+  ])
+    await call('deleteDocument', {
+      documentId: card.id,
+      relativePath: card.relativePath,
+    });
+  for (const asset of first.saved.manifest.assets)
+    assert.equal(
+      (await fs.stat(path.join(game, asset.path))).size,
+      asset.bytes,
+    );
+  await call('restoreHistory', second.event.id, undefined, 'before');
+  await stop(true);
+  await boot(true, env);
+  const relative = first.artifact.path;
+  const urls = await call(
+    'readGameAssetUrls',
+    relative,
+    first.artifact.buildId,
+  );
+  assert.deepEqual(
+    await js(
+      `fetch(${JSON.stringify(urls.audio)},{headers:{range:'bytes=2-7'}}).then(async r=>[r.status,r.headers.get('content-type'),(await r.arrayBuffer()).byteLength])`,
+    ),
+    [206, 'audio/mpeg', 6],
+  );
+  const preview = `document.querySelector(${JSON.stringify(`[data-id="preview:${relative}"]`)})`;
+  await wait(`!!${preview}`);
+  await js(`${preview}.querySelector('.file-node-surface--html')?.click()`);
+  await wait(`!!${preview}.querySelector('iframe')`);
+  await send('Target.setAutoAttach', {
+    autoAttach: true,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  let played = false;
+  for (let n = 0; n < 150 && !played; n++) {
+    for (const sessionId of packageFrameSessions()) {
+      const info = await send(
+        'Runtime.evaluate',
+        {
+          expression: `(()=>{if(!document.body?.dataset.media)return false;const button=document.querySelector('#listen');const audio=document.querySelector('#sound');if(audio.paused)button.click();return document.querySelector('img').naturalWidth===1&&getComputedStyle(document.querySelector('h1')).backgroundImage.includes('gamejam-media:')&&audio.duration>0&&audio.currentTime>0.30;})()`,
+          userGesture: true,
+          returnByValue: true,
+        },
+        sessionId,
+      ).catch(() => undefined);
+      if (info?.result?.value === true) played = true;
+    }
+    if (!played) await pause();
+  }
+  assert.ok(
+    played,
+    'restored game displays the original image, plays audio, and loads FBX animations, OBJ and Blender geometry',
+  );
+  console.log(
+    'PASS: image/CSS, sound playback and ranges, FBX/OBJ/BLEND, shared sources, deletion, restore and restart',
   );
 }
 async function verifyExistingBuilds() {
@@ -874,7 +1023,11 @@ async function verifyExistingBuilds() {
       'PASS: source-based edit, coupled design update, new version, failure and before/after restoration',
     );
   }
-  if (transfer) await roundTrip(edits.local ?? local, 'local');
+  if (transfer)
+    await assert.rejects(
+      call('exportPreviewHtml', (edits.local ?? local).artifact.path),
+      /프로젝트 에셋/,
+    );
   await stop(true);
   await boot(true, env);
   const reopened = await captureProject(game);
@@ -968,7 +1121,8 @@ async function verifyExistingBuilds() {
 }
 try {
   await boot(true, env);
-  if (glbPath) await verifyLocalGlb();
+  if (mediaPaths.length) await verifyLocalMedia();
+  else if (glbPath) await verifyLocalGlb();
   else if (largeLocal) await verifyLargeLocalHtml();
   else await verifyExistingBuilds();
 } catch (cause) {

@@ -35,10 +35,16 @@ import {
 } from '../../core/ai/task-context.ts';
 import type { GameBuildExecutionPort } from './game-build-execution.ts';
 import type {
+  GameBuildAssetFile,
   GameBuildAssetReference,
   GameBuildProjectAsset,
 } from '../../contracts/game-build.ts';
 import { isGameBuildAssetReference } from '../../core/projects/game-build-assets.ts';
+import { audioAsset, audioDigest } from '../../core/projects/audio-assets.ts';
+import {
+  imageAsset,
+  isProjectImagePath,
+} from '../../core/projects/image-assets.ts';
 import {
   modelAsset,
   modelDigest,
@@ -88,6 +94,11 @@ type BuildOptions = {
     asset: GameBuildProjectAsset,
     signal?: AbortSignal,
   ) => Promise<void>;
+  describeImage?(path: string, encoded: string): GameBuildAssetFile;
+  prepareBlend?(
+    asset: GameBuildAssetFile,
+    signal: AbortSignal,
+  ): Promise<GameBuildAssetFile>;
   id(): string;
 };
 
@@ -173,7 +184,7 @@ export class AiRunService {
       string,
       GameBuildProjectAsset & { name: string }
     >();
-    const selectedModels = new Set<string>();
+    const selectedMedia = new Set<string>();
     if (options.verifyProjectAsset) {
       const chosen = new Set<string>(data.inputs);
       for (const path of chosen) {
@@ -183,32 +194,70 @@ export class AiRunService {
       }
       for (const asset of previous?.manifest.assets ?? [])
         if (isGameBuildAssetReference(asset)) {
-          const { kind, path, sha256, bytes } = asset;
+          const { key: _key, ...reference } = asset;
+          const { path } = reference;
           projectAssets.set(path, {
-            kind,
-            path,
-            sha256,
-            bytes,
+            ...reference,
             name: path.split('/').at(-1)!,
           });
         }
+      const addImage = (path: string, name: string) => {
+        if (
+          !projectAssets.has(path) &&
+          scoped[path] !== undefined &&
+          options.describeImage
+        )
+          projectAssets.set(path, {
+            kind: 'image',
+            ...options.describeImage(path, scoped[path]),
+            name,
+          });
+      };
       for (const path of chosen) {
         const text = scoped[path];
+        if (isProjectImagePath(path)) addImage(path, path.split('/').at(-1)!);
         if (!path.endsWith('.md') || text === undefined) continue;
-        const model = modelAsset(matter(text).data.model_asset);
+        const data = matter(text).data;
+        const image = imageAsset(data.asset);
+        if (image) addImage(image.path, image.originalName);
+        const audio = audioAsset(data.audio_asset);
+        if (audio) {
+          projectAssets.set(audio.path, {
+            kind: 'audio',
+            path: audio.path,
+            sha256: audioDigest(audio.path)!,
+            bytes: audio.bytes,
+            name: audio.originalName,
+          });
+          selectedMedia.add(audio.path);
+        }
+        const model = modelAsset(data.model_asset);
         if (!model) continue;
-        if (modelExtension(model.path) !== 'glb')
-          throw Error(
-            `${model.originalName}: 게임 제작에는 GLB 모델을 선택해주세요.`,
-          );
-        projectAssets.set(model.path, {
-          kind: 'glb',
+        const kind = modelExtension(model.path)!;
+        const file = {
           path: model.path,
           sha256: modelDigest(model.path)!,
           bytes: model.bytes,
+        };
+        let reference: GameBuildProjectAsset;
+        const existing = projectAssets.get(model.path);
+        if (kind === 'blend') {
+          if (existing?.kind === 'blend') reference = existing;
+          else {
+            if (!options.prepareBlend)
+              throw Error('Blender 모델 변환을 사용할 수 없습니다.');
+            reference = {
+              ...file,
+              kind,
+              runtime: await options.prepareBlend(file, signal),
+            };
+          }
+        } else reference = { ...file, kind };
+        projectAssets.set(model.path, {
+          ...reference,
           name: model.originalName,
         });
-        selectedModels.add(model.path);
+        selectedMedia.add(model.path);
       }
       if (projectAssets.size > 64)
         throw Error('게임에는 한 번에 최대 64개 에셋을 연결할 수 있습니다.');
@@ -225,7 +274,9 @@ export class AiRunService {
       {
         prepared,
         specification: raw,
-        inputs: scoped,
+        inputs: Object.fromEntries(
+          Object.entries(scoped).filter(([path]) => !projectAssets.has(path)),
+        ),
         ...(projectAssets.size
           ? { projectAssets: [...projectAssets.values()] }
           : {}),
@@ -264,10 +315,10 @@ export class AiRunService {
       emit,
     );
     signal.throwIfAborted();
-    for (const path of selectedModels)
+    for (const path of selectedMedia)
       if (!built.projectAssets?.some((asset) => asset.path === path))
         throw Error(
-          `${projectAssets.get(path)!.name}: 선택한 GLB가 게임 소스에 연결되지 않았습니다.`,
+          `${projectAssets.get(path)!.name}: 선택한 파일이 게임 소스에 연결되지 않았습니다.`,
         );
     this.buildAssets = built.projectAssets;
     const current = readGameBuildIndex(files).artifacts.find(

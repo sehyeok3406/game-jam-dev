@@ -249,7 +249,7 @@ export function projectCopyBundle(
     )
   )
     throw Error(
-      '프로젝트 GLB를 사용하는 게임의 다른 프로젝트 복사는 아직 지원하지 않습니다.',
+      '프로젝트 에셋을 사용하는 게임의 다른 프로젝트 복사는 아직 지원하지 않습니다.',
     );
   Object.assign(collected, builds);
   validateGameBuilds(collected, local ? localGameBuildCodec : gameBuildCodec);

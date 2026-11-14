@@ -18,12 +18,16 @@ export type GameBuildIndexV1 = {
   version: 1;
   artifacts: { artifactId: string; buildId: string; path: string }[];
 };
-export type GameBuildProjectAsset = {
-  kind: 'glb';
+export type GameBuildAssetFile = {
   path: string;
   sha256: string;
   bytes: number;
 };
+export type GameBuildProjectAsset = GameBuildAssetFile &
+  (
+    | { kind: 'image' | 'audio' | 'glb' | 'fbx' | 'obj'; runtime?: never }
+    | { kind: 'blend'; runtime: GameBuildAssetFile }
+  );
 export type GameBuildAssetReference = GameBuildProjectAsset & { key: string };
 export type GameBuildManifestV1 = {
   version: 1;

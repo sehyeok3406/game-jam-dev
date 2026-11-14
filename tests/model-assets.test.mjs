@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
+  planLocalMediaChanges,
   stageLocalMedia,
   stageProjectMedia,
 } from '../src/adapters/filesystem/local-media.ts';
@@ -75,6 +76,44 @@ test('local model import and copy preserve bytes, duplicate references, and last
   await assert.rejects(fs.stat(binary), { code: 'ENOENT' });
   await applyChanges(root, {}, second);
   assert.deepEqual(await fs.readFile(binary), obj);
+});
+
+test('a removed game revision keeps one recoverable image by content hash', async (t) => {
+  const root = await workspace(t);
+  const bytes = Buffer.from(
+    'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+    'base64',
+  );
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const imagePath = 'assets/images/art.gif';
+  const manifestPath =
+    '.game-builds/12345678-1234-1234-1234-123456789abc/manifest.json';
+  const manifest = JSON.stringify({
+    assets: [
+      {
+        key: 'art',
+        kind: 'image',
+        path: imagePath,
+        sha256,
+        bytes: bytes.length,
+      },
+    ],
+  });
+  const original = path.join(root, imagePath);
+  await fs.mkdir(path.dirname(original), { recursive: true });
+  await fs.writeFile(original, bytes);
+  const baseline = { [manifestPath]: manifest, [imagePath]: 'tracked' };
+  await planLocalMediaChanges(root, baseline, { [manifestPath]: null }, check);
+  await fs.rm(original);
+  const { create } = await planLocalMediaChanges(
+    root,
+    {},
+    { [manifestPath]: manifest },
+    check,
+  );
+  assert.equal(create.length, 1);
+  assert.equal(create[0].file, original);
+  assert.deepEqual(await fs.readFile(create[0].object), bytes);
 });
 
 test('model staging rejects corrupt GLB headers, respects per-format limits and keeps Git LFS pointers', async (t) => {

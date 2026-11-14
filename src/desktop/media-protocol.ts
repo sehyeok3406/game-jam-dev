@@ -6,9 +6,10 @@ import { protocol, type Session } from 'electron';
 import type { GameBuildAssetReference } from '../contracts/game-build.ts';
 import { GAME_ASSET_ORIGIN } from '../contracts/game-build-execution.ts';
 import { mediaLocation } from '../core/projects/local-media.ts';
+import { gameBuildAssetMime } from '../core/projects/game-build-assets.ts';
 import {
   inspectMediaFile,
-  openGameBuildGlb,
+  openGameBuildAsset,
 } from '../adapters/filesystem/local-media.ts';
 import { projectPath } from '../project-store.ts';
 
@@ -100,7 +101,12 @@ export class DesktopMediaProtocol {
       );
     const urls = Object.fromEntries(
       assets.map((asset) => {
-        const key = `${root}:${asset.path}:${asset.bytes}`;
+        const key = JSON.stringify([
+          root,
+          asset.path,
+          asset.sha256,
+          asset.runtime?.sha256,
+        ]);
         let token = session ? undefined : this.gameUrls.get(key);
         if (!token || privateFiles.get(token)?.signal !== grantSignal) {
           token = randomUUID();
@@ -138,27 +144,49 @@ export class DesktopMediaProtocol {
       files.get(url.pathname.slice(1));
     if (!grant || grant.signal.aborted)
       return new Response(null, { status: 404 });
-    if (request.method !== 'GET') return new Response(null, { status: 405 });
+    if (!['GET', 'HEAD'].includes(request.method))
+      return new Response(null, { status: 405 });
     try {
-      const handle = await openGameBuildGlb(
+      const handle = await openGameBuildAsset(
         grant.root,
         grant.asset,
         grant.signal,
       );
-      const stream = handle.createReadStream({
-        start: 0,
-        signal: grant.signal,
+      const size = grant.asset.runtime?.bytes ?? grant.asset.bytes;
+      const headers = new Headers({
+        'content-type': gameBuildAssetMime(grant.asset),
+        'accept-ranges': 'bytes',
+        'access-control-allow-origin': '*',
+        'cache-control': 'no-store',
       });
+      const requested = request.headers.get('range');
+      const range = requested ? mediaRange(requested, size) : undefined;
+      if (requested && !range) {
+        await handle.close();
+        headers.set('content-range', `bytes */${size}`);
+        return new Response(null, { status: 416, headers });
+      }
+      if (range)
+        headers.set(
+          'content-range',
+          `bytes ${range.start}-${range.end}/${size}`,
+        );
+      headers.set(
+        'content-length',
+        String(range ? range.end - range.start + 1 : size),
+      );
+      if (request.method === 'HEAD') await handle.close();
       return new Response(
-        Readable.toWeb(stream) as ReadableStream<Uint8Array>,
-        {
-          headers: {
-            'content-type': 'model/gltf-binary',
-            'content-length': String(grant.asset.bytes),
-            'access-control-allow-origin': '*',
-            'cache-control': 'no-store',
-          },
-        },
+        request.method === 'HEAD'
+          ? null
+          : (Readable.toWeb(
+              handle.createReadStream({
+                start: range?.start ?? 0,
+                end: range?.end,
+                signal: grant.signal,
+              }),
+            ) as ReadableStream<Uint8Array>),
+        { status: range ? 206 : 200, headers },
       );
     } catch {
       return new Response(null, {

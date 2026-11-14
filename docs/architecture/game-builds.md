@@ -11,7 +11,7 @@
 - `captureProject`는 중단된 쓰기를 복구할 수 있도록 불완전한 추적 파일도 읽는다. capture 자체를 검증 완료로 간주하지 않는다. 완성 후보의 reader/writer·서버·apply에서 정합성을 검사한다. 자체 atomic writer의 UUID `.tmp`만 capture에서 제외하며, build namespace의 cache나 기타 파일은 거절한다.
 - 저장 지원은 `gameBuildStorageVersion:1`과 실제 `gameBuildStorageLimits`로 health/state에 광고한다. 4단계 생성 지원은 별도의 `gameBuildVersion:1`과 workflow v2로 구분한다. 현재 snapshot의 marker는 state의 `fileGameBuildStorageVersion`에도 표시한다. 새 형식이 없는 기존 프로젝트는 그대로 열린다.
 - 6단계의 선택적 `documents[].designSha256`은 본문·의미 있는 metadata의 안정 비교 값이다. 기존 `sha256`은 당시 전체 입력 파일의 사실로 유지한다. 좌표·크기·색·캔버스·갱신 시각 등 표시용 변경을 요구 변경으로 표시하지 않는다. 예전 hash만으로 비교할 수 없으면 unknown이며 과거 revision을 재작성하지 않는다. 복사 시 ID/path를 다시 연결한 문서의 designSha256은 제거한다.
-- 로컬 GLB 연결은 각 revision의 `assets`에 별칭·형식·`assets/models/<sha256>.glb` 경로·SHA-256·바이트 수를 기록한다. 여러 버전이 기존 원본 하나를 참조한다. 공동 저장 검증은 로컬 GLB 참조를 거절한다.
+- 로컬 에셋 연결은 각 revision의 `assets`에 별칭·형식·프로젝트 상대 경로·원본 SHA-256·바이트 수를 기록한다. 여러 버전이 기존 원본 하나를 참조한다. BLEND는 `.gamejam/local/game-models`의 변환된 GLB 경로·해시도 고정한다. 공동 저장 검증은 로컬 참조를 거절한다.
 
 ## 범위와 책임
 

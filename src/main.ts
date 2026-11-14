@@ -101,8 +101,10 @@ import {
 import { importSelectedFiles, readImportSources } from './desktop/import-files';
 import {
   stageLocalMedia,
-  verifyGameBuildGlb,
+  verifyGameBuildAsset,
 } from './adapters/filesystem/local-media';
+import { prepareBlenderGameModel } from './adapters/filesystem/blender-game-model.ts';
+import { decodeAsset } from './file-assets.ts';
 import { isGameBuildAssetReference } from './core/projects/game-build-assets.ts';
 import {
   readGameBuild,
@@ -1334,10 +1336,28 @@ const startCodexRun = async (
           verifyProjectAsset: client
             ? undefined
             : (asset, signal) =>
-                verifyGameBuildGlb(
+                verifyGameBuildAsset(
                   root,
                   asset,
                   signal ? AbortSignal.any([runSignal, signal]) : runSignal,
+                ),
+          describeImage: client
+            ? undefined
+            : (path, encoded) => {
+                const bytes = decodeAsset(path, encoded);
+                return {
+                  path,
+                  bytes: bytes.length,
+                  sha256: createHash('sha256').update(bytes).digest('hex'),
+                };
+              },
+          prepareBlend: client
+            ? undefined
+            : (asset, signal) =>
+                prepareBlenderGameModel(
+                  root,
+                  asset,
+                  AbortSignal.any([runSignal, signal]),
                 ),
           id: randomUUID,
         }
@@ -2505,7 +2525,7 @@ const registerIpc = () => {
         assertPreviewPath(path);
         if (local && content.includes(GAME_ASSET_BOOTSTRAP))
           throw Error(
-            '프로젝트 GLB를 사용하는 게임은 Game Jam! 안에서 실행해주세요.',
+            '프로젝트 에셋을 사용하는 게임은 Game Jam! 안에서 실행해주세요.',
           );
         inspectImportedHtml(content, path, local);
       },

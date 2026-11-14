@@ -5,12 +5,18 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Snapshot } from '../../contracts/project.ts';
-import type { GameBuildProjectAsset } from '../../contracts/game-build.ts';
+import type {
+  GameBuildAssetFile,
+  GameBuildAssetReference,
+  GameBuildProjectAsset,
+} from '../../contracts/game-build.ts';
 import { glbJsonBytes, validateGlbJson } from '../../core/projects/glb.ts';
 import {
   gameBuildAssetReferences,
+  isGameBuildProjectAsset,
   isGameBuildManifestPath,
 } from '../../core/projects/game-build-assets.ts';
+import { validateImage } from '../../file-assets.ts';
 import {
   AUDIO_DIRECTORY,
   MAX_AUDIO_BYTES,
@@ -61,40 +67,69 @@ export async function inspectMediaFile(file: string) {
   };
 }
 
-/** Read a selected file through its existing content-addressed project path. */
-export async function openGameBuildGlb(
+/** Check and stream the same open file, including for native media range reads. */
+export async function openGameBuildAsset(
   root: string,
   asset: GameBuildProjectAsset,
+  signal?: AbortSignal,
+  source = false,
+) {
+  if (!isGameBuildProjectAsset(asset))
+    throw Error('게임 에셋 정보를 확인해주세요.');
+  const descriptor = !source && asset.kind === 'blend' ? asset.runtime : asset;
+  const format = !source && asset.kind === 'blend' ? 'glb' : asset.kind;
+  return openVerifiedAssetFile(root, descriptor, format, signal);
+}
+
+export async function openVerifiedAssetFile(
+  root: string,
+  asset: GameBuildAssetFile,
+  format: GameBuildProjectAsset['kind'],
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
   const file = await projectPath(root, asset.path);
-  const info = await inspectMediaFile(file).catch((error) => {
-    if (absent(error)) throw Error('프로젝트에서 GLB 원본을 찾을 수 없습니다.');
+  const handle = await fs.open(file, 'r').catch((error) => {
+    if (absent(error))
+      throw Error('프로젝트에서 게임 에셋 원본을 찾을 수 없습니다.');
     throw error;
   });
-  if (info.pointer)
-    throw Error(
-      'Git LFS 원본이 필요합니다. 프로젝트 폴더에서 git lfs pull을 실행해주세요.',
-    );
-  const handle = await fs.open(file, 'r');
   try {
     const before = await handle.stat();
-    if (!before.isFile() || before.size !== asset.bytes)
-      throw Error('GLB 원본 크기가 변경되었습니다.');
-    const header = Buffer.alloc(20);
+    const header = Buffer.alloc(Math.min(before.size, 65_536));
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
-    const json = Buffer.alloc(
-      glbJsonBytes(header.subarray(0, bytesRead), before.size),
-    );
-    if ((await handle.read(json, 0, json.length, 20)).bytesRead !== json.length)
-      throw Error('GLB JSON 청크를 읽을 수 없습니다.');
-    try {
+    const prefix = header.subarray(0, bytesRead);
+    if (
+      before.size < 1024 &&
+      prefix.toString('ascii').startsWith(pointerPrefix)
+    )
+      throw Error(
+        'Git LFS 원본이 필요합니다. 프로젝트 폴더에서 git lfs pull을 실행해주세요.',
+      );
+    if (!before.isFile() || before.size !== asset.bytes)
+      throw Error('게임 에셋 원본 크기가 변경되었습니다.');
+    const extension = asset.path.split('.').at(-1)!;
+    if (format === 'glb') {
+      const json = Buffer.alloc(glbJsonBytes(prefix, before.size));
+      if (
+        (await handle.read(json, 0, json.length, 20)).bytesRead !== json.length
+      )
+        throw Error('GLB JSON 청크를 읽을 수 없습니다.');
       validateGlbJson(new TextDecoder('utf-8', { fatal: true }).decode(json));
-    } catch (error) {
-      if (error instanceof SyntaxError)
-        throw Error('GLB JSON 청크가 올바르지 않습니다.');
-      throw error;
+    } else if (format === 'image') {
+      const image = Buffer.alloc(before.size);
+      if (
+        (await handle.read(image, 0, image.length, 0)).bytesRead !==
+        image.length
+      )
+        throw Error('이미지 원본을 읽을 수 없습니다.');
+      validateImage(image, extension);
+    } else if (
+      !(format === 'audio'
+        ? isAudioHeader(prefix, extension)
+        : isModelHeader(prefix, extension, before.size))
+    ) {
+      throw Error('게임 에셋 원본 형식을 확인해주세요.');
     }
     const hash = createHash('sha256');
     for await (const chunk of handle.createReadStream({
@@ -111,7 +146,9 @@ export async function openGameBuildGlb(
       after.mtimeMs !== before.mtimeMs ||
       after.ctimeMs !== before.ctimeMs
     )
-      throw Error('GLB 원본이 변경되었습니다. 캔버스에 다시 불러와주세요.');
+      throw Error(
+        '게임 에셋 원본이 변경되었습니다. 캔버스에 다시 불러와주세요.',
+      );
     return handle;
   } catch (error) {
     await handle.close();
@@ -119,12 +156,14 @@ export async function openGameBuildGlb(
   }
 }
 
-export async function verifyGameBuildGlb(
+export async function verifyGameBuildAsset(
   root: string,
   asset: GameBuildProjectAsset,
   signal?: AbortSignal,
 ) {
-  await (await openGameBuildGlb(root, asset, signal)).close();
+  if (asset.kind === 'blend')
+    await (await openGameBuildAsset(root, asset, signal, true)).close();
+  await (await openGameBuildAsset(root, asset, signal)).close();
 }
 
 function isAudioHeader(header: Buffer, extension: string) {
@@ -192,6 +231,10 @@ async function objectPath(
   media: NonNullable<ReturnType<typeof mediaLocation>>,
 ) {
   return projectPath(root, `${objects(media.kind)}/${media.digest}`, true);
+}
+
+function imageRecoveryPath(asset: GameBuildAssetFile) {
+  return `.gamejam/local/game-image-objects/${asset.sha256}.${asset.path.split('.').at(-1)}`;
 }
 
 export async function stageLocalMedia(
@@ -308,9 +351,40 @@ export async function planLocalMediaChanges(
 ) {
   const added = new Set<string>(),
     removed = new Set<string>();
+  const imageReferences = new Map<string, GameBuildAssetReference>();
   for (const [relative, raw] of Object.entries(changes)) {
-    if (isGameBuildManifestPath(relative) && raw !== null) {
-      for (const asset of gameBuildAssetReferences(raw)) added.add(asset.path);
+    if (isGameBuildManifestPath(relative)) {
+      if (raw !== null) {
+        for (const asset of gameBuildAssetReferences(raw))
+          if (asset.kind === 'image') imageReferences.set(asset.path, asset);
+          else added.add(asset.path);
+      } else if (baseline[relative] !== undefined) {
+        for (const asset of gameBuildAssetReferences(baseline[relative])) {
+          if (asset.kind !== 'image' || baseline[asset.path] === undefined)
+            continue;
+          const object = await projectPath(
+            root,
+            imageRecoveryPath(asset),
+            true,
+          );
+          if (
+            await fs.stat(object).then(
+              (stat) => stat.isFile(),
+              () => false,
+            )
+          )
+            continue;
+          const file = await projectPath(root, asset.path);
+          await fs.mkdir(path.dirname(object), { recursive: true });
+          check();
+          await (await openGameBuildAsset(root, asset)).close();
+          await fs
+            .copyFile(file, object, constants.COPYFILE_EXCL)
+            .catch((error) => {
+              if (error.code !== 'EEXIST') throw error;
+            });
+        }
+      }
       continue;
     }
     if (!relative.endsWith('.md')) continue;
@@ -334,6 +408,30 @@ export async function planLocalMediaChanges(
     }
   const create: { file: string; object: string }[] = [];
   const remove: typeof create = [];
+  for (const asset of imageReferences.values()) {
+    if (
+      baseline[asset.path] !== undefined ||
+      typeof changes[asset.path] === 'string'
+    )
+      continue;
+    if (changes[asset.path] === null)
+      throw Error(`게임에서 사용하는 이미지입니다: ${asset.path}`);
+    const file = await projectPath(root, asset.path);
+    const objectPath = imageRecoveryPath(asset);
+    const object = await projectPath(root, objectPath, true);
+    await (
+      await openVerifiedAssetFile(
+        root,
+        { ...asset, path: objectPath },
+        'image',
+      ).catch(() => {
+        throw Error(
+          `복원할 게임 이미지 원본을 찾을 수 없습니다: ${asset.path}`,
+        );
+      })
+    ).close();
+    create.push({ file, object });
+  }
   for (const relative of added) {
     const file = await projectPath(root, relative);
     if (

@@ -97,10 +97,13 @@ async function main(input: Input) {
       : undefined;
   const asset = (value: string) => {
     const key = value.slice('gamejam:asset/'.length);
-    return input.assets[key] ?? fail(`선언하지 않은 이미지: ${key}`);
+    if (
+      !Object.hasOwn(input.assets, key) &&
+      !references.some((item) => item.key === key)
+    )
+      fail(`선언하지 않은 에셋: ${key}`);
   };
   function resource(value: string) {
-    if (value.startsWith('gamejam:asset/')) return asset(value);
     if (
       /^data:(?:image\/(?:png|jpeg|webp|gif)|font\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+);base64,[a-z0-9+/=\s]*$/i.test(
         value,
@@ -306,7 +309,7 @@ async function main(input: Input) {
           ++scripts !== 1
         )
           fail('HTML에는 entry를 가리키는 module script 하나만 작성해주세요.');
-        const assetPrelude = `globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__=Object.freeze(JSON.parse(${json(JSON.stringify(input.assets))}));for(const [key,value]of Object.entries(globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__))document.documentElement.style.setProperty('--gamejam-asset-'+key,'url("'+value+'")');for(const element of document.querySelectorAll('*'))for(const attr of [...element.attributes])if(attr.name.startsWith('data-gamejam-asset-')){const value=globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__[attr.value];if(!value)throw Error('Missing embedded asset');element.setAttribute(attr.name.slice(19),value);element.removeAttribute(attr.name);}`;
+        const assetPrelude = `globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__=Object.freeze(JSON.parse(${json(JSON.stringify(input.assets))}));{const assets={...globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__,...globalThis.__GAMEJAM_PROJECT_ASSETS_V1__};for(const [key,value]of Object.entries(assets))document.documentElement.style.setProperty('--gamejam-asset-'+key,'url("'+value+'")');for(const element of document.querySelectorAll('*'))for(const attr of [...element.attributes])if(attr.name.startsWith('data-gamejam-asset-')){const value=Object.hasOwn(assets,attr.value)&&assets[attr.value];if(!value)throw Error('Missing game asset');element.setAttribute(attr.name.slice(19),value);element.removeAttribute(attr.name);}}`;
         replace(
           node,
           `<script type="module">${(assetPrelude + code).replace(/<\/script/gi, '<\\/script')}</script>`,
@@ -376,8 +379,20 @@ async function main(input: Input) {
       (n): n is DefaultTreeAdapterMap['element'] =>
         'tagName' in n && n.tagName === 'head',
     )!;
+  const policy = references.length
+    ? csp
+        .replace("connect-src 'none'", `connect-src ${GAME_ASSET_ORIGIN} blob:`)
+        .replace(
+          'img-src data: blob:',
+          `img-src data: blob: ${GAME_ASSET_ORIGIN}`,
+        )
+        .replace(
+          'media-src data: blob:',
+          `media-src data: blob: ${GAME_ASSET_ORIGIN}`,
+        )
+    : csp;
   const additions = parseFragment(
-    `<meta http-equiv="Content-Security-Policy" content="${references.length ? csp.replace("connect-src 'none'", `connect-src ${GAME_ASSET_ORIGIN} blob:`) : csp}">${references.length ? GAME_ASSET_BOOTSTRAP : ''}<style>${styles.replace(/<\/style/gi, '<\\/style')}</style><script type="application/json" id="gamejam-build-provenance">${json({ version: 1, profile, toolsetSha256: input.toolsetSha256, dependencies: input.lock })}</script><script type="application/json" id="gamejam-license-notices">${json(input.notices)}</script>`,
+    `<meta http-equiv="Content-Security-Policy" content="${policy}">${references.length ? GAME_ASSET_BOOTSTRAP : ''}<style>${styles.replace(/<\/style/gi, '<\\/style')}</style><script type="application/json" id="gamejam-build-provenance">${json({ version: 1, profile, toolsetSha256: input.toolsetSha256, dependencies: input.lock })}</script><script type="application/json" id="gamejam-license-notices">${json(input.notices)}</script>`,
   ).childNodes;
   for (const node of additions) node.parentNode = head;
   head.childNodes.unshift(...additions);
