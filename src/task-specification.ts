@@ -68,6 +68,7 @@ export function createTaskSpecification(
     (organize ? input.documentResult?.mode : input.htmlResult?.mode) ??
     'update';
   const base = input.htmlResult?.basePath;
+  const changes = organize ? undefined : input.htmlResult?.dependencyChanges;
   const actionTitle = organize
     ? `${htmlSource ? 'HTML 게임 문서 추출' : '아이디어 문서 정리'} · ${outputs[0].includes('/versions/') ? outputs[0].split('/')[2] : 'v1'}`
     : `HTML 게임 구현 · 버전 ${previewVersion(outputs[0])}`;
@@ -115,6 +116,11 @@ export function createTaskSpecification(
     taskDesignContextRules(context),
     '- sections/*.md의 멤버 문서를 하나의 의미 단위로 취급하고 다른 섹션과 임의로 섞지 않는다.',
     versionRule,
+    ...(changes
+      ? [
+          `- 요청에 확정된 npm 라이브러리 변경은 ${JSON.stringify(changes)}이다. 앱이 준비한 결과에 맞춰 소스의 import와 사용 코드를 갱신한다.`,
+        ]
+      : []),
     documentFormat
       ? documentFormatRules(documentFormat)
       : documentBundle
@@ -159,6 +165,7 @@ export function createTaskSpecification(
       effective_instructions: effective,
       task_context: context,
       ...(documentUpdates ? { document_updates: documentUpdates } : {}),
+      ...(changes ? { dependency_changes: changes } : {}),
       ...(!organize && input.gameBuildVersion === 1
         ? { gamejam_workflow_version: 2, game_build_version: 1 }
         : {}),

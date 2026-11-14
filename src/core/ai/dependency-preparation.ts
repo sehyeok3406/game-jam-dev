@@ -2,6 +2,7 @@ import {
   DependencyPreparationLimits as Limits,
   type DependencyRequestV1,
   type DependencyExchangeRequestV1,
+  type GameDependencyChange,
 } from '../../contracts/dependency-preparation.ts';
 import type { GameBuildDependenciesV1 } from '../../contracts/game-build.ts';
 export const isRegistryPackageName = (name: unknown): name is string =>
@@ -15,6 +16,125 @@ const object = (value: unknown): value is Record<string, unknown> =>
 function fail(message: string): never {
   throw Error(`라이브러리 준비: ${message}`);
 }
+const exactVersion = /^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?$/i;
+
+export function gameDependencyChanges(
+  value: unknown,
+): GameDependencyChange[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || !value.length || value.length > Limits.roots * 2)
+    fail('라이브러리 변경 목록을 확인해주세요.');
+  const names = new Set<string>();
+  return value.map((change: unknown): GameDependencyChange => {
+    if (
+      !object(change) ||
+      !isRegistryPackageName(change.name) ||
+      names.has(change.name) ||
+      (change.action !== 'add' &&
+        change.action !== 'remove' &&
+        change.action !== 'update') ||
+      Object.keys(change).some(
+        (key) =>
+          ![
+            'action',
+            'name',
+            ...(change.action === 'remove' ? [] : ['version']),
+          ].includes(key),
+      ) ||
+      (change.version !== undefined &&
+        (typeof change.version !== 'string' ||
+          change.version.length > 120 ||
+          !exactVersion.test(change.version)))
+    )
+      fail('라이브러리 변경의 패키지 이름·동작·버전을 확인해주세요.');
+    names.add(change.name);
+    return change.action === 'remove'
+      ? { action: 'remove', name: change.name }
+      : {
+          action: change.action,
+          name: change.name,
+          ...(change.version ? { version: change.version } : {}),
+        };
+  });
+}
+
+export function dependencySelection(
+  previous: GameBuildDependenciesV1,
+  changes: readonly GameDependencyChange[],
+) {
+  validateDependencyLock(previous);
+  const selected = new Map(
+    Object.entries(previous.roots).map(([name, key]) => [
+      name,
+      {
+        name,
+        version: previous.packages.find((p) => p.key === key)!.version,
+        reason: '기존 버전 유지',
+      },
+    ]),
+  );
+  for (const change of changes) {
+    if (selected.has(change.name) === (change.action === 'add'))
+      fail(
+        `${change.name}의 변경 방식이 기존 라이브러리 목록과 맞지 않습니다.`,
+      );
+    if (change.action === 'remove') selected.delete(change.name);
+    else
+      selected.set(change.name, {
+        name: change.name,
+        version: change.version ?? 'latest',
+        reason: '사용자가 요청한 변경',
+      });
+  }
+  if (selected.size > Limits.roots)
+    fail(
+      `직접 사용하는 라이브러리는 ${Limits.roots}개까지 선택할 수 있습니다.`,
+    );
+  return [...selected.values()];
+}
+
+export function assertDependencyChanges(
+  previous: GameBuildDependenciesV1,
+  next: GameBuildDependenciesV1,
+  changes?: readonly GameDependencyChange[],
+) {
+  if (!changes) {
+    if (JSON.stringify(previous) !== JSON.stringify(next))
+      fail('기존 게임의 고정 라이브러리 버전을 유지해야 합니다.');
+    return;
+  }
+  const selected = dependencySelection(previous, changes);
+  validateDependencyLock(next);
+  const byKey = new Map(next.packages.map((item) => [item.key, item]));
+  const before = new Map(previous.packages.map((item) => [item.key, item]));
+  const roots = new Set(changes.map((change) => change.name));
+  if (Object.keys(next.roots).length !== selected.length)
+    fail('결과의 라이브러리 목록이 요청한 변경과 일치하지 않습니다.');
+  for (const { name, version } of selected) {
+    const current = byKey.get(next.roots[name]);
+    const prior = before.get(previous.roots[name]);
+    if (
+      !current ||
+      (version !== 'latest' && current.version !== version) ||
+      (!roots.has(name) &&
+        (current.integrity !== prior?.integrity ||
+          current.resolved !== prior.resolved ||
+          current.license !== prior.license))
+    )
+      fail(`${name}의 결과가 요청한 라이브러리 변경과 일치하지 않습니다.`);
+  }
+  const pending = Object.values(next.roots);
+  const reachable = new Set<string>();
+  for (let index = 0; index < pending.length; index++) {
+    const key = pending[index];
+    if (reachable.has(key)) continue;
+    reachable.add(key);
+    pending.push(...byKey.get(key)!.dependencies);
+  }
+  if (reachable.size !== next.packages.length)
+    fail('라이브러리 결과에 연결되지 않은 패키지가 있습니다.');
+}
+
 export function validateDependencyLock(
   value: unknown,
 ): asserts value is GameBuildDependenciesV1 {
@@ -43,7 +163,7 @@ export function validateDependencyLock(
         p.key.endsWith(`/node_modules/${p.name}`)
       ) ||
       typeof p.version !== 'string' ||
-      !/^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?$/i.test(p.version) ||
+      !exactVersion.test(p.version) ||
       typeof p.resolved !== 'string' ||
       !/^https:\/\/registry\.npmjs\.org\/[^?#\s\\]+$/.test(p.resolved) ||
       typeof p.integrity !== 'string' ||
@@ -79,7 +199,14 @@ export function parseDependencyRequest(value: unknown): DependencyRequestV1 {
     value.action === 'research'
       ? ['version', 'action', 'names']
       : value.action === 'prepare'
-        ? ['version', 'action', 'packages', 'previousLock', 'upgrades']
+        ? [
+            'version',
+            'action',
+            'packages',
+            'previousLock',
+            'upgrades',
+            'changes',
+          ]
         : ['version', 'action', 'lockSha256'];
   if (Object.keys(value).some((key) => !fields.includes(key)))
     fail('허용하지 않은 요청 필드');
@@ -96,7 +223,8 @@ export function parseDependencyRequest(value: unknown): DependencyRequestV1 {
     if (!Array.isArray(value.packages) || value.packages.length > Limits.roots)
       fail('선택한 패키지 개수');
     const names = new Set<string>();
-    for (const p of value.packages) {
+    const packages = value.packages;
+    for (const p of packages) {
       if (
         !object(p) ||
         Object.keys(p).some(
@@ -115,6 +243,26 @@ export function parseDependencyRequest(value: unknown): DependencyRequestV1 {
     }
     if (value.previousLock !== undefined)
       validateDependencyLock(value.previousLock);
+    if (value.changes !== undefined) {
+      const changes = gameDependencyChanges(value.changes)!;
+      if (!value.previousLock || value.upgrades !== undefined)
+        fail('기존 라이브러리와 요청한 변경을 확인해주세요.');
+      const selection = dependencySelection(
+        value.previousLock as GameBuildDependenciesV1,
+        changes,
+      );
+      if (
+        selection.length !== names.size ||
+        selection.some(
+          (p) =>
+            !packages.some(
+              (item: { name: string; version: string }) =>
+                item.name === p.name && item.version === p.version,
+            ),
+        )
+      )
+        fail('라이브러리 준비 대상이 요청한 변경과 일치하지 않습니다.');
+    }
     if (
       value.upgrades !== undefined &&
       (!Array.isArray(value.upgrades) ||

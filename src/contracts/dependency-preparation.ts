@@ -2,6 +2,10 @@ import type {
   GameBuildDependenciesV1,
   GameBuildNoticesV1,
 } from './game-build.ts';
+export type GameDependencyChange =
+  | { action: 'add' | 'update'; name: string; version?: string }
+  | { action: 'remove'; name: string };
+
 export const DependencyPreparationLimits = Object.freeze({
   rounds: 3,
   timeoutMs: 180_000,
@@ -24,6 +28,7 @@ export type DependencyRequestV1 =
       packages: { name: string; version: string; reason: string }[];
       previousLock?: GameBuildDependenciesV1;
       upgrades?: string[];
+      changes?: GameDependencyChange[];
     }
   | { version: 1; action: 'done'; lockSha256: string | null };
 export type DependencyResearchV1 = {

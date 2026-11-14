@@ -59,6 +59,10 @@ import {
   assertGameBuildEditingLock,
   currentGameBuildDocumentPath,
 } from '../../core/projects/game-build-editing.ts';
+import {
+  gameDependencyChanges,
+  dependencySelection,
+} from '../../core/ai/dependency-preparation.ts';
 import type {
   AiExecutor,
   PreparedAiRun,
@@ -179,6 +183,15 @@ export class AiRunService {
     const previous = prior
       ? readGameBuild(files, prior.buildId, options.codec)
       : undefined;
+    const dependencyChanges = gameDependencyChanges(data.dependency_changes);
+    if (dependencyChanges) {
+      if (!previous)
+        throw new CanvasError(
+          'GC-AI-011',
+          '라이브러리 변경에 사용할 기존 게임을 찾을 수 없습니다.',
+        );
+      dependencySelection(previous.lock, dependencyChanges);
+    }
     const scoped = aiLockedSnapshot(files, taskFileLock(files, this.taskPath));
     const projectAssets = new Map<
       string,
@@ -292,6 +305,7 @@ export class AiRunService {
           ? { projectAssets: [...projectAssets.values()] }
           : {}),
         previousLock: previous?.lock,
+        dependencyChanges,
         previousDocuments: previous?.manifest.documents.map((d) => {
           const currentPath = currentGameBuildDocumentPath(files, d);
           return {
@@ -525,6 +539,7 @@ export class AiRunService {
         staged,
         data.base_html ?? outputs.find(isPreviewPath),
         outputs.find(isPreviewPath)!,
+        gameDependencyChanges(data.dependency_changes),
       );
       gameBuildPublicationPaths(
         this.baseline,

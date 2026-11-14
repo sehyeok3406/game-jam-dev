@@ -12,10 +12,15 @@ import type { GamejamPage } from './gamejam-wizard.ts';
 import type { CreateTaskInput, HistoryEntry } from './shared.ts';
 import { isAiProvider, isReasoningEffort } from './core/ai/catalog.ts';
 import {
+  gameDependencyChanges,
+  isRegistryPackageName,
+} from './core/ai/dependency-preparation.ts';
+import {
   identifyInstructionOrigin,
   readInstructionOrigin,
 } from './core/ai/task-instructions.ts';
 export type GamejamDraft = GamejamSavedRequest & {
+  suggestedLibraries?: ReturnType<typeof readSuggestedLibraries>;
   approval?: {
     id: string;
     revision: number;
@@ -30,6 +35,19 @@ const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 const optionalString = (value: unknown) =>
   value === undefined || typeof value === 'string';
+
+export function readSuggestedLibraries(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, 12)
+    .flatMap((item: unknown) =>
+      object(item) &&
+      isRegistryPackageName(item.name) &&
+      typeof item.reason === 'string'
+        ? [{ name: item.name, reason: item.reason.slice(0, 2000) }]
+        : [],
+    );
+}
 /** Drafts may be incomplete, but malformed local/server data must never break the dialog. */
 export function readSavedRequest(
   value: unknown,
@@ -77,6 +95,11 @@ export function readSavedRequest(
         !Object.hasOwn(RESULT_CATEGORIES, String(html.category))))
   )
     return;
+  try {
+    if (object(html)) gameDependencyChanges(html.dependencyChanges);
+  } catch {
+    return;
+  }
   const docs = request.documentResult;
   if (
     docs !== undefined &&
@@ -274,6 +297,9 @@ export function requestSnapshotFromTask(
         ? {
             htmlResult: {
               mode: html.data.html_output_mode ?? 'update',
+              ...(html.data.dependency_changes === undefined
+                ? {}
+                : { dependencyChanges: html.data.dependency_changes }),
               ...(typeof html.data.base_html === 'string'
                 ? { basePath: html.data.base_html }
                 : {}),
@@ -336,8 +362,10 @@ export function loadGamejamDraft(
       !['organize', 'implement'].includes(value.instructionPage)
     )
       return;
+    const suggestedLibraries = readSuggestedLibraries(value.suggestedLibraries);
     return {
       ...saved,
+      ...(suggestedLibraries.length ? { suggestedLibraries } : {}),
       updatedAt: value.updatedAt,
       ...(typeof value.copiedFrom === 'string'
         ? { copiedFrom: value.copiedFrom }

@@ -87,6 +87,7 @@ interface Props {
   closeAiRequest: () => void;
   aiRequestDialogRef: import('react').RefObject<HTMLElement | null>;
   loadingAiRequest: boolean;
+  suggestedLibraries: { name: string; reason: string }[];
   savedAiDraft: import('../../gamejam-history.ts').GamejamDraft | null;
   aiDraftStatus: string;
   initializeAiRequest: (
@@ -203,6 +204,7 @@ export function WorkspaceAiDialogs({
   closeAiRequest,
   aiRequestDialogRef,
   loadingAiRequest,
+  suggestedLibraries,
   savedAiDraft,
   aiDraftStatus,
   initializeAiRequest,
@@ -434,6 +436,7 @@ export function WorkspaceAiDialogs({
               documentSetName,
               aiRequestPage,
               aiRequestIssues,
+              suggestedLibraries,
               aiRequest,
               documents,
               sections,

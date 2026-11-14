@@ -25,6 +25,8 @@ import {
   assertDocumentUpdateBaseline,
 } from '../../core/ai/task-document-updates.ts';
 import { assertGameBuildEditingLock } from '../../core/projects/game-build-editing.ts';
+import { gameDependencyChanges } from '../../core/ai/dependency-preparation.ts';
+import { readSuggestedLibraries } from '../../gamejam-history.ts';
 /** Validate/prepare completion without mutating the project or persisting success. */
 export function planAiResult(
   project: Project,
@@ -35,6 +37,14 @@ export function planAiResult(
 ) {
   const success = input.status === 'completed';
   const build = gameBuildTask(project.files[job.taskPath]);
+  if (
+    matter(project.files[job.taskPath]).data.dependency_changes !== undefined &&
+    input.gameDependencyChangesVersion !== 1
+  )
+    throw new ApiError(
+      '라이브러리 변경을 지원하는 앱으로 업데이트해주세요.',
+      409,
+    );
   if (
     build &&
     (input.gameBuildVersion !== 1 || input.gameBuildEditingVersion !== 1)
@@ -111,6 +121,7 @@ export function planAiResult(
         files,
         taskData.base_html ?? output,
         output,
+        gameDependencyChanges(taskData.dependency_changes),
       );
     }
     files = {
@@ -135,6 +146,7 @@ export function planAiResult(
     | {
         code?: unknown;
         message?: unknown;
+        details?: { suggestedLibraries?: unknown };
       }
     | undefined;
   const failure =
@@ -149,6 +161,13 @@ export function planAiResult(
             typeof report?.message === 'string'
               ? report.message.slice(0, 4000)
               : 'AI 작업이 실패했습니다.',
+            report?.code === 'GC-AI-011'
+              ? {
+                  suggestedLibraries: readSuggestedLibraries(
+                    report.details?.suggestedLibraries,
+                  ),
+                }
+              : {},
           ),
         )
       : undefined;

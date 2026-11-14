@@ -47,6 +47,20 @@ const imagePath = 'assets/images/hero.gif';
 const image =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const emptyLock = { version: 1, roots: {}, packages: [] };
+const library = {
+  key: 'node_modules/tegaki',
+  name: 'tegaki',
+  version: '1.1.0',
+  resolved: 'https://registry.npmjs.org/tegaki/-/tegaki-1.1.0.tgz',
+  integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+  dependencies: [],
+  license: 'MIT',
+};
+const libraryLock = {
+  version: 1,
+  roots: { tegaki: library.key },
+  packages: [library],
+};
 function built(lives = 7) {
   return {
     plan: {
@@ -130,6 +144,7 @@ function runFixture(initialFiles, options = {}) {
     x: 0,
     y: 0,
     htmlResult: {
+      dependencyChanges: options.changes,
       mode: options.mode ?? 'update',
       basePath:
         options.base ?? readGameBuildIndex(initialFiles).artifacts[0].path,
@@ -140,6 +155,7 @@ function runFixture(initialFiles, options = {}) {
           thenImplement: {
             instructions: '목숨 9개로 수정',
             htmlResult: {
+              dependencyChanges: options.changes,
               mode: 'update',
               basePath: readGameBuildIndex(initialFiles).artifacts[0].path,
             },
@@ -201,7 +217,7 @@ function runFixture(initialFiles, options = {}) {
       execution: {
         execute: async (input) => {
           seen.push(input);
-          return built(9);
+          return options.built ?? built(9);
         },
       },
     },
@@ -250,6 +266,109 @@ async function complete(f) {
   await f.service.publish(result.staged, result.outputs, f.publication);
   return result;
 }
+
+test('explicit addition is frozen for direct and staged requests and enforced in local and shared publication', async () => {
+  const base = initial();
+  const changes = [{ action: 'add', name: 'tegaki', version: '1.1.0' }];
+  const staged = runFixture(base.files, { organize: true, changes });
+  const stagedRaw = staged.baseline[staged.taskPath];
+  assert.deepEqual(
+    matter(workflowStages(stagedRaw)[1]).data.dependency_changes,
+    changes,
+  );
+  const tamperedStages = matter(stagedRaw);
+  tamperedStages.data.dependency_changes = [{ action: 'add', name: 'other' }];
+  assert.throws(
+    () =>
+      workflowStages(
+        matter.stringify(tamperedStages.content, tamperedStages.data),
+      ),
+    /단계별 라이브러리 변경/,
+  );
+
+  const fixture = runFixture(base.files, {
+    mode: 'new',
+    changes,
+    built: {
+      ...built(9),
+      lock: libraryLock,
+      notices: {
+        version: 1,
+        packages: [{ key: library.key, license: 'MIT', text: 'MIT fixture' }],
+      },
+    },
+  });
+  const result = await complete(fixture);
+  assert.deepEqual(fixture.seen[0].dependencyChanges, changes);
+  const after = fixture.current();
+  const index = readGameBuildIndex(after);
+  assert.deepEqual(
+    readGameBuild(after, base.artifact.buildId, codec).lock,
+    emptyLock,
+  );
+  assert.deepEqual(
+    readGameBuild(
+      after,
+      index.artifacts.find((a) => a.path === result.outputs[0]).buildId,
+      codec,
+    ).lock,
+    libraryLock,
+  );
+  const artifacts = Object.fromEntries(
+    [
+      ...result.outputs,
+      ...gameBuildPublicationPaths(
+        fixture.baseline,
+        result.staged,
+        result.outputs,
+        codec,
+      ),
+    ].map((p) => [p, result.staged[p]]),
+  );
+  const job = {
+    taskPath: fixture.taskPath,
+    baselineHash: codec.digest(JSON.stringify(fixture.baseline)),
+  };
+  const input = {
+    status: 'completed',
+    gameBuildVersion: 1,
+    gameBuildEditingVersion: 1,
+    artifacts,
+  };
+  const submit = (files, submitted) =>
+    planAiResult(
+      { files },
+      { ...job, baselineHash: codec.digest(JSON.stringify(files)) },
+      submitted,
+      () => 1,
+      codec.digest,
+    );
+  assert.throws(
+    () => submit(fixture.baseline, input),
+    /라이브러리 변경을 지원/,
+  );
+  assert.equal(
+    submit(fixture.baseline, { ...input, gameDependencyChangesVersion: 1 })
+      .success,
+    true,
+  );
+  const tampered = matter(fixture.baseline[fixture.taskPath]);
+  tampered.data.dependency_changes[0].version = '2.0.0';
+  assert.throws(
+    () =>
+      submit(
+        {
+          ...fixture.baseline,
+          [fixture.taskPath]: matter.stringify(tampered.content, tampered.data),
+        },
+        { ...input, gameDependencyChangesVersion: 1 },
+      ),
+    /tegaki의 결과/,
+  );
+  const omitted = runFixture(base.files, { changes });
+  await assert.rejects(complete(omitted), /라이브러리 목록/);
+  assert.equal(omitted.current()[base.artifact.path], base.result.html);
+});
 
 test('editing follows this game original, current design and images and gives an editable source copy', async () => {
   const base = initial();

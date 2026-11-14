@@ -4,12 +4,26 @@ import {
   type PreparedDependenciesV1,
   type DependencyPreparationResult,
   type DependencyRequestV1,
+  type GameDependencyChange,
 } from '../../contracts/dependency-preparation.ts';
 import {
   parseDependencyExchange,
   validateDependencyLock,
+  assertDependencyChanges,
+  dependencySelection,
 } from '../../core/ai/dependency-preparation.ts';
 import type { GameBuildDependenciesV1 } from '../../contracts/game-build.ts';
+export class DependencyPreparationError extends Error {
+  readonly suggestedLibraries: { name: string; reason: string }[];
+
+  constructor(
+    message: string,
+    suggestedLibraries: { name: string; reason: string }[] = [],
+  ) {
+    super(message);
+    this.suggestedLibraries = suggestedLibraries;
+  }
+}
 export type DependencyPreparationEngine = {
   execute(
     request: Exclude<DependencyRequestV1, { action: 'done' }>,
@@ -32,6 +46,7 @@ export async function prepareGameDependencies(
     exchange: DependencyPreparationExchange;
     previousLock?: GameBuildDependenciesV1;
     allowedUpgrades?: string[];
+    changes?: GameDependencyChange[];
     assertCurrent(): void;
     progress(message: string): void;
   },
@@ -56,6 +71,27 @@ export async function prepareGameDependencies(
   let response: DependencyPreparationResult | null = null,
     prepared: PreparedDependenciesV1 | null = null;
   try {
+    if (ports.changes) {
+      if (!previous)
+        throw Error('라이브러리 변경에 사용할 기존 게임을 찾을 수 없습니다.');
+      check();
+      ports.progress('요청한 라이브러리 변경 준비');
+      const result = await ports.engine.execute(
+        {
+          version: 1,
+          action: 'prepare',
+          packages: dependencySelection(previous, ports.changes),
+          previousLock: previous,
+          changes: ports.changes,
+        },
+        controller.signal,
+      );
+      check();
+      if (result.action !== 'prepared')
+        throw Error('라이브러리 준비 결과가 없습니다.');
+      assertDependencyChanges(previous, result.lock, ports.changes);
+      return result;
+    }
     for (let sequence = 1; sequence <= Limits.rounds; sequence++) {
       check();
       ports.progress(`라이브러리 자료 준비 · ${sequence}/${Limits.rounds}`);
@@ -79,6 +115,21 @@ export async function prepareGameDependencies(
       }
       let request = item.request;
       if (request.action === 'prepare') {
+        if (request.changes)
+          throw Error('라이브러리 변경은 사용자가 요청에서 선택해야 합니다.');
+        if (previous) {
+          const additions = request.packages.filter(
+            (p) => !Object.hasOwn(previous.roots, p.name),
+          );
+          if (additions.length)
+            throw new DependencyPreparationError(
+              `AI가 제안한 라이브러리 추가를 확인해주세요. ${additions.map((p) => `${p.name} (${p.reason.trim() || 'AI 제안'})`).join(', ')}`.slice(
+                0,
+                4000,
+              ),
+              additions.map(({ name, reason }) => ({ name, reason })),
+            );
+        }
         if (request.previousLock && !previous)
           throw Error(
             '기존 고정 의존성은 앱이 제공한 정보만 사용할 수 있습니다.',
@@ -112,6 +163,14 @@ export async function prepareGameDependencies(
       if (response.action === 'prepared') prepared = response;
     }
     throw Error('라이브러리 준비 교환 한도 3회를 초과했습니다.');
+  } catch (error) {
+    if (signal.aborted || error instanceof DependencyPreparationError)
+      throw error;
+    if (ports.changes)
+      throw new DependencyPreparationError(
+        error instanceof Error ? error.message : String(error),
+      );
+    throw error;
   } finally {
     clearTimeout(timeout);
     signal.removeEventListener('abort', abort);

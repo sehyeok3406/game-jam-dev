@@ -124,6 +124,83 @@ const plan = (name, version = 'latest', extra = {}) => ({
   packages: [{ name, version, reason: 'fixture choice' }],
   ...extra,
 });
+test('an empty saved lock accepts an explicit addition, version change, replacement and removal', async (t) => {
+  const f = await fixture(t);
+  await f.pkg('writer', '1.0.0');
+  await f.pkg('writer', '2.0.0');
+  await f.pkg('engine', '1.0.0', { dependencies: { writer: '1.0.0' } });
+  const empty = { version: 1, roots: {}, packages: [] };
+  const signal = new AbortController().signal;
+  let lock = empty;
+  async function apply(changes) {
+    const result = await prepareGameDependencies(
+      {
+        runId: 'approved',
+        previousLock: lock,
+        changes,
+        engine: f.engine,
+        exchange: {
+          turn() {
+            throw Error('Explicit changes should use the app selection');
+          },
+          async close() {},
+        },
+        assertCurrent() {},
+        progress() {},
+      },
+      signal,
+    );
+    lock = result.lock;
+    return result;
+  }
+  const first = await apply([
+    { action: 'add', name: 'writer', version: '1.0.0' },
+  ]);
+  assert.equal(first.selection[0].version, '1.0.0');
+  const updated = await apply([{ action: 'update', name: 'writer' }]);
+  assert.equal(updated.selection[0].version, '2.0.0');
+  const replaced = await apply([
+    { action: 'remove', name: 'writer' },
+    { action: 'add', name: 'engine' },
+  ]);
+  assert.deepEqual(Object.keys(replaced.lock.roots), ['engine']);
+  assert.equal(
+    replaced.lock.packages.find((p) => p.name === 'writer').version,
+    '1.0.0',
+  );
+  assert.deepEqual(
+    (await apply([{ action: 'remove', name: 'engine' }])).lock,
+    empty,
+  );
+  await assert.rejects(
+    prepareGameDependencies(
+      {
+        runId: 'proposal',
+        previousLock: empty,
+        engine: {
+          execute() {
+            throw Error('An AI proposal must not reach package preparation');
+          },
+        },
+        exchange: {
+          async turn() {
+            return {
+              version: 1,
+              runId: 'proposal',
+              sequence: 1,
+              request: plan('writer'),
+            };
+          },
+          async close() {},
+        },
+        assertCurrent() {},
+        progress() {},
+      },
+      signal,
+    ),
+    (error) => error.suggestedLibraries?.[0]?.name === 'writer',
+  );
+});
 test('exact dependency graph, notices and API sources survive offline replay; cache corruption fails closed', async (t) => {
   const f = await fixture(t);
   await f.pkg('math', '1.0.0');

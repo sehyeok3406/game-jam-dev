@@ -3,6 +3,7 @@ import { assertGameBuildMutation } from '../../core/projects/game-build.ts';
 import { ServerLimits } from '../../contracts/server-limits.ts';
 import type { CollaborationCommand } from '../../contracts/collaboration.ts';
 import type { Snapshot } from '../../contracts/project.ts';
+import type { CreateTaskInput } from '../../contracts/ai.ts';
 import { CANVAS_SHEETS_PATH } from '../../canvas-sheets.ts';
 import { collaborationPath, commandLabels } from '../../collaboration-model.ts';
 import { changedGroups } from '../../sync-properties.ts';
@@ -65,6 +66,17 @@ export function createCommandService<
 >(ports: CommandPorts<P, M, E>) {
   async function execute(project: P, member: M, command: CollaborationCommand) {
     if (command.channel === 'tasks:create') ports.admin(member);
+    const task = command.input as CreateTaskInput | undefined;
+    if (
+      command.channel === 'tasks:create' &&
+      (task?.htmlResult?.dependencyChanges ||
+        task?.thenImplement?.htmlResult?.dependencyChanges) &&
+      command.gameDependencyChangesVersion !== 1
+    )
+      throw new ApiError(
+        '라이브러리 변경을 지원하는 앱으로 업데이트해주세요.',
+        409,
+      );
     if (
       command.channel === 'tasks:create' &&
       (command.input as { gameBuildVersion?: unknown })?.gameBuildVersion ===

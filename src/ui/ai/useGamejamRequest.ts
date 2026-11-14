@@ -13,6 +13,7 @@ import {
   loadGamejamDraft,
   saveGamejamDraft,
   entryRequest,
+  readSuggestedLibraries,
   type GamejamDraft,
   type GamejamSavedRequest,
 } from '../../gamejam-history';
@@ -64,6 +65,9 @@ export function useGamejamRequest({
     string | undefined
   >();
   const [loadingAiRequest, setLoadingAiRequest] = useState(false);
+  const [suggestedLibraries, setSuggestedLibraries] = useState<
+    ReturnType<typeof readSuggestedLibraries>
+  >([]);
   const aiRequestProjectRef = useRef<string | null>(null);
   const requestSession = useRef(sessionId);
   const aiDraftSignatureRef = useRef('');
@@ -101,6 +105,7 @@ export function useGamejamRequest({
       modelId: selectedAiModel,
       reasoningEffort: selectedAiReasoning,
       retryOf: aiRequestRetryOf,
+      ...(suggestedLibraries.length ? { suggestedLibraries } : {}),
       page: aiRequestPage,
       instructionPage: aiInstructionPage,
       updatedAt: Date.now(),
@@ -123,6 +128,7 @@ export function useGamejamRequest({
     selectedAiModel,
     selectedAiReasoning,
     aiRequestRetryOf,
+    suggestedLibraries,
     noticeProject,
     aiDraftScope,
     editingApproval,
@@ -149,6 +155,7 @@ export function useGamejamRequest({
     saved?: GamejamSavedRequest,
     draft?: GamejamDraft,
     approval?: { id: string; revision: number },
+    suggestions = draft?.suggestedLibraries ?? [],
   ) => {
     if (!noticeProject) return;
     const editing = approval ?? draft?.approval;
@@ -162,7 +169,7 @@ export function useGamejamRequest({
     const reasoningEffort = saved
       ? (saved.reasoningEffort ?? null)
       : selectedAiReasoning;
-    const page = draft?.page ?? 1;
+    const page = draft?.page ?? (suggestions.length ? 2 : 1);
     const instructionPage = draft?.instructionPage ?? 'organize';
     const prepared = prepareRequestInstructions(request, !draft && !editing);
     const restored = structuredClone(prepared.request);
@@ -177,6 +184,7 @@ export function useGamejamRequest({
       modelId,
       reasoningEffort,
       retryOf: saved?.retryOf,
+      ...(suggestions.length ? { suggestedLibraries: suggestions } : {}),
       page,
       instructionPage,
       updatedAt: 0,
@@ -192,6 +200,7 @@ export function useGamejamRequest({
             : '변경한 작성 내용은 이 기기에 자동 저장됩니다.',
     );
     setAiRequestRetryOf(saved?.retryOf);
+    setSuggestedLibraries(suggestions);
     setAiRequestPage(page);
     setAiRequestVisited(page);
     setAiInstructionPage(instructionPage);
@@ -208,6 +217,7 @@ export function useGamejamRequest({
         approval: editing,
         ...saved,
         request: restored,
+        ...(suggestions.length ? { suggestedLibraries: suggestions } : {}),
         page,
         instructionPage,
         updatedAt: Date.now(),
@@ -241,7 +251,13 @@ export function useGamejamRequest({
   const reuseAiEntry = (entry: HistoryEntry) => {
     const saved = entryRequest(entry);
     if (!saved) return;
-    initializeAiRequest(saved.request, saved);
+    initializeAiRequest(
+      saved.request,
+      saved,
+      undefined,
+      undefined,
+      readSuggestedLibraries(entry.failure?.details.suggestedLibraries),
+    );
   };
   const loadRecentAiRequest = async () => {
     const project = noticeProject,
@@ -385,6 +401,7 @@ export function useGamejamRequest({
     setAiDraftStatus,
     aiRequestRetryOf,
     loadingAiRequest,
+    suggestedLibraries,
     aiRequestDialogRef,
     selectedAiProvider,
     setSelectedAiProvider,

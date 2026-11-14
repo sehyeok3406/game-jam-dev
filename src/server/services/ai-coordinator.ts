@@ -28,6 +28,7 @@ import {
   workflowStages,
   newOutputsAlreadyExist,
   gameBuildTask,
+  gameDependencyChangeTask,
 } from '../../task-plan.ts';
 import { ApiError } from './errors.ts';
 import {
@@ -80,6 +81,16 @@ export function createAiCoordinator(ports: Ports) {
     )
       throw new ApiError(
         '게임 제작 v2 실행을 지원하는 앱으로 업데이트해주세요.',
+        409,
+      );
+    if (
+      replayTask &&
+      project.files[replayTask] &&
+      gameDependencyChangeTask(project.files[replayTask]) &&
+      input.gameDependencyChangesVersion !== 1
+    )
+      throw new ApiError(
+        '라이브러리 변경을 지원하는 앱으로 업데이트해주세요.',
         409,
       );
     let claimed: import('../../ai-task-queue.ts').StoredAiQueueTask | undefined;
@@ -221,6 +232,14 @@ export function createAiCoordinator(ports: Ports) {
         '여러 캔버스의 AI 작업에는 앱 v0.11.0 이상이 필요합니다.',
       );
     const outputs = expectedArtifacts(workingFiles[taskPath]);
+    if (
+      gameDependencyChangeTask(workingFiles[taskPath]) &&
+      input.gameDependencyChangesVersion !== 1
+    )
+      throw new ApiError(
+        '라이브러리 변경을 지원하는 앱으로 업데이트해주세요.',
+        409,
+      );
     if (
       gameBuildTask(workingFiles[taskPath]) &&
       (input.gameBuildVersion !== 1 || input.gameBuildEditingVersion !== 1)

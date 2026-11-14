@@ -1750,6 +1750,21 @@ kbd {
   gap: 8px;
   min-width: 0;
 }
+.ai-dependency-changes {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.ai-dependency-changes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ai-dependency-changes > label {
+  margin: 8px 0;
+}
+.ai-dependency-changes li {
+  margin: 4px 0;
+}
 .ai-instructions-field input {
   width: 100%;
   min-width: 0;

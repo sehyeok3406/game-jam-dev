@@ -119,13 +119,26 @@ export function createApprovalService(ports: Ports) {
     }
     const next = ports.clone(project);
     const at = ports.now();
+    const readRequest = () => {
+      const request = parseApprovalRequest(input.request);
+      if (
+        request.implement &&
+        request.htmlResult?.dependencyChanges &&
+        input.gameDependencyChangesVersion !== 1
+      )
+        throw new ApiError(
+          '라이브러리 변경을 지원하는 앱으로 업데이트해주세요.',
+          409,
+        );
+      return request;
+    };
     let item: GamejamApproval;
     if (action === 'requests-create') {
       if (items[commandId])
         throw new ApiError('이미 등록된 요청입니다. 최신 요청을 확인해주세요.');
       if (Object.keys(items).length >= 1000)
         throw new ApiError('프로젝트 요청 보관 한도에 도달했습니다.');
-      const request = parseApprovalRequest(input.request);
+      const request = readRequest();
       ports.plan(project, request);
       item = {
         id: commandId,
@@ -183,7 +196,7 @@ export function createApprovalService(ports: Ports) {
         };
         item.status = 'deleted';
       } else if (action === 'requests-update') {
-        const request = parseApprovalRequest(input.request);
+        const request = readRequest();
         ports.plan(project, request);
         item.request = request;
         item.status = 'pending';

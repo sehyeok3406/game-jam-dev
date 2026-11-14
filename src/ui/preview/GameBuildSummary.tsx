@@ -31,8 +31,8 @@ export function GameBuildSummary({
       </summary>
       {build?.kind === 'source' ? (
         <p>
-          기존 소스와 이미지 연결을 이어서 수정합니다. 사용한 라이브러리 버전은
-          유지합니다.
+          기존 소스와 이미지 연결을 이어서 수정합니다. 라이브러리는 요청에서
+          변경을 지정할 수 있습니다.
         </p>
       ) : build?.kind === 'unavailable' ? (
         <p>

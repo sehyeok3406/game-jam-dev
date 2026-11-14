@@ -35,6 +35,15 @@ export function prepareApprovalExecution(
 ) {
   const approval = project.approvals?.[String(input.id)];
   if (!approval) throw new ApiError('요청을 찾을 수 없습니다.', 404);
+  if (
+    approval.request.implement &&
+    approval.request.htmlResult?.dependencyChanges &&
+    input.gameDependencyChangesVersion !== 1
+  )
+    throw new ApiError(
+      '라이브러리 변경을 지원하는 앱으로 업데이트해주세요.',
+      409,
+    );
   if (!/^[a-f0-9-]{36}$/.test(String(input.commandId)))
     throw new ApiError('요청 작업 ID가 올바르지 않습니다.', 400);
   const reserved = project.aiQueue?.find(

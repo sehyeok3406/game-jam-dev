@@ -45,9 +45,9 @@ README·타입 선언·registry 설명은 참고 데이터로 표시하며 AI �
 
 기존 lock은 **앱이 소유한 입력**이다. application이 사본을 주입하므로 AI가 필드를 생략해도 사라지지 않는다. AI가 다른 lock을 보내거나 앱이 허용하지 않은 `upgrades`를 요청하면 거절한다. 사용자가 요청한 업그레이드만 호출자가 `allowedUpgrades`에 넣는다. 현재 계약은 개별 업그레이드 승인 UI를 새로 만들지 않는다.
 
-선택한 root 목록이 같고 업그레이드가 없으면 기존 graph 전체를 그대로 사용한다. registry metadata를 다시 조회하지 않고 캐시의 배포본을 재검증하므로 캐시가 온전하면 오프라인 준비도 가능하다. 명시한 범위가 기존 버전과 충돌하면 실패하며 `latest` 요청만으로 갱신하지 않는다. root 구성 변경에는 현재 명시적 변경 선언이 필요하다. source 기반 수정 정책의 전체 연결은 5단계다.
+변경 요청 없이 선택한 root 목록과 버전이 맞으면 기존 graph 전체를 사용한다. registry metadata를 다시 조회하지 않고 캐시의 배포본을 재검증하므로 캐시가 온전하면 오프라인 준비도 가능하다. 명시한 범위가 기존 버전과 충돌하면 실패하며 AI의 `latest` 요청만으로 갱신하지 않는다. AI가 기존 목록에 없던 패키지를 선택하면 준비 전에 이름과 이유를 돌려준다.
 
-업그레이드한 경우 변경하지 않은 root는 기존 버전을 지정하고, 간접 의존성도 새 범위와 맞는 기존 버전을 우선 선택한다. 새 graph가 이전 graph와 무조건 같다는 보장은 아니다. 최종 exact lock과 hash가 변경 사실을 나타낸다.
+사용자가 작업에 확정한 `dependency_changes`가 있으면 application이 앱 소유의 기준 lock과 변경 요청을 결합해 worker의 `prepare` 목록을 작성한다. 지정하지 않은 root에는 기존 정확한 버전을 사용하며 간접 의존성도 새 범위와 맞는 기존 버전을 우선 선택한다. 최종 exact lock과 hash를 기록한다. [게임 원본 수정 정책](game-build-editing.md#고정-의존성)을 따른다.
 
 ## 배포본·라이선스·자료
 
@@ -85,7 +85,7 @@ worker는 절대 경로의 동봉 Node로 실행한다. PATH는 도구 폴더만
 
 ## 검증
 
-5단계의 실제 수정 경로는 기존 exact lock을 그대로 제공한다. 기존 의존성이 있는데 준비 없이 `done(null)`로 끝내거나 준비 결과의 lock이 달라지면 거절한다. source 실행 port와 최종 local/server 반영도 기존 lock을 확인한다. 기존 graph를 교체·추가·삭제·업그레이드하는 사용자 계약/UI는 아직 제공하지 않는다. 새 게임 선정과 내부 allowedUpgrades port를 일반 수정의 업그레이드 지원으로 혼동하지 않는다.
+기존 의존성이 있는데 준비 없이 `done(null)`로 끝내거나, 사용자가 선택한 변경 범위를 벗어난 결과는 거절한다. 실제 worker 회귀는 빈 lock에 추가, 버전 변경, 교체와 마지막 패키지 삭제도 검사한다.
 
 기본 `npm test`에는 `tests/dependency-preparation.test.mjs`가 포함된다. 실제 worker·압축·HTTP·오프라인 재사용은 `node scripts/build-game-build-runtime.mjs` 뒤 `node --test tests/dependency-preparation-runtime.mjs`로 검사한다. 후자는 localhost registry fixture를 사용하며 유료 AI나 외부 registry에 의존하지 않는다.
 

@@ -10,7 +10,7 @@ import { FILE_NAMES_PATH } from './contracts/document-names.ts';
 import { requireProjectLayoutSupport } from './adapters/http/project-layout-support.ts';
 import { requireGameBuildStorageSupport } from './adapters/http/game-build-support.ts';
 import { hasGameBuilds } from './core/projects/game-build.ts';
-import { gameBuildTask } from './task-plan.ts';
+import { gameBuildTask, gameDependencyChangeTask } from './task-plan.ts';
 import { supportsSharedAiProvider } from './core/ai/catalog.ts';
 import {
   objectId,
@@ -282,6 +282,7 @@ export class CollaborationClient {
         gameBuildStorageVersion: 1,
         gameBuildVersion: 1,
         gameBuildEditingVersion: 1,
+        gameDependencyChangesVersion: 1,
         documentNamesVersion: 1,
         ...(input as object),
       },
@@ -567,6 +568,14 @@ export class CollaborationClient {
     const task =
       request.taskPath ??
       this.state.aiQueue?.find((t) => t.taskId === request.taskId)?.taskPath;
+    if (
+      this.state.gameDependencyChangesVersion !== 1 &&
+      ['ai-start', 'ai-claim'].includes(action) &&
+      task &&
+      this.files[task] &&
+      gameDependencyChangeTask(this.files[task])
+    )
+      throw Error('라이브러리 변경을 사용하려면 협업 서버를 업데이트해주세요.');
     if (
       (this.state.gameBuildVersion !== 1 ||
         this.state.gameBuildEditingVersion !== 1) &&
@@ -1172,6 +1181,16 @@ export class CollaborationClient {
         );
       if (
         channel === 'tasks:create' &&
+        this.state.gameDependencyChangesVersion !== 1 &&
+        ((input as CreateTaskInput)?.htmlResult?.dependencyChanges ||
+          (input as CreateTaskInput)?.thenImplement?.htmlResult
+            ?.dependencyChanges)
+      )
+        throw Error(
+          '라이브러리 변경을 사용하려면 협업 서버를 업데이트해주세요.',
+        );
+      if (
+        channel === 'tasks:create' &&
         (input as CreateTaskInput)?.gameBuildVersion === 1 &&
         (this.state.gameBuildVersion !== 1 ||
           this.state.gameBuildEditingVersion !== 1)
@@ -1765,6 +1784,13 @@ export class CollaborationClient {
     action: 'create' | 'update' | 'cancel' | 'feedback' | 'delete',
     input: import('./gamejam-approval.ts').ApprovalMutation,
   ) {
+    if (
+      'request' in input &&
+      input.request?.implement &&
+      input.request.htmlResult?.dependencyChanges &&
+      this.state.gameDependencyChangesVersion !== 1
+    )
+      throw Error('라이브러리 변경을 사용하려면 협업 서버를 업데이트해주세요.');
     if (
       'request' in input &&
       input.request?.implement &&

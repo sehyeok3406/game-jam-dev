@@ -2,7 +2,10 @@ import type { Snapshot } from '../../contracts/project.ts';
 import type {
   GameBuildManifestV1,
   GameBuildIndexV1,
+  GameBuildDependenciesV1,
 } from '../../contracts/game-build.ts';
+import type { GameDependencyChange } from '../../contracts/dependency-preparation.ts';
+import { assertDependencyChanges } from '../ai/dependency-preparation.ts';
 import { readGameBuildIndex } from './game-build.ts';
 import { readFileNames } from '../documents/name-registry.ts';
 
@@ -52,28 +55,30 @@ export function assertGameBuildEditingLock(
   after: Snapshot,
   basePath: string | undefined,
   output: string,
+  changes?: GameDependencyChange[],
 ) {
-  const prior = readGameBuildIndex(before).artifacts.find(
-    (a) => a.path === basePath,
+  const prior = gameBuildEditingLock(before, basePath);
+  if (!prior) {
+    if (changes)
+      throw Error('라이브러리 변경에 사용할 기존 게임을 찾을 수 없습니다.');
+    return;
+  }
+  const next = gameBuildEditingLock(after, output);
+  if (!next) throw Error('게임 결과의 라이브러리 목록을 찾을 수 없습니다.');
+  assertDependencyChanges(prior, next, changes);
+}
+
+export function gameBuildEditingLock(
+  files: Snapshot,
+  path?: string,
+): GameBuildDependenciesV1 | undefined {
+  const artifact = readGameBuildIndex(files).artifacts.find(
+    (item) => item.path === path,
   );
-  if (!prior) return;
-  const next = readGameBuildIndex(after).artifacts.find(
-    (a) => a.path === output,
-  );
-  if (
-    !next ||
-    JSON.stringify(
-      JSON.parse(
-        before[`.game-builds/${prior.buildId}/dependencies.lock.json`],
-      ),
-    ) !==
-      JSON.stringify(
-        JSON.parse(
-          after[`.game-builds/${next.buildId}/dependencies.lock.json`],
-        ),
-      )
-  )
-    throw Error('기존 게임의 고정 라이브러리 버전을 유지해야 합니다.');
+  if (artifact)
+    return JSON.parse(
+      files[`.game-builds/${artifact.buildId}/dependencies.lock.json`],
+    );
 }
 
 /** The global index is shared by games; restoring one record must preserve later games. */

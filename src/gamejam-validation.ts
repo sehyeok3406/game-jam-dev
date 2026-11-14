@@ -11,6 +11,7 @@ import { taskInstructions } from './task-instructions.ts';
 import { documentTemplates } from './document-format.ts';
 import { isImportedPreviewPath } from './preview-output.ts';
 import { reasoningError, supportsSharedAiProvider } from './core/ai/catalog.ts';
+import { gameDependencyChanges } from './core/ai/dependency-preparation.ts';
 
 export type GamejamField =
   | 'steps'
@@ -19,6 +20,7 @@ export type GamejamField =
   | 'organize'
   | 'implement'
   | 'html-result'
+  | 'dependency-changes'
   | 'document-format'
   | 'connection'
   | 'model'
@@ -151,6 +153,26 @@ export function gamejamIssues(
         'html-result',
         '불러온 HTML은 원본을 유지합니다. 새 버전 만들기를 선택해주세요.',
       );
+  if (
+    request.implement &&
+    request.htmlResult?.dependencyChanges !== undefined
+  ) {
+    try {
+      gameDependencyChanges(request.htmlResult.dependencyChanges);
+      if (!request.htmlResult.basePath)
+        throw Error('라이브러리를 변경할 기존 게임을 선택해주세요.');
+    } catch (error) {
+      add('dependency-changes', (error as Error).message);
+    }
+    if (
+      context.collaboration.active &&
+      context.collaboration.gameDependencyChangesVersion !== 1
+    )
+      add(
+        'dependency-changes',
+        '라이브러리 변경을 사용하려면 협업 서버를 업데이트해주세요.',
+      );
+  }
   if (context.intent === 'content') return issues;
   if (
     request.implement &&
@@ -336,6 +358,7 @@ export const gamejamFieldId = (field: GamejamField) =>
     organize: 'ai-task-instructions-organize',
     implement: 'ai-task-instructions-implement',
     'html-result': 'ai-html-result',
+    'dependency-changes': 'ai-dependency-changes',
     'document-format': 'ai-document-format',
     connection: 'ai-request-connection',
     model: 'ai-model-custom',

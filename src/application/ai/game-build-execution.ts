@@ -4,7 +4,11 @@ import type {
   CompiledGame,
   GeneratedGameSource,
 } from '../../contracts/game-build-execution.ts';
-import type { PreparedDependenciesV1 } from '../../contracts/dependency-preparation.ts';
+import type {
+  GameDependencyChange,
+  PreparedDependenciesV1,
+} from '../../contracts/dependency-preparation.ts';
+import { assertDependencyChanges } from '../../core/ai/dependency-preparation.ts';
 import type {
   GameBuildDependenciesV1,
   GameBuildProjectAsset,
@@ -17,6 +21,7 @@ export type GameBuildExecutionInput = {
   inputs: Snapshot;
   projectAssets?: (GameBuildProjectAsset & { name: string })[];
   previousLock?: GameBuildDependenciesV1;
+  dependencyChanges?: GameDependencyChange[];
   /** Editable copy of the selected revision; durable originals remain read-only. */
   previousSource?: GeneratedGameSource;
   previousDocuments?: {
@@ -73,13 +78,12 @@ export function createGameBuildExecution(ports: {
         ports.progress('게임 제작 · 라이브러리 조사와 버전 고정');
         const dependencies = await session.run(signal);
         check();
-        if (
-          input.previousLock &&
-          JSON.stringify(
+        if (input.previousLock)
+          assertDependencyChanges(
+            input.previousLock,
             dependencies?.lock ?? { version: 1, roots: {}, packages: [] },
-          ) !== JSON.stringify(input.previousLock)
-        )
-          throw Error('기존 게임의 고정 라이브러리 버전을 유지해야 합니다.');
+            input.dependencyChanges,
+          );
         ports.progress('게임 제작 · 보존할 소스 작성');
         const source = await ports.generate(input, dependencies, signal, emit);
         check();

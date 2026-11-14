@@ -89,10 +89,11 @@ async function generateSource(
     const context = JSON.stringify({
       version: 1,
       dependencies,
+      dependencyChanges: input.dependencyChanges,
       previousSource: input.previousSource?.plan ?? null,
       previousDocuments: input.previousDocuments ?? [],
       editingInstructions: input.previousSource
-        ? 'source/ and source-plan.json contain an editable copy of the selected game revision. Modify these existing sources to satisfy the request; preserve unaffected features, asset keys and exact dependency versions. The .game-builds/ original and all project inputs stay read-only. Do not rewrite design documents in the source phase.'
+        ? 'source/ and source-plan.json contain an editable copy of the selected game revision. Preserve unaffected features and asset keys. Follow the exact prepared dependency list and adjust existing imports for the requested dependencyChanges. The .game-builds/ original and all project inputs stay read-only. Do not rewrite design documents in the source phase.'
         : 'There is no complete rebuild recipe. Use the selected HTML and reference documents to create a new source bundle; do not claim historical source restoration.',
       assetPaths: Object.keys(input.inputs).filter((p) =>
         p.startsWith('assets/images/'),
@@ -243,6 +244,7 @@ export function desktopGameBuildExecution(options: Options) {
         prepared: input.prepared,
         inputs: input.inputs,
         previousLock: input.previousLock,
+        changes: input.dependencyChanges,
         projectAssets: input.projectAssets,
       }),
     generate: (input, deps, signal, emit) =>

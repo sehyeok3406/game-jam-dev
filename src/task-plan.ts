@@ -31,7 +31,14 @@ import {
   describePreview,
 } from './html-source.ts';
 import { describeHtmlInput } from './html-inputs.ts';
-import { gameBuildEditingInputs } from './core/projects/game-build-editing.ts';
+import {
+  gameBuildEditingInputs,
+  gameBuildEditingLock,
+} from './core/projects/game-build-editing.ts';
+import {
+  gameDependencyChanges,
+  dependencySelection,
+} from './core/ai/dependency-preparation.ts';
 import {
   taskDocumentUpdates,
   assertDocumentUpdateBaseline,
@@ -345,6 +352,24 @@ export function createTaskPlan(
     ),
   );
   const htmlTarget = resolved.path;
+  const changes = gameDependencyChanges(choice.dependencyChanges);
+  if (changes) {
+    const lock =
+      implementing &&
+      input.gameBuildVersion === 1 &&
+      base &&
+      gameBuildEditingLock(files, base);
+    if (!lock)
+      throw new CanvasError(
+        'GC-AI-011',
+        '라이브러리를 변경할 기존 게임을 선택해주세요.',
+      );
+    dependencySelection(lock, changes);
+  }
+  const resolvedHtmlChoice = {
+    ...resolved.choice,
+    ...(changes ? { dependencyChanges: changes } : {}),
+  };
   if (implementing && input.gameBuildVersion === 1) {
     input = {
       ...input,
@@ -430,7 +455,7 @@ export function createTaskPlan(
     ],
   };
   const first = createTaskSpecification(
-    documents ? input : { ...input, htmlResult: resolved.choice },
+    documents ? input : { ...input, htmlResult: resolvedHtmlChoice },
     id,
     outputs,
     input.sourceMode === 'html' ? source?.descriptor : undefined,
@@ -465,7 +490,7 @@ export function createTaskPlan(
       instructions: input.thenImplement.instructions,
       instructionOrigin: input.thenImplement.instructionOrigin,
       resultName: input.thenImplement.resultName,
-      htmlResult: resolved.choice,
+      htmlResult: resolvedHtmlChoice,
     },
     `${id}-implement`,
     [htmlTarget],
@@ -488,6 +513,7 @@ export function createTaskPlan(
       expected_outputs: [...docOutputs, htmlTarget],
       html_output_mode: secondData.html_output_mode,
       base_html: secondData.base_html,
+      ...(changes ? { dependency_changes: changes } : {}),
       ...(secondData.multiplayer !== undefined
         ? { multiplayer: secondData.multiplayer }
         : {}),
@@ -501,6 +527,17 @@ export function createTaskPlan(
 export function workflowStages(raw: string): string[] {
   const data = matter(raw).data;
   const sourceBuild = gameBuildTask(raw);
+  const changes = gameDependencyChanges(data.dependency_changes);
+  if (
+    changes &&
+    (!sourceBuild ||
+      typeof data.base_html !== 'string' ||
+      !isPreviewPath(data.base_html))
+  )
+    throw new CanvasError(
+      'GC-AI-011',
+      '라이브러리를 변경할 기존 게임이 명세에 없습니다.',
+    );
   if (sourceBuild || data.document_updates !== undefined) {
     const updates = taskDocumentUpdates(
       data.document_updates,
@@ -546,6 +583,17 @@ export function workflowStages(raw: string): string[] {
     throw new CanvasError(
       'GC-AI-004',
       '단계별 게임 제작 버전이 일치하지 않습니다.',
+    );
+  const implement = matter(stages[1]).data;
+  if (
+    matter(stages[0]).data.dependency_changes !== undefined ||
+    JSON.stringify(changes) !==
+      JSON.stringify(gameDependencyChanges(implement.dependency_changes)) ||
+    (changes && data.base_html !== implement.base_html)
+  )
+    throw new CanvasError(
+      'GC-AI-011',
+      '단계별 라이브러리 변경 요청이 일치하지 않습니다.',
     );
   const first = expectedArtifacts(stages[0]),
     second = expectedArtifacts(stages[1]);
@@ -653,6 +701,10 @@ export function gameBuildTask(raw: string): boolean {
       '지원하지 않는 게임 제작 명세입니다. 앱과 서버를 업데이트해주세요.',
     );
   return true;
+}
+
+export function gameDependencyChangeTask(raw: string): boolean {
+  return matter(raw).data.dependency_changes !== undefined;
 }
 
 export function newOutputsAlreadyExist(raw: string, files: Snapshot) {

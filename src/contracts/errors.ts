@@ -97,6 +97,10 @@ export const ERROR_CODES = {
     '결과 미변경',
     '작업이 실제 결과를 생성하거나 갱신했는지 확인해주세요.',
   ],
+  'GC-AI-011': [
+    '라이브러리 준비',
+    '요청을 다시 열고 결과 설정에서 라이브러리 변경 내용을 확인해주세요.',
+  ],
   'GC-MD-001': [
     '문서 형식',
     'Markdown frontmatter의 id/title/type/status/sources를 확인해주세요.',

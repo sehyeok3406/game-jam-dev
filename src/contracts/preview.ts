@@ -3,6 +3,7 @@ export type HtmlResultChoice = {
   mode: 'update' | 'new';
   basePath?: string;
   category?: ResultCategory;
+  dependencyChanges?: import('./dependency-preparation.ts').GameDependencyChange[];
 };
 export type ResultCategory = keyof typeof RESULT_CATEGORIES;
 export const RESULT_CATEGORIES = {

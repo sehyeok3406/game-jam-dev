@@ -1,6 +1,7 @@
 import { Check, Eye } from 'lucide-react';
 import { GAMEJAM_PAGES, type GamejamPage } from '../gamejam-wizard';
 import type { GamejamRequest } from '../gamejam-request';
+import { dependencyChangeLabel } from './ai/GameDependencyChanges';
 
 export function GamejamProgress({
   page,
@@ -137,6 +138,20 @@ export function GamejamReview({
                     <dd>{nameForPath(request.htmlResult.basePath)}</dd>
                   </>
                 )}
+              {!!request.htmlResult?.dependencyChanges?.length && (
+                <>
+                  <dt>라이브러리 변경</dt>
+                  <dd>
+                    <ul>
+                      {request.htmlResult.dependencyChanges.map((change) => (
+                        <li key={change.name}>
+                          {dependencyChangeLabel(change)}
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </>
+              )}
             </>
           )}
         </dl>

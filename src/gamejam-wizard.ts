@@ -17,6 +17,7 @@ export const gamejamFieldPage = (field: GamejamField): GamejamPage => {
       return 1;
     case 'name':
     case 'html-result':
+    case 'dependency-changes':
     case 'document-format':
       return 2;
     case 'organize':

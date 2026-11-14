@@ -35,6 +35,7 @@ import {
 } from '../../document-format';
 import { GamejamReview } from '../GamejamWizard';
 import { GameBuildSummary } from '../preview/GameBuildSummary';
+import { GameDependencyChanges } from './GameDependencyChanges';
 import { GameFeatureLibrary } from '../GameFeatureLibrary';
 import { GamejamFieldErrors } from '../GamejamValidation';
 import { MAX_RESULT_NAME } from '../../result-name';
@@ -62,6 +63,7 @@ type RequestFieldsProps = Pick<
   documentSetName: (baseDir?: string) => string;
   aiRequest: Request;
   aiRequestIssues: V.GamejamIssue[];
+  suggestedLibraries?: { name: string; reason: string }[];
   documents: C.CanvasDocument[];
   sections: C.CanvasSection[];
   previews: C.PreviewResult[];
@@ -93,6 +95,7 @@ export function GamejamRequestFields({
   documentSetName,
   aiRequestPage,
   aiRequestIssues,
+  suggestedLibraries = [],
   aiRequest,
   documents,
   sections,
@@ -125,6 +128,9 @@ export function GamejamRequestFields({
   const editablePreviews = previews.filter(
     (p) => !isImportedPreviewPath(p.relativePath),
   );
+  const baseBuild = previews.find(
+    (preview) => preview.relativePath === aiRequest.htmlResult?.basePath,
+  )?.build;
   const aiFieldProps = (field: V.GamejamField) => ({
     'aria-invalid':
       aiRequestIssues.some((issue) => issue.field === field) || undefined,
@@ -754,6 +760,11 @@ export function GamejamRequestFields({
                     htmlResult: {
                       ...aiRequest.htmlResult,
                       mode: 'update',
+                      dependencyChanges: isImportedPreviewPath(
+                        aiRequest.htmlResult?.basePath ?? '',
+                      )
+                        ? undefined
+                        : aiRequest.htmlResult?.dependencyChanges,
                       basePath:
                         aiRequest.htmlResult?.basePath &&
                         !isImportedPreviewPath(aiRequest.htmlResult.basePath)
@@ -787,6 +798,7 @@ export function GamejamRequestFields({
                       ...aiRequest.htmlResult,
                       mode: aiRequest.htmlResult?.mode ?? 'new',
                       basePath: event.target.value || undefined,
+                      dependencyChanges: undefined,
                     },
                   })
                 }
@@ -816,14 +828,30 @@ export function GamejamRequestFields({
             </label>
             <GamejamFieldErrors field="html-result" issues={aiRequestIssues} />
             {aiRequest.htmlResult?.basePath && (
-              <GameBuildSummary
-                build={
-                  previews.find(
-                    (p) => p.relativePath === aiRequest.htmlResult?.basePath,
-                  )?.build
+              <GameBuildSummary build={baseBuild} />
+            )}
+            {baseBuild?.kind === 'source' && aiRequest.htmlResult && (
+              <GameDependencyChanges
+                key={aiRequest.htmlResult.basePath}
+                build={baseBuild}
+                changes={aiRequest.htmlResult.dependencyChanges ?? []}
+                suggestions={suggestedLibraries}
+                busy={creatingTask}
+                onChange={(changes) =>
+                  setAiRequest({
+                    ...aiRequest,
+                    htmlResult: {
+                      ...aiRequest.htmlResult!,
+                      dependencyChanges: changes.length ? changes : undefined,
+                    },
+                  })
                 }
               />
             )}
+            <GamejamFieldErrors
+              field="dependency-changes"
+              issues={aiRequestIssues}
+            />
           </>
         )}
         <section className="ai-instructions-field">

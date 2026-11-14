@@ -184,6 +184,9 @@ async function main(input: Input) {
     const pinned =
       request.action === 'prepare' &&
       !request.upgrades?.includes(name) &&
+      !request.changes?.some(
+        (change) => change.action === 'update' && change.name === name,
+      ) &&
       semver.validRange(spec)
         ? request.previousLock?.packages.find(
             (p) => p.name === name && semver.satisfies(p.version, spec),
@@ -261,7 +264,8 @@ async function main(input: Input) {
         .map((p) => p.name)
         .sort()
         .join('\n');
-  if (sameRoots && !request.upgrades?.length) {
+  const reuseLock = sameRoots && !request.upgrades?.length && !request.changes;
+  if (reuseLock) {
     lock = structuredClone(prior);
     if (
       request.packages.some(
@@ -285,7 +289,7 @@ async function main(input: Input) {
       });
     }
   } else {
-    if (prior && !request.upgrades?.length)
+    if (prior && !request.upgrades?.length && !request.changes)
       error('LOCK_CHANGE', '기존 고정 의존성 변경 대상을 명시해주세요.');
     lock = { version: 1, roots: {}, packages: [] };
     async function add(
@@ -344,7 +348,7 @@ async function main(input: Input) {
       );
       lock.roots[p.name] = await add(
         p.name,
-        previous && !request.upgrades?.includes(p.name)
+        previous && !request.upgrades?.includes(p.name) && !request.changes
           ? previous.version
           : p.version,
       );
@@ -479,7 +483,7 @@ async function main(input: Input) {
     inspect({ ...installed, dist: metadata.get(p.key)!.dist });
     if (
       p.license === 'UNKNOWN' &&
-      !(sameRoots && !request.upgrades?.length) &&
+      !reuseLock &&
       typeof installed.license === 'string'
     )
       p.license = installed.license;

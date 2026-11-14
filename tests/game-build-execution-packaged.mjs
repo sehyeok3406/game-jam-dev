@@ -89,7 +89,8 @@ if(args.includes('--help')){console.log('--restricted --strict-mcp-config --tool
 if(args[0]==='auth')process.exit(0);
 if(!args.includes('--print'))process.exit(2);
 let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
- const three=args.some(a=>['build-three','edit-three','new-three','glb-three','media-three'].includes(a));
+ const three=args.some(a=>['build-three','edit-three','new-three','add-three','propose-three','glb-three','media-three'].includes(a));
+ const threeSource="import {Vector2} from 'three';const movement=new Vector2(3,4);if(movement.length()!==5)throw Error('Three API failed');";
  if(fs.existsSync('.ai/tasks/dependency-response.json')){
   const r=JSON.parse(fs.readFileSync('.ai/tasks/dependency-response.json','utf8'));
   const previous=r.previousLock;
@@ -100,10 +101,13 @@ let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
   const ctx=JSON.parse(fs.readFileSync('.ai/tasks/game-build-context.json','utf8'));if(three&&ctx.dependencies.selection[0].version!=='0.187.0')throw Error('wrong dependency version');
   if(ctx.previousSource){
     if(!fs.existsSync('source/main.js'))throw Error('missing editable source');
-    fs.writeFileSync('source/main.js',args.includes('fail-local')?"import 'unprepared-engine';":fs.readFileSync('source/main.js','utf8').replace(/dataset.lives='[0-9]+'/g,"dataset.lives='9'").replace(/목숨 7개/g,'목숨 9개')+";document.body.dataset.edit='yes';document.querySelector('p').textContent='← → 이동 · 목숨 9개 · 전투 금지';");
+    let source=fs.readFileSync('source/main.js','utf8');
+    if(args.includes('add-three'))source=threeSource+source;
+    if(args.includes('remove-library'))source=source.replace(threeSource,'');
+    fs.writeFileSync('source/main.js',args.includes('fail-local')?"import 'unprepared-engine';":source.replace(/dataset.lives='[0-9]+'/g,"dataset.lives='9'").replace(/목숨 7개/g,'목숨 9개')+";document.body.dataset.edit='yes';document.querySelector('p').textContent='← → 이동 · 목숨 9개 · 전투 금지';");
   }else{
   fs.mkdirSync('source');
-  fs.writeFileSync('source/main.js',(three?"import {Vector2} from 'three';const movement=new Vector2(3,4);if(movement.length()!==5)throw Error('Three API failed');":'')+"import assets from 'gamejam:assets';import './style.css';document.body.dataset.lives='7';const c=document.querySelector('canvas'),g=c.getContext('2d');let x=90;function draw(){g.fillStyle='#142236';g.fillRect(0,0,480,280);g.fillStyle='#88e0ad';g.fillRect(x,140,35,35);g.fillStyle='white';g.font='22px sans-serif';g.fillText('목숨 7개 · 전투 없는 숲',28,40);}draw();document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')x+=10;if(e.key==='ArrowLeft')x-=10;draw();});document.querySelector('#hero').src=assets.hero;");
+  fs.writeFileSync('source/main.js',(three?threeSource:'')+"import assets from 'gamejam:assets';import './style.css';document.body.dataset.lives='7';const c=document.querySelector('canvas'),g=c.getContext('2d');let x=90;function draw(){g.fillStyle='#142236';g.fillRect(0,0,480,280);g.fillStyle='#88e0ad';g.fillRect(x,140,35,35);g.fillStyle='white';g.font='22px sans-serif';g.fillText('목숨 7개 · 전투 없는 숲',28,40);}draw();document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')x+=10;if(e.key==='ArrowLeft')x-=10;draw();});document.querySelector('#hero').src=assets.hero;");
   fs.writeFileSync('source/style.css','body{margin:0;background:#0e1828;color:white;font-family:sans-serif;display:grid;place-content:center;height:100vh}canvas{border:2px solid #88e0ad}img{width:24px;height:24px}');
   fs.writeFileSync('source/index.html','<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>숲의 이동</title><script type="module" src="./main.js"></script></head><body><h1>숲의 이동</h1><canvas width="480" height="280"></canvas><img id="hero" src="gamejam:asset/hero"><p>← → 이동 · 목숨 7개 · 전투 금지</p></body></html>');
   fs.writeFileSync('source-plan.json',JSON.stringify({version:1,entry:'main.js',html:'index.html',files:['main.js','style.css','index.html'],assets:[{key:'hero',path:'assets/images/hero.gif'}]}));
@@ -302,6 +306,9 @@ async function execute(modelId, options = {}) {
         ...(options.previous
           ? { basePath: options.previous.artifact.path }
           : {}),
+        ...(options.dependencyChanges
+          ? { dependencyChanges: options.dependencyChanges }
+          : {}),
       },
       resultName:
         options.mode === 'new' && options.previous
@@ -356,6 +363,13 @@ async function execute(modelId, options = {}) {
     (f) =>
       f.relativePath.startsWith('output/') && f.relativePath.endsWith('.html'),
   ).relativePath;
+  if (activeRoot !== game) {
+    await wait(
+      `window.gameCanvas.listPreviews().then((items) => items.some((item) => item.relativePath === ${JSON.stringify(outputPath)} && item.build?.kind === 'source' && item.build.buildId !== ${JSON.stringify(options.previous?.artifact.buildId ?? null)}))`,
+    );
+    // Let Windows finish replacing the cache before this test opens its files.
+    await pause();
+  }
   let files, artifact, saved;
   for (let n = 0; n < 200; n++) {
     files =
@@ -401,7 +415,8 @@ async function execute(modelId, options = {}) {
       saved.manifest.assets,
       options.previous.saved.manifest.assets,
     );
-    assert.deepEqual(saved.lock, options.previous.saved.lock);
+    if (!options.dependencyChanges)
+      assert.deepEqual(saved.lock, options.previous.saved.lock);
     assert.notEqual(artifact.buildId, options.previous.artifact.buildId);
     assert.equal(
       artifact.artifactId === options.previous.artifact.artifactId,
@@ -426,10 +441,7 @@ async function execute(modelId, options = {}) {
           .digest('hex')
       : codec.digest(image),
   );
-  if (
-    modelId.includes('three') ||
-    saved.manifest.tool.profile === 'local-assets-browser-v1'
-  )
+  if (modelId.includes('three') || glbPath || mediaPaths.length > 0)
     assert.equal(
       saved.lock.packages.find((p) => p.name === 'three').version,
       '0.187.0',
@@ -1060,6 +1072,53 @@ async function verifyExistingBuilds() {
       previous: edits.local,
       mode: 'new',
     });
+    if (process.env.GAMEJAM_PUBLIC_BUILD === '1') {
+      const proposed = await execute('propose-three', {
+        previous: edits.local,
+        expectFailure: true,
+      });
+      assert.equal(proposed.event.failure.code, 'GC-AI-011');
+      assert.deepEqual(
+        proposed.event.failure.details.suggestedLibraries.map(
+          (library) => library.name,
+        ),
+        ['three'],
+      );
+      await js(`document.querySelector('[aria-label="gamejam!"]').click()`);
+      await wait(
+        `Array.from(document.querySelectorAll('.gamejam-request-history button')).some((button) => button.textContent.includes('최근 작업 불러오기'))`,
+      );
+      await js(
+        `Array.from(document.querySelectorAll('.gamejam-request-history button')).find((button) => button.textContent.includes('최근 작업 불러오기')).click()`,
+      );
+      await wait(
+        `!!document.querySelector('[data-gamejam-page="2"]:not([hidden]) .ai-dependency-changes')`,
+      );
+      await js(
+        `Array.from(document.querySelectorAll('.ai-dependency-changes button')).find((button) => button.textContent === 'three 추가').click()`,
+      );
+      assert.ok(
+        await js(
+          `document.querySelector('.gamejam-review').textContent.includes('three 추가')`,
+        ),
+      );
+      await js(
+        `document.querySelector('.ai-request-dialog > footer button').click()`,
+      );
+      await wait(`!document.querySelector('.ai-request-dialog')`);
+      const added = await execute('add-three', {
+        previous: edits.local,
+        mode: 'new',
+        dependencyChanges: [
+          { action: 'add', name: 'three', version: '0.187.0' },
+        ],
+      });
+      assert.deepEqual(Object.keys(added.saved.lock.roots), ['three']);
+      assert.deepEqual(
+        readGameBuild(added.files, local.artifact.buildId, codec).lock,
+        local.saved.lock,
+      );
+    }
     await execute('fail-local', { previous: edits.local, expectFailure: true });
     await call('restoreHistory', edits.local.event.id, undefined, 'before');
     const restored = await captureProject(game);
@@ -1096,6 +1155,23 @@ async function verifyExistingBuilds() {
     local.saved.sources['main.js'],
   );
   const internal = await call('startLocalCollaborationServer');
+  // Local revisions refer to media served from the PC. Seed a separate source
+  // project so the shared scenario exercises portable dependencies and assets.
+  const sharedSource = await call('createProject', {
+    name: '공동 게임 빌드 검사',
+    mode: 'local',
+    parent: root,
+  });
+  assert.ok(sharedSource.root?.startsWith(root + path.sep));
+  await applyChanges(
+    sharedSource.root,
+    await captureProject(sharedSource.root),
+    {
+      'project.md': reopened['project.md'],
+      'ideas/hero.md': reopened['ideas/hero.md'],
+      'assets/images/hero.gif': reopened['assets/images/hero.gif'],
+    },
+  );
   await call('createCollaboration', {
     serverUrl: internal.serverUrl,
     serverKey: '',
@@ -1112,6 +1188,10 @@ async function verifyExistingBuilds() {
     await call('restoreHistory', edits.shared.event.id, undefined, 'before');
     const workspace = await call('getWorkspace');
     const awaitSharedBuild = async (buildId) => {
+      await wait(
+        `window.gameCanvas.listPreviews().then((items) => items.some((item) => item.relativePath === ${JSON.stringify(shared.artifact.path)} && item.build?.buildId === ${JSON.stringify(buildId)}))`,
+      );
+      await pause();
       let files;
       for (let n = 0; n < 200; n++) {
         files = (
@@ -1138,6 +1218,21 @@ async function verifyExistingBuilds() {
     );
     await call('restoreHistory', edits.shared.event.id, undefined, 'after');
     await awaitSharedBuild(edits.shared.artifact.buildId);
+    if (process.env.GAMEJAM_PUBLIC_BUILD === '1') {
+      const removed = await execute('remove-library', {
+        previous: edits.shared,
+        dependencyChanges: [{ action: 'remove', name: 'three' }],
+      });
+      assert.deepEqual(Object.keys(removed.saved.lock.roots), []);
+      assert.deepEqual(
+        readGameBuild(
+          removed.files,
+          edits.shared.artifact.buildId,
+          gameBuildCodec,
+        ).lock,
+        edits.shared.saved.lock,
+      );
+    }
     console.log(
       'PASS: shared exact dependency reuse and whole source/HTML restore through existing server history',
     );

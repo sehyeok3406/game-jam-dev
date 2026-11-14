@@ -7,6 +7,7 @@ export function serverCapabilities(
     locationAnchorVersion: 1,
     gameBuildVersion: 1,
     gameBuildEditingVersion: 1,
+    gameDependencyChangesVersion: 1,
     gameBuildStorageVersion: 1,
     gameBuildStorageLimits: GameBuildLimits,
     projectStoragePolicy: storagePolicy ?? {},

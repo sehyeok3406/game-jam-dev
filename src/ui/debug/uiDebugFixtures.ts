@@ -241,6 +241,7 @@ export function sampleCollaboration(
     gamejamWorkflow: true,
     gameBuildVersion: 1,
     gameBuildEditingVersion: 1,
+    gameDependencyChangesVersion: 1,
     documentBundles: true,
     documentOutputFormats: true,
     canvasSheets: true,
