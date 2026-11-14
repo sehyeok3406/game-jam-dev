@@ -11,6 +11,7 @@ import { verifyGameBuildRuntime } from './engine.ts';
 import { runGameTool } from './tool-process.ts';
 import { decodeAsset, isAssetPath } from '../../../file-assets.ts';
 import { validateGameBuildSource } from '../../../core/ai/game-build-source.ts';
+import type { GameBuildProjectAsset } from '../../../contracts/game-build.ts';
 
 export async function compileStandaloneGame(
   options: {
@@ -24,6 +25,7 @@ export async function compileStandaloneGame(
   dependencies: PreparedDependenciesV1 | null,
   dependencyRoot: string | null,
   signal: AbortSignal,
+  projectAssets: readonly GameBuildProjectAsset[] = [],
 ): Promise<CompiledGame> {
   signal.throwIfAborted();
   options.assertCurrent();
@@ -32,7 +34,16 @@ export async function compileStandaloneGame(
     source.sources,
     inputs,
     Buffer.byteLength,
+    options.local ? projectAssets : [],
   );
+  const references = source.plan.assets.flatMap(({ key, path }) => {
+    const asset =
+      options.local && projectAssets.find((item) => item.path === path);
+    return asset ? [{ key, ...asset }] : [];
+  });
+  const profile = references.length
+    ? 'local-assets-browser-v1'
+    : 'standalone-browser-v1';
   const runtime = await verifyGameBuildRuntime(options.runtime, signal);
   if (dependencies && dependencies.toolsetSha256 !== runtime.sha256)
     throw Error('준비 단계와 빌드 단계의 도구 묶음이 다릅니다.');
@@ -57,11 +68,13 @@ export async function compileStandaloneGame(
   };
   try {
     const assets = Object.fromEntries(
-      source.plan.assets.map((a) => {
-        if (!isAssetPath(a.path)) throw Error('빌드 이미지 경로 오류');
-        decodeAsset(a.path, inputs[a.path]);
-        return [a.key, inputs[a.path]];
-      }),
+      source.plan.assets
+        .filter((a) => !references.some((asset) => asset.key === a.key))
+        .map((a) => {
+          if (!isAssetPath(a.path)) throw Error('빌드 이미지 경로 오류');
+          decodeAsset(a.path, inputs[a.path]);
+          return [a.key, inputs[a.path]];
+        }),
     );
     await fs.writeFile(
       path.join(directory, 'build-input.json'),
@@ -69,6 +82,7 @@ export async function compileStandaloneGame(
         local: options.local === true,
         source,
         assets,
+        ...(references.length ? { projectAssets: references } : {}),
         dependencyRoot,
         lock: dependencies?.lock ?? { version: 1, roots: {}, packages: [] },
         notices: dependencies?.notices ?? { version: 1, packages: [] },
@@ -98,7 +112,7 @@ export async function compileStandaloneGame(
     if (response.error) throw Error(response.error.message);
     if (
       !response.result ||
-      response.result.profile !== 'standalone-browser-v1' ||
+      response.result.profile !== profile ||
       response.result.toolsetSha256 !== runtime.sha256
     )
       throw Error('게임 빌드 결과 형식·한도 오류');
@@ -112,7 +126,11 @@ export async function compileStandaloneGame(
       (!options.local && Buffer.byteLength(html) > GameBuildLimits.htmlBytes)
     )
       throw Error('게임 빌드 결과 형식·한도 오류');
-    return { ...response.result, html };
+    return {
+      ...response.result,
+      html,
+      ...(references.length ? { projectAssets: references } : {}),
+    };
   } finally {
     await cleanup();
   }

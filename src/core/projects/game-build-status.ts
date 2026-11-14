@@ -1,6 +1,7 @@
 import type { Snapshot } from '../../contracts/project.ts';
 import type { GameBuildStatus } from '../../contracts/game-build-status.ts';
 import { currentGameBuildDocumentPath } from './game-build-editing.ts';
+import { isGameBuildAssetReference } from './game-build-assets.ts';
 import {
   readGameBuild,
   readGameBuildIndex,
@@ -79,6 +80,13 @@ export function gameBuildStatus(
     return {
       kind: saved.manifest.htmlTemplate ? 'source' : 'html',
       buildId: artifact.buildId,
+      ...(saved.manifest.tool.profile === 'local-assets-browser-v1'
+        ? {
+            projectAssets: saved.manifest.assets.filter(
+              isGameBuildAssetReference,
+            ).length,
+          }
+        : {}),
       libraries: Object.entries(saved.lock.roots).flatMap(([name, key]) => {
         const p = saved.lock.packages.find((p) => p.key === key);
         return p ? [{ name, version: p.version }] : [];

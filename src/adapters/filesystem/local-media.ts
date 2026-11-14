@@ -5,6 +5,12 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Snapshot } from '../../contracts/project.ts';
+import type { GameBuildProjectAsset } from '../../contracts/game-build.ts';
+import { glbJsonBytes, validateGlbJson } from '../../core/projects/glb.ts';
+import {
+  gameBuildAssetReferences,
+  isGameBuildManifestPath,
+} from '../../core/projects/game-build-assets.ts';
 import {
   AUDIO_DIRECTORY,
   MAX_AUDIO_BYTES,
@@ -53,6 +59,72 @@ export async function inspectMediaFile(file: string) {
     pointer:
       stat.size < 1024 && header.toString('ascii').startsWith(pointerPrefix),
   };
+}
+
+/** Read a selected file through its existing content-addressed project path. */
+export async function openGameBuildGlb(
+  root: string,
+  asset: GameBuildProjectAsset,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  const file = await projectPath(root, asset.path);
+  const info = await inspectMediaFile(file).catch((error) => {
+    if (absent(error)) throw Error('프로젝트에서 GLB 원본을 찾을 수 없습니다.');
+    throw error;
+  });
+  if (info.pointer)
+    throw Error(
+      'Git LFS 원본이 필요합니다. 프로젝트 폴더에서 git lfs pull을 실행해주세요.',
+    );
+  const handle = await fs.open(file, 'r');
+  try {
+    const before = await handle.stat();
+    if (!before.isFile() || before.size !== asset.bytes)
+      throw Error('GLB 원본 크기가 변경되었습니다.');
+    const header = Buffer.alloc(20);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    const json = Buffer.alloc(
+      glbJsonBytes(header.subarray(0, bytesRead), before.size),
+    );
+    if ((await handle.read(json, 0, json.length, 20)).bytesRead !== json.length)
+      throw Error('GLB JSON 청크를 읽을 수 없습니다.');
+    try {
+      validateGlbJson(new TextDecoder('utf-8', { fatal: true }).decode(json));
+    } catch (error) {
+      if (error instanceof SyntaxError)
+        throw Error('GLB JSON 청크가 올바르지 않습니다.');
+      throw error;
+    }
+    const hash = createHash('sha256');
+    for await (const chunk of handle.createReadStream({
+      start: 0,
+      autoClose: false,
+      signal,
+    }))
+      hash.update(chunk);
+    const after = await handle.stat();
+    signal?.throwIfAborted();
+    if (
+      hash.digest('hex') !== asset.sha256 ||
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs ||
+      after.ctimeMs !== before.ctimeMs
+    )
+      throw Error('GLB 원본이 변경되었습니다. 캔버스에 다시 불러와주세요.');
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+export async function verifyGameBuildGlb(
+  root: string,
+  asset: GameBuildProjectAsset,
+  signal?: AbortSignal,
+) {
+  await (await openGameBuildGlb(root, asset, signal)).close();
 }
 
 function isAudioHeader(header: Buffer, extension: string) {
@@ -237,6 +309,10 @@ export async function planLocalMediaChanges(
   const added = new Set<string>(),
     removed = new Set<string>();
   for (const [relative, raw] of Object.entries(changes)) {
+    if (isGameBuildManifestPath(relative) && raw !== null) {
+      for (const asset of gameBuildAssetReferences(raw)) added.add(asset.path);
+      continue;
+    }
     if (!relative.endsWith('.md')) continue;
     const before = localMediaFromMarkdown(baseline[relative])?.path;
     const after = localMediaFromMarkdown(raw ?? undefined)?.path;
@@ -247,8 +323,12 @@ export async function planLocalMediaChanges(
   for (const relative of added) removed.delete(relative);
   if (removed.size)
     for (const [relative, raw] of Object.entries(baseline)) {
-      if (Object.hasOwn(changes, relative) || !relative.endsWith('.md'))
-        continue;
+      if (Object.hasOwn(changes, relative)) continue;
+      if (isGameBuildManifestPath(relative)) {
+        for (const asset of gameBuildAssetReferences(raw))
+          removed.delete(asset.path);
+      }
+      if (!relative.endsWith('.md')) continue;
       const asset = localMediaFromMarkdown(raw);
       if (asset) removed.delete(asset.path);
     }

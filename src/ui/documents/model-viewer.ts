@@ -26,6 +26,7 @@ import {
   type Texture,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { glbJsonBytes, validateGlbJson } from '../../core/projects/glb.ts';
 
 type Format = 'glb' | 'fbx' | 'obj';
 const blankTexture =
@@ -37,42 +38,15 @@ const embeddedData = (url: string) =>
   );
 
 function validateGlb(bytes: ArrayBuffer) {
-  const view = new DataView(bytes);
-  if (
-    bytes.byteLength < 20 ||
-    view.getUint32(0, true) !== 0x46546c67 ||
-    view.getUint32(4, true) !== 2 ||
-    view.getUint32(8, true) !== bytes.byteLength ||
-    view.getUint32(16, true) !== 0x4e4f534a
-  )
-    throw Error('GLB 2.0 파일을 읽을 수 없습니다. 원본 파일을 확인해주세요.');
-  const json = JSON.parse(
-    new TextDecoder().decode(
-      new Uint8Array(bytes, 20, view.getUint32(12, true)),
+  const size = glbJsonBytes(
+    new Uint8Array(bytes, 0, Math.min(20, bytes.byteLength)),
+    bytes.byteLength,
+  );
+  validateGlbJson(
+    new TextDecoder('utf-8', { fatal: true }).decode(
+      new Uint8Array(bytes, 20, size),
     ),
-  ) as {
-    buffers?: { uri?: string }[];
-    images?: { uri?: string }[];
-    extensionsUsed?: string[];
-  };
-  if (
-    [...(json.buffers ?? []), ...(json.images ?? [])].some(
-      (item) => typeof item.uri === 'string' && !embeddedData(item.uri),
-    )
-  )
-    throw Error(
-      '외부 리소스가 연결된 GLB입니다. 텍스처와 버퍼를 포함한 단일 GLB로 다시 내보내주세요.',
-    );
-  if (
-    json.extensionsUsed?.some((extension) =>
-      /^(?:KHR_draco_mesh_compression|KHR_texture_basisu|(?:EXT|KHR)_meshopt_compression)$/.test(
-        extension,
-      ),
-    )
-  )
-    throw Error(
-      '압축 디코더가 필요한 GLB입니다. Draco·Meshopt·KTX2 압축을 끄고 다시 내보내주세요.',
-    );
+  );
 }
 
 function disposeObjects(roots: Object3D[]) {

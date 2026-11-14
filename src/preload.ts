@@ -266,6 +266,8 @@ const api: GameCanvasApi = {
   savePreviewWindow: (state, relativePath) =>
     ipcRenderer.invoke('preview:save-window', state, relativePath),
   listPreviews: () => ipcRenderer.invoke('preview:list'),
+  readGameAssetUrls: (relativePath, buildId) =>
+    ipcRenderer.invoke('preview:game-assets', relativePath, buildId),
   moveResult: (input) => ipcRenderer.invoke('results:move', input),
   organizeResults: () => ipcRenderer.invoke('results:organize', {}),
   listHistory: () => ipcRenderer.invoke('history:list'),

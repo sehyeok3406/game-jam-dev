@@ -217,6 +217,33 @@ test('private source files cannot escape the declared bundle or bind unselected 
       validateGameBuildSource(plan, built.sources, {}, Buffer.byteLength),
     );
 });
+test('source can declare an approved GLB without adding its binary to the snapshot', () => {
+  const sha256 = 'a'.repeat(64);
+  const asset = {
+    kind: 'glb',
+    path: `assets/models/${sha256}.glb`,
+    sha256,
+    bytes: 48_405_256,
+  };
+  const plan = {
+    ...built.plan,
+    assets: [{ key: 'model', path: asset.path }],
+  };
+  assert.deepEqual(
+    validateGameBuildSource(plan, built.sources, {}, Buffer.byteLength, [
+      asset,
+    ]),
+    plan,
+  );
+  assert.throws(() =>
+    validateGameBuildSource(
+      plan,
+      built.sources,
+      { [asset.path]: 'unexpected input' },
+      Buffer.byteLength,
+    ),
+  );
+});
 test('preparation, source and compile use one cancellation/session boundary and always close resources', async () => {
   const calls = [];
   let valid = true;

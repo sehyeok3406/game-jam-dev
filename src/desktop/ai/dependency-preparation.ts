@@ -6,7 +6,10 @@ import type {
   PreparedAiRun,
 } from '../../application/ai/ai-executor.ts';
 import type { Snapshot } from '../../contracts/project.ts';
-import type { GameBuildDependenciesV1 } from '../../contracts/game-build.ts';
+import type {
+  GameBuildDependenciesV1,
+  GameBuildProjectAsset,
+} from '../../contracts/game-build.ts';
 import type { DependencyPreparationResult } from '../../contracts/dependency-preparation.ts';
 import {
   prepareGameDependencies,
@@ -22,6 +25,7 @@ type ExchangePorts = {
   executor: AiExecutor;
   inputs: Snapshot;
   previousLock?: GameBuildDependenciesV1;
+  projectAssets?: (GameBuildProjectAsset & { name: string })[];
   assertCurrent(): void;
   log(message: string): void;
 };
@@ -69,6 +73,7 @@ export class AiDependencyFileExchange implements DependencyPreparationExchange {
       sequence,
       response,
       previousLock: this.ports.previousLock,
+      projectAssets: this.ports.projectAssets,
     });
     await fs.mkdir(path.join(this.directory, '.ai/tasks'), { recursive: true });
     await fs.writeFile(path.join(this.directory, responsePath), responseText);
@@ -183,6 +188,7 @@ export function createGameDependencyPreparation(ports: {
   inputs: Snapshot;
   previousLock?: GameBuildDependenciesV1;
   allowedUpgrades?: string[];
+  projectAssets?: (GameBuildProjectAsset & { name: string })[];
   assertCurrent(): void;
   progress(message: string): void;
 }) {

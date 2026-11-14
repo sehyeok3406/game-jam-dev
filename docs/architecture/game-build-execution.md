@@ -75,6 +75,12 @@ module import를 하나의 IIFE로 합치되 HTML의 inline `type="module"`로 �
 
 초기 `standalone-browser-v1`은 DOM/CSS/Canvas2D/WebGL와 내장 리소스를 대상으로 한다. HTML 자체의 CSP에서 외부 연결·worker·object·form/base를 제한하고 eval/WASM 실행 권한을 추가하지 않는다. 외부 runtime/CDN/프로젝트 경로/node_modules 없이 실행되어야 한다. package 확보나 source 파일 허용이 브라우저 호환성 인증은 아니다. 로컬 최종 HTML에는 고정 크기 제한을 두지 않는다. 공동 최종 HTML은 8MB다.
 
+### 로컬 프로젝트 GLB 연결
+
+로컬 제작에서 선택한 모델 노드의 GLB는 `source-plan.json`의 `assets`에 프로젝트 상대 경로와 별칭으로 선언한다. AI는 파일명·경로·크기·해시를 받고, 게임 코드는 `import assets from 'gamejam:assets'`로 별칭에 해당하는 URL을 읽는다. 새 버전은 이전 manifest의 연결을 다시 사용할 수 있다. 실행 서비스는 선택하거나 이전 버전에서 연결한 GLB만 허용하며, 외부 버퍼나 텍스처가 필요한 GLB와 누락·변경된 원본은 거절한다.
+
+빌더는 `local-assets-browser-v1`로 저장하고 게임 코드 앞에 앱에서 채울 자리를 둔다. 미리보기의 메인 프로세스는 현재 프로젝트와 HTML 경로·build ID를 검사하고, 해당 버전 manifest에 있는 GLB마다 현재 세션에 한해 유효한 임시 URL을 발급한다. 실행 검사는 전용 세션에 같은 연결을 설정한다. 파일 어댑터는 프로젝트 경로·크기·SHA-256·GLB 구조를 확인하고 원본을 스트리밍한다. CSP는 이 프로젝트 에셋 호스트와 GLB 내부 텍스처 디코딩용 blob 연결을 허용한다. 검증 프레임은 초기 fetch·응답 본문 읽기·이미지 디코딩 중 오류도 관찰한다.
+
 ## 실행 검사와 저장
 
 `validateHtml`은 작은 격리 shell을 연 뒤 renderer IPC로 sandbox iframe의 srcdoc에 전달한다. 큰 로컬 HTML은 512Ki UTF-16 코드 단위씩 전달해 renderer에서 합친다. readiness는 실행별 channel과 frame의 window identity를 함께 확인한다. 이미지 decode/font 준비·리소스 오류, 기존 JavaScript 예외/Promise 거절/console 오류와 ResizeObserver 분류·8초 timeout을 유지한다. 온라인 검사용 harness의 큰 게임 문자열도 renderer IPC로 전달한다. 실제 player shell은 기존처럼 작은 shell과 bootstrap IPC를 사용한다.
@@ -90,5 +96,7 @@ module import를 하나의 IIFE로 합치되 HTML의 inline `type="module"`로 �
 ## 검증과 후속
 
 `tests/game-build-workflow.test.mjs`, `server-ai-start`와 기존 회귀는 기본 `npm test`에 포함된다. 실제 동봉 도구는 `tests/game-build-runtime.mjs`, 실제 Windows IPC/CLI fixture/HTML 검사/로컬·공동 반영은 `tests/game-build-execution-packaged.mjs`로 확인한다. `GAMEJAM_PUBLIC_BUILD=1`은 후자에서 실제 공개 Three.js 다운로드·bundle을 추가하는 검증 옵션이며 제품 동작의 우회 옵션이 아니다. 계정·유료 AI 호출은 사용하지 않는다.
+
+`GAMEJAM_BUILD_TEST_GLB`에 단일 파일 GLB의 절대 경로를 지정하면 Windows 패키지에서 모델 가져오기, Three.js 빌드, 동일 원본을 쓰는 두 버전, 모델 노드 삭제, 히스토리 복원·재시작, 캔버스의 실제 WebGL 렌더링을 검사한다.
 
 외부 단일 파일은 `tests/game-build-browser.mjs`로 Windows Chrome/Edge에서 확인한다. 실제 수행 결과와 모의 경계는 [4단계 보고서](../audits/2026-11-02-game-build-stage4.md)에 기록한다. source 기반 수정/버전/복원은 [5단계](game-build-editing.md), HTML 내보내기·재가져오기·상태 UI는 [6단계](game-build-transfer.md)에 연결했다. 실제 네 계정과 게임/아트 전체 품질 검증은 7단계다.

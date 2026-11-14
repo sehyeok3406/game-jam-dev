@@ -91,6 +91,7 @@ import { savePreviewHtml } from './desktop/export-preview-html';
 import { PreviewExportService } from './application/editing/preview-export-service';
 import { assertPreviewPath } from './preview-output';
 import { inspectImportedHtml } from './html-source';
+import { GAME_ASSET_BOOTSTRAP } from './contracts/game-build-execution.ts';
 import { LocalHistoryService } from './application/editing/history-service';
 import { registerHistoryIpc } from './desktop/ipc/history';
 import {
@@ -98,7 +99,16 @@ import {
   assertImportAccess,
 } from './application/editing/import-service';
 import { importSelectedFiles, readImportSources } from './desktop/import-files';
-import { stageLocalMedia } from './adapters/filesystem/local-media';
+import {
+  stageLocalMedia,
+  verifyGameBuildGlb,
+} from './adapters/filesystem/local-media';
+import { isGameBuildAssetReference } from './core/projects/game-build-assets.ts';
+import {
+  readGameBuild,
+  readGameBuildIndex,
+  selectGameBuilds,
+} from './core/projects/game-build.ts';
 import { mediaLocation } from './core/projects/local-media';
 import { modelExtension } from './core/projects/model-assets';
 import {
@@ -1230,6 +1240,7 @@ const startCodexRun = async (
   }
   const root = requireWorkspace(),
     client = projectSessions.client;
+  const runSignal = projectSessions.signal!;
   const lease = client?.lease ?? null;
   const taskAbsolute = await projectPath(root, input.taskPath);
   const taskDocument = await readDocument(root, taskAbsolute);
@@ -1288,7 +1299,16 @@ const startCodexRun = async (
     input.taskPath,
     workspace,
     filesystemProjectRepository(root),
-    (html, relative) => validateHtml(html, relative, !client),
+    (html, relative, assets) =>
+      validateHtml(
+        html,
+        relative,
+        !client,
+        !client && assets?.length
+          ? (session) =>
+              mediaProtocol.gameAssets(root, assets, runSignal, session)
+          : undefined,
+      ),
     Date.now,
     gameBuildTask(baseline[input.taskPath])
       ? {
@@ -1311,6 +1331,14 @@ const startCodexRun = async (
           }),
           executor: aiExecutorFor(input.providerId),
           codec: client ? gameBuildCodec : localGameBuildCodec,
+          verifyProjectAsset: client
+            ? undefined
+            : (asset, signal) =>
+                verifyGameBuildGlb(
+                  root,
+                  asset,
+                  signal ? AbortSignal.any([runSignal, signal]) : runSignal,
+                ),
           id: randomUUID,
         }
       : undefined,
@@ -2420,6 +2448,40 @@ const registerIpc = () => {
       projectSessions.assertCurrent(session),
     );
   });
+  handle(
+    'preview:game-assets',
+    async (event, relative: string, buildId: string) => {
+      if (
+        !isUpdateSender(event) ||
+        projectSessions.client ||
+        !projectSessions.signal
+      )
+        throw Error('로컬 프로젝트에서 게임 에셋을 열어주세요.');
+      assertPreviewPath(relative);
+      const root = requireWorkspace(),
+        ref = projectSessions.ref,
+        signal = projectSessions.signal;
+      const files = await captureProject(root);
+      projectSessions.assertCurrent(ref);
+      const artifact = readGameBuildIndex(files).artifacts.find(
+        (item) => item.path === relative,
+      );
+      if (!artifact || artifact.buildId !== buildId)
+        throw Error('게임 버전이 변경되었습니다.');
+      const { manifest } = readGameBuild(
+        {
+          ...selectGameBuilds(files, new Set([relative])),
+          [relative]: files[relative],
+        },
+        buildId,
+        localGameBuildCodec,
+      );
+      const assets = manifest.assets.filter(isGameBuildAssetReference);
+      if (!assets.length)
+        throw Error('게임 버전에 연결된 프로젝트 에셋이 없습니다.');
+      return mediaProtocol.gameAssets(root, assets, signal).urls;
+    },
+  );
   handle('preview:export-html', async (event, relative: string) => {
     if (!isUpdateSender(event))
       throw Error('허용되지 않은 내보내기 요청입니다.');
@@ -2441,6 +2503,10 @@ const registerIpc = () => {
       },
       validate: (path, content) => {
         assertPreviewPath(path);
+        if (local && content.includes(GAME_ASSET_BOOTSTRAP))
+          throw Error(
+            '프로젝트 GLB를 사용하는 게임은 Game Jam! 안에서 실행해주세요.',
+          );
         inspectImportedHtml(content, path, local);
       },
       save: (input, check) => savePreviewHtml(input, mainWindow!, root, check),

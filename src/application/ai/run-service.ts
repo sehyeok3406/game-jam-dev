@@ -34,6 +34,16 @@ import {
   taskDesignContextRules,
 } from '../../core/ai/task-context.ts';
 import type { GameBuildExecutionPort } from './game-build-execution.ts';
+import type {
+  GameBuildAssetReference,
+  GameBuildProjectAsset,
+} from '../../contracts/game-build.ts';
+import { isGameBuildAssetReference } from '../../core/projects/game-build-assets.ts';
+import {
+  modelAsset,
+  modelDigest,
+  modelExtension,
+} from '../../core/projects/model-assets.ts';
 import { gameDesignDigest } from '../../core/projects/game-build-status.ts';
 import {
   taskDocumentUpdates,
@@ -70,6 +80,17 @@ export type AiPublication = {
   phase: (phase: string) => void;
 };
 
+type BuildOptions = {
+  execution: GameBuildExecutionPort;
+  executor: AiExecutor;
+  codec: GameBuildCodec;
+  verifyProjectAsset?: (
+    asset: GameBuildProjectAsset,
+    signal?: AbortSignal,
+  ) => Promise<void>;
+  id(): string;
+};
+
 /** Owns staged workflow validation and publication; no process, Electron or global session. */
 export class AiRunService {
   readonly stages: string[];
@@ -82,18 +103,15 @@ export class AiRunService {
   private readonly validateHtml: (
     raw: string,
     relative: string,
+    assets?: readonly GameBuildAssetReference[],
   ) => Promise<unknown>;
   private readonly now: () => number;
   private readonly previewWindow?: (
     path: string,
   ) => Promise<PreviewWindowState | null>;
   private buildSnapshot: Snapshot = {};
-  private buildOptions?: {
-    execution: GameBuildExecutionPort;
-    executor: AiExecutor;
-    codec: GameBuildCodec;
-    id(): string;
-  };
+  private buildAssets?: GameBuildAssetReference[];
+  private buildOptions?: BuildOptions;
   executePhase?: (
     prepared: PreparedAiRun,
     signal: AbortSignal,
@@ -104,14 +122,13 @@ export class AiRunService {
     taskPath: string,
     workspace: AiStageWorkspace,
     repository: LocalProjectRepository,
-    validateHtml: (raw: string, relative: string) => Promise<unknown>,
+    validateHtml: (
+      raw: string,
+      relative: string,
+      assets?: readonly GameBuildAssetReference[],
+    ) => Promise<unknown>,
     now: () => number = Date.now,
-    build?: {
-      execution: GameBuildExecutionPort;
-      executor: AiExecutor;
-      codec: GameBuildCodec;
-      id(): string;
-    },
+    build?: BuildOptions,
     previewWindow?: (path: string) => Promise<PreviewWindowState | null>,
   ) {
     this.baseline = baseline;
@@ -152,11 +169,66 @@ export class AiRunService {
       ? readGameBuild(files, prior.buildId, options.codec)
       : undefined;
     const scoped = aiLockedSnapshot(files, taskFileLock(files, this.taskPath));
+    const projectAssets = new Map<
+      string,
+      GameBuildProjectAsset & { name: string }
+    >();
+    const selectedModels = new Set<string>();
+    if (options.verifyProjectAsset) {
+      const chosen = new Set<string>(data.inputs);
+      for (const path of chosen) {
+        if (!path.startsWith('sections/') || !scoped[path]) continue;
+        for (const member of matter(scoped[path]).data.members ?? [])
+          if (typeof member?.path === 'string') chosen.add(member.path);
+      }
+      for (const asset of previous?.manifest.assets ?? [])
+        if (isGameBuildAssetReference(asset)) {
+          const { kind, path, sha256, bytes } = asset;
+          projectAssets.set(path, {
+            kind,
+            path,
+            sha256,
+            bytes,
+            name: path.split('/').at(-1)!,
+          });
+        }
+      for (const path of chosen) {
+        const text = scoped[path];
+        if (!path.endsWith('.md') || text === undefined) continue;
+        const model = modelAsset(matter(text).data.model_asset);
+        if (!model) continue;
+        if (modelExtension(model.path) !== 'glb')
+          throw Error(
+            `${model.originalName}: 게임 제작에는 GLB 모델을 선택해주세요.`,
+          );
+        projectAssets.set(model.path, {
+          kind: 'glb',
+          path: model.path,
+          sha256: modelDigest(model.path)!,
+          bytes: model.bytes,
+          name: model.originalName,
+        });
+        selectedModels.add(model.path);
+      }
+      if (projectAssets.size > 64)
+        throw Error('게임에는 한 번에 최대 64개 에셋을 연결할 수 있습니다.');
+      for (const { name, ...asset } of projectAssets.values()) {
+        try {
+          await options.verifyProjectAsset(asset, signal);
+        } catch (error) {
+          signal.throwIfAborted();
+          throw Error(`${name}: ${(error as Error).message}`, { cause: error });
+        }
+      }
+    }
     const built = await options.execution.execute(
       {
         prepared,
         specification: raw,
         inputs: scoped,
+        ...(projectAssets.size
+          ? { projectAssets: [...projectAssets.values()] }
+          : {}),
         previousLock: previous?.lock,
         previousDocuments: previous?.manifest.documents.map((d) => {
           const currentPath = currentGameBuildDocumentPath(files, d);
@@ -192,6 +264,12 @@ export class AiRunService {
       emit,
     );
     signal.throwIfAborted();
+    for (const path of selectedModels)
+      if (!built.projectAssets?.some((asset) => asset.path === path))
+        throw Error(
+          `${projectAssets.get(path)!.name}: 선택한 GLB가 게임 소스에 연결되지 않았습니다.`,
+        );
+    this.buildAssets = built.projectAssets;
     const current = readGameBuildIndex(files).artifacts.find(
         (a) => a.path === output,
       ),
@@ -227,7 +305,8 @@ export class AiRunService {
         assetHashes: Object.fromEntries(
           built.plan.assets.map((a) => [
             a.path,
-            options.codec.digest(files[a.path]),
+            projectAssets.get(a.path)?.sha256 ??
+              options.codec.digest(files[a.path]),
           ]),
         ),
       },
@@ -375,7 +454,7 @@ export class AiRunService {
     validateHtmlAnalysis(this.baseline[this.taskPath], staged, outputs);
     phase('html-validation');
     for (const relative of outputs.filter(isPreviewPath))
-      await this.validateHtml(staged[relative], relative);
+      await this.validateHtml(staged[relative], relative, this.buildAssets);
     if (this.buildOptions) {
       staged = { ...staged, ...this.buildSnapshot };
       const data = matter(this.baseline[this.taskPath]).data;
@@ -406,6 +485,10 @@ export class AiRunService {
       );
     const taskData = matter(this.baseline[this.taskPath]).data;
     if (this.buildOptions) {
+      for (const asset of this.buildAssets ?? []) {
+        if (input.cancelled()) throw Error('결과 반영을 중지했습니다.');
+        await this.buildOptions.verifyProjectAsset?.(asset);
+      }
       const basePath = taskData.base_html ?? outputs.find(isPreviewPath);
       const prior = readGameBuildIndex(this.baseline).artifacts.find(
         (a) => a.path === basePath,

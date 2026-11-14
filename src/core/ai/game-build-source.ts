@@ -1,6 +1,9 @@
 import type { GameBuildSourceV1 } from '../../contracts/game-build-execution.ts';
 import type { Snapshot } from '../../contracts/project.ts';
-import { GameBuildLimits } from '../../contracts/game-build.ts';
+import {
+  GameBuildLimits,
+  type GameBuildProjectAsset,
+} from '../../contracts/game-build.ts';
 import { isGameBuildSourcePath } from '../projects/game-build.ts';
 
 export function validateGameBuildSource(
@@ -8,6 +11,7 @@ export function validateGameBuildSource(
   sources: Snapshot,
   inputs: Snapshot,
   byteLength: (text: string) => number,
+  projectAssets: readonly GameBuildProjectAsset[] = [],
 ): GameBuildSourceV1 {
   const fail = () => {
     throw Error('게임 소스 명세·파일·에셋 범위를 확인해주세요.');
@@ -52,8 +56,11 @@ export function validateGameBuildSource(
       !/^[a-zA-Z0-9_-]{1,64}$/.test(asset.key) ||
       names.has(asset.key) ||
       typeof asset.path !== 'string' ||
-      !asset.path.startsWith('assets/images/') ||
-      inputs[asset.path] === undefined
+      !(
+        (asset.path.startsWith('assets/images/') &&
+          inputs[asset.path] !== undefined) ||
+        projectAssets.some((item) => item.path === asset.path)
+      )
     )
       fail();
     names.add(asset.key);

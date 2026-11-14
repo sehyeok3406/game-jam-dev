@@ -2,12 +2,23 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { protocol } from 'electron';
+import { protocol, type Session } from 'electron';
+import type { GameBuildAssetReference } from '../contracts/game-build.ts';
+import { GAME_ASSET_ORIGIN } from '../contracts/game-build-execution.ts';
 import { mediaLocation } from '../core/projects/local-media.ts';
-import { inspectMediaFile } from '../adapters/filesystem/local-media.ts';
+import {
+  inspectMediaFile,
+  openGameBuildGlb,
+} from '../adapters/filesystem/local-media.ts';
 import { projectPath } from '../project-store.ts';
 
 const scheme = 'gamejam-media';
+type GameGrant = {
+  root: string;
+  asset: GameBuildAssetReference;
+  signal: AbortSignal;
+};
+
 export function registerMediaScheme() {
   protocol.registerSchemesAsPrivileged([
     {
@@ -66,6 +77,96 @@ export class DesktopMediaProtocol {
     { root: string; relative: string; mime: string; maxBytes: number }
   >();
   private tokens = new Map<string, string>();
+  private gameFiles = new Map<string, GameGrant>();
+  private gameUrls = new Map<string, string>();
+
+  gameAssets(
+    root: string,
+    assets: readonly GameBuildAssetReference[],
+    signal: AbortSignal,
+    session?: Session,
+  ) {
+    signal.throwIfAborted();
+    const privateFiles = session
+      ? new Map<string, GameGrant>()
+      : this.gameFiles;
+    const lifetime = session ? new AbortController() : undefined;
+    const grantSignal = lifetime
+      ? AbortSignal.any([signal, lifetime.signal])
+      : signal;
+    if (session)
+      session.protocol.handle(scheme, (request) =>
+        this.gameResponse(request, privateFiles),
+      );
+    const urls = Object.fromEntries(
+      assets.map((asset) => {
+        const key = `${root}:${asset.path}:${asset.bytes}`;
+        let token = session ? undefined : this.gameUrls.get(key);
+        if (!token || privateFiles.get(token)?.signal !== grantSignal) {
+          token = randomUUID();
+          const id = token;
+          privateFiles.set(id, { root, asset, signal: grantSignal });
+          if (!session) this.gameUrls.set(key, id);
+          grantSignal.addEventListener(
+            'abort',
+            () => {
+              privateFiles.delete(id);
+              if (this.gameUrls.get(key) === id) this.gameUrls.delete(key);
+            },
+            { once: true },
+          );
+        }
+        return [asset.key, `${GAME_ASSET_ORIGIN}/${token}`];
+      }),
+    );
+    return {
+      urls,
+      close: () => {
+        if (session) {
+          lifetime!.abort();
+          session.protocol.unhandle(scheme);
+        }
+      },
+    };
+  }
+
+  private async gameResponse(request: Request, files: Map<string, GameGrant>) {
+    const url = new URL(request.url);
+    const grant =
+      url.host === 'game-assets' &&
+      !url.search &&
+      files.get(url.pathname.slice(1));
+    if (!grant || grant.signal.aborted)
+      return new Response(null, { status: 404 });
+    if (request.method !== 'GET') return new Response(null, { status: 405 });
+    try {
+      const handle = await openGameBuildGlb(
+        grant.root,
+        grant.asset,
+        grant.signal,
+      );
+      const stream = handle.createReadStream({
+        start: 0,
+        signal: grant.signal,
+      });
+      return new Response(
+        Readable.toWeb(stream) as ReadableStream<Uint8Array>,
+        {
+          headers: {
+            'content-type': 'model/gltf-binary',
+            'content-length': String(grant.asset.bytes),
+            'access-control-allow-origin': '*',
+            'cache-control': 'no-store',
+          },
+        },
+      );
+    } catch {
+      return new Response(null, {
+        status: 404,
+        headers: { 'access-control-allow-origin': '*' },
+      });
+    }
+  }
 
   async url(root: string, relative: string, signal: AbortSignal) {
     const { mime, maxBytes } = await resolveMediaFile(root, relative);
@@ -96,6 +197,8 @@ export class DesktopMediaProtocol {
   start() {
     protocol.handle(scheme, async (request) => {
       const url = new URL(request.url);
+      if (url.hostname === 'game-assets')
+        return this.gameResponse(request, this.gameFiles);
       const asset =
         url.hostname === 'local' && this.files.get(url.pathname.slice(1));
       const signal = this.signal;

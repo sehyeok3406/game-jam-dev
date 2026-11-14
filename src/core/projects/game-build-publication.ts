@@ -40,6 +40,7 @@ export function createGameBuildRevision(
     assets: built.plan.assets.map((a) => ({
       ...a,
       sha256: input.assetHashes[a.path],
+      ...built.projectAssets?.find((asset) => asset.key === a.key),
     })),
     documents: input.documents,
     dependenciesSha256: codec.digest(lock),

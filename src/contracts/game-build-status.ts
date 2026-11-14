@@ -1,6 +1,7 @@
 export type GameBuildStatus = {
   kind: 'source' | 'html' | 'unavailable';
   buildId?: string;
+  projectAssets?: number;
   libraries: { name: string; version: string }[];
   documents: {
     path: string;

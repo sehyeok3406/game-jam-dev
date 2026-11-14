@@ -5,13 +5,17 @@ import type {
   GeneratedGameSource,
 } from '../../contracts/game-build-execution.ts';
 import type { PreparedDependenciesV1 } from '../../contracts/dependency-preparation.ts';
-import type { GameBuildDependenciesV1 } from '../../contracts/game-build.ts';
+import type {
+  GameBuildDependenciesV1,
+  GameBuildProjectAsset,
+} from '../../contracts/game-build.ts';
 import type { PreparedAiRun, AiProcessEvent } from './ai-executor.ts';
 
 export type GameBuildExecutionInput = {
   prepared: PreparedAiRun;
   specification: string;
   inputs: Snapshot;
+  projectAssets?: (GameBuildProjectAsset & { name: string })[];
   previousLock?: GameBuildDependenciesV1;
   /** Editable copy of the selected revision; durable originals remain read-only. */
   previousSource?: GeneratedGameSource;
@@ -52,6 +56,7 @@ export function createGameBuildExecution(ports: {
     dependencies: PreparedDependenciesV1 | null,
     dependencyRoot: string | null,
     signal: AbortSignal,
+    projectAssets?: readonly GameBuildProjectAsset[],
   ): Promise<CompiledGame>;
   assertCurrent(): void;
   progress(message: string): void;
@@ -78,13 +83,18 @@ export function createGameBuildExecution(ports: {
         ports.progress('게임 제작 · 보존할 소스 작성');
         const source = await ports.generate(input, dependencies, signal, emit);
         check();
-        ports.progress('게임 제작 · 라이브러리와 이미지 내장 HTML 빌드');
+        ports.progress(
+          input.projectAssets?.length
+            ? '게임 제작 · 프로젝트 에셋을 연결한 HTML 빌드'
+            : '게임 제작 · 라이브러리와 이미지 내장 HTML 빌드',
+        );
         const compiled = await ports.compile(
           source,
           input.inputs,
           dependencies,
           dependencies ? session.workspace() : null,
           signal,
+          input.projectAssets,
         );
         check();
         return {

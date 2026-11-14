@@ -123,12 +123,14 @@ const PreviewCardContent = memo(function PreviewCardContent({
     preset,
     viewport,
     previewHtml,
+    assetError,
     collapsed,
     toggleFullscreen,
   } = usePreviewPlayback(
     data.preview.content,
     data.preview.relativePath,
     state,
+    data.preview.build?.projectAssets ? data.preview.build.buildId : undefined,
   );
   return (
     <>
@@ -193,18 +195,19 @@ const PreviewCardContent = memo(function PreviewCardContent({
                 : 'HTML 실행'}
           </span>
           <div className="preview-card__actions nodrag">
-            {api.desktop?.exportPreviewHtml && (
-              <button
-                type="button"
-                className="icon-button"
-                title="게임 HTML 내보내기"
-                aria-label="게임 HTML 내보내기"
-                disabled={exporting || fullscreen || !data.preview.exists}
-                onClick={() => void exportHtml()}
-              >
-                <Download size={14} />
-              </button>
-            )}
+            {api.desktop?.exportPreviewHtml &&
+              !data.preview.build?.projectAssets && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="게임 HTML 내보내기"
+                  aria-label="게임 HTML 내보내기"
+                  disabled={exporting || fullscreen || !data.preview.exists}
+                  onClick={() => void exportHtml()}
+                >
+                  <Download size={14} />
+                </button>
+              )}
             <button
               type="button"
               className="icon-button"
@@ -397,13 +400,16 @@ const PreviewCardContent = memo(function PreviewCardContent({
                 : undefined
             }
           >
-            <PreviewGameFrame
-              html={previewHtml}
-              restart={restart}
-              id={settingsId}
-              cardRef={cardRef}
-              frameRef={frameRef}
-            />
+            {previewHtml !== undefined && (
+              <PreviewGameFrame
+                html={previewHtml}
+                restart={restart}
+                id={settingsId}
+                cardRef={cardRef}
+                frameRef={frameRef}
+              />
+            )}
+            {assetError && <p role="alert">{assetError}</p>}
           </div>
         </div>
         {fullscreenError && (

@@ -53,6 +53,8 @@ v0.43.0 통합에서는 이름 registry가 같은 ID의 현재 경로를 알고 
 
 로컬 filesystem restore와 서버 후보 계획이 같은 계산을 사용한다. 후보 전체의 저장 정합성 검사를 통과해야 적용한다. 서버는 기존 관리자·revision·잠금·durable commit 규칙을 유지한다. 서버 확정과 클라이언트 durable cache/탐색기용 사본 갱신은 서로 다른 수명이므로 검증에서도 구분한다.
 
+로컬 미디어 어댑터는 남아 있는 게임 revision이 참조하는 GLB를 모델 노드 삭제 시 원본 경로에 보존한다. 기록 복원으로 참조가 돌아왔는데 원본 경로에 파일이 없으면 기존 콘텐츠 주소 기반 모델 복구 저장소에서 되살린다. 버전 생성 때 게임 출력이나 제작 기록에 GLB 바이너리를 복제하지 않는다.
+
 ## 검증
 
 `tests/game-build-editing.test.mjs`는 원본/문서/이미지 승계, source 사본, 기존 수정·새 버전, 문서 target/rollback, 관련 변경·source pointer 충돌, 서버 입력 검사, 고정 의존성 생략 거절, 실제 filesystem 및 서버 후보 복원을 검사한다. 기본 `npm test`에 포함된다.

@@ -346,6 +346,10 @@ export type GameCanvasApi = {
     relativePath?: string,
   ) => Promise<void>;
   listPreviews: () => Promise<PreviewResult[]>;
+  readGameAssetUrls?: (
+    relativePath: string,
+    buildId: string,
+  ) => Promise<Record<string, string>>;
   moveResult: (input: MoveResultInput) => Promise<ResultMove[]>;
   organizeResults: () => Promise<ResultMove[]>;
   listHistory: () => Promise<HistoryEntry[]>;
@@ -540,6 +544,7 @@ export const APP_API_GROUPS = {
   getPreviewWindow: 'preview',
   savePreviewWindow: 'preview',
   listPreviews: 'preview',
+  readGameAssetUrls: 'preview',
   moveResult: 'editor',
   organizeResults: 'editor',
   listHistory: 'history',

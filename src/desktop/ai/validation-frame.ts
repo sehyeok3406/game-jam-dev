@@ -5,8 +5,34 @@ export async function loadValidationFrame(
   html: string,
   channel: string,
   local = false,
+  waitForProjectAssets = false,
 ) {
-  const ready = `<script>(()=>{window.addEventListener('error',e=>{if(e.target!==window&&e.target instanceof Element)console.error('리소스 로딩 실패: '+e.target.tagName);},true);window.addEventListener('load',async()=>{try{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));}catch(e){console.error('리소스 초기화 실패: '+String(e));}parent.postMessage({type:'gamejam-validation-ready',channel:${JSON.stringify(channel)}},'*');},{once:true});})();</script>`;
+  const track = waitForProjectAssets
+    ? `
+      const pending = new Set();
+      function track(owner, name) {
+        const original = owner[name];
+        owner[name] = function (...args) {
+          const result = Reflect.apply(original, this, args);
+          pending.add(result);
+          const done = () => pending.delete(result);
+          result.then(done, done);
+          return result;
+        };
+      }
+      track(window, 'fetch');
+      track(Response.prototype, 'arrayBuffer');
+      track(Response.prototype, 'blob');
+      track(window, 'createImageBitmap');
+      async function settle() {
+        do {
+          await Promise.allSettled([...pending]);
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } while (pending.size);
+      }
+    `
+    : '';
+  const ready = `<script>(()=>{${track}window.addEventListener('error',e=>{if(e.target!==window&&e.target instanceof Element)console.error('리소스 로딩 실패: '+e.target.tagName);},true);window.addEventListener('load',async()=>{try{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));${waitForProjectAssets ? 'await settle();' : ''}}catch(e){console.error('리소스 초기화 실패: '+String(e));}parent.postMessage({type:'gamejam-validation-ready',channel:${JSON.stringify(channel)}},'*');},{once:true});})();</script>`;
   const source = html.replace(/<head([^>]*)>/i, `<head$1>${ready}`);
   await window.loadURL(
     'data:text/html;charset=utf-8,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3C%2Fbody%3E%3C%2Fhtml%3E',

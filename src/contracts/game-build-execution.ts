@@ -1,7 +1,11 @@
 import type { Snapshot } from './project.ts';
+export const GAME_ASSET_ORIGIN = 'gamejam-media://game-assets';
+export const GAME_ASSET_BOOTSTRAP =
+  '<script id="gamejam-project-assets"></script>';
 import type {
   GameBuildDependenciesV1,
   GameBuildNoticesV1,
+  GameBuildAssetReference,
 } from './game-build.ts';
 
 /** Private AI exchange, distinct from public Markdown/HTML expected_outputs. */
@@ -19,7 +23,8 @@ export type GeneratedGameSource = {
 export type CompiledGame = {
   html: string;
   toolsetSha256: string;
-  profile: 'standalone-browser-v1';
+  profile: 'standalone-browser-v1' | 'local-assets-browser-v1';
+  projectAssets?: GameBuildAssetReference[];
 };
 export type BuiltGameArtifact = GeneratedGameSource &
   CompiledGame & {

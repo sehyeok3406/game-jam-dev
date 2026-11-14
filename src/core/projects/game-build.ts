@@ -1,5 +1,9 @@
 import type { Snapshot } from '../../contracts/project.ts';
 import {
+  isGameBuildAssetReference,
+  isGameBuildManifestPath,
+} from './game-build-assets.ts';
+import {
   GAME_BUILD_INDEX,
   GAME_BUILDS_DIRECTORY,
   GameBuildLimits,
@@ -287,22 +291,26 @@ export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
       '소스 총량·목록',
     );
     const assetKeys = new Set<string>();
+    let hasReferences = false;
     for (const asset of m.assets) {
       requireBuild(
         record(asset) &&
           typeof asset.key === 'string' &&
           /^[a-zA-Z0-9_-]{1,80}$/.test(asset.key) &&
           !assetKeys.has(asset.key) &&
-          typeof asset.path === 'string' &&
-          asset.path.startsWith('assets/images/') &&
-          codec.isAssetPath(asset.path) &&
-          typeof asset.sha256 === 'string' &&
-          hash.test(asset.sha256) &&
-          typeof files[asset.path] === 'string' &&
-          codec.digest(files[asset.path]) === asset.sha256,
+          (asset.kind !== undefined
+            ? codec.localHtml && isGameBuildAssetReference(asset)
+            : typeof asset.path === 'string' &&
+              asset.path.startsWith('assets/images/') &&
+              codec.isAssetPath(asset.path) &&
+              typeof asset.sha256 === 'string' &&
+              hash.test(asset.sha256) &&
+              typeof files[asset.path] === 'string' &&
+              codec.digest(files[asset.path]) === asset.sha256),
         '에셋 연결·hash',
       );
       assetKeys.add(asset.key);
+      if (asset.kind !== undefined) hasReferences = true;
     }
     for (const doc of m.documents)
       requireBuild(
@@ -343,7 +351,8 @@ export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
         string(m.tool.version) &&
         typeof m.tool.sha256 === 'string' &&
         hash.test(m.tool.sha256) &&
-        string(m.tool.profile),
+        string(m.tool.profile) &&
+        (m.tool.profile === 'local-assets-browser-v1') === hasReferences,
       '출력·도구 provenance',
     );
     if (artifact.buildId === id) {
@@ -438,9 +447,7 @@ export function deleteGameBuilds(
       ),
     }),
   };
-  for (const key of Object.keys(next).filter(
-    (key) => key.endsWith('/manifest.json') && isGameBuildPath(key),
-  )) {
+  for (const key of Object.keys(next).filter(isGameBuildManifestPath)) {
     const manifest = JSON.parse(next[key]) as GameBuildManifestV1;
     if (removed.has(manifest.artifactId))
       for (const path of Object.keys(next))
@@ -522,16 +529,15 @@ export function selectGameBuilds(
     [GAME_BUILD_INDEX]: JSON.stringify({ version: 1, artifacts }),
   };
   const ids = new Set(artifacts.map((a) => a.artifactId));
-  for (const path of Object.keys(files).filter(
-    (key) => isGameBuildPath(key) && key.endsWith('/manifest.json'),
-  )) {
+  for (const path of Object.keys(files).filter(isGameBuildManifestPath)) {
     const manifest = JSON.parse(files[path]) as GameBuildManifestV1;
     if (!ids.has(manifest.artifactId)) continue;
     for (const key of Object.keys(files))
       if (key.startsWith(path.slice(0, -'manifest.json'.length)))
         selected[key] = files[key];
     for (const asset of manifest.assets)
-      selected[asset.path] = files[asset.path];
+      if (!isGameBuildAssetReference(asset))
+        selected[asset.path] = files[asset.path];
   }
   return selected;
 }
@@ -555,9 +561,7 @@ export function copyGameBuilds(
     original.artifacts.map((a) => [a.artifactId, id()]),
   );
   const builds = new Map<string, string>();
-  for (const key of Object.keys(source).filter(
-    (key) => isGameBuildPath(key) && key.endsWith('/manifest.json'),
-  ))
+  for (const key of Object.keys(source).filter(isGameBuildManifestPath))
     builds.set(key.split('/')[1], id());
   requireBuild(
     new Set(builds.values()).size === builds.size &&
@@ -593,6 +597,10 @@ export function copyGameBuilds(
       artifactId: artifactIds.get(m.artifactId)!,
       buildId: fresh,
       assets: m.assets.map((a) => {
+        if (isGameBuildAssetReference(a))
+          throw Error(
+            '프로젝트 에셋을 사용하는 게임의 다른 프로젝트 복사는 아직 지원하지 않습니다.',
+          );
         requireBuild(paths.has(a.path), '에셋 복사 연결');
         return { ...a, path: paths.get(a.path)! };
       }),

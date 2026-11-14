@@ -16,6 +16,12 @@ import type {
   GameBuildNoticesV1,
 } from '../../../contracts/game-build.ts';
 import { GameBuildLimits } from '../../../contracts/game-build.ts';
+import type { GameBuildAssetReference } from '../../../contracts/game-build.ts';
+import { isGameBuildAssetReference } from '../../../core/projects/game-build-assets.ts';
+import {
+  GAME_ASSET_BOOTSTRAP,
+  GAME_ASSET_ORIGIN,
+} from '../../../contracts/game-build-execution.ts';
 import { validateGameBuildSource } from '../../../core/ai/game-build-source.ts';
 import { validateDependencyLock } from '../../../core/ai/dependency-preparation.ts';
 
@@ -23,13 +29,13 @@ type Input = {
   local?: boolean;
   source: GeneratedGameSource;
   assets: Record<string, string>;
+  projectAssets?: GameBuildAssetReference[];
   dependencyRoot: string | null;
   lock: GameBuildDependenciesV1;
   notices: GameBuildNoticesV1;
   toolsetSha256: string;
 };
 type Node = DefaultTreeAdapterMap['node'];
-const profile = 'standalone-browser-v1';
 const csp =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const json = (value: unknown) =>
@@ -42,11 +48,32 @@ function fail(message: string): never {
 }
 async function main(input: Input) {
   const { plan, sources } = input.source;
+  const references = input.projectAssets ?? [];
+  if (
+    references.length &&
+    (!input.local ||
+      references.some(
+        (asset) =>
+          !isGameBuildAssetReference(asset) ||
+          !plan.assets.some(
+            (item) => item.key === asset.key && item.path === asset.path,
+          ),
+      ))
+  )
+    fail('로컬 게임 에셋 목록을 확인해주세요.');
+  const profile = references.length
+    ? 'local-assets-browser-v1'
+    : 'standalone-browser-v1';
   validateGameBuildSource(
     plan,
     sources,
-    Object.fromEntries(plan.assets.map((a) => [a.path, 'provided'])),
+    Object.fromEntries(
+      plan.assets
+        .filter((a) => Object.hasOwn(input.assets, a.key))
+        .map((a) => [a.path, 'provided']),
+    ),
     Buffer.byteLength,
+    references,
   );
   validateDependencyLock(input.lock);
   const sourceRoot = path.join(process.cwd(), 'source');
@@ -194,7 +221,9 @@ async function main(input: Input) {
         },
         async load(id) {
           if (id === '\0gamejam-assets')
-            return 'export default globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__;';
+            return references.length
+              ? 'export default Object.freeze({...globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__, ...globalThis.__GAMEJAM_PROJECT_ASSETS_V1__});'
+              : 'export default globalThis.__GAMEJAM_EMBEDDED_ASSETS_V1__;';
           if (id.endsWith('.css'))
             return {
               code: `const text=${json(css(await fs.readFile(id, 'utf8')))};const style=document.createElement('style');style.textContent=text;document.head.appendChild(style);export default text;`,
@@ -348,7 +377,7 @@ async function main(input: Input) {
         'tagName' in n && n.tagName === 'head',
     )!;
   const additions = parseFragment(
-    `<meta http-equiv="Content-Security-Policy" content="${csp}"><style>${styles.replace(/<\/style/gi, '<\\/style')}</style><script type="application/json" id="gamejam-build-provenance">${json({ version: 1, profile, toolsetSha256: input.toolsetSha256, dependencies: input.lock })}</script><script type="application/json" id="gamejam-license-notices">${json(input.notices)}</script>`,
+    `<meta http-equiv="Content-Security-Policy" content="${references.length ? csp.replace("connect-src 'none'", `connect-src ${GAME_ASSET_ORIGIN} blob:`) : csp}">${references.length ? GAME_ASSET_BOOTSTRAP : ''}<style>${styles.replace(/<\/style/gi, '<\\/style')}</style><script type="application/json" id="gamejam-build-provenance">${json({ version: 1, profile, toolsetSha256: input.toolsetSha256, dependencies: input.lock })}</script><script type="application/json" id="gamejam-license-notices">${json(input.notices)}</script>`,
   ).childNodes;
   for (const node of additions) node.parentNode = head;
   head.childNodes.unshift(...additions);

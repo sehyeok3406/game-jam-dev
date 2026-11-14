@@ -3,6 +3,10 @@ import { documentName } from './core/documents/file-name.ts';
 import path from 'node:path';
 import { GameBuildLimits } from './contracts/game-build.ts';
 import {
+  gameBuildAssetReferences,
+  isGameBuildManifestPath,
+} from './core/projects/game-build-assets.ts';
+import {
   hasGameBuilds,
   isGameBuildPath,
   selectGameBuilds,
@@ -237,7 +241,17 @@ export function projectCopyBundle(
         throw Error(`지원하지 않는 본문 이미지 경로입니다: ${node.url}`);
     }
   }
-  Object.assign(collected, selectGameBuilds(files, previews));
+  const builds = selectGameBuilds(files, previews);
+  if (
+    Object.entries(builds).some(
+      ([path, raw]) =>
+        isGameBuildManifestPath(path) && gameBuildAssetReferences(raw).length,
+    )
+  )
+    throw Error(
+      '프로젝트 GLB를 사용하는 게임의 다른 프로젝트 복사는 아직 지원하지 않습니다.',
+    );
+  Object.assign(collected, builds);
   validateGameBuilds(collected, local ? localGameBuildCodec : gameBuildCodec);
   if (!documents.size && !sections.size && !previews.size && !drawings.length)
     throw Error('복사할 자료를 선택해주세요.');

@@ -7,11 +7,17 @@ import { withMultiplayerSdk } from './multiplayer/sdk';
 import { readMultiplayerManifest } from './multiplayer/contract';
 import { validateMultiplayerRuntime } from './multiplayer/runtime-validation';
 import { loadValidationFrame } from './desktop/ai/validation-frame.ts';
+import { bindGameAssets } from './core/projects/game-asset-bootstrap.ts';
+import type { Session } from 'electron';
 
 export async function validateHtml(
   content: string,
   relativePath?: string,
   local = false,
+  projectAssets?: (session: Session) => {
+    urls: Record<string, string>;
+    close(): void;
+  },
 ) {
   const normalized = withMultiplayerSdk(
     inspectHtml(content, relativePath).normalized,
@@ -28,13 +34,6 @@ export async function validateHtml(
   validator.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   validator.webContents.session.setPermissionRequestHandler(
     (_contents, _permission, callback) => callback(false),
-  );
-  validator.webContents.session.webRequest.onBeforeRequest(
-    (details, callback) =>
-      callback({
-        cancel:
-          !details.url.startsWith('data:') && !details.url.startsWith('about:'),
-      }),
   );
   const errors: {
     message: string;
@@ -78,10 +77,29 @@ export async function validateHtml(
     `<head$1>${instrumentation}`,
   );
   let timeout: ReturnType<typeof setTimeout>;
+  let grant: ReturnType<NonNullable<typeof projectAssets>> | undefined;
   try {
+    grant = projectAssets?.(validator.webContents.session);
+    const assetUrls = new Set(Object.values(grant?.urls ?? {}));
+    validator.webContents.session.webRequest.onBeforeRequest(
+      (details, callback) =>
+        callback({
+          cancel:
+            !assetUrls.has(details.url) &&
+            !details.url.startsWith('data:') &&
+            !details.url.startsWith('about:') &&
+            !(grant && details.url.startsWith('blob:null/')),
+        }),
+    );
     await Promise.race([
       (async () => {
-        await loadValidationFrame(validator, instrumented, randomUUID(), local);
+        await loadValidationFrame(
+          validator,
+          grant ? bindGameAssets(instrumented, grant.urls) : instrumented,
+          randomUUID(),
+          local,
+          !!grant,
+        );
         await new Promise((resolve) => setTimeout(resolve, 900));
         const gameCode = errors[0]?.message.match(/\[(GC-MP-\d{3})\]/)?.[1];
         if (isPlayCode(gameCode)) {
@@ -126,5 +144,6 @@ export async function validateHtml(
   } finally {
     clearTimeout(timeout!);
     if (!validator.isDestroyed()) validator.destroy();
+    grant?.close();
   }
 }

@@ -18,6 +18,13 @@ export type GameBuildIndexV1 = {
   version: 1;
   artifacts: { artifactId: string; buildId: string; path: string }[];
 };
+export type GameBuildProjectAsset = {
+  kind: 'glb';
+  path: string;
+  sha256: string;
+  bytes: number;
+};
+export type GameBuildAssetReference = GameBuildProjectAsset & { key: string };
 export type GameBuildManifestV1 = {
   version: 1;
   artifactId: string;
@@ -26,8 +33,11 @@ export type GameBuildManifestV1 = {
   /** Set by source builder v1; absent on early storage-only revisions. */
   htmlTemplate?: string;
   sources: { path: string; bytes: number; sha256: string }[];
-  /** Asset hashes cover the existing encoded snapshot representation. */
-  assets: { key: string; path: string; sha256: string }[];
+  /** Inline image hashes cover the encoded snapshot. Project assets hash file bytes. */
+  assets: (
+    | { key: string; path: string; sha256: string }
+    | GameBuildAssetReference
+  )[];
   /** Historical input facts; users can subsequently edit/delete the documents. */
   documents: {
     path: string;

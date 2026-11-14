@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import type { PreviewWindowState } from '../../contracts/preview';
+import { bindGameAssets } from '../../core/projects/game-asset-bootstrap.ts';
 import {
   previewPreset,
   previewViewport,
@@ -21,6 +22,7 @@ export function usePreviewPlayback(
   content: string,
   path: string,
   state: PreviewWindowState,
+  assetBuildId?: string,
 ) {
   const { api, capabilities } = useRuntime();
 
@@ -36,15 +38,66 @@ export function usePreviewPlayback(
   const [settingsPosition, setSettingsPosition] = useState({ left: 0, top: 0 });
   const preset = previewPreset(state);
   const viewport = previewViewport(state);
+  const collapsed = state.collapsed && !fullscreen;
+  const [bound, setBound] = useState<{
+    path: string;
+    buildId: string;
+    restart: number;
+    source: string;
+    html?: string;
+    error?: string;
+  }>();
+  useEffect(() => {
+    if (collapsed || !assetBuildId) return;
+    let active = true;
+    const load = async () => {
+      try {
+        if (!api.preview.readGameAssetUrls)
+          throw Error('Game Jam! PC 앱에서 프로젝트 에셋을 열어주세요.');
+        const urls = await api.preview.readGameAssetUrls(path, assetBuildId);
+        if (active)
+          setBound({
+            path,
+            buildId: assetBuildId,
+            restart,
+            source: content,
+            html: bindGameAssets(content, urls),
+          });
+      } catch (error) {
+        if (active)
+          setBound({
+            path,
+            buildId: assetBuildId,
+            restart,
+            source: content,
+            error: error instanceof Error ? error.message : String(error),
+          });
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [api, assetBuildId, content, path, restart, collapsed]);
+  const binding =
+    bound &&
+    bound.path === path &&
+    bound.buildId === assetBuildId &&
+    bound.source === content &&
+    bound.restart === restart
+      ? bound
+      : undefined;
+  const playable = assetBuildId ? binding?.html : content;
   const previewHtml = useMemo(
     () =>
-      withPreviewKeyboardBridge(
-        withMultiplayerSdk(content, 'solo', settingsId),
-        settingsId,
-      ),
-    [content, settingsId],
+      playable === undefined
+        ? undefined
+        : withPreviewKeyboardBridge(
+            withMultiplayerSdk(playable, 'solo', settingsId),
+            settingsId,
+          ),
+    [playable, settingsId],
   );
-  const collapsed = state.collapsed && !fullscreen;
   useLayoutEffect(() => {
     const card = cardRef.current,
       frame = frameRef.current;
@@ -62,7 +115,7 @@ export function usePreviewPlayback(
           }
         : undefined,
     });
-  }, [settingsId, restart, path, api, capabilities.multiplayer]);
+  }, [settingsId, restart, path, api, capabilities.multiplayer, previewHtml]);
   useEffect(() => {
     if (fullscreen) frameRef.current?.focus();
   }, [fullscreen]);
@@ -125,6 +178,7 @@ export function usePreviewPlayback(
     preset,
     viewport,
     previewHtml,
+    assetError: binding?.error,
     collapsed,
     toggleFullscreen,
   };

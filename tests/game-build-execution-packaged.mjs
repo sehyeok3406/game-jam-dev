@@ -52,14 +52,17 @@ const call = async (method, ...args) => {
 const editing = process.env.GAMEJAM_BUILD_EDITING === '1';
 const transfer = process.env.GAMEJAM_BUILD_TRANSFER === '1';
 const largeLocal = process.env.GAMEJAM_BUILD_LARGE_LOCAL === '1';
-const codec = largeLocal ? localGameBuildCodec : gameBuildCodec;
+const glbPath = process.env.GAMEJAM_BUILD_TEST_GLB;
+const codec = largeLocal || glbPath ? localGameBuildCodec : gameBuildCodec;
 const evidenceDirectory = transfer
   ? 'out/game-build-stage6'
   : editing
     ? 'out/game-build-stage5'
     : largeLocal
       ? 'out/large-local-html'
-      : 'out/game-build-stage4';
+      : glbPath
+        ? 'out/local-glb-game-build'
+        : 'out/game-build-stage4';
 await fs.mkdir(evidenceDirectory, { recursive: true });
 const bin = path.join(root, 'mock-bin'),
   cli = path.join(bin, 'node_modules/@anthropic-ai/claude-code/cli.js');
@@ -77,7 +80,7 @@ if(args.includes('--help')){console.log('--restricted --strict-mcp-config --tool
 if(args[0]==='auth')process.exit(0);
 if(!args.includes('--print'))process.exit(2);
 let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
- const three=args.some(a=>['build-three','edit-three','new-three'].includes(a));
+ const three=args.some(a=>['build-three','edit-three','new-three','glb-three'].includes(a));
  if(fs.existsSync('.ai/tasks/dependency-response.json')){
   const r=JSON.parse(fs.readFileSync('.ai/tasks/dependency-response.json','utf8'));
   const previous=r.previousLock;
@@ -95,6 +98,37 @@ let prompt='';process.stdin.on('data',d=>prompt+=d);process.stdin.on('end',()=>{
   fs.writeFileSync('source/style.css','body{margin:0;background:#0e1828;color:white;font-family:sans-serif;display:grid;place-content:center;height:100vh}canvas{border:2px solid #88e0ad}img{width:24px;height:24px}');
   fs.writeFileSync('source/index.html','<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>숲의 이동</title><script type="module" src="./main.js"></script></head><body><h1>숲의 이동</h1><canvas width="480" height="280"></canvas><img id="hero" src="gamejam:asset/hero"><p>← → 이동 · 목숨 7개 · 전투 금지</p></body></html>');
   fs.writeFileSync('source-plan.json',JSON.stringify({version:1,entry:'main.js',html:'index.html',files:['main.js','style.css','index.html'],assets:[{key:'hero',path:'assets/images/hero.gif'}]}));
+  if(args.includes('glb-three')){
+    const model=ctx.projectAssets[0], plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
+    if(fs.existsSync(model.path))throw Error('GLB bytes must stay in the project');
+    plan.assets.push({key:'robot',path:model.path});
+    fs.writeFileSync('source-plan.json',JSON.stringify(plan));
+    fs.appendFileSync('source/main.js', ${JSON.stringify(`
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { Scene, PerspectiveCamera, WebGLRenderer, Box3, Vector3, AmbientLight, DirectionalLight, Color, LoadingManager } from 'three';
+const manager = new LoadingManager();
+manager.onError = () => console.error('Model failed to load');
+void new GLTFLoader(manager).loadAsync(assets.robot).then((robot) => {
+const box = new Box3().setFromObject(robot.scene);
+const center = box.getCenter(new Vector3()), size = box.getSize(new Vector3()).length();
+const renderer = new WebGLRenderer();
+renderer.setSize(320,240);
+document.body.append(renderer.domElement);
+const scene = new Scene();
+scene.background = new Color(0x20242b);
+scene.add(robot.scene, new AmbientLight(0xffffff, 1.5));
+const light = new DirectionalLight(0xffffff, 3);
+light.position.set(3,5,8);
+scene.add(light);
+const camera = new PerspectiveCamera(45, 320/240, size/1000, size*20);
+camera.position.copy(center).add(new Vector3(0,0,size*1.4));
+camera.lookAt(center);
+renderer.render(scene,camera);
+if (!renderer.info.render.triangles) throw Error('No model triangles drawn');
+document.body.dataset.model = String(renderer.info.render.triangles);
+});
+`)});
+  }
   if(args.includes('build-large')){
     const plan=JSON.parse(fs.readFileSync('source-plan.json','utf8'));
     for(let n=0;n<9;n++){
@@ -169,9 +203,9 @@ async function execute(modelId, options = {}) {
     'test must stay in its local project or isolated profile mirror',
   );
   const inputs = (await call('listDocuments'))
-    .filter((doc) => ['project', 'hero-card'].includes(doc.id))
+    .filter((doc) => ['project', 'hero-card', options.modelId].includes(doc.id))
     .map((doc) => doc.relativePath);
-  assert.equal(inputs.length, 2);
+  assert.equal(inputs.length, options.modelId ? 3 : 2);
   const task = await call(
     'createTask',
     gamejamTaskInput({
@@ -314,7 +348,10 @@ async function execute(modelId, options = {}) {
     true,
   );
   assert.equal(saved.manifest.assets[0].sha256, codec.digest(image));
-  if (modelId.includes('three'))
+  if (
+    modelId.includes('three') ||
+    saved.manifest.tool.profile === 'local-assets-browser-v1'
+  )
     assert.equal(
       saved.lock.packages.find((p) => p.name === 'three').version,
       '0.187.0',
@@ -700,6 +737,102 @@ async function verifyLargeLocalHtml() {
     'PASS: large HTML build, history restore, native export/picker/drop, local copy and >64MB revision after restart',
   );
 }
+async function verifyLocalGlb() {
+  const nativeInput = await send('Runtime.evaluate', {
+    expression:
+      'document.body.appendChild(Object.assign(document.createElement("input"),{id:"glb-drop-fixture",type:"file"}))',
+  });
+  await send('DOM.setFileInputFiles', {
+    files: [path.resolve(glbPath)],
+    objectId: nativeInput.result.objectId,
+  });
+  await js(`(() => {
+    const input = document.querySelector('#glb-drop-fixture');
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(input.files[0]);
+    document.querySelector('.react-flow').dispatchEvent(new DragEvent('drop',{bubbles:true,clientX:460,clientY:380,dataTransfer}));
+    input.remove();
+  })()`);
+  await wait('window.gameCanvas.listDocuments().then(d=>d.some(x=>x.model))');
+  const card = (await call('listDocuments')).find((d) => d.model);
+  const file = path.join(game, card.model.path);
+  const original = await fs.stat(file);
+  assert.equal(original.size, (await fs.stat(glbPath)).size);
+  const first = await execute('glb-three', { modelId: card.id });
+  assert.equal(first.saved.manifest.assets[1].path, card.model.path);
+  assert.equal(first.saved.manifest.assets[1].bytes, original.size);
+  const second = await execute('glb-three-edit', { previous: first });
+  assert.deepEqual(second.saved.manifest.assets, first.saved.manifest.assets);
+  assert.deepEqual(await fs.readdir(path.dirname(file)), [path.basename(file)]);
+  const outputs = await fs.readdir(path.join(game, 'output'), {
+    recursive: true,
+  });
+  assert.ok(outputs.every((name) => !name.endsWith('.glb')));
+  await call('deleteDocument', {
+    documentId: card.id,
+    relativePath: card.relativePath,
+  });
+  assert.equal((await fs.stat(file)).size, original.size);
+  await call('restoreHistory', second.event.id, undefined, 'before');
+  assert.equal(
+    (await captureProject(game))[first.artifact.path],
+    first.files[first.artifact.path],
+  );
+  await stop(true);
+  await boot(true, env);
+  const relative = first.artifact.path;
+  const selector = `[data-id="preview:${relative}"]`;
+  const preview = `document.querySelector(${JSON.stringify(selector)})`;
+  await wait(`!!${preview}`);
+  await js(`${preview}.querySelector('.file-node-surface--html')?.click()`);
+  await wait(`!!${preview}.querySelector('iframe')`);
+  await send('Target.setAutoAttach', {
+    autoAttach: true,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  let triangles;
+  for (let n = 0; n < 120 && !triangles; n++) {
+    for (const sessionId of packageFrameSessions()) {
+      const value = await send(
+        'Runtime.evaluate',
+        {
+          expression: 'Number(document.body?.dataset.model)',
+          returnByValue: true,
+        },
+        sessionId,
+      ).catch(() => undefined);
+      if (value?.result?.value > 0) triangles = value.result.value;
+    }
+    if (!triangles) await pause();
+  }
+  assert.ok(
+    triangles,
+    'restored game renders real GLB triangles inside its canvas preview',
+  );
+  const urls = await call(
+    'readGameAssetUrls',
+    relative,
+    first.artifact.buildId,
+  );
+  const stale = urls.robot;
+  assert.match(stale, /^gamejam-media:\/\/game-assets\//);
+  await assert.rejects(
+    call('readGameAssetUrls', relative, second.artifact.buildId),
+    /게임 버전이 변경되었습니다/,
+  );
+  await assert.rejects(call('exportPreviewHtml', relative), /프로젝트 GLB/);
+  await call('goHome');
+  assert.equal(
+    await js(`fetch(${JSON.stringify(stale)}).then(r=>r.ok,()=>false)`),
+    false,
+  );
+  console.log(
+    'PASS: GLB source, two revisions, one active file, card deletion, restore, restart and actual WebGL rendering',
+    original.size,
+    triangles,
+  );
+}
 async function verifyExistingBuilds() {
   const local = await execute('build-local');
   const edits = {};
@@ -835,7 +968,8 @@ async function verifyExistingBuilds() {
 }
 try {
   await boot(true, env);
-  if (largeLocal) await verifyLargeLocalHtml();
+  if (glbPath) await verifyLocalGlb();
+  else if (largeLocal) await verifyLargeLocalHtml();
   else await verifyExistingBuilds();
 } catch (cause) {
   console.error(
