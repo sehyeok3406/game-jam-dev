@@ -151,16 +151,37 @@ document.body.dataset.model = String(renderer.info.render.triangles);
     fs.appendFileSync('source/main.js', ${JSON.stringify(`
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { LoadingManager } from 'three';
+import { AmbientLight, LoadingManager, OrthographicCamera, Scene, WebGLRenderer } from 'three';
 const sound=document.querySelector('#sound');
 document.querySelector('#listen').onclick=()=>{sound.currentTime=0.25;void sound.play();};
 sound.addEventListener('timeupdate',()=>document.body.dataset.sound=String(sound.currentTime));
 sound.addEventListener('loadedmetadata',()=>document.body.dataset.duration=String(sound.duration));
 const manager=new LoadingManager().setURLModifier(url=>url===assets.fbx || /^(?:data:|blob:)/.test(url)?url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/X2QAAAAASUVORK5CYII=');
+const loadObj = async () => {
+  const material = await new MTLLoader().loadAsync(assets.obj + '/materials/hero%20body.mtl');
+  const model = await new OBJLoader().setMaterials(material).loadAsync(assets.obj);
+  const map = model.children.find(child => child.isMesh)?.material.map;
+  for (let i=0; i<100 && !map?.image?.naturalWidth; i++) await new Promise(resolve => setTimeout(resolve, 20));
+  if (map?.image?.naturalWidth !== 2) throw Error('OBJ texture was not decoded');
+  const scene = new Scene();
+  scene.add(model, new AmbientLight(0xffffff, 3));
+  const camera = new OrthographicCamera(0, 1, 1, 0, 0.1, 10);
+  camera.position.z = 2;
+  const renderer = new WebGLRenderer();
+  renderer.setSize(32, 32);
+  renderer.render(scene, camera);
+  const gl = renderer.getContext(), pixel = new Uint8Array(4);
+  gl.readPixels(6, 6, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  if (!renderer.info.render.triangles || (pixel[0] === 0 && pixel[1] === 0)) throw Error('Textured OBJ was not rendered');
+  document.body.append(renderer.domElement);
+  document.body.dataset.objTexture = String(map.image.naturalWidth);
+  return model.children.length;
+};
 void Promise.all([
   new FBXLoader(manager).loadAsync(assets.fbx).then(g=>{if(!g.animations.length)throw Error('FBX animation missing');return g.animations.length;}),
-  new OBJLoader().loadAsync(assets.obj).then(g=>{if(!g.children.length)throw Error('OBJ geometry missing');return g.children.length;}),
+  loadObj(),
   new GLTFLoader().loadAsync(assets.blend).then(g=>{if(!g.scene.children.length)throw Error('Blender export empty');return g.scene.children.length;}),
 ]).then(counts=>document.body.dataset.media=counts.join(','));
 `)});
@@ -898,7 +919,33 @@ async function verifyLocalGlb() {
 }
 async function verifyLocalMedia() {
   assert.equal(mediaPaths.length, 4);
-  await dropMedia(mediaPaths);
+  const objDirectory = path.join(root, 'textured-obj');
+  const objPath = path.join(objDirectory, 'triangle.obj');
+  const mtl = path.join(objDirectory, 'materials', 'hero body.mtl');
+  const texture = path.join(objDirectory, 'textures', 'hero image.png');
+  await fs.mkdir(path.dirname(mtl), { recursive: true });
+  await fs.mkdir(path.dirname(texture), { recursive: true });
+  await fs.writeFile(
+    objPath,
+    'mtllib materials/hero body.mtl\no Triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl Hero\nf 1/1 2/2 3/3\n',
+  );
+  await fs.writeFile(
+    mtl,
+    'newmtl Hero\nKd 0.4 0.8 0.1\nmap_Kd ../textures/hero image.png\n',
+  );
+  await fs.writeFile(
+    texture,
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGP4z8DA8J8BAAf/Af8Bf4mnAAAAAElFTkSuQmCC',
+      'base64',
+    ),
+  );
+  await dropMedia([
+    ...mediaPaths.slice(0, 2),
+    objPath,
+    ...mediaPaths.slice(3),
+    mtl,
+  ]);
   await wait(
     'window.gameCanvas.listDocuments().then(d=>d.filter(x=>x.model||x.audio).length===4)',
   );
@@ -908,6 +955,11 @@ async function verifyLocalMedia() {
     modelIds: cards.map((card) => card.id),
   });
   const second = await execute('media-three-edit', { previous: first });
+  const obj = first.saved.manifest.assets.find((asset) => asset.kind === 'obj');
+  assert.deepEqual(
+    obj.resources?.map((file) => file.name),
+    ['materials/hero body.mtl', 'textures/hero image.png'],
+  );
   assert.deepEqual(
     first.saved.manifest.assets.map((asset) => asset.kind).sort(),
     ['audio', 'blend', 'fbx', 'image', 'obj'],
@@ -934,6 +986,8 @@ async function verifyLocalMedia() {
       (await fs.stat(path.join(game, asset.path))).size,
       asset.bytes,
     );
+  for (const file of obj.resources)
+    assert.equal((await fs.stat(path.join(game, file.path))).size, file.bytes);
   await call('restoreHistory', second.event.id, undefined, 'before');
   await stop(true);
   await boot(true, env);
@@ -942,6 +996,12 @@ async function verifyLocalMedia() {
     'readGameAssetUrls',
     relative,
     first.artifact.buildId,
+  );
+  assert.equal(
+    await js(
+      `fetch(${JSON.stringify(urls.obj + '/textures/other.png')}).then(r=>r.status,()=>404)`,
+    ),
+    404,
   );
   assert.deepEqual(
     await js(
@@ -964,7 +1024,7 @@ async function verifyLocalMedia() {
       const info = await send(
         'Runtime.evaluate',
         {
-          expression: `(()=>{if(!document.body?.dataset.media)return false;const button=document.querySelector('#listen');const audio=document.querySelector('#sound');if(audio.paused)button.click();return document.querySelector('img').naturalWidth===1&&getComputedStyle(document.querySelector('h1')).backgroundImage.includes('gamejam-media:')&&audio.duration>0&&audio.currentTime>0.30;})()`,
+          expression: `(()=>{if(!document.body?.dataset.media)return false;const button=document.querySelector('#listen');const audio=document.querySelector('#sound');if(audio.paused)button.click();return document.body.dataset.objTexture==='2'&&document.querySelector('img').naturalWidth===1&&getComputedStyle(document.querySelector('h1')).backgroundImage.includes('gamejam-media:')&&audio.duration>0&&audio.currentTime>0.30;})()`,
           userGesture: true,
           returnByValue: true,
         },
@@ -979,7 +1039,7 @@ async function verifyLocalMedia() {
     'restored game displays the original image, plays audio, and loads FBX animations, OBJ and Blender geometry',
   );
   console.log(
-    'PASS: image/CSS, sound playback and ranges, FBX/OBJ/BLEND, shared sources, deletion, restore and restart',
+    'PASS: image/CSS, audio ranges, FBX animation, OBJ materials/textures, BLEND, deletion, restore and restart',
   );
 }
 async function verifyExistingBuilds() {

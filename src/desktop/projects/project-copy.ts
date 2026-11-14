@@ -3,7 +3,10 @@ import {
   snapshotSections,
 } from '../../collaboration-model.ts';
 import { stageProjectMedia } from '../../adapters/filesystem/local-media.ts';
-import { localMedia } from '../../core/projects/local-media.ts';
+import {
+  localMedia,
+  localMediaPaths,
+} from '../../core/projects/local-media.ts';
 import { sharedWorkspacePath } from '../../adapters/filesystem/shared-workspace-locations.ts';
 import { hasGameBuilds } from '../../core/projects/game-build.ts';
 import fs from 'node:fs/promises';
@@ -109,7 +112,7 @@ export function registerProjectCopyIpc(handle: IpcRegistrar, ports: Ports) {
           const media = new Set(
             snapshotDocuments(input.bundle.files)
               .map(localMedia)
-              .flatMap((asset) => (asset ? [asset.path] : [])),
+              .flatMap(localMediaPaths),
           );
           if (media.size) {
             if (!source || !session || sharedSource)

@@ -1,4 +1,5 @@
 import { ServerLimits } from './server-limits.ts';
+import type { ObjResource } from './documents.ts';
 /** Durable UTF-8 project data. Download caches and executable tools are never snapshots. */
 export const GAME_BUILDS_DIRECTORY = '.game-builds';
 export const GAME_BUILD_INDEX = '.game-builds/index.json';
@@ -25,8 +26,13 @@ export type GameBuildAssetFile = {
 };
 export type GameBuildProjectAsset = GameBuildAssetFile &
   (
-    | { kind: 'image' | 'audio' | 'glb' | 'fbx' | 'obj'; runtime?: never }
-    | { kind: 'blend'; runtime: GameBuildAssetFile }
+    | {
+        kind: 'image' | 'audio' | 'glb' | 'fbx';
+        runtime?: never;
+        resources?: never;
+      }
+    | { kind: 'obj'; runtime?: never; resources?: ObjResource[] }
+    | { kind: 'blend'; runtime: GameBuildAssetFile; resources?: never }
   );
 export type GameBuildAssetReference = GameBuildProjectAsset & { key: string };
 export type GameBuildManifestV1 = {

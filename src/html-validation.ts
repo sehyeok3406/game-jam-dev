@@ -16,6 +16,7 @@ export async function validateHtml(
   local = false,
   projectAssets?: (session: Session) => {
     urls: Record<string, string>;
+    allowsUrl(url: string): boolean;
     close(): void;
   },
 ) {
@@ -80,12 +81,11 @@ export async function validateHtml(
   let grant: ReturnType<NonNullable<typeof projectAssets>> | undefined;
   try {
     grant = projectAssets?.(validator.webContents.session);
-    const assetUrls = new Set(Object.values(grant?.urls ?? {}));
     validator.webContents.session.webRequest.onBeforeRequest(
       (details, callback) =>
         callback({
           cancel:
-            !assetUrls.has(details.url) &&
+            !grant?.allowsUrl(details.url) &&
             !details.url.startsWith('data:') &&
             !details.url.startsWith('about:') &&
             !(grant && details.url.startsWith('blob:null/')),

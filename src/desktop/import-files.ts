@@ -69,7 +69,7 @@ export async function importSelectedFiles(
                 'webp',
                 'gif',
                 ...(options?.stageMedia
-                  ? ['mp3', 'wav', 'ogg', 'glb', 'fbx', 'obj', 'blend']
+                  ? ['mp3', 'wav', 'ogg', 'glb', 'fbx', 'obj', 'mtl', 'blend']
                   : []),
               ],
             },
@@ -131,6 +131,8 @@ export async function readImportSources(
   let total = 0;
   let mediaTotal = 0;
   const files: { name: string; content: string }[] = [];
+  const consumed = new Set<string>();
+  const selectedMaterials: { name: string; absolute?: string }[] = [];
   for (const source of sources) {
     assertCurrent();
     const absolute = 'path' in source ? source.path : undefined;
@@ -141,6 +143,10 @@ export async function readImportSources(
           : '',
       ext = path.extname(name).toLowerCase();
     const media = localMediaExtension(name);
+    if (ext === '.mtl' && stageMedia) {
+      selectedMaterials.push({ name, absolute });
+      continue;
+    }
     if (
       !name ||
       name.length > 200 ||
@@ -195,6 +201,21 @@ export async function readImportSources(
         name,
         stat.size,
       );
+      if (
+        'resources' in content &&
+        (mediaTotal += (content.resources ?? []).reduce(
+          (sum, file) => sum + file.bytes,
+          0,
+        )) > MAX_LOCAL_MEDIA_BATCH_BYTES
+      )
+        throw Error(
+          '미디어와 연결된 재질 파일은 한 번에 합계 256MiB까지 불러올 수 있습니다.',
+        );
+      if (absolute && 'resources' in content)
+        for (const file of content.resources ?? [])
+          consumed.add(
+            path.resolve(path.dirname(absolute), file.name).toLowerCase(),
+          );
       files.push({ name, content: JSON.stringify(content) });
       continue;
     }
@@ -260,5 +281,13 @@ export async function readImportSources(
     }
   }
   assertCurrent();
+  for (const material of selectedMaterials)
+    if (
+      !material.absolute ||
+      !consumed.has(path.resolve(material.absolute).toLowerCase())
+    )
+      throw Error(
+        `${material.name}: 이 재질을 참조하는 OBJ를 함께 불러와주세요.`,
+      );
   return files;
 }

@@ -104,6 +104,7 @@ import {
   verifyGameBuildAsset,
 } from './adapters/filesystem/local-media';
 import { prepareBlenderGameModel } from './adapters/filesystem/blender-game-model.ts';
+import { stageObjModel } from './adapters/filesystem/obj-import.ts';
 import { decodeAsset } from './file-assets.ts';
 import { isGameBuildAssetReference } from './core/projects/game-build-assets.ts';
 import {
@@ -2669,7 +2670,9 @@ const registerIpc = () => {
           stageMedia: projectSessions.client
             ? undefined
             : (source, name, bytes) =>
-                stageLocalMedia(root, source, name, bytes, check),
+                /\.obj$/i.test(name)
+                  ? stageObjModel(root, source, name, bytes, check)
+                  : stageLocalMedia(root, source, name, bytes, check),
         },
       );
     },

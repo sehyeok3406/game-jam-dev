@@ -10,7 +10,9 @@ import { gameBuildAssetMime } from '../core/projects/game-build-assets.ts';
 import {
   inspectMediaFile,
   openGameBuildAsset,
+  openObjResource,
 } from '../adapters/filesystem/local-media.ts';
+import { objResourceLocation } from '../core/projects/obj-resources.ts';
 import { projectPath } from '../project-store.ts';
 
 const scheme = 'gamejam-media';
@@ -106,6 +108,7 @@ export class DesktopMediaProtocol {
           asset.path,
           asset.sha256,
           asset.runtime?.sha256,
+          asset.resources,
         ]);
         let token = session ? undefined : this.gameUrls.get(key);
         if (!token || privateFiles.get(token)?.signal !== grantSignal) {
@@ -127,6 +130,7 @@ export class DesktopMediaProtocol {
     );
     return {
       urls,
+      allowsUrl: (url: string) => !!this.gameFile(url, privateFiles),
       close: () => {
         if (session) {
           lifetime!.abort();
@@ -136,25 +140,45 @@ export class DesktopMediaProtocol {
     };
   }
 
+  private gameFile(address: string, files: Map<string, GameGrant>) {
+    const url = new URL(address);
+    if (
+      url.protocol !== `${scheme}:` ||
+      url.host !== 'game-assets' ||
+      url.search
+    )
+      return;
+    const [token, ...segments] = url.pathname.slice(1).split('/');
+    const grant = files.get(token);
+    if (!grant || grant.signal.aborted) return;
+    if (!segments.length) return { grant };
+    try {
+      const name = segments.map(decodeURIComponent).join('/').toLowerCase();
+      const resource = grant.asset.resources?.find(
+        (item) => item.name.toLowerCase() === name,
+      );
+      if (resource) return { grant, resource };
+    } catch {
+      return;
+    }
+  }
+
   private async gameResponse(request: Request, files: Map<string, GameGrant>) {
-    const url = new URL(request.url);
-    const grant =
-      url.host === 'game-assets' &&
-      !url.search &&
-      files.get(url.pathname.slice(1));
-    if (!grant || grant.signal.aborted)
-      return new Response(null, { status: 404 });
+    const file = this.gameFile(request.url, files);
+    if (!file) return new Response(null, { status: 404 });
+    const { grant, resource } = file;
     if (!['GET', 'HEAD'].includes(request.method))
       return new Response(null, { status: 405 });
     try {
-      const handle = await openGameBuildAsset(
-        grant.root,
-        grant.asset,
-        grant.signal,
-      );
-      const size = grant.asset.runtime?.bytes ?? grant.asset.bytes;
+      const handle = resource
+        ? await openObjResource(grant.root, resource, grant.signal)
+        : await openGameBuildAsset(grant.root, grant.asset, grant.signal);
+      const size =
+        resource?.bytes ?? grant.asset.runtime?.bytes ?? grant.asset.bytes;
       const headers = new Headers({
-        'content-type': gameBuildAssetMime(grant.asset),
+        'content-type': resource
+          ? objResourceLocation(resource.path)!.mime
+          : gameBuildAssetMime(grant.asset),
         'accept-ranges': 'bytes',
         'access-control-allow-origin': '*',
         'cache-control': 'no-store',

@@ -6,6 +6,8 @@
 
 3D 노드는 같은 경로를 통해 `assets/models/`에 활성 원본을, `.gamejam/local/model-objects/`에 편집 기록에서 복원할 원본을 보관한다. 사운드와 모델을 함께 복사하거나 삭제할 때 동일한 미디어 저장 및 세션 경계를 사용한다. [ADR 0011](decisions/0011-local-model-viewer.md)
 
+디스크에서 OBJ를 가져오면 명시된 MTL과 지원하는 텍스처를 모델 폴더 안에서 찾아 함께 저장한다. 연결 파일 역시 해시별로 `assets/models/`에 보관하고, 모델 카드나 로컬 게임 버전이 참조하는 동안 보존한다. 파일이 없거나 모델 폴더를 벗어나는 참조는 가져오기 오류로 표시한다. 기존 OBJ 카드에 재질을 연결하려면 원본 OBJ를 다시 가져온다. 재질 연결은 게임 제작과 재생에 적용한다.
+
 ## 게임 제작 원본 보관 · 2026-11-01
 
 [게임 제작 계약](game-builds.md)의 `.game-builds/index.json`과 revision별 UTF-8 source·lock·notices·manifest를 기존 capture/materialize/apply/mirror/history에 포함한다. v2 실제 위치는 `.gamejam/project/builds`다. 명시적 구조 전환·raw stage/history의 기존 정책을 유지한다. node_modules·캐시를 프로젝트 데이터에 포함하지 않는다.

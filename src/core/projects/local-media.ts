@@ -1,4 +1,5 @@
 import type { CanvasDocument } from '../../contracts/documents.ts';
+import { objResourceLocation } from './obj-resources.ts';
 import {
   AUDIO_MIME,
   MAX_AUDIO_BYTES,
@@ -36,8 +37,22 @@ export function mediaLocation(path: unknown) {
       maxBytes: modelSizeLimit(modelFormat),
       kind: 'model' as const,
     };
+  return objResourceLocation(path);
 }
 
 export function localMedia(document: Pick<CanvasDocument, 'audio' | 'model'>) {
   return document.audio ?? document.model;
+}
+
+export function localMediaPaths(
+  asset: CanvasDocument['audio'] | CanvasDocument['model'],
+) {
+  return asset
+    ? [
+        asset.path,
+        ...('resources' in asset
+          ? (asset.resources ?? []).map((file) => file.path)
+          : []),
+      ]
+    : [];
 }

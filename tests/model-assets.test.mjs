@@ -19,6 +19,9 @@ import {
   modelSizeLimit,
 } from '../src/core/projects/model-assets.ts';
 import { buildFileImports } from '../src/file-assets.ts';
+import { stageObjModel } from '../src/adapters/filesystem/obj-import.ts';
+import { localMediaPaths } from '../src/core/projects/local-media.ts';
+import { openObjResource } from '../src/adapters/filesystem/local-media.ts';
 import { applyChanges, captureProject } from '../src/project-store.ts';
 
 async function workspace(t) {
@@ -41,6 +44,58 @@ const importModel = (asset, previous = {}) =>
     previous,
     true,
   );
+
+test('an OBJ imports only its relative libraries and textures and restores them with the card', async (t) => {
+  const root = await workspace(t);
+  const origin = path.join(root, 'source');
+  await fs.mkdir(path.join(origin, 'materials'), { recursive: true });
+  const objSource = Buffer.from(
+    'mtllib materials/hero body.mtl other.mtl\n' + obj.toString(),
+  );
+  const filename = path.join(origin, 'model.obj');
+  await fs.writeFile(filename, objSource);
+  const mtl = path.join(origin, 'materials', 'hero body.mtl');
+  await fs.writeFile(mtl, 'newmtl Hero\nmap_Kd -s 1 1 1 ../hero.gif');
+  await fs.writeFile(path.join(origin, 'other.mtl'), 'newmtl Other\nKd 0 1 0');
+  await assert.rejects(
+    stageObjModel(root, filename, 'model.obj', objSource.length, check),
+    /hero.gif/,
+  );
+  const gif = Buffer.from(
+    'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+    'base64',
+  );
+  await fs.writeFile(path.join(origin, 'hero.gif'), gif);
+  const model = await stageObjModel(
+    root,
+    filename,
+    'model.obj',
+    objSource.length,
+    check,
+  );
+  assert.deepEqual(
+    model.resources.map((file) => file.name),
+    ['materials/hero body.mtl', 'hero.gif', 'other.mtl'],
+  );
+  const card = importModel(model);
+  await applyChanges(root, {}, card);
+  const opened = await openObjResource(root, model.resources[1]);
+  assert.deepEqual(await opened.readFile(), gif);
+  await opened.close();
+  const paths = localMediaPaths(model).map((relative) =>
+    path.join(root, relative),
+  );
+  await applyChanges(root, card, { [Object.keys(card)[0]]: null });
+  for (const file of paths)
+    await assert.rejects(fs.stat(file), { code: 'ENOENT' });
+  await applyChanges(root, {}, card);
+  for (const file of paths) assert.ok((await fs.stat(file)).isFile());
+  await fs.writeFile(mtl, 'newmtl Hero\nmap_Kd ../../outside.gif');
+  await assert.rejects(
+    stageObjModel(root, filename, 'model.obj', objSource.length, check),
+    /상대 경로/,
+  );
+});
 
 test('local model import and copy preserve bytes, duplicate references, and last-card restore', async (t) => {
   const root = await workspace(t);

@@ -252,6 +252,17 @@ export class AiRunService {
               runtime: await options.prepareBlend(file, signal),
             };
           }
+        } else if (kind === 'obj') {
+          if (
+            selectedMedia.has(model.path) &&
+            existing?.kind === 'obj' &&
+            JSON.stringify(existing.resources) !==
+              JSON.stringify(model.resources)
+          )
+            throw Error(
+              `${model.originalName}: 같은 OBJ 형상에 서로 다른 재질이 연결되어 있습니다. 한 모델만 선택해주세요.`,
+            );
+          reference = { ...file, kind, resources: model.resources };
         } else reference = { ...file, kind };
         projectAssets.set(model.path, {
           ...reference,

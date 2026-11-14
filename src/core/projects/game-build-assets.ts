@@ -11,6 +11,7 @@ import {
 } from './image-assets.ts';
 import { mediaLocation } from './local-media.ts';
 import { modelExtension } from './model-assets.ts';
+import { objResources } from './obj-resources.ts';
 
 export const GAME_MODEL_DIRECTORY = '.gamejam/local/game-models';
 const hash = /^[a-f0-9]{64}$/;
@@ -40,7 +41,8 @@ export function isGameBuildProjectAsset(
     return (
       validFile(asset, MAX_IMAGE_BYTES) &&
       isProjectImagePath(asset.path) &&
-      asset.runtime === undefined
+      asset.runtime === undefined &&
+      asset.resources === undefined
     );
   const media = mediaLocation(asset.path);
   if (
@@ -53,11 +55,14 @@ export function isGameBuildProjectAsset(
     return (
       modelExtension(asset.path) === 'blend' &&
       validFile(asset.runtime, media.maxBytes) &&
+      asset.resources === undefined &&
       asset.runtime.path ===
         `${GAME_MODEL_DIRECTORY}/${asset.runtime.sha256}.glb`
     );
   return (
     asset.runtime === undefined &&
+    (asset.resources === undefined ||
+      (asset.kind === 'obj' && !!objResources(asset.resources))) &&
     ((asset.kind === 'audio' && media.kind === 'audio') ||
       (['glb', 'fbx', 'obj'].includes(asset.kind) &&
         modelExtension(asset.path) === asset.kind))

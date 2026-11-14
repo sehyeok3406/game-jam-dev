@@ -81,7 +81,7 @@ module import를 하나의 IIFE로 합치되 HTML의 inline `type="module"`로 �
 
 빌더는 `local-assets-browser-v1`로 저장한다. 미리보기는 현재 프로젝트와 HTML 경로·build ID를 확인하고 해당 버전의 에셋에만 세션 URL을 발급한다. 실행 검사는 전용 세션에 같은 연결을 설정한다. 파일 어댑터는 프로젝트 경로·크기·SHA-256·헤더를 확인하고 파일을 스트리밍한다. 사운드의 재생 위치 이동에는 바이트 범위 요청을 사용한다. CSP는 이 호스트를 이미지·미디어·데이터 연결에 허용하고 GLB 내부 텍스처용 blob 연결을 지원한다.
 
-GLB는 외부 버퍼·텍스처 없이 저장해야 한다. FBX는 내장 텍스처와 애니메이션을 읽을 수 있고 OBJ는 단독 형상 파일을 사용한다. BLEND는 설치된 Windows Blender로 게임에 연결할 GLB를 만들며 원본과 변환 결과의 경로·해시를 기록한다. 외부 파일 없이 열 수 있도록 Blender에서 프로젝트 리소스를 포함해야 한다. 변환은 자동 스크립트 실행과 온라인 모드를 끈 상태에서 실행한다. [Blender 명령행 옵션](https://docs.blender.org/manual/en/4.4/advanced/command_line/arguments.html)
+GLB는 외부 버퍼·텍스처 없이 저장해야 한다. FBX는 내장 텍스처와 애니메이션을 읽을 수 있다. OBJ는 단독 형상과 함께 같은 폴더 트리의 MTL 및 PNG·JPEG·WebP·GIF 텍스처를 지원한다. 제작 기록의 OBJ 참조는 원본과 각 연결 파일의 해시 경로를 고정한다. 게임은 `gamejam:assets`의 OBJ URL 뒤에 등록된 재질 상대 경로를 붙여 MTL을 읽고, MTL 로더는 그 URL을 기준으로 텍스처를 읽는다. 검증과 미리보기는 동일한 등록 파일 목록을 사용한다. BLEND는 설치된 Windows Blender로 게임에 연결할 GLB를 만들며 원본과 변환 결과의 경로·해시를 기록한다. 외부 파일 없이 열 수 있도록 Blender에서 프로젝트 리소스를 포함해야 한다. 변환은 자동 스크립트 실행과 온라인 모드를 끈 상태에서 실행한다. [Blender 명령행 옵션](https://docs.blender.org/manual/en/4.4/advanced/command_line/arguments.html)
 
 ## 실행 검사와 저장
 

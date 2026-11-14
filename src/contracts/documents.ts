@@ -79,6 +79,12 @@ export type ModelAsset = {
   path: string;
   originalName: string;
   bytes: number;
+  resources?: ObjResource[];
+};
+export type ObjResource = {
+  name: string;
+  path: string;
+  bytes: number;
 };
 export type SaveDocumentInput = {
   /** Internal process-local guard; never changes durable draft/scope keys. */

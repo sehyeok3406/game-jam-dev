@@ -23,7 +23,14 @@ import {
   audioAsset,
   audioExtension,
 } from '../../core/projects/audio-assets.ts';
-import { mediaLocation } from '../../core/projects/local-media.ts';
+import {
+  localMediaPaths,
+  mediaLocation,
+} from '../../core/projects/local-media.ts';
+import {
+  objResourceFormat,
+  objResourceLocation,
+} from '../../core/projects/obj-resources.ts';
 import {
   MODEL_DIRECTORY,
   modelAsset,
@@ -84,7 +91,7 @@ export async function openGameBuildAsset(
 export async function openVerifiedAssetFile(
   root: string,
   asset: GameBuildAssetFile,
-  format: GameBuildProjectAsset['kind'],
+  format: GameBuildProjectAsset['kind'] | 'mtl',
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
@@ -164,6 +171,23 @@ export async function verifyGameBuildAsset(
   if (asset.kind === 'blend')
     await (await openGameBuildAsset(root, asset, signal, true)).close();
   await (await openGameBuildAsset(root, asset, signal)).close();
+  for (const resource of asset.resources ?? [])
+    await (await openObjResource(root, resource, signal)).close();
+}
+
+export async function openObjResource(
+  root: string,
+  resource: import('../../contracts/documents.ts').ObjResource,
+  signal?: AbortSignal,
+) {
+  const format = objResourceLocation(resource.path);
+  if (!format) throw Error('OBJ 재질 파일 경로를 확인해주세요.');
+  return openVerifiedAssetFile(
+    root,
+    { ...resource, sha256: format.digest },
+    format.extension === 'mtl' ? 'mtl' : 'image',
+    signal,
+  );
 }
 
 function isAudioHeader(header: Buffer, extension: string) {
@@ -244,11 +268,15 @@ export async function stageLocalMedia(
   expectedBytes: number,
   check: () => void,
   expectedDigest?: string,
+  companion = false,
 ) {
   const audio = audioExtension(name);
   const model = modelExtension(name);
-  if (!audio && !model) throw Error('지원하는 미디어 파일인지 확인해주세요.');
-  const maxBytes = model ? modelSizeLimit(model) : MAX_AUDIO_BYTES;
+  const resource = companion ? objResourceFormat(name) : undefined;
+  if (!audio && !model && !resource)
+    throw Error('지원하는 미디어 파일인지 확인해주세요.');
+  const maxBytes =
+    resource?.maxBytes ?? (model ? modelSizeLimit(model) : MAX_AUDIO_BYTES);
   if (
     !Number.isSafeInteger(expectedBytes) ||
     expectedBytes <= 0 ||
@@ -294,14 +322,17 @@ export async function stageLocalMedia(
     )
       throw Error(`${name}: 원본 파일이 변경되었습니다.`);
     const { header } = await mediaHeader(temporary);
+    if (resource && resource.extension !== 'mtl')
+      validateImage(await fs.readFile(temporary), resource.extension);
     const supported = audio
       ? isAudioHeader(header, audio)
-      : isModelHeader(header, model!, bytes);
+      : (resource && resource.extension !== 'mtl') ||
+        isModelHeader(header, resource?.extension ?? model!, bytes);
     if (!supported)
       throw Error(
         `${name}: 지원하는 ${audio ? '오디오' : '3D 모델'} 형식의 파일인지 확인해주세요.`,
       );
-    const relative = `${audio ? AUDIO_DIRECTORY : MODEL_DIRECTORY}/${digest}.${audio ?? model}`;
+    const relative = `${audio ? AUDIO_DIRECTORY : MODEL_DIRECTORY}/${digest}.${audio ?? model ?? resource!.extension}`;
     const destination = await objectPath(root, mediaLocation(relative)!);
     check();
     // Exclusive publication keeps an older history object's bytes intact.
@@ -339,6 +370,7 @@ export async function stageProjectMedia(
     info.bytes,
     check,
     media.digest,
+    !!objResourceLocation(relative),
   );
 }
 
@@ -357,7 +389,11 @@ export async function planLocalMediaChanges(
       if (raw !== null) {
         for (const asset of gameBuildAssetReferences(raw))
           if (asset.kind === 'image') imageReferences.set(asset.path, asset);
-          else added.add(asset.path);
+          else {
+            added.add(asset.path);
+            for (const resource of asset.resources ?? [])
+              added.add(resource.path);
+          }
       } else if (baseline[relative] !== undefined) {
         for (const asset of gameBuildAssetReferences(baseline[relative])) {
           if (asset.kind !== 'image' || baseline[asset.path] === undefined)
@@ -388,23 +424,25 @@ export async function planLocalMediaChanges(
       continue;
     }
     if (!relative.endsWith('.md')) continue;
-    const before = localMediaFromMarkdown(baseline[relative])?.path;
-    const after = localMediaFromMarkdown(raw ?? undefined)?.path;
-    if (before === after) continue;
-    if (before) removed.add(before);
-    if (after) added.add(after);
+    const before = localMediaPaths(localMediaFromMarkdown(baseline[relative]));
+    const after = localMediaPaths(localMediaFromMarkdown(raw ?? undefined));
+    for (const path of before) if (!after.includes(path)) removed.add(path);
+    for (const path of after) if (!before.includes(path)) added.add(path);
   }
   for (const relative of added) removed.delete(relative);
   if (removed.size)
     for (const [relative, raw] of Object.entries(baseline)) {
       if (Object.hasOwn(changes, relative)) continue;
       if (isGameBuildManifestPath(relative)) {
-        for (const asset of gameBuildAssetReferences(raw))
+        for (const asset of gameBuildAssetReferences(raw)) {
           removed.delete(asset.path);
+          for (const resource of asset.resources ?? [])
+            removed.delete(resource.path);
+        }
       }
       if (!relative.endsWith('.md')) continue;
-      const asset = localMediaFromMarkdown(raw);
-      if (asset) removed.delete(asset.path);
+      for (const path of localMediaPaths(localMediaFromMarkdown(raw)))
+        removed.delete(path);
     }
   const create: { file: string; object: string }[] = [];
   const remove: typeof create = [];

@@ -1,4 +1,5 @@
 import type { ModelAsset } from '../../contracts/documents.ts';
+import { objResources } from './obj-resources.ts';
 
 export const MODEL_DIRECTORY = 'assets/models';
 export const MAX_MODEL_BYTES = 50 * 1024 * 1024;
@@ -33,12 +34,19 @@ export function modelAsset(value: unknown): ModelAsset | undefined {
   const extension =
     typeof asset.originalName === 'string' &&
     modelExtension(asset.originalName);
+  const resources = objResources(asset.resources);
   return modelDigest(asset.path) &&
     extension &&
     extension === modelExtension(asset.path) &&
     Number.isSafeInteger(asset.bytes) &&
     asset.bytes > 0 &&
-    asset.bytes <= modelSizeLimit(extension)
-    ? { path: asset.path, originalName: asset.originalName, bytes: asset.bytes }
+    asset.bytes <= modelSizeLimit(extension) &&
+    (asset.resources === undefined || (extension === 'obj' && resources))
+    ? {
+        path: asset.path,
+        originalName: asset.originalName,
+        bytes: asset.bytes,
+        ...(resources ? { resources } : {}),
+      }
     : undefined;
 }
