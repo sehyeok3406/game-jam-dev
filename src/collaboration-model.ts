@@ -210,7 +210,7 @@ export function checkSnapshot(
     if (!sheets.canvases.some((c) => c.id === o.canvasId))
       throw new Error('그림의 캔버스를 찾을 수 없습니다.');
   const entries = Object.entries(files);
-  if (entries.length > ServerLimits.files)
+  if (!local && entries.length > ServerLimits.files)
     throw new Error('최대 500개 파일을 공유할 수 있습니다.');
   let bytes = 0;
   const ids = new Set<string>();
@@ -235,7 +235,7 @@ export function checkSnapshot(
       throw new Error(
         'Markdown은 2MB, HTML은 8MB, 원본 이미지는 5MB까지 공유할 수 있습니다.',
       );
-    if (!localHtml) bytes += Buffer.byteLength(value);
+    if (!local) bytes += Buffer.byteLength(value);
     if (isGameBuildPath(key)) continue;
     if (isGameUiPath(key)) {
       readGameUi(value, key);
@@ -282,13 +282,15 @@ export function checkSnapshot(
       ids.add(id);
     }
   }
-  const snapshotLimit = hasGameBuilds(files as Snapshot)
-    ? GameBuildLimits.snapshotBytes
-    : ServerLimits.projectBytes;
-  if (bytes > snapshotLimit)
-    throw new Error(
-      `프로젝트 전송 한도(${snapshotLimit / 1_000_000}MB)를 초과했습니다.`,
-    );
+  if (!local) {
+    const snapshotLimit = hasGameBuilds(files as Snapshot)
+      ? GameBuildLimits.snapshotBytes
+      : ServerLimits.projectBytes;
+    if (bytes > snapshotLimit)
+      throw new Error(
+        `프로젝트 전송 한도(${snapshotLimit / 1_000_000}MB)를 초과했습니다.`,
+      );
+  }
   const documents = new Map(
     snapshotDocuments(files as Snapshot).map((doc) => [doc.relativePath, doc]),
   );

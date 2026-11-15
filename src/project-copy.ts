@@ -2,6 +2,7 @@ import { sectionBranch, sectionTree } from './core/editing/section-tree.ts';
 import { documentName } from './core/documents/file-name.ts';
 import path from 'node:path';
 import { GameBuildLimits } from './contracts/game-build.ts';
+import { ServerLimits } from './contracts/server-limits.ts';
 import {
   gameBuildAssetReferences,
   isGameBuildManifestPath,
@@ -110,11 +111,12 @@ export function projectCopyBundle(
     !Array.isArray(selection.sections) ||
     !Array.isArray(selection.previews) ||
     !Array.isArray(selection.drawings) ||
-    selection.documents.length +
-      selection.sections.length +
-      selection.previews.length +
-      selection.drawings.length >
-      500
+    (!local &&
+      selection.documents.length +
+        selection.sections.length +
+        selection.previews.length +
+        selection.drawings.length >
+        ServerLimits.files)
   )
     throw Error('복사할 선택 항목을 확인해주세요.');
   const documents = new Set<string>(),
@@ -290,20 +292,21 @@ export function importProjectCopy(
     !bundle.files ||
     typeof bundle.files !== 'object' ||
     Array.isArray(bundle.files) ||
-    Object.keys(bundle.files).length > 500 ||
+    (!local && Object.keys(bundle.files).length > ServerLimits.files) ||
     ![
       bundle.documents,
       bundle.sections,
       bundle.previews,
       bundle.drawings,
     ].every(Array.isArray) ||
-    bundle.drawings.length > 500
+    (!local && bundle.drawings.length > ServerLimits.files)
   )
     throw Error('프로젝트 복사 자료를 확인해주세요.');
   const lists = [bundle.documents, bundle.sections, bundle.previews];
   if (
-    lists.reduce((sum, list) => sum + list.length, bundle.drawings.length) >
-      500 ||
+    (!local &&
+      lists.reduce((sum, list) => sum + list.length, bundle.drawings.length) >
+        ServerLimits.files) ||
     lists.some((list) => new Set(list).size !== list.length)
   )
     throw Error('복사 항목 수나 중복 선택을 확인해주세요.');
@@ -321,11 +324,14 @@ export function importProjectCopy(
     normalized[relative] = raw;
   }
   if (
-    Object.entries(normalized).reduce(
-      (sum, [relative, raw]) =>
-        sum + (local && isPreviewPath(relative) ? 0 : Buffer.byteLength(raw)),
+    !local &&
+    Object.values(normalized).reduce(
+      (sum, raw) => sum + Buffer.byteLength(raw),
       0,
-    ) > (hasGameBuilds(normalized) ? GameBuildLimits.snapshotBytes : 20_000_000)
+    ) >
+      (hasGameBuilds(normalized)
+        ? GameBuildLimits.snapshotBytes
+        : ServerLimits.projectBytes)
   )
     throw Error('복사 자료의 전송 한도를 초과했습니다.');
   const codec = local ? localGameBuildCodec : gameBuildCodec;

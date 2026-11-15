@@ -13,5 +13,5 @@ export const gameBuildCodec: GameBuildCodec = {
 
 export const localGameBuildCodec: GameBuildCodec = {
   ...gameBuildCodec,
-  localHtml: true,
+  local: true,
 };

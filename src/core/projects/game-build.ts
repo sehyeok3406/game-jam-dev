@@ -14,7 +14,7 @@ import {
 } from '../../contracts/game-build.ts';
 
 export type GameBuildCodec = {
-  localHtml?: boolean;
+  local?: boolean;
   byteLength: (text: string) => number;
   digest: (text: string) => string;
   isHtmlPath: (path: string) => boolean;
@@ -175,20 +175,18 @@ function checkLock(files: Snapshot, prefix: string) {
 /** Complete bundles only; staging fragments and caches are deliberately rejected. */
 export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
   if (hasGameBuilds(files)) {
-    const entries = Object.entries(files);
+    const values = Object.values(files);
     requireBuild(
-      entries.length <= GameBuildLimits.files &&
-        entries.every(([, value]) => typeof value === 'string') &&
-        entries.reduce(
-          (sum, [path, value]) =>
-            sum +
-            (codec.localHtml && codec.isHtmlPath(path)
-              ? 0
-              : codec.byteLength(value)),
-          0,
-        ) <= GameBuildLimits.snapshotBytes,
-      '프로젝트 전송 한도 64MB·500개 파일',
+      values.every((value) => typeof value === 'string'),
+      '프로젝트 파일 형식',
     );
+    if (!codec.local)
+      requireBuild(
+        values.length <= GameBuildLimits.files &&
+          values.reduce((sum, value) => sum + codec.byteLength(value), 0) <=
+            GameBuildLimits.snapshotBytes,
+        '프로젝트 전송 한도 64MB·500개 파일',
+      );
   }
   const index = readGameBuildIndex(files);
   if (!hasGameBuilds(files)) return index;
@@ -299,7 +297,7 @@ export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
           /^[a-zA-Z0-9_-]{1,80}$/.test(asset.key) &&
           !assetKeys.has(asset.key) &&
           (asset.kind !== undefined
-            ? codec.localHtml && isGameBuildAssetReference(asset)
+            ? codec.local && isGameBuildAssetReference(asset)
             : typeof asset.path === 'string' &&
               asset.path.startsWith('assets/images/') &&
               codec.isAssetPath(asset.path) &&
@@ -357,7 +355,7 @@ export function validateGameBuilds(files: Snapshot, codec: GameBuildCodec) {
     );
     if (artifact.buildId === id) {
       requireBuild(
-        codec.localHtml ||
+        codec.local ||
           codec.byteLength(files[artifact.path]) <= GameBuildLimits.htmlBytes,
         'HTML 한도 8MB',
       );
