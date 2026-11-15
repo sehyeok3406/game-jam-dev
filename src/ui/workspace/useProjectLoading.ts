@@ -23,8 +23,10 @@ import type {
 } from '../../shared.ts';
 import { pendingDocument } from '../documents/presentation.ts';
 import { previewNodeId, type CanvasNode } from './workspace-types.ts';
+import type { WorkspaceDocumentLayoutChange } from '../../contracts/project.ts';
 
 interface Ports {
+  workspace: WorkspaceState;
   workspaceData: import('./workspace-data').WorkspaceDataLoader;
   setWorkspace: import('react').Dispatch<
     import('react').SetStateAction<WorkspaceState>
@@ -75,6 +77,7 @@ interface Ports {
   >;
   previewWindowCache: import('react').RefObject<{
     root: string | null;
+    sessionId?: string;
     windows: Record<string, PreviewWindowState>;
   }>;
   api: import('../../contracts/app-api').AppApi;
@@ -148,7 +151,7 @@ interface Ports {
 export function useProjectLoading(ports: () => Ports) {
   const current = useRef(ports);
   current.current = ports;
-  const loadProject = useCallback(async (fit = false, throwOnError = false) => {
+  const readProject = useCallback(async (fit = false, throwOnError = false) => {
     const {
       workspaceData,
       setWorkspace,
@@ -251,13 +254,14 @@ export function useProjectLoading(ports: () => Ports) {
           : nextSheets,
       );
       const nextWindows: Record<string, PreviewWindowState> = {};
+      const cache = previewWindowCache.current;
+      const sameWindowSession =
+        cache.root === state.root &&
+        cache.sessionId === state.session?.sessionId;
       const savedWindows = await Promise.all(
         nextPreviews.map((result) =>
-          previewWindowCache.current.root === state.root &&
-          previewWindowCache.current.windows[result.relativePath]
-            ? Promise.resolve(
-                previewWindowCache.current.windows[result.relativePath],
-              )
+          sameWindowSession && cache.windows[result.relativePath]
+            ? Promise.resolve(cache.windows[result.relativePath])
             : api.preview.getPreviewWindow(result.relativePath),
         ),
       );
@@ -429,11 +433,23 @@ export function useProjectLoading(ports: () => Ports) {
       );
       setSections((current) => reconcile(current, nextSections));
       setPreviews((current) => reconcile(current, nextPreviews));
-      setPreviewWindows((current) =>
-        JSON.stringify(current) === JSON.stringify(nextWindows)
+      setPreviewWindows((current) => {
+        const merged = { ...nextWindows };
+        if (sameWindowSession) {
+          for (const [path, window] of Object.entries(nextWindows)) {
+            const latest = current[path];
+            if (
+              latest &&
+              latest !== cache.windows[path] &&
+              latest.placementId === window.placementId
+            )
+              merged[path] = latest;
+          }
+        }
+        return JSON.stringify(current) === JSON.stringify(merged)
           ? current
-          : nextWindows,
-      );
+          : merged;
+      });
       setUndoState(await api.history.getUndoState());
       if (knownPreviewsRef.current.root !== state.root) {
         setInspectorId(null);
@@ -514,5 +530,86 @@ export function useProjectLoading(ports: () => Ports) {
     }
   }, []);
 
-  return { loadProject };
+  const fullLoad = useRef({
+    version: 0,
+    pending: null as Promise<void> | null,
+  });
+  const layoutLoads = useRef(Promise.resolve());
+  const loadProject = useCallback(
+    (fit = false, throwOnError = false) => {
+      const pending = readProject(fit, throwOnError);
+      const load = { version: fullLoad.current.version + 1, pending };
+      fullLoad.current = load;
+      const clear = () => {
+        if (fullLoad.current === load) fullLoad.current.pending = null;
+      };
+      void pending.then(clear, clear);
+      return pending;
+    },
+    [readProject],
+  );
+  const loadDocumentLayouts = useCallback(
+    ({ sessionId, paths }: WorkspaceDocumentLayoutChange) => {
+      const load = layoutLoads.current.then(async () => {
+        const { api, setDocuments, setUndoState } = current.current();
+        const isCurrent = () =>
+          current.current().workspace.session?.sessionId === sessionId;
+        while (isCurrent()) {
+          const { pending, version } = fullLoad.current;
+          if (pending) {
+            await pending.catch(() => undefined);
+            continue;
+          }
+          const [saved, undo] = await Promise.all([
+            Promise.all(paths.map((path) => api.editor.getDocument(path))),
+            api.history.getUndoState(),
+          ]);
+          if (!isCurrent()) return;
+          if (version !== fullLoad.current.version) continue;
+          if (
+            saved.some((document) => !document || !isCanvasDocument(document))
+          ) {
+            return loadProject(false);
+          }
+          const confirmed = new Map(
+            saved.flatMap((document) =>
+              document ? [[document.relativePath, document] as const] : [],
+            ),
+          );
+          setDocuments((existing) => {
+            let changed = false;
+            const next = existing.map((document) => {
+              const saved = confirmed.get(document.relativePath);
+              if (
+                saved?.id !== document.id ||
+                (saved.x === document.x &&
+                  saved.y === document.y &&
+                  saved.width === document.width &&
+                  saved.height === document.height &&
+                  saved.modifiedAt === document.modifiedAt)
+              )
+                return document;
+              changed = true;
+              return {
+                ...document,
+                x: saved.x,
+                y: saved.y,
+                width: saved.width,
+                height: saved.height,
+                modifiedAt: saved.modifiedAt,
+              };
+            });
+            return changed ? next : existing;
+          });
+          setUndoState(undo);
+          return;
+        }
+      });
+      layoutLoads.current = load.catch(() => undefined);
+      return load;
+    },
+    [loadProject],
+  );
+
+  return { loadProject, loadDocumentLayouts };
 }

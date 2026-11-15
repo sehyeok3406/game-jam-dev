@@ -23,6 +23,7 @@ interface GeometryPorts {
   nestedSections?: boolean;
   api: import('../../contracts/app-api.ts').AppApi;
   loadProject: (fit?: boolean, throwOnError?: boolean) => Promise<void>;
+  loadDocumentLayouts?: (paths: string[]) => Promise<void>;
   showError: (error: unknown) => void;
   gameUi: {
     frames: import('../../game-ui-types').GameUiFrame[];
@@ -36,6 +37,7 @@ interface GeometryPorts {
   updatePreviewWindows: (
     windows: { relative: string; state: PreviewWindowState }[],
   ) => Promise<void>;
+  previewWindows?: Record<string, PreviewWindowState>;
   locked: boolean;
   sectionCollapsed: (section: CanvasSection) => boolean;
   canvasBatch: (
@@ -89,6 +91,7 @@ function createGeometryActions(
     sections,
     api,
     loadProject,
+    loadDocumentLayouts,
     showError,
     gameUi,
     blockAiFiles,
@@ -248,8 +251,23 @@ function createGeometryActions(
     try {
       membership = (await performPersistDraggedNodes(primary, dragged)) ?? null;
       if (!isCurrent()) return;
-      if (moved.some((node) => node.data.kind !== 'kanban'))
-        if (isCurrent()) await loadProject(false);
+      if (membership) await loadProject(false);
+      else {
+        const documents = moved.flatMap((node) =>
+          node.data.kind === 'document'
+            ? [node.data.document.relativePath]
+            : [],
+        );
+        if (
+          moved.some(
+            (node) =>
+              node.data.kind === 'section' || node.data.kind === 'drawing',
+          ) ||
+          (documents.length && !loadDocumentLayouts)
+        )
+          await loadProject(false);
+        else if (documents.length) await loadDocumentLayouts?.(documents);
+      }
     } finally {
       for (const node of moved)
         if (pendingGeometry.current.get(node.id)?.sequence === sequence)
@@ -318,15 +336,10 @@ function createGeometryActions(
               {
                 relative: moved.data.preview.relativePath,
                 state: {
-                  ...moved.data.windowState,
+                  ...(ports.previewWindows?.[moved.data.preview.relativePath] ??
+                    moved.data.windowState),
                   x: moved.position.x,
                   y: moved.position.y,
-                  width: moved.data.windowState.collapsed
-                    ? moved.data.windowState.width
-                    : (moved.measured?.width ?? moved.data.windowState.width),
-                  height: moved.data.windowState.collapsed
-                    ? moved.data.windowState.height
-                    : (moved.measured?.height ?? moved.data.windowState.height),
                 },
               },
             ]

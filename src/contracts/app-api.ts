@@ -53,6 +53,7 @@ import type {
   ProjectTrashEntry,
   SharedProjectLifecycle,
   WorkspaceState,
+  WorkspaceDocumentLayoutChange,
 } from './project.ts';
 import type { CollaborationRole, CollaborationState } from './collaboration.ts';
 import type {
@@ -443,7 +444,9 @@ export type GameCanvasApi = {
   openBlendSource: (relativePath: string, sessionId: string) => Promise<void>;
   openWorkspace: () => Promise<void>;
   copyText: (text: string) => Promise<void>;
-  onWorkspaceChanged: (listener: () => void) => () => void;
+  onWorkspaceChanged: (
+    listener: (layouts?: WorkspaceDocumentLayoutChange) => void,
+  ) => () => void;
   onCodexRunEvent: (listener: (event: CodexRunEvent) => void) => () => void;
 };
 

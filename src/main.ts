@@ -32,9 +32,11 @@ import { readProjectLayout } from './core/projects/project-layout.ts';
 import { filesystemSharedProjectFiles } from './adapters/filesystem/shared-project-files';
 import { ensureProjectLayout } from './adapters/filesystem/project-layout';
 import {
+  documentLayoutWrites,
   sessionProjectFileEffects,
   startSessionProjectWatcher,
 } from './desktop/project-file-effects';
+import type { WorkspaceDocumentLayoutChange } from './contracts/project.ts';
 import { DesktopProjectModes } from './desktop/projects/project-modes';
 import { ProjectModeFiles } from './adapters/filesystem/project-mode-files';
 import { ProjectHomeService } from './application/projects/home-service';
@@ -710,6 +712,11 @@ const projectModes: DesktopProjectModes = new DesktopProjectModes({
   changed: () => notifyWorkspaceChanged(),
 });
 let changeTimer: NodeJS.Timeout | null = null;
+let pendingWorkspaceChange: {
+  sessionId: string | undefined;
+  paths?: string[];
+} | null = null;
+const layoutWrites = documentLayoutWrites();
 let lastRunEvent: CodexRunEvent | null = null;
 let runPreparing = false;
 let preparationCancelled = false;
@@ -1011,13 +1018,27 @@ const listDocuments = () =>
 const listSections = () =>
   filesystemProjectReader(requireWorkspace()).sections.list();
 
-const notifyWorkspaceChanged = () => {
+const notifyWorkspaceChanged = (documentPaths?: string[]) => {
   if (changeTimer) clearTimeout(changeTimer);
   projectSessions.release('workspace-notification');
   const ref = projectSessions.ref;
+  const sessionId = ref?.sessionId;
+  const pending =
+    pendingWorkspaceChange?.sessionId === sessionId
+      ? pendingWorkspaceChange
+      : null;
+  const paths =
+    documentPaths && (!pending || pending.paths)
+      ? [...new Set([...(pending?.paths ?? []), ...documentPaths])]
+      : undefined;
+  pendingWorkspaceChange = { sessionId, paths };
   changeTimer = setTimeout(() => {
-    if (projectSessions.matches(ref))
-      mainWindow?.webContents.send('workspace:changed');
+    pendingWorkspaceChange = null;
+    if (projectSessions.matches(ref)) {
+      const layouts: WorkspaceDocumentLayoutChange | undefined =
+        sessionId && paths ? { sessionId, paths } : undefined;
+      mainWindow?.webContents.send('workspace:changed', layouts);
+    }
   }, 180);
   const timer = changeTimer;
   projectSessions.own('workspace-notification', () => clearTimeout(timer));
@@ -1066,7 +1087,18 @@ const startWatcher = () => {
         ignoreInitial: true,
         awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
       }),
-    changed: notifyWorkspaceChanged,
+    changed: (event, absolute) => {
+      if (!root || !ref || event !== 'change') {
+        notifyWorkspaceChanged();
+        return;
+      }
+      const relative = path.relative(root, absolute).replaceAll('\\', '/');
+      void layoutWrites
+        .matches(ref.sessionId, relative, absolute)
+        .then((same) => {
+          if (!same && projectSessions.matches(ref)) notifyWorkspaceChanged();
+        });
+    },
   });
 };
 
@@ -2008,7 +2040,18 @@ const handle = (
               after,
               label,
             ),
-          changed: notifyWorkspaceChanged,
+          changed: (layout) => {
+            if (channel === 'layouts:update') return;
+            const paths =
+              layout && requestSession
+                ? layoutWrites.record(
+                    requestSession.sessionId,
+                    layout.before,
+                    layout.after,
+                  )
+                : null;
+            notifyWorkspaceChanged(paths ?? undefined);
+          },
         }).execute(channel, args, async () =>
           listener(
             event,
@@ -2376,7 +2419,19 @@ const registerIpc = () => {
       new RecordedCommandPublisher(
         publisher,
         userEdits(root, session),
-        notifyWorkspaceChanged,
+        (plan) => {
+          assertCurrent();
+          const paths =
+            plan && session
+              ? layoutWrites.record(
+                  session.sessionId,
+                  plan.before,
+                  plan.files,
+                  Object.keys(plan.changes),
+                )
+              : null;
+          notifyWorkspaceChanged(paths ?? undefined);
+        },
       ),
     );
   };

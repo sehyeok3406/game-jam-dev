@@ -1,5 +1,8 @@
 import type { AppApi } from '../../contracts/app-api.ts';
-import type { WorkspaceState } from '../../contracts/project.ts';
+import type {
+  WorkspaceDocumentLayoutChange,
+  WorkspaceState,
+} from '../../contracts/project.ts';
 import type { CanvasDocument } from '../../contracts/documents.ts';
 import type { CanvasSection } from '../../contracts/canvas.ts';
 import type { PreviewResult } from '../../contracts/preview.ts';
@@ -37,10 +40,10 @@ export class WorkspaceDataLoader {
   invalidate() {
     this.generation++;
   }
-  watch(changed: () => void) {
-    const stop = this.api.projects.onWorkspaceChanged(() => {
-      this.invalidate();
-      changed();
+  watch(changed: (layouts?: WorkspaceDocumentLayoutChange) => void) {
+    const stop = this.api.projects.onWorkspaceChanged((layouts) => {
+      if (!layouts) this.invalidate();
+      changed(layouts);
     });
     return () => {
       this.invalidate();

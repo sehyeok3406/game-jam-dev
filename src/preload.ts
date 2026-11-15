@@ -265,7 +265,10 @@ const api: GameCanvasApi = {
   openWorkspace: () => ipcRenderer.invoke('workspace:open-folder'),
   copyText: (text) => ipcRenderer.invoke('clipboard:copy', text),
   onWorkspaceChanged: (listener) => {
-    const wrapped = () => listener();
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      layouts?: Parameters<typeof listener>[0],
+    ) => listener(layouts);
     ipcRenderer.on('workspace:changed', wrapped);
     return () => ipcRenderer.removeListener('workspace:changed', wrapped);
   },

@@ -759,6 +759,7 @@ test('AI project lifetime keeps a captured canvas destination across tab changes
 test('mixed drag batches preview updates once and reports failures without losing document saves', async (t) => {
   const batches = [],
     layouts = [],
+    refreshed = [],
     errors = [];
   const ports = geometryPorts({
     updatePreviewWindows: async (items) => {
@@ -766,6 +767,9 @@ test('mixed drag batches preview updates once and reports failures without losin
       throw Error('preview failed');
     },
     api: { editor: { updateLayouts: async (items) => layouts.push(items) } },
+    loadDocumentLayouts: async (paths) => refreshed.push(...paths),
+    loadProject: async () =>
+      assert.fail('geometry-only drag performed a full refresh'),
     setNotice: () => {},
     showError: (error) => errors.push(error.message),
   });
@@ -792,12 +796,15 @@ test('mixed drag batches preview updates once and reports failures without losin
     batches[0].map((i) => [i.relative, i.state.x, i.state.height]),
     [
       ['output/a.html', 30, 300],
-      ['output/b.html', 30, 50],
+      ['output/b.html', 30, 300],
     ],
   );
   assert.equal(layouts.length, 1);
   assert.equal(layouts[0].length, 1);
+  assert.deepEqual(refreshed, [node().data.document.relativePath]);
   assert.deepEqual(errors, ['preview failed']);
+  await act(async () => view.value.persistDraggedNodes(preview('a', true), []));
+  assert.equal(refreshed.length, 1, 'HTML-only drag refreshes no documents');
 });
 
 test('preview batch completion cannot overwrite newer positions and acknowledges only successful windows', async (t) => {

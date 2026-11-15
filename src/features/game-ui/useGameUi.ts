@@ -124,9 +124,9 @@ export function useGameUi(scope: string | undefined) {
         }
       }
     })().catch((e) => state.current === s && setError(String(e)));
-    const stop = api.projects.onWorkspaceChanged(
-      () => void reload().catch((e) => setError(String(e))),
-    );
+    const stop = api.projects.onWorkspaceChanged((layouts) => {
+      if (!layouts) void reload().catch((e) => setError(String(e)));
+    });
     return stop;
   }, [scope, reload]);
   const submit = useCallback(

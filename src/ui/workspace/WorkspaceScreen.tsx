@@ -1012,10 +1012,19 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     nestedSections: !collaboration.active,
     api,
     loadProject,
+    loadDocumentLayouts:
+      workspace.session && !collaboration.active
+        ? (paths) =>
+            loadDocumentLayouts({
+              sessionId: workspace.session!.sessionId,
+              paths,
+            })
+        : undefined,
     showError,
     gameUi,
     blockAiFiles,
     updatePreviewWindows,
+    previewWindows,
     locked,
     sectionCollapsed,
     canvasBatch,
@@ -1421,7 +1430,9 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         .catch(showError);
     };
     refresh();
-    const stop = api.projects.onWorkspaceChanged(refresh);
+    const stop = api.projects.onWorkspaceChanged((layouts) => {
+      if (!layouts) refresh();
+    });
     const stopRuns = api.ai.onCodexRunEvent(refresh);
     return () => {
       active = false;
@@ -1694,10 +1705,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     }));
   const previewWindowCache = useRef<{
     root: string | null;
+    sessionId?: string;
     windows: Record<string, PreviewWindowState>;
   }>({ root: null, windows: {} });
   previewWindowCache.current = {
     root: workspace.root,
+    sessionId: workspace.session?.sessionId,
     windows: previewWindows,
   };
   const reconcile = <T extends { relativePath: string }>(
@@ -1729,9 +1742,16 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     const key = `game-ui:${workspace.saveScope}`;
     return draftRegistry.register(key, gameUi.flush);
   }, [draftRegistry, workspace.saveScope, gameUi.flush]);
-  const reloadWorkspaceRef = useRef<() => void>(() => {});
-  const workspaceData = useWorkspaceData(() => reloadWorkspaceRef.current());
-  const { loadProject } = useProjectLoading(() => ({
+  const reloadWorkspaceRef = useRef<
+    (
+      layouts?: import('../../contracts/project.ts').WorkspaceDocumentLayoutChange,
+    ) => void
+  >(() => {});
+  const workspaceData = useWorkspaceData((layouts) =>
+    reloadWorkspaceRef.current(layouts),
+  );
+  const { loadProject, loadDocumentLayouts } = useProjectLoading(() => ({
+    workspace,
     viewportIntent,
     workspaceData,
     setWorkspace,
@@ -1776,7 +1796,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     flowRef,
     showError,
   }));
-  reloadWorkspaceRef.current = () => void loadProject(false);
+  reloadWorkspaceRef.current = (layouts) => {
+    if (layouts) void loadDocumentLayouts(layouts).catch(showError);
+    else void loadProject(false);
+  };
   useEffect(() => {
     void loadProject(true);
   }, [loadProject]);

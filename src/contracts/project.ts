@@ -8,6 +8,10 @@ export type WorkspaceState = {
   saveScope?: string;
   clipboardContextId?: string;
 };
+export type WorkspaceDocumentLayoutChange = {
+  sessionId: string;
+  paths: string[];
+};
 export type ProjectEntry = {
   nameConflict?: boolean;
   folderNamePending?: boolean;

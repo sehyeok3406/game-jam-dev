@@ -7,6 +7,7 @@ import matter from 'gray-matter';
 import { SharedProjectMirror } from '../src/application/editing/shared-project-mirror.ts';
 import { filesystemSharedProjectFiles } from '../src/adapters/filesystem/shared-project-files.ts';
 import {
+  documentLayoutWrites,
   sessionProjectFileEffects,
   startSessionProjectWatcher,
 } from '../src/desktop/project-file-effects.ts';
@@ -263,6 +264,38 @@ test('installed watcher retains original root and ignores events after the sessi
   current = false;
   callback();
   assert.equal(changed, 1);
+});
+
+test('layout notifications suppress only same-session watcher echoes of the exact confirmed bytes', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'layout-watcher-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const relative = 'ideas/layout.md';
+  const absolute = path.join(root, 'layout.md');
+  const original = matter.stringify('body\n', { id: 'doc', x: 4, y: 8 });
+  const moved = matter.stringify('body\n', { id: 'doc', x: 5, y: 9 });
+  const edited = matter.stringify('new body\n', { id: 'doc', x: 5, y: 9 });
+  const writes = documentLayoutWrites();
+  assert.deepEqual(
+    writes.record('a', { [relative]: original }, { [relative]: moved }),
+    [relative],
+  );
+  await fs.writeFile(absolute, moved);
+  assert.equal(await writes.matches('a', relative, absolute), true);
+  assert.equal(await writes.matches('b', relative, absolute), false);
+  await fs.writeFile(absolute, edited);
+  assert.equal(await writes.matches('a', relative, absolute), false);
+  assert.equal(
+    writes.record('a', { [relative]: original }, { [relative]: edited }),
+    null,
+  );
+  assert.equal(
+    writes.record(
+      'a',
+      { 'sections/layout.md': original },
+      { 'sections/layout.md': moved },
+    ),
+    null,
+  );
 });
 
 const html = '<!doctype html><html><body>preserved HTML</body></html>';

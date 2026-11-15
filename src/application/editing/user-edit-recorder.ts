@@ -55,11 +55,11 @@ const MANUAL_LABELS: Partial<Record<CommandName, string>> = {
 export class RecordedCommandPublisher implements CommandPublisher {
   private publisher: CommandPublisher;
   private recorder: UserEditRecorder;
-  private changed: () => void;
+  private changed: (layouts?: CommandPlan) => void;
   constructor(
     publisher: CommandPublisher,
     recorder: UserEditRecorder,
-    changed: () => void,
+    changed: (layouts?: CommandPlan) => void,
   ) {
     this.publisher = publisher;
     this.recorder = recorder;
@@ -69,7 +69,7 @@ export class RecordedCommandPublisher implements CommandPublisher {
     await this.publisher.publish(channel, plan);
     const label = MANUAL_LABELS[channel];
     if (label) await this.recorder.record(plan.before, plan.files, label);
-    if (channel === 'documents:set-color' || channel === 'layouts:update')
-      this.changed();
+    if (channel === 'layouts:update') this.changed(plan);
+    if (channel === 'documents:set-color') this.changed();
   }
 }

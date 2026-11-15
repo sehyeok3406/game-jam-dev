@@ -75,7 +75,7 @@ const PreviewCardContent = memo(function PreviewCardContent({
   data,
   selected,
 }: Pick<NodeProps<PreviewCanvasNode>, 'data' | 'selected'>) {
-  const { api } = useRuntime();
+  const { api, capabilities } = useRuntime();
   const [exporting, setExporting] = useState(false),
     [exportMessage, setExportMessage] = useState('');
   const exportEpoch = useRef(0);
@@ -258,12 +258,14 @@ const PreviewCardContent = memo(function PreviewCardContent({
             >
               <History size={14} />
             </button>
-            <MultiplayerLobby
-              path={data.preview.relativePath}
-              html={data.preview.content}
-              onRepair={data.onMultiplayerRepair}
-              repairDisabled={data.multiplayerRepairDisabled}
-            />
+            {capabilities.multiplayer && (
+              <MultiplayerLobby
+                path={data.preview.relativePath}
+                html={data.preview.content}
+                onRepair={data.onMultiplayerRepair}
+                repairDisabled={data.multiplayerRepairDisabled}
+              />
+            )}
             <button
               className="icon-button"
               title="HTML 버전 비교"

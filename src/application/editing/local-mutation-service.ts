@@ -35,7 +35,7 @@ type Ports = {
   project: Pick<LocalProjectRepository, 'capture' | 'apply'>;
   assertCurrent(): void;
   record(before: Snapshot, after: Snapshot, label: string): Promise<void>;
-  changed(): void;
+  changed(layout?: { before: Snapshot; after: Snapshot }): void;
 };
 /** Legacy local handlers keep partial capture and their own specialized writes. */
 export class LocalMutationService {
@@ -111,6 +111,10 @@ export class LocalMutationService {
           throw error;
         }
         p.assertCurrent();
+      }
+      if (channel === 'documents:update-layout') {
+        p.changed({ before, after });
+        return result;
       }
     }
     p.changed();

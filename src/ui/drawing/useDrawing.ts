@@ -143,9 +143,9 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
         }
       })
       .catch((e) => active && setError(`그림 초안 읽기 실패: ${String(e)}`));
-    const stop = api.projects.onWorkspaceChanged(
-      () => void reload().catch((e) => active && setError(String(e))),
-    );
+    const stop = api.projects.onWorkspaceChanged((layouts) => {
+      if (!layouts) void reload().catch((e) => active && setError(String(e)));
+    });
     return () => {
       active = false;
       stop();
