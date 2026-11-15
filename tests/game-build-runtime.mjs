@@ -122,24 +122,39 @@ test('declared package exports and transitive imports bundle from the prepared g
   const s = source();
   s.sources['main.js'] =
     "import {lives} from 'engine';document.body.dataset.lives=String(lives);";
-  const result = await f.compile(
-    s,
-    {
-      lock,
-      notices: {
-        version: 1,
-        packages: lock.packages.map((p) => ({
-          key: p.key,
-          license: 'MIT',
-          text: p.name + ' fixture MIT notice',
-        })),
-      },
-      toolsetSha256: tool.sha256,
+  const dependencies = {
+    lock,
+    notices: {
+      version: 1,
+      packages: lock.packages.map((p) => ({
+        key: p.key,
+        license: 'MIT',
+        text: p.name + ' fixture MIT notice',
+      })),
     },
-    root,
-  );
+    toolsetSha256: tool.sha256,
+  };
+  const result = await f.compile(s, dependencies, root);
   assert.ok(result.html.includes('fixture MIT notice'));
   assert.equal(/from ["'](?:engine|math)/.test(result.html), false);
+  const engine = path.join(root, 'node_modules', 'engine');
+  await fs.writeFile(path.join(engine, 'font.woff2'), 'font fixture bytes');
+  await fs.writeFile(
+    path.join(engine, 'index.js'),
+    'export const lives=new URL("./font.woff2", import.meta.url).href;',
+  );
+  assert.match(
+    (await f.compile(s, dependencies, root)).html,
+    /data:font\/woff2;base64,Zm9udCBmaXh0dXJlIGJ5dGVz/,
+  );
+  await fs.writeFile(
+    path.join(engine, 'index.js'),
+    'export const lives = new URL("../math/font.woff2", import.meta.url).href;',
+  );
+  await assert.rejects(
+    f.compile(s, dependencies, root),
+    /준비된 라이브러리 범위 밖 글꼴/,
+  );
 });
 test('undeclared packages, Node/URL/escaping imports, remote resources and executable extra scripts fail closed', async (t) => {
   const f = await fixture(t);

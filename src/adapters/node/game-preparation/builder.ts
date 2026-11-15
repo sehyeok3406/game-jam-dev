@@ -9,13 +9,18 @@ import {
 } from 'parse5';
 import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
-import { parse as parseJavaScript } from 'acorn';
+import {
+  parse as parseJavaScript,
+  type Node as JavaScriptNode,
+  type NewExpression,
+} from 'acorn';
 import type { GeneratedGameSource } from '../../../contracts/game-build-execution.ts';
 import type {
   GameBuildDependenciesV1,
   GameBuildNoticesV1,
 } from '../../../contracts/game-build.ts';
 import { GameBuildLimits } from '../../../contracts/game-build.ts';
+import { DependencyPreparationLimits } from '../../../contracts/dependency-preparation.ts';
 import type { GameBuildAssetReference } from '../../../contracts/game-build.ts';
 import { isGameBuildAssetReference } from '../../../core/projects/game-build-assets.ts';
 import {
@@ -45,6 +50,87 @@ const json = (value: unknown) =>
     .replaceAll('&', '\\u0026');
 function fail(message: string): never {
   throw Error(message);
+}
+function* syntaxNodes(root: JavaScriptNode) {
+  const pending: unknown[] = [root];
+  while (pending.length) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object' || !('type' in node)) continue;
+    yield node as JavaScriptNode;
+    for (const child of Object.values(node)) {
+      if (Array.isArray(child)) {
+        for (const item of child) pending.push(item);
+      } else if (child && typeof child === 'object') pending.push(child);
+    }
+  }
+}
+function moduleUrl(node: JavaScriptNode) {
+  if (node.type !== 'NewExpression') return;
+  const { callee, arguments: args } = node as NewExpression;
+  if (
+    callee.type !== 'Identifier' ||
+    callee.name !== 'URL' ||
+    args.length !== 2
+  )
+    return;
+  const [resource, base] = args;
+  if (
+    resource.type === 'Literal' &&
+    typeof resource.value === 'string' &&
+    base.type === 'MemberExpression' &&
+    !base.computed &&
+    base.property.type === 'Identifier' &&
+    base.property.name === 'url' &&
+    base.object.type === 'MetaProperty' &&
+    base.object.meta.name === 'import' &&
+    base.object.property.name === 'meta'
+  )
+    return resource.value;
+}
+async function embedPackageFonts(
+  code: string,
+  modulePath: string,
+  packageOwns: (file: string) => boolean,
+) {
+  const syntax = parseJavaScript(code, {
+    ecmaVersion: 'latest',
+    sourceType: 'module',
+  });
+  const replacements: { start: number; end: number; code: string }[] = [];
+  for (const node of syntaxNodes(syntax)) {
+    const url = moduleUrl(node);
+    if (!url) continue;
+    const { start, end } = node;
+    const extension = /\.(ttf|otf|woff2?)$/i.exec(url)?.[1].toLowerCase();
+    if (!extension) continue;
+    const relative = decodeURIComponent(url);
+    if (
+      !/^\.\.?\//.test(relative) ||
+      /[\\:#?]/.test(relative) ||
+      relative.includes('\0')
+    )
+      fail('글꼴은 준비된 라이브러리 내부 상대 경로를 사용해주세요.');
+    const file = path.resolve(path.dirname(modulePath), relative);
+    if (!packageOwns(file)) fail('준비된 라이브러리 범위 밖 글꼴');
+    const real = await fs
+      .realpath(file)
+      .catch(() => fail('준비된 라이브러리 글꼴을 찾을 수 없습니다.'));
+    if (!packageOwns(real)) fail('준비된 라이브러리 범위 밖 글꼴');
+    const stat = await fs.stat(real);
+    if (!stat.isFile() || stat.size > DependencyPreparationLimits.fileBytes)
+      fail('준비된 라이브러리의 글꼴 파일 크기나 형식을 확인해주세요.');
+    const content = await fs.readFile(real);
+    if (content.length !== stat.size)
+      fail('글꼴 파일이 빌드 중에 변경되었습니다.');
+    const data = `data:font/${extension};base64,${content.toString('base64')}`;
+    replacements.push({ start, end, code: `new URL(${json(data)})` });
+  }
+  for (const replacement of replacements.sort((a, b) => b.start - a.start))
+    code =
+      code.slice(0, replacement.start) +
+      replacement.code +
+      code.slice(replacement.end);
+  return replacements.length ? code : undefined;
 }
 async function main(input: Input) {
   const { plan, sources } = input.source;
@@ -234,6 +320,20 @@ async function main(input: Input) {
               moduleSideEffects: 'no-treeshake',
             };
         },
+        async transform(code, id) {
+          const dependency = owner(id);
+          if (
+            dependency &&
+            /\.[cm]?js$/.test(id) &&
+            code.includes('import.meta') &&
+            /\.(?:ttf|otf|woff2?)["']/i.test(code)
+          )
+            return embedPackageFonts(
+              code,
+              id,
+              (file) => owner(file)?.key === dependency.key,
+            );
+        },
       },
     ],
     onwarn(w) {
@@ -265,22 +365,15 @@ async function main(input: Input) {
     await bundle.close();
   }
   if (!code) fail('실행할 JavaScript가 없습니다.');
-  const nodes: unknown[] = [
-    parseJavaScript(code, { ecmaVersion: 'latest', sourceType: 'script' }),
-  ];
-  while (nodes.length) {
-    const node = nodes.pop();
-    if (!node || typeof node !== 'object') continue;
-    if ('type' in node && node.type === 'ImportExpression')
+  const syntax = parseJavaScript(code, {
+    ecmaVersion: 'latest',
+    sourceType: 'script',
+  });
+  for (const node of syntaxNodes(syntax))
+    if (node.type === 'ImportExpression')
       fail(
         '빌드에 포함되지 않은 동적 import는 지원하지 않습니다. 준비한 모듈을 정적 import해주세요.',
       );
-    for (const value of Object.values(node)) {
-      if (Array.isArray(value)) {
-        for (const item of value) nodes.push(item);
-      } else if (value && typeof value === 'object') nodes.push(value);
-    }
-  }
   const doc = parse(sources[plan.html]);
   let scripts = 0;
   const replace = (node: DefaultTreeAdapterMap['element'], html: string) => {

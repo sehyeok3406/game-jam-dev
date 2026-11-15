@@ -57,7 +57,7 @@ README·타입 선언·registry 설명은 참고 데이터로 표시하며 AI �
 
 SHA-512 검증 후 압축을 해제한다. 절대 경로·상위 이동·Windows 장치 이름·중복 대소문자·symlink/hardlink·패키지 안의 node_modules·파일/총량 한도 위반을 거절한다. 배포본 package.json의 이름·버전·설치 조건을 다시 확인하고 모든 lock package의 license와 LICENSE/COPYING/NOTICE 원문을 확보한다. 고지가 없으면 성공으로 처리하지 않는다. 이 검사는 라이선스 조합의 법률 판단을 의미하지 않는다.
 
-AI 자료는 root 패키지의 README와 `types`/`typings` 진입 선언을 대상으로 한다. 파일당 32KB, 전체 160KB 이내의 발췌다. 외부 홈페이지/저장소 링크는 참고 문자열로만 제공하고 자동 수집하지 않는다. 타입 재수출의 모든 하위 파일이나 외부 API 문서까지 확보하는 기능은 아니다. 자료가 부족하면 후속 제작 단계가 호환성을 확인해야 한다.
+AI 자료는 root 패키지의 README와 `types`/`typings`, 또는 `exports['.'].types` 진입 선언을 대상으로 한다. 파일당 32KB, 전체 160KB 이내의 발췌다. 외부 홈페이지/저장소 링크는 참고 문자열로만 제공하고 자동 수집하지 않는다. 타입 재수출의 모든 하위 파일이나 외부 API 문서까지 확보하는 기능은 아니다. 자료가 부족하면 후속 제작 단계가 호환성을 확인해야 한다.
 
 각 문서는 `npm:<name>@<exact>/<relative>` 출처, 전달 본문의 SHA-256, 원본 파일 SHA-256, 잘림 여부를 가진다. UTF-8 문자 중간을 자르지 않는다. 선택 이유·도구 digest·OS/arch도 응답에 남긴다. 원본 전체를 읽었다는 의미와 AI에 전달한 발췌를 구분한다.
 
@@ -73,15 +73,19 @@ worker는 절대 경로의 동봉 Node로 실행한다. PATH는 도구 폴더만
 
 취소·시간 초과는 worker를 종료하고 종료 뒤 임시 파일을 정리한다. async 전후 `assertCurrent`로 세션을 검사하며 늦은 결과를 반환하지 않는다. 삭제는 정규화·실제 경로·직접 부모·작업 폴더 접두어·링크를 확인한 뒤 실행한다. 정리 실패는 성공으로 숨기지 않으며 재시도 가능한 작업 폴더 목록을 유지한다.
 
-| 처리 한도                                      | 초기값        |
+| 처리 한도                                      | 값            |
 | ---------------------------------------------- | ------------- |
 | root / 전체 package                            | 12 / 256      |
-| metadata 1회 / 배포본 1개                      | 8MB / 20MB    |
+| metadata 1회 / 배포본 1개                      | 8MB / 32MB    |
 | metadata·배포본 다운로드 합계 / 압축 해제 합계 | 80MB / 256MB  |
 | 압축 항목 수(디렉터리 포함) / 파일 하나        | 20,000 / 16MB |
 | API 자료 / JSON 결과                           | 160KB / 2MB   |
 
 이 한도는 준비 처리에만 적용한다. [원본 저장 한도](game-builds.md), 최종 HTML 한도, 서비스 구매 용량과 별개다. 전체 RSS 상한·운영 규모 부하·최종 브라우저 실행 가능성을 보장하지 않는다.
+
+`tegaki@1.1.0` 배포본은 23,909,489바이트로, 패키지 이름에 따른 예외 없이 준비할 수 있도록 배포본 1개 한도를 32MB로 조정했다. 다운로드·압축 해제 바이트 한도를 넘으면 `GC-AI-011` 메시지와 `details.dependencySizeLimit`에 패키지명, 알려진 버전, 한도 종류, 바이트 수, 상한을 기록한다. 스트림이나 합계에서 전체 크기를 알기 전에 중단하면 읽거나 확인한 수치를 최소값으로 표시한다.
+
+빌더는 확정된 패키지 모듈의 `new URL('./파일.ttf', import.meta.url)` 형태에서 같은 패키지가 소유한 TTF·OTF·WOFF·WOFF2만 HTML에 넣는다. 패키지 고지에 더해 동봉된 글꼴 고지(`FONTS-LICENSE.md` 등)를 포함한다. 단일 HTML의 네트워크 제한을 유지하며 Tegaki의 `tegaki/core`와 `tegaki/fonts/nanum-pen-script`로 한글·영문 애니메이션을 실행할 수 있다.
 
 ## 검증
 
@@ -90,3 +94,5 @@ worker는 절대 경로의 동봉 Node로 실행한다. PATH는 도구 폴더만
 기본 `npm test`에는 `tests/dependency-preparation.test.mjs`가 포함된다. 실제 worker·압축·HTTP·오프라인 재사용은 `node scripts/build-game-build-runtime.mjs` 뒤 `node --test tests/dependency-preparation-runtime.mjs`로 검사한다. 후자는 localhost registry fixture를 사용하며 유료 AI나 외부 registry에 의존하지 않는다.
 
 Windows package를 만든 뒤 `GAMEJAM_PREPARATION_RUNTIME`을 패키지의 `resources/game-build-runtime` 절대 경로로 지정하면 같은 실제 worker 검사를 실행할 수 있다. package와 이 검사가 사용하는 도구 폴더를 동시에 다시 빌드하지 않는다. 이번 실행 증거와 미검증 경계는 [3단계 보고서](../audits/2026-11-02-game-build-stage3.md)에 기록한다.
+
+`node tests/tegaki-offline-runtime.mjs`는 공개 npm의 고정 버전을 준비하고 단일 HTML을 빌드한다. 추출 폴더를 닫은 뒤 Electron에서 한글·영문 획, 두 글꼴의 로드, 외부 요청이 없음을 확인한다. 이 검사는 공개 npm 연결을 사용하므로 별도로 실행한다.

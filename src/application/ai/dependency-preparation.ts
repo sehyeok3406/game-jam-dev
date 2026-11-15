@@ -5,6 +5,7 @@ import {
   type DependencyPreparationResult,
   type DependencyRequestV1,
   type GameDependencyChange,
+  type DependencySizeLimit,
 } from '../../contracts/dependency-preparation.ts';
 import {
   parseDependencyExchange,
@@ -15,13 +16,16 @@ import {
 import type { GameBuildDependenciesV1 } from '../../contracts/game-build.ts';
 export class DependencyPreparationError extends Error {
   readonly suggestedLibraries: { name: string; reason: string }[];
+  readonly sizeLimit?: DependencySizeLimit;
 
   constructor(
     message: string,
     suggestedLibraries: { name: string; reason: string }[] = [],
+    sizeLimit?: DependencySizeLimit,
   ) {
     super(message);
     this.suggestedLibraries = suggestedLibraries;
+    this.sizeLimit = sizeLimit;
   }
 }
 export type DependencyPreparationEngine = {

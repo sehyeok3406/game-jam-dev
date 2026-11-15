@@ -12,7 +12,7 @@ export const DependencyPreparationLimits = Object.freeze({
   roots: 12,
   packages: 256,
   metadataBytes: 8_000_000,
-  tarballBytes: 20_000_000,
+  tarballBytes: 32_000_000,
   downloadBytes: 80_000_000,
   extractedBytes: 256_000_000,
   files: 20_000,
@@ -20,6 +20,19 @@ export const DependencyPreparationLimits = Object.freeze({
   materialBytes: 160_000,
   resultBytes: 2_000_000,
 });
+export type DependencySizeLimit = {
+  packageName: string;
+  version?: string;
+  scope:
+    | 'metadata'
+    | 'tarball'
+    | 'download-total'
+    | 'extracted-file'
+    | 'extracted-total';
+  bytes: number;
+  limitBytes: number;
+  atLeast?: true;
+};
 export type DependencyRequestV1 =
   | { version: 1; action: 'research'; names: string[] }
   | {

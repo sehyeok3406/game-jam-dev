@@ -227,6 +227,9 @@ export function createGameDependencyPreparation(ports: {
         if (cause instanceof DependencyPreparationError)
           throw new CanvasError('GC-AI-011', cause.message, {
             suggestedLibraries: cause.suggestedLibraries,
+            ...(cause.sizeLimit
+              ? { dependencySizeLimit: cause.sizeLimit }
+              : {}),
           });
         throw cause;
       }

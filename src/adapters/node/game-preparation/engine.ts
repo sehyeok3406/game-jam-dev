@@ -2,11 +2,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { runGameTool } from './tool-process.ts';
-import type { DependencyPreparationEngine } from '../../../application/ai/dependency-preparation.ts';
+import {
+  DependencyPreparationError,
+  type DependencyPreparationEngine,
+} from '../../../application/ai/dependency-preparation.ts';
 import {
   DependencyPreparationLimits as Limits,
   type DependencyPreparationResult,
   type DependencyRequestV1,
+  type DependencySizeLimit,
 } from '../../../contracts/dependency-preparation.ts';
 import {
   parseDependencyRequest,
@@ -148,14 +152,25 @@ export class NodeDependencyPreparationEngine implements DependencyPreparationEng
         ),
       ) as {
         result?: DependencyPreparationResult;
-        error?: { code: string; message: string };
+        error?: {
+          code: string;
+          message: string;
+          sizeLimit?: DependencySizeLimit;
+        };
       };
       signal.throwIfAborted();
       this.options.assertCurrent();
       if (result.error)
-        throw Object.assign(Error(result.error.message), {
-          code: result.error.code,
-        });
+        throw Object.assign(
+          result.error.sizeLimit
+            ? new DependencyPreparationError(
+                result.error.message,
+                [],
+                result.error.sizeLimit,
+              )
+            : Error(result.error.message),
+          { code: result.error.code },
+        );
       if (!result.result || result.result.version !== 1)
         throw Error('게임 준비 결과가 올바르지 않습니다.');
       if (result.result.action === 'prepared') {

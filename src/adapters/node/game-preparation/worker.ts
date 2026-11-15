@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { StringDecoder } from 'node:string_decoder';
 import {
   DependencyPreparationLimits as L,
+  type DependencySizeLimit,
   type PreparedDependenciesV1,
 } from '../../../contracts/dependency-preparation.ts';
 import type { GameBuildDependenciesV1 } from '../../../contracts/game-build.ts';
@@ -33,6 +34,7 @@ type Meta = {
   repository?: { url?: string };
   types?: string;
   typings?: string;
+  exports?: { '.'?: { types?: string } };
 };
 type Input = {
   request: unknown;
@@ -57,6 +59,40 @@ const sha = (value: string | Buffer) =>
   createHash('sha256').update(value).digest('hex');
 function error(code: string, message: string): never {
   throw Object.assign(Error(message), { code });
+}
+function sizeError(
+  pkg: Pick<DependencySizeLimit, 'packageName' | 'version'>,
+  scope: DependencySizeLimit['scope'],
+  bytes: number,
+  limitBytes: number,
+  atLeast?: true,
+): never {
+  const label = {
+    metadata: 'npm 패키지 정보 크기',
+    tarball: '라이브러리 다운로드 크기',
+    'download-total': '라이브러리 다운로드 합계',
+    'extracted-file': '압축 해제 파일 크기',
+    'extracted-total': '압축 해제 합계',
+  }[scope];
+  const name = pkg.version
+    ? `${pkg.packageName}@${pkg.version}`
+    : pkg.packageName;
+  const format = (n: number) => n.toLocaleString('ko-KR');
+  throw Object.assign(
+    Error(
+      `${name}: ${label} 한도 초과 (${atLeast ? '최소 ' : ''}${format(bytes)}바이트, 한도 ${format(limitBytes)}바이트).`,
+    ),
+    {
+      code: 'LIMIT',
+      sizeLimit: {
+        ...pkg,
+        scope,
+        bytes,
+        limitBytes,
+        ...(atLeast ? { atLeast } : {}),
+      } satisfies DependencySizeLimit,
+    },
+  );
 }
 const publicOrigin = 'https://registry.npmjs.org';
 const safeReference = (value: unknown) =>
@@ -120,7 +156,12 @@ async function main(input: Input) {
       description?: string;
     }
   >();
-  async function bytes(url: string, limit: number) {
+  async function bytes(
+    url: string,
+    pkg: Pick<DependencySizeLimit, 'packageName' | 'version'>,
+    scope: 'metadata' | 'tarball',
+  ) {
+    const limit = scope === 'metadata' ? L.metadataBytes : L.tarballBytes;
     const parsed = new URL(url);
     if (
       parsed.origin !== publicOrigin ||
@@ -140,19 +181,37 @@ async function main(input: Input) {
     if (!response.ok || !response.body)
       error(
         'NETWORK',
-        `라이브러리 자료를 받지 못했습니다 (HTTP ${response.status}).`,
+        `${pkg.packageName}: 라이브러리 자료를 받지 못했습니다 (HTTP ${response.status}).`,
       );
-    const length = Number(response.headers.get('content-length') ?? 0);
-    if (length > limit) error('LIMIT', '라이브러리 다운로드 크기 한도 초과');
+    const encoding = response.headers.get('content-encoding');
+    const length = Number(response.headers.get('content-length'));
+    if (
+      (!encoding || encoding === 'identity') &&
+      Number.isSafeInteger(length)
+    ) {
+      if (length > limit) {
+        await response.body.cancel().catch(() => {});
+        sizeError(pkg, scope, length, limit);
+      }
+      if (downloaded + length > L.downloadBytes) {
+        await response.body.cancel().catch(() => {});
+        sizeError(
+          pkg,
+          'download-total',
+          downloaded + length,
+          L.downloadBytes,
+          true,
+        );
+      }
+    }
     const chunks: Uint8Array[] = [];
     let size = 0;
     for await (const chunk of response.body) {
       size += chunk.length;
       downloaded += chunk.length;
-      if (size > limit || downloaded > L.downloadBytes) {
-        await response.body.cancel().catch(() => {});
-        error('LIMIT', '라이브러리 다운로드 크기 한도 초과');
-      }
+      if (size > limit) sizeError(pkg, scope, size, limit, true);
+      if (downloaded > L.downloadBytes)
+        sizeError(pkg, 'download-total', downloaded, L.downloadBytes, true);
       chunks.push(chunk);
     }
     return Buffer.concat(chunks);
@@ -167,7 +226,8 @@ async function main(input: Input) {
           (
             await bytes(
               `${publicOrigin}/${encodeURIComponent(name)}`,
-              L.metadataBytes,
+              { packageName: name },
+              'metadata',
             )
           ).toString('utf8'),
         ),
@@ -401,6 +461,7 @@ async function main(input: Input) {
     packages: [],
   };
   for (const p of lock.packages) {
+    const pkg = { packageName: p.name, version: p.version };
     const archive = path.join(archiveRoot, `${sha(p.integrity)}.tgz`);
     const valid = (data: Buffer) =>
       `sha512-${createHash('sha512').update(data).digest('base64')}` ===
@@ -413,7 +474,7 @@ async function main(input: Input) {
         ? await fs.readFile(archive)
         : null;
     if (!compressed || !valid(compressed)) {
-      compressed = await bytes(p.resolved, L.tarballBytes);
+      compressed = await bytes(p.resolved, pkg, 'tarball');
       if (!valid(compressed))
         error('INTEGRITY', `배포본 hash 또는 다운로드 한도 오류: ${p.name}`);
       const scratch = archive + `.${randomUUID()}.tmp`;
@@ -462,15 +523,19 @@ async function main(input: Input) {
           if (seen.has(relative.toLowerCase()))
             error('ARCHIVE_PATH', '대소문자/중복 archive 경로');
           seen.add(relative.toLowerCase());
+          if (!Number.isSafeInteger(entry.size) || entry.size < 0)
+            error('ARCHIVE_PATH', `올바르지 않은 압축 파일 크기: ${p.name}`);
+          if (entry.size > L.fileBytes)
+            sizeError(pkg, 'extracted-file', entry.size, L.fileBytes);
           extracted += entry.size;
-          if (
-            !Number.isSafeInteger(entry.size) ||
-            entry.size < 0 ||
-            entry.size > L.fileBytes ||
-            files > L.files ||
-            extracted > L.extractedBytes
-          )
-            error('LIMIT', '압축 해제 파일/크기 한도 초과');
+          if (extracted > L.extractedBytes)
+            sizeError(
+              pkg,
+              'extracted-total',
+              extracted,
+              L.extractedBytes,
+              true,
+            );
         }
         return true;
       },
@@ -490,18 +555,20 @@ async function main(input: Input) {
     if (installed.license !== p.license)
       error('LICENSE', 'registry와 배포본의 license 정보가 일치하지 않습니다.');
     metadata.set(p.key, { ...installed, dist: metadata.get(p.key)!.dist });
-    const licenses = (await fs.readdir(directory))
-      .filter((name) =>
-        /^(?:licen[sc]e|copying|notice)(?:[.-].*)?$/i.test(name),
-      )
-      .sort();
+    const names = (await fs.readdir(directory)).sort();
+    const licenses = names.filter((name) =>
+      /^(?:licen[sc]e|copying|notice)(?:[.-].*)?$/i.test(name),
+    );
     if (!licenses.length || p.license === 'UNKNOWN')
       error(
         'LICENSE',
         `라이선스 고지 원문이 필요합니다: ${p.name}@${p.version}`,
       );
     let text = '';
-    for (const name of licenses) {
+    for (const name of [
+      ...licenses,
+      ...names.filter((name) => /^fonts?-licen[sc]e(?:[.-].*)?$/i.test(name)),
+    ]) {
       const stat = await fs.stat(path.join(directory, name));
       if (!stat.isFile()) continue;
       if (stat.size > 200_000) error('LIMIT', '라이선스 고지 크기 초과');
@@ -520,9 +587,9 @@ async function main(input: Input) {
     const readme = (await fs.readdir(directory)).find((name) =>
       /^readme(?:\.md|\.txt)?$/i.test(name),
     );
-    for (const name of [readme, meta.types ?? meta.typings].filter(
-      (s): s is string => !!s,
-    )) {
+    const types = meta.types ?? meta.typings ?? meta.exports?.['.']?.types;
+    for (const name of [readme, types]) {
+      if (typeof name !== 'string') continue;
       const relative = name.replace(/^\.\//, '');
       if (!safePackageFile(relative)) continue;
       const filename = path.join(directory, relative);
@@ -580,12 +647,13 @@ for await (const chunk of process.stdin) {
 try {
   process.stdout.write(JSON.stringify(await main(JSON.parse(raw))));
 } catch (cause) {
-  const e = cause as Error & { code?: string };
+  const e = cause as Error & { code?: string; sizeLimit?: DependencySizeLimit };
   process.stdout.write(
     JSON.stringify({
       error: {
         code: e.code ?? 'PREPARATION',
         message: e.message.slice(0, 2000),
+        sizeLimit: e.sizeLimit,
       },
     }),
   );

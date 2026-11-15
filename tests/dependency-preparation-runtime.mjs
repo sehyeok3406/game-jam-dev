@@ -7,12 +7,16 @@ import path from 'node:path';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { DependencyPreparationLimits as limits } from '../src/contracts/dependency-preparation.ts';
 import {
   NodeDependencyPreparationEngine,
   verifyGameBuildRuntime,
 } from '../src/adapters/node/game-preparation/engine.ts';
 import { prepareGameDependencies } from '../src/application/ai/dependency-preparation.ts';
-import { AiDependencyFileExchange } from '../src/desktop/ai/dependency-preparation.ts';
+import {
+  AiDependencyFileExchange,
+  createGameDependencyPreparation,
+} from '../src/desktop/ai/dependency-preparation.ts';
 const runtime = path.resolve(
   process.env.GAMEJAM_PREPARATION_RUNTIME ?? 'out/game-build-runtime',
 );
@@ -35,15 +39,17 @@ async function fixture(t) {
       r.end('{}');
       return;
     }
-    r.end(Buffer.isBuffer(item) ? item : JSON.stringify(item));
+    if (typeof item === 'function') item(r);
+    else r.end(Buffer.isBuffer(item) ? item : JSON.stringify(item));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const engine = new NodeDependencyPreparationEngine({
+  const options = {
     runtime,
     cacheRoot: path.join(root, 'cache'),
     registryOrigin: `http://127.0.0.1:${server.address().port}`,
     assertCurrent() {},
-  });
+  };
+  const engine = new NodeDependencyPreparationEngine(options);
   t.after(async () => {
     await engine.close();
     await new Promise((resolve) => server.close(resolve));
@@ -116,7 +122,7 @@ async function fixture(t) {
     versions.set('/' + name, book);
     return meta;
   }
-  return { root, engine, pkg, requests, versions };
+  return { root, options, engine, pkg, requests, versions };
 }
 const plan = (name, version = 'latest', extra = {}) => ({
   version: 1,
@@ -124,6 +130,67 @@ const plan = (name, version = 'latest', extra = {}) => ({
   packages: [{ name, version, reason: 'fixture choice' }],
   ...extra,
 });
+test('download limit reports the exact archive size or the observed number of streamed metadata bytes', async (t) => {
+  const f = await fixture(t);
+  await f.pkg('large-engine', '1.0.0');
+  const bytes = limits.tarballBytes + 123;
+  f.versions.set('/large-engine/-/large-engine-1.0.0.tgz', (response) => {
+    response.writeHead(200, { 'Content-Length': bytes });
+    response.flushHeaders();
+    response.end('partial');
+  });
+  const preparation = createGameDependencyPreparation({
+    ...f.options,
+    prepared: { runId: 'diagnostic-fixture' },
+    executor: {
+      run: () => assert.fail('Explicit library changes bypass AI selection'),
+    },
+    inputs: {},
+    previousLock: { version: 1, roots: {}, packages: [] },
+    changes: [{ action: 'add', name: 'large-engine', version: '1.0.0' }],
+    progress() {},
+  });
+  t.after(() => preparation.close());
+  await assert.rejects(
+    preparation.run(AbortSignal.timeout(30_000)),
+    (error) => {
+      assert.match(
+        error.message,
+        /large-engine@1\.0\.0.*32,000,123.*32,000,000/,
+      );
+      assert.deepEqual(error.details.dependencySizeLimit, {
+        packageName: 'large-engine',
+        version: '1.0.0',
+        scope: 'tarball',
+        bytes,
+        limitBytes: limits.tarballBytes,
+      });
+      return error.code === 'GC-AI-011';
+    },
+  );
+  f.versions.set('/large-metadata', (response) => {
+    response.writeHead(200, { 'Transfer-Encoding': 'chunked' });
+    response.end(Buffer.alloc(limits.metadataBytes + 1));
+  });
+  await assert.rejects(
+    f.engine.execute(
+      { version: 1, action: 'research', names: ['large-metadata'] },
+      AbortSignal.timeout(30_000),
+    ),
+    (error) => {
+      assert.match(error.message, /large-metadata.*최소 8,000,001.*8,000,000/);
+      assert.deepEqual(error.sizeLimit, {
+        packageName: 'large-metadata',
+        scope: 'metadata',
+        bytes: limits.metadataBytes + 1,
+        limitBytes: limits.metadataBytes,
+        atLeast: true,
+      });
+      return error.code === 'LIMIT';
+    },
+  );
+});
+
 test('an empty saved lock accepts an explicit addition, version change, replacement and removal', async (t) => {
   const f = await fixture(t);
   await f.pkg('writer', '1.0.0');
