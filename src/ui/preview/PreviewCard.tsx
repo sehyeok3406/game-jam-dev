@@ -38,6 +38,7 @@ import { PreviewGameFrame } from './PreviewGameFrame';
 import {
   FileNodeSurface,
   fileNodeVariables,
+  useSelectedFileNodeClick,
   type FileNodeDisplay,
 } from '../canvas/FileNodeSurface';
 import { previewLabel } from '../../preview-output';
@@ -76,6 +77,7 @@ const PreviewCardContent = memo(function PreviewCardContent({
   selected,
 }: Pick<NodeProps<PreviewCanvasNode>, 'data' | 'selected'>) {
   const { api, capabilities } = useRuntime();
+  const activation = useSelectedFileNodeClick();
   const [exporting, setExporting] = useState(false),
     [exportMessage, setExportMessage] = useState('');
   const exportEpoch = useRef(0);
@@ -169,6 +171,7 @@ const PreviewCardContent = memo(function PreviewCardContent({
             selected={selected}
             locked={data.locked}
             hidden={data.sectionHidden}
+            activation={activation}
             onOpen={data.onOpenFileNode}
             onResize={data.onResizeFileNode}
           />

@@ -96,6 +96,37 @@ async function run() {
       await js('!!document.querySelector(".canvas-minimap-panel")'),
       false,
     );
+    const htmlSurface = '.file-node-surface--html';
+    const htmlCenter = `(() => {
+      const surface = document.querySelector('${htmlSurface}');
+      if (!surface) return;
+      const rect = surface.getBoundingClientRect();
+      const x = Math.round(rect.left + rect.width / 2);
+      const y = Math.round(rect.top + rect.height / 2);
+      if (surface.contains(document.elementFromPoint(x, y))) return { x, y };
+    })()`;
+    const clickHtmlNode = async () => {
+      await wait(htmlCenter);
+      const point = await js(htmlCenter);
+      for (const type of ['mouseDown', 'mouseUp']) {
+        win.webContents.sendInputEvent({
+          type,
+          button: 'left',
+          clickCount: 1,
+          ...point,
+        });
+      }
+    };
+    await clickHtmlNode();
+    await wait(
+      '!!document.querySelector(".react-flow__node-preview.selected")',
+    );
+    assert.ok(await js(`!!document.querySelector('${htmlSurface}')`));
+    await clickHtmlNode();
+    await wait(`!document.querySelector('${htmlSurface}')`);
+    await click('.preview-card button[title="HTML 창 최소화"]');
+    await wait(`!!document.querySelector('${htmlSurface}')`);
+
     const draw = '.canvas-drawing-control > button';
     const drawOptions = '.canvas-drawing-group';
     await click(draw);
