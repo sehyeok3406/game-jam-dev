@@ -4,9 +4,20 @@ export async function assertCanvasToolbar(js) {
   const layout = await js(`(()=>{
     const bar=document.querySelector('.bottom-toolbar'), canvas=document.querySelector('.canvas-shell');
     const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+    const contains=(outer,inner)=>inner.width>0&&inner.height>0&&
+      inner.left>=outer.left-0.5&&inner.right<=outer.right+0.5&&
+      inner.top>=outer.top-0.5&&inner.bottom<=outer.bottom+0.5;
     const targets=[...bar.querySelectorAll(':scope > button, :scope > details > summary, :scope > .canvas-drawing-control > button')].map(e=>{
       const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
-      return {name:e.textContent.trim(),visible:r.width>=36&&r.height>=36,clickable:e===hit||e.contains(hit)};
+      const badge=e.querySelector(':scope > kbd');
+      let shortcut;
+      if(badge){
+        const text=document.createRange();
+        text.selectNodeContents(badge);
+        const badgeRect=rect(badge);
+        shortcut={key:badge.textContent,fits:contains(r,badgeRect)&&contains(badgeRect,text.getBoundingClientRect())};
+      }
+      return {name:e.textContent.trim(),visible:r.width>=36&&r.height>=36,clickable:e===hit||e.contains(hit),shortcut};
     });
     return {bar:rect(bar),canvas:rect(canvas),targets,map:document.querySelector('.canvas-minimap-panel')?rect(document.querySelector('.canvas-minimap-panel')):null};
   })()`);
@@ -38,8 +49,15 @@ export async function assertCanvasToolbar(js) {
     layout.bar.bottom <= layout.canvas.bottom - 8,
     'Toolbar clears the footer',
   );
-  for (const target of layout.targets)
+  assert.equal(layout.targets.filter((target) => target.shortcut).length, 6);
+  for (const target of layout.targets) {
     assert.ok(target.visible && target.clickable, JSON.stringify(target));
+    if (target.shortcut)
+      assert.ok(
+        target.shortcut.fits,
+        `Shortcut is clipped: ${target.shortcut.key}`,
+      );
+  }
   if (layout.map) {
     const a = layout.bar,
       b = layout.map;

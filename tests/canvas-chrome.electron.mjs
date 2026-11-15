@@ -33,8 +33,8 @@ async function run() {
   };
   const click = (selector) =>
     js(`document.querySelector(${JSON.stringify(selector)}).click()`);
-  const key = (type, keyCode) =>
-    win.webContents.sendInputEvent({ type, keyCode });
+  const key = (type, keyCode, modifiers = []) =>
+    win.webContents.sendInputEvent({ type, keyCode, modifiers });
   const capture = async (name) => {
     await pause(150);
     await fs.writeFile(
@@ -261,31 +261,37 @@ async function run() {
       await js('window.dispatchEvent(new KeyboardEvent("keydown", {key:"?"}))');
       await wait('!!document.querySelector(".shortcut-dialog")');
     };
-    const changeToolKey = async (label, code) => {
+    const changeToolKey = async (label, code, modifiers) => {
       await js(
         `{ const button = document.querySelector(${JSON.stringify(`button[aria-label="${label} 단축키 변경"]`)}); button.focus(); button.click(); }`,
       );
-      key('keyDown', code);
-      key('keyUp', code);
+      key('keyDown', code, modifiers);
+      key('keyUp', code, modifiers);
     };
     await openShortcuts();
-    await changeToolKey('이동', 'J');
+    const longShortcut = 'Ctrl+Shift+E';
+    const modifiers = ['control', 'shift'];
+    await changeToolKey('이동', 'E', modifiers);
     await wait(
-      `document.querySelector('button[aria-label="이동 단축키 변경"] kbd')?.textContent === 'J'`,
+      `document.querySelector('button[aria-label="이동 단축키 변경"] kbd')?.textContent === '${longShortcut}'`,
     );
-    await changeToolKey('선택', 'J');
+    await changeToolKey('선택', 'E', modifiers);
     await wait(
       `document.querySelector('.shortcut-reset [role=status]').textContent.includes('이미 사용 중')`,
     );
     await click('[title="단축키 안내 닫기"]');
-    const changedHand = '.bottom-toolbar button[title="이동 도구 (J)"]';
+    const changedHand = `.bottom-toolbar button[title="이동 도구 (${longShortcut})"]`;
     assert.equal(
       await js(`document.querySelector('${changedHand} kbd').textContent`),
-      'J',
+      longShortcut,
     );
+    win.setSize(980, 640);
+    await pause();
+    await unobscured();
+    win.setSize(1280, 800);
     await js('document.querySelector(".canvas-shell").focus()');
-    key('keyDown', 'J');
-    key('keyUp', 'J');
+    key('keyDown', 'E', modifiers);
+    key('keyUp', 'E', modifiers);
     await wait('!!document.querySelector(".app-shell--tool-hand")');
     await click('.bottom-toolbar button[title="선택 도구 (V)"]');
     await openShortcuts();
