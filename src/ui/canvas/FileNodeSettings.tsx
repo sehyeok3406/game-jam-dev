@@ -1,9 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 import {
   fileNodeStyle,
   MAX_NODE_FONT_SIZE,
   MIN_NODE_BODY,
   MIN_NODE_FONT_SIZE,
+  readableOn,
   titleHeightFor,
   type FileNodeStyle,
 } from '../../core/canvas/file-node-style';
@@ -31,9 +33,10 @@ const settingsDimensions = [
   })),
 ];
 const colors = [
-  { key: 'markdownTitle', label: 'MD 제목 배경색', fallback: '#f4f6f8' },
-  { key: 'markdownBody', label: 'MD 본문 배경색', fallback: '#ffffff' },
-  { key: 'htmlTitle', label: 'HTML 제목 배경색', fallback: '#f4f6f8' },
+  { key: 'markdownTitle', label: 'MD 제목 배경색' },
+  { key: 'markdownBody', label: 'MD 본문 배경색' },
+  { key: 'markdownBodyText', label: 'MD 본문 글씨 색' },
+  { key: 'htmlTitle', label: 'HTML 제목 배경색' },
 ] as const;
 
 export function FileNodeSettings({
@@ -53,6 +56,14 @@ export function FileNodeSettings({
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState(680);
   const [message, setMessage] = useState('');
+  const [themeColors] = useState(() => {
+    const theme = getComputedStyle(document.documentElement);
+    return {
+      title: theme.getPropertyValue('--document-title-background').trim(),
+      body: theme.getPropertyValue('--card').trim(),
+      text: theme.getPropertyValue('--card-text').trim(),
+    };
+  });
   const [numericInput, setNumericInput] = useState<{
     key: keyof FileNodeStyle;
     value: string;
@@ -71,6 +82,14 @@ export function FileNodeSettings({
   }, []);
 
   const effective = fileNodeStyle(draft);
+  const defaultColors = {
+    markdownTitle: themeColors.title,
+    markdownBody: themeColors.body,
+    markdownBodyText: effective.markdownBody
+      ? readableOn(effective.markdownBody)
+      : themeColors.text,
+    htmlTitle: themeColors.title,
+  };
   const mdSize = expanded ? { width: 340, height: 300 } : effective;
   const htmlSize = expanded ? { width: 720, height: 520 } : effective;
   const displayWidth = mdSize.width + htmlSize.width + 20;
@@ -226,22 +245,23 @@ export function FileNodeSettings({
             );
           })}
           <div className="file-node-settings__colors">
-            {colors.map(({ key, label, fallback }) => (
+            {colors.map(({ key, label }) => (
               <div key={key}>
                 <label>
                   {label}
                   <input
                     type="color"
-                    value={effective[key] || fallback}
+                    value={effective[key] || defaultColors[key]}
                     onChange={(event) => change({ [key]: event.target.value })}
                   />
                 </label>
                 <button
                   type="button"
-                  aria-label={`${label} 테마 기본값`}
+                  aria-label={`${label} 초기화`}
+                  disabled={!effective[key]}
                   onClick={() => change({ [key]: '' })}
                 >
-                  테마 기본
+                  <RotateCcw size={13} aria-hidden="true" /> 색 초기화
                 </button>
               </div>
             ))}

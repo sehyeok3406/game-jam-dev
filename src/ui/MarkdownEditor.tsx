@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { previewState } from './debug/uiDebugPreviewState';
 import type { MarkdownEditFocus } from './documents/markdown-title';
@@ -44,6 +51,7 @@ import {
 } from '../editor-ux';
 
 type Props = {
+  bodyStyle?: CSSProperties;
   referencePreview?: ReactNode;
   onCopyBlock?: (id: string) => void;
   value: string;
@@ -63,6 +71,7 @@ type Props = {
   currentCanvas?: string;
 };
 export function MarkdownEditor({
+  bodyStyle,
   referencePreview,
   onCopyBlock,
   value,
@@ -1272,6 +1281,7 @@ export function MarkdownEditor({
   const content = (
     <div
       className="markdown-editor"
+      style={bodyStyle}
       onKeyDown={(event) => {
         if (!event.isPropagationStopped() && !handleLinkKey(event))
           dismissMenus(event);

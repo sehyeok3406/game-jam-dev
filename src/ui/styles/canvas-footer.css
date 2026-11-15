@@ -1181,6 +1181,7 @@
   overflow: visible;
 }
 .canvas-workspace .bottom-toolbar > button,
+.canvas-workspace .canvas-drawing-control > button,
 .canvas-workspace .bottom-toolbar > details > summary {
   width: 44px;
   min-width: 44px;
@@ -1197,9 +1198,32 @@
   font-size: 10px;
   cursor: pointer;
 }
+.canvas-workspace .bottom-toolbar :is(button, summary):has(> kbd) > kbd {
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  white-space: nowrap;
+}
+.canvas-workspace .bottom-toolbar > button:has(> kbd),
+.canvas-workspace .canvas-drawing-control > button:has(> kbd),
+.canvas-workspace .bottom-toolbar > details > summary:has(> kbd) {
+  gap: 1px;
+  padding-block: 2px;
+}
+.canvas-workspace .bottom-toolbar > button:has(> kbd) > svg,
+.canvas-workspace .canvas-drawing-control > button:has(> kbd) > svg,
+.canvas-workspace .bottom-toolbar > details > summary:has(> kbd) > svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
 .canvas-workspace .bottom-toolbar > button > kbd,
+.canvas-workspace .canvas-drawing-control > button > kbd,
 .canvas-workspace .bottom-toolbar > details > summary > kbd {
-  display: none;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 8px;
+  text-overflow: ellipsis;
 }
 .canvas-workspace .bottom-toolbar > button > span {
   display: block;
@@ -1219,6 +1243,30 @@
 .canvas-workspace summary:focus-visible {
   outline: 2px solid var(--selection);
   outline-offset: 2px;
+}
+.canvas-workspace .canvas-drawing-control {
+  display: flex;
+  align-items: center;
+}
+.canvas-workspace .canvas-drawing-group > summary {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 40px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.canvas-workspace .canvas-drawing-group > summary:hover,
+.canvas-workspace .canvas-drawing-group[open] > summary {
+  background: var(--surface-subtle);
+}
+.canvas-workspace .canvas-drawing-group[open] > summary svg {
+  transform: rotate(180deg);
+}
+.canvas-workspace .canvas-drawing-group > summary[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
 }
 .canvas-workspace .canvas-tool-more,
 .canvas-workspace .canvas-drawing-group {
@@ -1244,13 +1292,25 @@
 .canvas-workspace .bottom-toolbar details:not([open]) > div {
   display: none;
 }
+.canvas-workspace .canvas-drawing-group > div {
+  left: auto;
+  right: 0;
+}
 .canvas-workspace .canvas-tool-more > div > button,
-.canvas-workspace .canvas-drawing-group > div > button {
+.canvas-workspace .canvas-drawing-group > div > button,
+.canvas-workspace .drawing-tool-menu__items > button {
   flex-direction: row;
   justify-content: flex-start;
   min-height: 36px;
   padding: 8px 12px;
   font-size: 12px;
+}
+.canvas-workspace .bottom-toolbar details > div button > kbd {
+  margin-inline-start: auto;
+  font-size: 10px;
+}
+.canvas-workspace .drawing-eraser-menu > button > small {
+  order: 1;
 }
 .canvas-workspace .drawing-eraser-menu > button {
   width: 100%;

@@ -4,7 +4,7 @@ export async function assertCanvasToolbar(js) {
   const layout = await js(`(()=>{
     const bar=document.querySelector('.bottom-toolbar'), canvas=document.querySelector('.canvas-shell');
     const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
-    const targets=[...bar.querySelectorAll(':scope > button, :scope > details > summary')].map(e=>{
+    const targets=[...bar.querySelectorAll(':scope > button, :scope > details > summary, :scope > .canvas-drawing-control > button')].map(e=>{
       const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
       return {name:e.textContent.trim(),visible:r.width>=36&&r.height>=36,clickable:e===hit||e.contains(hit)};
     });
@@ -12,8 +12,8 @@ export async function assertCanvasToolbar(js) {
   })()`);
   assert.equal(
     layout.targets.length,
-    6,
-    'One toolbar contains the six primary tool groups',
+    7,
+    'One toolbar contains the seven primary tool groups',
   );
   assert.ok(
     layout.bar.height <= 60 && layout.bar.width > layout.bar.height * 3,

@@ -122,10 +122,10 @@ export function PreviewTitle({
             }
           }}
           onKeyDown={(e) => {
-            if (!locked && (e.key === 'Enter' || e.key === ' ')) {
+            if (!locked && e.key === 'Enter') {
               e.preventDefault();
               e.stopPropagation();
-              setEditing(true);
+              if (!e.repeat) setEditing(true);
             }
           }}
         >

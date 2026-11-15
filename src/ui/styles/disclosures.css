@@ -66,21 +66,10 @@
 
 /* Text and tool dropdowns need an indicator without widening the compact bar.
    Ellipsis menu buttons already use an established menu icon. */
-:is(
-    .canvas-drawing-group,
-    .drawing-tool-menu,
-    .selection-arrange-menu,
-    .canvas-zoom-menu
-  )
-  > summary {
+:is(.drawing-tool-menu, .selection-arrange-menu, .canvas-zoom-menu) > summary {
   position: relative;
 }
-:is(
-    .canvas-drawing-group,
-    .drawing-tool-menu,
-    .selection-arrange-menu,
-    .canvas-zoom-menu
-  )
+:is(.drawing-tool-menu, .selection-arrange-menu, .canvas-zoom-menu)
   > summary::after {
   content: '';
   position: absolute;
@@ -93,12 +82,7 @@
   transform: rotate(45deg);
   pointer-events: none;
 }
-:is(
-    .canvas-drawing-group,
-    .drawing-tool-menu,
-    .selection-arrange-menu,
-    .canvas-zoom-menu
-  )[open]
+:is(.drawing-tool-menu, .selection-arrange-menu, .canvas-zoom-menu)[open]
   > summary::after {
   transform: rotate(225deg);
 }

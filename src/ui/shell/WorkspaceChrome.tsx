@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react';
+import type { CanvasToolKeys } from '../../canvas-ux';
 import { WorkspaceHeader } from '../shell/WorkspaceHeader';
 import { WorkspaceCanvasTools } from '../canvas/WorkspaceCanvasTools';
 import { CanvasZoomLabel } from '../canvas/CanvasZoomLabel';
@@ -124,6 +125,7 @@ type Props = Pick<
     ComponentProps<typeof WorkspaceInspector>,
     'setInspectorId' | 'setSectionRename'
   > & {
+    toolKeys: CanvasToolKeys;
     compactChrome: boolean;
     dockPanel: import('../CanvasChrome').CanvasPanelId | null;
     eraserMode: import('../../drawing-types').EraserMode;
@@ -156,6 +158,7 @@ export function WorkspaceChrome({
   canWriteAiRequest,
   canvasSheets,
   changeEdit,
+  toolKeys,
   chooseDrawingTool,
   collaboration,
   compactChrome,
@@ -690,22 +693,22 @@ export function WorkspaceChrome({
           className={tool === 'select' ? 'active' : ''}
           aria-pressed={tool === 'select'}
           onClick={() => setTool('select')}
-          title="선택 도구 (V)"
+          title={`선택 도구 (${toolKeys.select})`}
         >
           <MousePointer2 size={19} />
           <span>선택</span>
-          <kbd>V</kbd>
+          <kbd>{toolKeys.select}</kbd>
         </button>
         <button
           type="button"
           className={tool === 'hand' ? 'active' : ''}
           aria-pressed={tool === 'hand'}
           onClick={() => setTool('hand')}
-          title="이동 도구 (H)"
+          title={`이동 도구 (${toolKeys.hand})`}
         >
           <Hand size={19} />
           <span>이동</span>
-          <kbd>H</kbd>
+          <kbd>{toolKeys.hand}</kbd>
         </button>
         <button
           type="button"
@@ -713,11 +716,11 @@ export function WorkspaceChrome({
           aria-pressed={tool === 'note'}
           disabled={locked}
           onClick={() => setTool('note')}
-          title="새 메모 (N) — 빈 곳 클릭 또는 원하는 크기로 드래그"
+          title={`새 메모 (${toolKeys.note}) · 빈 곳 클릭 또는 드래그`}
         >
           <StickyNote size={19} />
           <span>새 메모</span>
-          <kbd>N</kbd>
+          <kbd>{toolKeys.note}</kbd>
         </button>
         <button
           type="button"
@@ -729,13 +732,14 @@ export function WorkspaceChrome({
             (collaboration.active && collaboration.drawingTextVersion !== 1)
           }
           onClick={() => setTool('text')}
-          title="텍스트 (T) — 빈 곳을 클릭해서 입력"
+          title={`텍스트 (${toolKeys.text}) · 빈 곳을 클릭해서 입력`}
         >
           <Type size={19} />
           <span>텍스트</span>
-          <kbd>T</kbd>
+          <kbd>{toolKeys.text}</kbd>
         </button>
         <DrawingToolButtons
+          toolKeys={toolKeys}
           eraserMode={eraserMode}
           eraserSize={eraserSize}
           onEraser={(mode, size) => setEraserSettings({ mode, size })}
@@ -771,21 +775,21 @@ export function WorkspaceChrome({
                 setSectionTitle('새 섹션');
                 setSectionDialogOpen(true);
               }}
-              title="선택한 파일을 하나의 섹션으로 묶기 (Shift+S / Ctrl+G)"
+              title={`선택한 파일을 하나의 섹션으로 묶기 (${toolKeys.section})`}
             >
               <Frame size={19} />
               <span>섹션</span>
-              <kbd>⇧S</kbd>
+              <kbd>{toolKeys.section}</kbd>
             </button>
             <button
               type="button"
               onClick={() => openImport()}
               disabled={locked || importingFiles}
-              title="Markdown · HTML 게임 · 이미지 파일 불러오기 (Ctrl+I)"
+              title={`Markdown · HTML 게임 · 이미지 파일 불러오기 (${toolKeys.import})`}
             >
               <Upload size={19} />
               <span>불러오기</span>
-              <kbd>Ctrl I</kbd>
+              <kbd>{toolKeys.import}</kbd>
             </button>
             <button
               data-plugin-launcher

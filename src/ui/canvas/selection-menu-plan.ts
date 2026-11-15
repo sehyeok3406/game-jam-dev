@@ -1,6 +1,7 @@
 import type { CanvasNode } from '../workspace/workspace-types.ts';
 import type { CollapseTarget } from './collapse-actions.ts';
 import type { ProjectCopySelection } from '../../contracts/project-copy.ts';
+import { canvasStackKey } from './file-card-presentation.ts';
 
 export function contextSelection(nodes: CanvasNode[], hit?: CanvasNode) {
   return hit
@@ -44,6 +45,10 @@ export function selectionMenuTargets(nodes: CanvasNode[]) {
     return [];
   });
   return {
+    stacking: nodes.flatMap((node) => {
+      const key = canvasStackKey(node);
+      return key ? [key] : [];
+    }),
     documents: structuredClone(documents),
     sections: structuredClone(sections),
     previews: structuredClone(previews),

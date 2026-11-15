@@ -32,6 +32,7 @@ export type WorkspacePanelsProps = {
     find: Omit<Content<typeof CanvasFind>, 'jump'>;
     navigation: Content<typeof CanvasNavigator>;
     commands: ComponentProps<typeof CommandPalette>['commands'];
+    shortcuts: Content<typeof ShortcutDialog>;
     compare: Content<typeof CompareDialog> | null;
     plugins: Content<typeof PluginControlPanel>;
     appearance: Content<typeof KanbanAppearanceManager>;
@@ -109,7 +110,10 @@ export function WorkspacePanels({
         />
       )}
       {state.shortcutsOpen && (
-        <ShortcutDialog close={() => state.setShortcutsOpen(false)} />
+        <ShortcutDialog
+          {...workspace.shortcuts}
+          close={() => state.setShortcutsOpen(false)}
+        />
       )}
       {workspace.compare && (
         <CompareDialog {...workspace.compare} close={workspace.closeCompare} />

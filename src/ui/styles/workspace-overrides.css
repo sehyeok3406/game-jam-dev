@@ -404,9 +404,10 @@
 .markdown-editor-content {
   min-height: 0;
   flex: 1 1 0;
-  background: transparent;
+  background: var(--node-body-bg, transparent);
 }
 .markdown-editor .tiptap {
+  color: var(--node-body-fg, inherit);
   font-size: var(--node-body-font-size, 15px);
   line-height: 1.75;
   padding: 10px;
@@ -428,8 +429,8 @@
   font-size: var(--node-body-font-size, 14px);
   line-height: 1.8;
   padding: 12px;
-  color: var(--text);
-  background: var(--surface-subtle);
+  color: var(--node-body-fg, var(--text));
+  background: var(--node-body-bg, var(--surface-subtle));
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -1015,6 +1016,26 @@ kbd {
   gap: 15px;
   padding: 7px 0;
   border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.shortcut-tools {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
+  column-gap: 20px;
+}
+.shortcut-tools > div {
+  padding-block: 3px;
+}
+.shortcut-tools button {
+  min-height: 30px;
+  min-width: 90px;
+}
+.shortcut-tools button[aria-pressed='true'] {
+  border-color: var(--selection);
+}
+.shortcut-reset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
 }
 .compare-fields,

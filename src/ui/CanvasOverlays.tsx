@@ -9,7 +9,16 @@ import {
   StickyNote,
   X,
 } from 'lucide-react';
-import { SHORTCUTS } from '../canvas-ux';
+import {
+  CANVAS_TOOLS,
+  DEFAULT_CANVAS_TOOL_KEYS,
+  SHORTCUTS,
+  canvasToolActions,
+  canvasToolKey,
+  canvasToolKeyConflict,
+  type CanvasToolAction,
+  type CanvasToolKeys,
+} from '../canvas-ux';
 import { PREVIEW_PRESETS } from '../preview-window';
 import { previewLabel } from '../preview-output';
 import type { PreviewResult } from '../shared';
@@ -342,8 +351,32 @@ export function CommandPalette({
   );
 }
 
-export function ShortcutDialog({ close }: { close: () => void }) {
+export function ShortcutDialog({
+  close,
+  toolKeys,
+  setToolKeys,
+}: {
+  close: () => void;
+  toolKeys: CanvasToolKeys;
+  setToolKeys: (keys: CanvasToolKeys) => void;
+}) {
   const ref = useModalFocus();
+  const [recording, setRecording] = useState<CanvasToolAction | null>(null);
+  const [message, setMessage] = useState('');
+  const update = (action: CanvasToolAction, key: string) => {
+    const error = canvasToolKeyConflict(toolKeys, action, key);
+    if (error) {
+      setMessage(error);
+      return;
+    }
+    try {
+      setToolKeys({ ...toolKeys, [action]: key });
+      setRecording(null);
+      setMessage('');
+    } catch {
+      setMessage('단축키를 저장하지 못했습니다.');
+    }
+  };
   return (
     <div
       className="dialog-backdrop"
@@ -366,7 +399,6 @@ export function ShortcutDialog({ close }: { close: () => void }) {
       >
         <header>
           <div>
-            <span className="eyebrow">WORK FASTER</span>
             <h2>캔버스 단축키</h2>
           </div>
           <button
@@ -378,9 +410,76 @@ export function ShortcutDialog({ close }: { close: () => void }) {
           </button>
         </header>
         <p>
-          텍스트 입력 중에는 기본 텍스트 단축키가 우선합니다. Mac에서는 Ctrl
-          대신 ⌘를 사용하세요.
+          키를 바꿀 도구를 누르고 영문 키를 입력하세요. Ctrl(맥에서는 ⌘),
+          Shift를 조합할 수 있습니다.
         </p>
+        <div className="shortcut-list shortcut-tools">
+          {canvasToolActions.map((action) => {
+            const label = CANVAS_TOOLS[action][0];
+            const capturing = recording === action;
+            return (
+              <div key={action}>
+                <span>{label}</span>
+                <button
+                  type="button"
+                  aria-label={`${label} 단축키 변경`}
+                  aria-pressed={capturing}
+                  onClick={() => {
+                    setRecording(capturing ? null : action);
+                    setMessage('');
+                  }}
+                  onBlur={() => setRecording(null)}
+                  onKeyDown={(event) => {
+                    if (!capturing || event.key === 'Tab') return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (event.key === 'Escape') {
+                      setRecording(null);
+                      setMessage('');
+                      return;
+                    }
+                    if (
+                      event.repeat ||
+                      ['Shift', 'Control', 'Meta', 'Alt'].includes(event.key)
+                    )
+                      return;
+                    const chord = canvasToolKey(event.nativeEvent);
+                    if (chord) update(action, chord);
+                    else
+                      setMessage(
+                        '영문 키 또는 Ctrl·Shift 조합을 입력해주세요.',
+                      );
+                  }}
+                >
+                  {capturing ? (
+                    '키 입력…'
+                  ) : toolKeys[action] ? (
+                    <kbd>{toolKeys[action]}</kbd>
+                  ) : (
+                    '지정'
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="shortcut-reset">
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                setToolKeys(DEFAULT_CANVAS_TOOL_KEYS);
+                setRecording(null);
+                setMessage('');
+              } catch {
+                setMessage('단축키를 저장하지 못했습니다.');
+              }
+            }}
+          >
+            도구 단축키 초기화
+          </button>
+          <span role="status">{message}</span>
+        </div>
         <div className="shortcut-list">
           {SHORTCUTS.map(([label, keys]) => (
             <div key={label}>

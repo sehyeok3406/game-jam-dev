@@ -33,6 +33,8 @@ async function run() {
   };
   const click = (selector) =>
     js(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const key = (type, keyCode) =>
+    win.webContents.sendInputEvent({ type, keyCode });
   const capture = async (name) => {
     await pause(150);
     await fs.writeFile(
@@ -88,12 +90,212 @@ async function run() {
     await capture('project-add');
     await click('[aria-label="프로젝트 추가 닫기"]');
     await click('.home-project-open');
-    await wait('!!document.querySelector(".document-card")');
+    await wait('!!document.querySelector(".file-node-surface--md")');
     assert.equal(await js('!!document.querySelector(".canvas-dock")'), false);
     assert.equal(
       await js('!!document.querySelector(".canvas-minimap-panel")'),
       false,
     );
+    const draw = '.canvas-drawing-control > button';
+    const drawOptions = '.canvas-drawing-group';
+    await click(draw);
+    await wait(
+      `document.querySelector('${draw}').getAttribute('aria-pressed') === 'true'`,
+    );
+    assert.equal(
+      await js(`document.querySelector('${drawOptions}').open`),
+      false,
+    );
+    await click(draw);
+    await wait(`document.querySelector('${drawOptions}').open`);
+    await click(`${drawOptions} button[title="형광펜 (B)"]`);
+    await wait(`!document.querySelector('${drawOptions}').open`);
+    await click('.bottom-toolbar > button[title="선택 도구 (V)"]');
+    await click(draw);
+    await wait(
+      `document.querySelector('${draw} span').textContent === '형광펜'`,
+    );
+    await click('.bottom-toolbar > button[title="선택 도구 (V)"]');
+    await click(`${drawOptions} > summary`);
+    await wait(`document.querySelector('${drawOptions}').open`);
+    assert.equal(
+      await js(
+        `document.querySelector('${draw}').getAttribute('aria-pressed')`,
+      ),
+      'false',
+    );
+    await click(`${drawOptions} > summary`);
+
+    const compact = '.file-node-surface--md';
+    const compactId = await js(
+      `document.querySelector('${compact}').closest('.react-flow__node').dataset.id`,
+    );
+    const note = `[data-id=${JSON.stringify(compactId)}]`;
+    const surface = `${note} ${compact}`;
+    await click(note);
+    await wait(
+      `document.querySelector(${JSON.stringify(note)}).classList.contains('selected')`,
+    );
+    await js(
+      `document.querySelector(${JSON.stringify(surface)}).focus({preventScroll:true})`,
+    );
+    const viewport = () =>
+      js(`document.querySelector('.react-flow__viewport').style.transform`);
+    const beforePan = await viewport();
+    key('keyDown', 'Space');
+    await wait(`!!document.querySelector('.app-shell--tool-hand')`);
+    const [x, y] = await js(
+      `(()=>{const r=document.querySelector('.canvas-shell').getBoundingClientRect();return [Math.round(r.x+r.width/2), Math.round(r.y+150)]})()`,
+    );
+    win.webContents.sendInputEvent({
+      type: 'mouseDown',
+      button: 'left',
+      x,
+      y,
+      clickCount: 1,
+    });
+    win.webContents.sendInputEvent({
+      type: 'mouseMove',
+      x: x + 70,
+      y: y + 30,
+      modifiers: ['leftButtonDown'],
+    });
+    win.webContents.sendInputEvent({
+      type: 'mouseUp',
+      button: 'left',
+      x: x + 70,
+      y: y + 30,
+      clickCount: 1,
+    });
+    key('keyUp', 'Space');
+    await wait(`!!document.querySelector('.app-shell--tool-select')`);
+    assert.notEqual(await viewport(), beforePan);
+    assert.equal(
+      await js(`!!document.querySelector(${JSON.stringify(surface)})`),
+      true,
+    );
+    await js(
+      `document.querySelector(${JSON.stringify(surface)}).focus({preventScroll:true})`,
+    );
+    key('keyDown', 'Enter');
+    key('keyUp', 'Enter');
+    await wait(
+      `!!document.querySelector(${JSON.stringify(`${note} .markdown-body`)})`,
+    );
+
+    await click('summary[aria-label="더보기"]');
+    const clickText = (label) =>
+      js(
+        `[...document.querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(label)}).click()`,
+      );
+    await clickText('설정 및 도구');
+    await clickText('노드 모양');
+    await wait(`!!document.querySelector('.file-node-settings')`);
+    const setColor = (label, color) =>
+      js(`{
+      const input = [...document.querySelectorAll('.file-node-settings__colors label')].find(label=>label.textContent.trim()===${JSON.stringify(label)}).querySelector('input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(color)});
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    }`);
+    await setColor('MD 본문 배경색', '#102030');
+    await setColor('MD 본문 글씨 색', '#eebb44');
+    await wait(
+      `getComputedStyle(document.querySelector('.file-node-settings .file-node-summary')).color === 'rgb(238, 187, 68)'`,
+    );
+    await click('.file-node-settings [aria-label="MD 본문 글씨 색 초기화"]');
+    await wait(
+      `getComputedStyle(document.querySelector('.file-node-settings .file-node-summary')).color === 'rgb(255, 255, 255)'`,
+    );
+    await setColor('MD 본문 글씨 색', '#eebb44');
+    await clickText('저장');
+    await click('.file-node-settings [aria-label="닫기"]');
+    await wait(
+      `getComputedStyle(document.querySelector(${JSON.stringify(`${note} .markdown-body`)})).color === 'rgb(238, 187, 68)'`,
+    );
+    await click(`${note} button.canvas-file-header__title`);
+    await wait(
+      `getComputedStyle(document.querySelector(${JSON.stringify(`${note} .tiptap`)})).color === 'rgb(238, 187, 68)'`,
+    );
+    await js(
+      `document.querySelector(${JSON.stringify(`${note} .tiptap`)}).focus()`,
+    );
+    key('keyDown', 'Space');
+    await pause();
+    assert.ok(await js(`!!document.querySelector('.app-shell--tool-select')`));
+    key('keyUp', 'Space');
+    await click(`${note} [aria-label="접기"]`);
+    await wait(`!!document.querySelector(${JSON.stringify(surface)})`);
+
+    const openShortcuts = async () => {
+      await js('window.dispatchEvent(new KeyboardEvent("keydown", {key:"?"}))');
+      await wait('!!document.querySelector(".shortcut-dialog")');
+    };
+    const changeToolKey = async (label, code) => {
+      await js(
+        `{ const button = document.querySelector(${JSON.stringify(`button[aria-label="${label} 단축키 변경"]`)}); button.focus(); button.click(); }`,
+      );
+      key('keyDown', code);
+      key('keyUp', code);
+    };
+    await openShortcuts();
+    await changeToolKey('이동', 'J');
+    await wait(
+      `document.querySelector('button[aria-label="이동 단축키 변경"] kbd')?.textContent === 'J'`,
+    );
+    await changeToolKey('선택', 'J');
+    await wait(
+      `document.querySelector('.shortcut-reset [role=status]').textContent.includes('이미 사용 중')`,
+    );
+    await click('[title="단축키 안내 닫기"]');
+    const changedHand = '.bottom-toolbar button[title="이동 도구 (J)"]';
+    assert.equal(
+      await js(`document.querySelector('${changedHand} kbd').textContent`),
+      'J',
+    );
+    await js('document.querySelector(".canvas-shell").focus()');
+    key('keyDown', 'J');
+    key('keyUp', 'J');
+    await wait('!!document.querySelector(".app-shell--tool-hand")');
+    await click('.bottom-toolbar button[title="선택 도구 (V)"]');
+    await openShortcuts();
+    await clickText('도구 단축키 초기화');
+    await wait(
+      `document.querySelector('button[aria-label="이동 단축키 변경"] kbd')?.textContent === 'H'`,
+    );
+    await click('[title="단축키 안내 닫기"]');
+
+    const openStack = async () => {
+      await js(`{
+        const element = document.querySelector(${JSON.stringify(surface)});
+        element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2, clientX: 380, clientY: 260 }));
+      }`);
+      await wait('!!document.querySelector(".canvas-stack-menu")');
+    };
+    const noteZ = `Number(document.querySelector(${JSON.stringify(note)})?.style.zIndex)`;
+    const htmlZ = `Number(document.querySelector('.file-node-surface--html').closest('.react-flow__node').style.zIndex)`;
+    await openStack();
+    await clickText('맨 앞으로');
+    await wait(`${noteZ} > ${htmlZ}`);
+    await openStack();
+    await clickText('맨 뒤로');
+    await wait(`${noteZ} < ${htmlZ}`);
+    await js(`document.querySelector(${JSON.stringify(surface)}).focus()`);
+    key('keyDown', 'Enter');
+    key('keyUp', 'Enter');
+    await wait(
+      `!!document.querySelector(${JSON.stringify(`${note} .document-card`)})`,
+    );
+    assert.ok(
+      await js(`${noteZ} < ${htmlZ}`),
+      'opening a card keeps its manual order',
+    );
+    await click(`${note} [aria-label="접기"]`);
+    await wait(`!!document.querySelector(${JSON.stringify(surface)})`);
+    await click('.header-undo [aria-label="실행 취소"]');
+    await wait(`${noteZ} > ${htmlZ}`);
+    await click('.header-undo [aria-label="다시 실행"]');
+    await wait(`${noteZ} < ${htmlZ}`);
+
     for (const size of [
       [980, 640],
       [1280, 720],
@@ -204,7 +406,13 @@ async function run() {
     );
     await click('[aria-label="작업 패널 닫기"]');
     await win.loadURL(process.env.QA_URL);
-    await wait('!!document.querySelector(".document-card")');
+    await wait('!!document.querySelector(".file-node-surface--md")');
+    assert.equal(
+      await js(
+        `getComputedStyle(document.querySelector('.file-node-summary')).color`,
+      ),
+      'rgb(238, 187, 68)',
+    );
     await js(
       'Promise.all([qaQueue.enqueue(),qaQueue.enqueue(),qaQueue.enqueue()])',
     );
@@ -231,7 +439,7 @@ async function run() {
       errors.join('\n'),
     );
     console.log(
-      'PASS: project entry choices, trash icon, reserved controls, min-size layouts, minimap, focus restore, properties, collaboration and active AI queue',
+      'PASS: temporary pan, file node colors, drawing tool menu, project entry, responsive canvas controls and work panels',
     );
   } catch (error) {
     code = 1;

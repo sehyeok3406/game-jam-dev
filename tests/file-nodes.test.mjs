@@ -26,6 +26,12 @@ test('node styles reserve room for the summary and choose contrasting text', () 
   assert.equal(readNodePlacement({ width: '340', height: 112 }), undefined);
   assert.equal(fileNodeStyle({ height: 88, titleHeight: 70 }).titleHeight, 38);
   assert.equal(fileNodeStyle({ htmlTitle: 'red' }).htmlTitle, '');
+  assert.equal(fileNodeStyle({}).markdownBodyText, '');
+  assert.equal(fileNodeStyle({ markdownBodyText: 'red' }).markdownBodyText, '');
+  assert.equal(
+    fileNodeStyle({ markdownBodyText: '#fedcba' }).markdownBodyText,
+    '#fedcba',
+  );
   assert.equal(readableOn('#001030'), '#ffffff');
   assert.equal(readableOn('#f0eeee'), '#000000');
 });

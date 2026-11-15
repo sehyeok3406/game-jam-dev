@@ -70,8 +70,6 @@
         "compatibility-import|src/ai-task-records.ts|src/shared.ts": 1,
         "compatibility-import|src/app-update.ts|src/shared.ts": 1,
         "compatibility-import|src/author-label.ts|src/shared.ts": 1,
-        "compatibility-import|src/canvas-sheet-commands.ts|src/shared.ts": 1,
-        "compatibility-import|src/canvas-sheets.ts|src/shared.ts": 1,
         "compatibility-import|src/canvas-view.ts|src/shared.ts": 1,
         "compatibility-import|src/collaboration-client.ts|src/shared.ts": 4,
         "compatibility-import|src/collaboration-model.ts|src/shared.ts": 2,

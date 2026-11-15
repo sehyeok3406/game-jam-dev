@@ -349,7 +349,12 @@ export function WorkspaceCanvas({
     id: string;
   } | null>(null);
   const { renderedNodes, activate, reportImageEditing } =
-    useFileCardPresentation(nodes, selectionScopeKey(selectionScope));
+    useFileCardPresentation(
+      nodes,
+      selectionScopeKey(selectionScope),
+      canvasSheets.canvases.find((sheet) => sheet.id === activeCanvas)
+        ?.stacking,
+    );
   const activateFileAt = (target: Element) => {
     if (materialPicker !== null || tool !== 'select') return;
     const id = target.closest('.react-flow__node')?.getAttribute('data-id');
@@ -734,7 +739,7 @@ export function WorkspaceCanvas({
                           ),
                           screenY: Math.min(
                             event.clientY,
-                            window.innerHeight - 190,
+                            Math.max(8, window.innerHeight - 420),
                           ),
                           document: node.data.document,
                         });
@@ -761,7 +766,7 @@ export function WorkspaceCanvas({
                           ),
                           screenY: Math.min(
                             event.clientY,
-                            window.innerHeight - 160,
+                            Math.max(8, window.innerHeight - 420),
                           ),
                           preview: node.data.preview,
                         });
@@ -954,6 +959,7 @@ export function WorkspaceCanvas({
                     }}
                     selectionOnDrag={tool === 'select'}
                     panOnDrag={tool === 'hand' ? [0, 1, 2] : [1, 2]}
+                    panActivationKeyCode={null}
                     nodesDraggable={
                       materialPicker === null && tool === 'select'
                     }

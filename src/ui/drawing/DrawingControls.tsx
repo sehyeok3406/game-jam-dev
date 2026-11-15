@@ -3,10 +3,12 @@ import {
   Pencil,
   Highlighter,
   Eraser,
+  ChevronDown,
   Copy,
   Trash2,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { DEFAULT_CANVAS_TOOL_KEYS, type CanvasToolKeys } from '../../canvas-ux';
 import {
   drawingName,
   SHAPE_NAMES,
@@ -22,6 +24,7 @@ import {
   DEFAULT_SHAPE_STYLE,
 } from '../../drawing-geometry';
 export function DrawingToolButtons({
+  toolKeys = DEFAULT_CANVAS_TOOL_KEYS,
   grouped = false,
   active,
   tool,
@@ -32,6 +35,7 @@ export function DrawingToolButtons({
   onEraser,
   partialSupported = true,
 }: {
+  toolKeys?: CanvasToolKeys;
   grouped?: boolean;
   active: boolean;
   tool: DrawingTool;
@@ -42,6 +46,24 @@ export function DrawingToolButtons({
   onEraser?: (mode: EraserMode, size: number) => void;
   partialSupported?: boolean;
 }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  const lastBrush = useRef<'pen' | 'highlighter' | 'eraser'>('pen');
+  const brush =
+    tool === 'pen' || tool === 'highlighter' || tool === 'eraser' ? tool : null;
+  const brushActive = active && brush !== null;
+  useEffect(() => {
+    if (brush) lastBrush.current = brush;
+  }, [brush]);
+  useEffect(() => {
+    if (disabled && menu.current) menu.current.open = false;
+  }, [disabled]);
+  const BrushIcon = brushActive
+    ? brush === 'highlighter'
+      ? Highlighter
+      : brush === 'eraser'
+        ? Eraser
+        : Pencil
+    : Pencil;
   const drawingButtons = (
     <>
       <button
@@ -50,10 +72,11 @@ export function DrawingToolButtons({
         className={active && tool === 'pen' ? 'active' : ''}
         aria-pressed={active && tool === 'pen'}
         onClick={() => onTool('pen')}
-        title="펜 (Shift+P)"
+        title={`펜 (${toolKeys.pen})`}
       >
         <Pencil size={19} />
         <span>펜</span>
+        <kbd>{toolKeys.pen}</kbd>
       </button>
       <button
         type="button"
@@ -61,12 +84,14 @@ export function DrawingToolButtons({
         className={active && tool === 'highlighter' ? 'active' : ''}
         aria-pressed={active && tool === 'highlighter'}
         onClick={() => onTool('highlighter')}
-        title="형광펜 (B)"
+        title={`형광펜 (${toolKeys.highlighter})`}
       >
         <Highlighter size={19} />
         <span>형광펜</span>
+        <kbd>{toolKeys.highlighter}</kbd>
       </button>
       <EraserMenu
+        shortcut={toolKeys.eraser}
         active={active && tool === 'eraser'}
         disabled={disabled}
         mode={eraserMode}
@@ -83,10 +108,11 @@ export function DrawingToolButtons({
         <summary
           className={active && Object.hasOwn(SHAPE_NAMES, tool) ? 'active' : ''}
           aria-label="도형 삽입"
+          title={`도형 (${toolKeys.shapes})`}
         >
           <Shapes size={19} />
           <span>도형</span>
-          <kbd>D</kbd>
+          <kbd>{toolKeys.shapes}</kbd>
         </summary>
         <div className="drawing-tool-menu__items">
           {Object.entries(SHAPE_NAMES).map(([k, label]) => (
@@ -94,37 +120,63 @@ export function DrawingToolButtons({
               type="button"
               key={k}
               disabled={disabled}
+              aria-pressed={active && tool === k}
               onClick={(e) => {
                 onTool(k as DrawingTool);
                 e.currentTarget.closest('details')?.removeAttribute('open');
               }}
             >
-              {label}
+              <span>{label}</span>
+              {toolKeys[k as keyof typeof SHAPE_NAMES] && (
+                <kbd>{toolKeys[k as keyof typeof SHAPE_NAMES]}</kbd>
+              )}
             </button>
           ))}
         </div>
       </details>
       {grouped ? (
-        <details className="canvas-drawing-group">
-          <summary
-            className={
-              active && ['pen', 'highlighter', 'eraser'].includes(tool)
-                ? 'active'
-                : ''
-            }
-            aria-label="그리기 도구"
+        <div className="canvas-drawing-control">
+          <button
+            type="button"
+            className={brushActive ? 'active' : ''}
+            aria-pressed={brushActive}
+            disabled={disabled}
+            title={`그리기 (${toolKeys[brush ?? lastBrush.current]})`}
+            onClick={() => {
+              const details = menu.current;
+              if (!details) return;
+              if (brushActive) {
+                details.open = !details.open;
+              } else {
+                details.open = false;
+                onTool(lastBrush.current);
+              }
+            }}
           >
-            <Pencil size={19} />
+            <BrushIcon size={19} />
             <span>
-              {active && tool === 'highlighter'
+              {brushActive && brush === 'highlighter'
                 ? '형광펜'
-                : active && tool === 'eraser'
+                : brushActive && brush === 'eraser'
                   ? '지우개'
                   : '그리기'}
             </span>
-          </summary>
-          <div>{drawingButtons}</div>
-        </details>
+            <kbd>{toolKeys[brush ?? lastBrush.current]}</kbd>
+          </button>
+          <details className="canvas-drawing-group" ref={menu}>
+            <summary
+              aria-label="그리기 종류 선택"
+              aria-disabled={disabled || undefined}
+              tabIndex={disabled ? -1 : undefined}
+              onClick={(event) => {
+                if (disabled) event.preventDefault();
+              }}
+            >
+              <ChevronDown size={12} aria-hidden="true" />
+            </summary>
+            <div>{drawingButtons}</div>
+          </details>
+        </div>
       ) : (
         drawingButtons
       )}
@@ -132,6 +184,7 @@ export function DrawingToolButtons({
   );
 }
 function EraserMenu({
+  shortcut,
   active,
   disabled,
   mode,
@@ -140,6 +193,7 @@ function EraserMenu({
   onActivate,
   onChange,
 }: {
+  shortcut: string;
   active: boolean;
   disabled: boolean;
   mode: EraserMode;
@@ -193,7 +247,7 @@ function EraserMenu({
         aria-pressed={active}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={`${mode === 'partial' ? '부분' : '획'} 지우개 (E)`}
+        title={`${mode === 'partial' ? '부분' : '획'} 지우개 (${shortcut})`}
         onClick={() => {
           onActivate();
           setOpen(!open);
@@ -201,6 +255,7 @@ function EraserMenu({
       >
         <Eraser size={19} />
         <span>지우개</span>
+        <kbd>{shortcut}</kbd>
         <small aria-hidden="true">▴</small>
       </button>
       {open && (
@@ -277,6 +332,7 @@ export function DrawingInspector({
   canvases,
   canvasId,
   allObjects,
+  changeStack,
   eraserMode = 'stroke',
 }: {
   objects: DrawingItem[];
@@ -296,6 +352,7 @@ export function DrawingInspector({
   canvases: { id: string; name: string }[];
   canvasId: string;
   allObjects: DrawingItem[];
+  changeStack?: (ids: string[], direction: 'front' | 'back') => void;
   eraserMode?: EraserMode;
 }) {
   const first = objects[0],
@@ -558,21 +615,36 @@ export function DrawingInspector({
                 <select
                   aria-label="그림 표시 위치"
                   disabled={disabled}
-                  value={mixedLayer ? 'mixed' : first.layer}
-                  onChange={(e) =>
+                  value={
+                    changeStack ? 'manual' : mixedLayer ? 'mixed' : first.layer
+                  }
+                  onChange={(e) => {
+                    const layer = e.target.value as DrawingItem['layer'];
+                    if (changeStack) {
+                      changeStack(
+                        objects.map((object) => object.id),
+                        layer === 'background' ? 'back' : 'front',
+                      );
+                      return;
+                    }
                     submit({
                       action: 'patch',
                       patches: objects.map((o) => ({
                         id: o.id,
                         generation: o.generation,
-                        layer: e.target.value as DrawingItem['layer'],
+                        layer,
                       })),
-                    })
-                  }
+                    });
+                  }}
                 >
                   <option value="mixed" disabled>
                     혼합
                   </option>
+                  {changeStack && (
+                    <option value="manual" disabled>
+                      순서 선택…
+                    </option>
+                  )}
                   <option value="background">카드 뒤</option>
                   <option value="annotation">주석 앞</option>
                 </select>
@@ -580,7 +652,14 @@ export function DrawingInspector({
               <div className="drawing-actions">
                 <button
                   disabled={disabled}
-                  onClick={() =>
+                  onClick={() => {
+                    if (changeStack) {
+                      changeStack(
+                        objects.map((object) => object.id),
+                        'front',
+                      );
+                      return;
+                    }
                     submit({
                       action: 'patch',
                       patches: objects.map((o) => ({
@@ -600,14 +679,21 @@ export function DrawingInspector({
                           ) + 1,
                         ),
                       })),
-                    })
-                  }
+                    });
+                  }}
                 >
                   맨 앞으로
                 </button>
                 <button
                   disabled={disabled}
-                  onClick={() =>
+                  onClick={() => {
+                    if (changeStack) {
+                      changeStack(
+                        objects.map((object) => object.id),
+                        'back',
+                      );
+                      return;
+                    }
                     submit({
                       action: 'patch',
                       patches: allObjects
@@ -619,8 +705,8 @@ export function DrawingInspector({
                             ? 0
                             : Math.min(1e9, o.order + 1),
                         })),
-                    })
-                  }
+                    });
+                  }}
                 >
                   맨 뒤로
                 </button>

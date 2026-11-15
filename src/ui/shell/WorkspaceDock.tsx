@@ -194,6 +194,7 @@ type Props = Pick<
     'minimapPreferences' | 'updateMiniMapPreferences'
   > &
   Pick<ComponentProps<typeof WorkspaceAiDialogs>, 'noticeProject'> & {
+    changeDrawingStack?: ComponentProps<typeof DrawingInspector>['changeStack'];
     dockPanel: import('../CanvasChrome').CanvasPanelId | null;
     eraserMode: import('../../drawing-types').EraserMode;
     gameUiPanelActive: boolean;
@@ -248,6 +249,7 @@ export function WorkspaceDock({
   cancellingCodexRun,
   canvasItems,
   canvasSheets,
+  changeDrawingStack,
   closeCompletion,
   closeRunPanel,
   codexLogsRef,
@@ -1079,6 +1081,7 @@ export function WorkspaceDock({
                 <>
                   {(tool === 'drawing' || selectedDrawings.length > 0) && (
                     <DrawingInspector
+                      changeStack={changeDrawingStack}
                       eraserMode={eraserMode}
                       objects={drawing.items.filter((o) =>
                         selectedDrawings.some((s) => s.id === o.id),
@@ -1087,7 +1090,7 @@ export function WorkspaceDock({
                       style={drawingStyle}
                       onStyle={setDrawingStyle}
                       submit={submitDrawing}
-                      disabled={locked || drawing.saving}
+                      disabled={locked || drawing.saving || editBusy}
                       onDuplicate={() => duplicateDrawings()}
                       allObjects={drawing.items}
                       onDelete={deleteDrawings}

@@ -11,6 +11,8 @@
 
 ## 포커스와 표시 순서
 
+하단 도구의 키 설정은 앱 개인 설정에 저장한다. 단축키 안내, 버튼과 펼침 메뉴의 키 배지, 캔버스 입력 처리가 같은 설정을 사용한다. 도구마다 영문 키와 Ctrl·Shift 조합을 지정하며, 사용하는 키와 앱의 고정 단축키가 겹치면 현재 설정을 유지한다.
+
 2026-10-27 게임 UI 패널 정리: `PluginControlPanel`의 `embedded`와 게임 UI inspector의 기존 embedded 계약으로 우측 패널의 중복 닫기·이동·크기 조절 UI를 제외한다. 공통 패널이 닫히면 게임 UI provider의 활성 소유자를 해제해 UI 편집 버튼으로 한 번에 다시 열 수 있다. 독립 패널은 기존 창 조작을 유지한다. 게임 UI의 추가·속성·화면 설정과 접힌 레이어 목록은 표시 상태이며 저장·권한·명령 큐의 책임을 바꾸지 않는다.
 
 기존 `.dialog-backdrop` 80, `.modal-backdrop` 1200, `.workflow-modal-backdrop` 1500 등 CSS의 ancestor z-index와 동점의 DOM 순서로 활성 창을 정한다. CSS 숫자나 디자인은 변경하지 않는다. native `showModal` dialog는 브라우저의 top layer와 자체 포커스/Tab 처리를 유지한다.

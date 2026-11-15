@@ -5,6 +5,7 @@ export type FileNodeStyle = CompactSize & {
   radius: number;
   markdownTitle: string;
   markdownBody: string;
+  markdownBodyText: string;
   htmlTitle: string;
   markdownTitleSize?: number;
   markdownBodySize?: number;
@@ -18,6 +19,7 @@ export const DEFAULT_FILE_NODE_STYLE: FileNodeStyle = {
   radius: 12,
   markdownTitle: '',
   markdownBody: '',
+  markdownBodyText: '',
   htmlTitle: '',
 };
 
@@ -73,6 +75,7 @@ export function fileNodeStyle(
     radius: dimension(value.radius, 12, 0, 48),
     markdownTitle: color(value.markdownTitle),
     markdownBody: color(value.markdownBody),
+    markdownBodyText: color(value.markdownBodyText),
     htmlTitle: color(value.htmlTitle),
     markdownTitleSize: fontSize(value.markdownTitleSize),
     markdownBodySize: fontSize(value.markdownBodySize),

@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { canvasShortcut, type Shortcut } from '../../canvas-ux';
+import {
+  canvasShortcut,
+  type CanvasToolKeys,
+  type Shortcut,
+} from '../../canvas-ux';
 
 type CanvasCommands = {
+  toolKeys: CanvasToolKeys;
   home: boolean;
   findOpen: boolean;
   find: () => void;
@@ -40,15 +45,28 @@ export function useCanvasCommands(commands: CanvasCommands) {
         (current.findOpen && !!target?.closest('.canvas-find'))
       )
         return;
-      const action = canvasShortcut(event, {
-        editable: !!target?.closest(
-          'input, textarea, select, button:not(.file-node-surface), [role="listbox"], .plugin-control-panel, [contenteditable="true"], [data-editor-owner]',
-        ),
-        dialog,
-        playing: document.activeElement?.tagName === 'IFRAME',
-      });
+      const space = event.key === ' ';
+      const action = canvasShortcut(
+        event,
+        {
+          editable:
+            !!target?.closest(
+              'input, textarea, select, [role="listbox"], .plugin-control-panel, [contenteditable="true"], [data-editor-owner]',
+            ) ||
+            (!!target?.closest('button:not(.file-node-surface)') &&
+              !(space && target.closest('.canvas-file-header__title'))) ||
+            (space && !!target?.closest('summary')),
+          dialog,
+          playing: document.activeElement?.tagName === 'IFRAME',
+        },
+        current.toolKeys,
+      );
       if (action) {
         event.preventDefault();
+        if (action === 'pan') {
+          event.stopPropagation();
+          if (event.repeat) return;
+        }
         current.action(action, event);
         return;
       }
@@ -59,6 +77,13 @@ export function useCanvasCommands(commands: CanvasCommands) {
       )
         current.escape();
     };
+    // Claim Space before React Flow can change selection or a node can activate.
+    const panKeydown = (event: KeyboardEvent) => {
+      if (event.key === ' ') keydown(event);
+    };
+    const otherKeydown = (event: KeyboardEvent) => {
+      if (event.key !== ' ') keydown(event);
+    };
     const keyup = (event: KeyboardEvent) => {
       if (event.key === ' ') latest.current.releasePan();
       if (event.key.toLowerCase() === 'g') latest.current.releaseLinks?.();
@@ -68,11 +93,13 @@ export function useCanvasCommands(commands: CanvasCommands) {
       latest.current.releaseLinks?.();
       latest.current.blur();
     };
-    window.addEventListener('keydown', keydown);
+    document.addEventListener('keydown', panKeydown, true);
+    window.addEventListener('keydown', otherKeydown);
     window.addEventListener('keyup', keyup);
     window.addEventListener('blur', blur);
     return () => {
-      window.removeEventListener('keydown', keydown);
+      document.removeEventListener('keydown', panKeydown, true);
+      window.removeEventListener('keydown', otherKeydown);
       window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', blur);
     };

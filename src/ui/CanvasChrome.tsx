@@ -60,7 +60,8 @@ export function useCanvasRegions(
       '.canvas-main-menu, .canvas-zoom-menu, .canvas-tool-more, .canvas-drawing-group, .drawing-tool-menu';
     const outside = (event: PointerEvent) => {
       document.querySelectorAll<HTMLDetailsElement>(menus).forEach((menu) => {
-        if (!menu.contains(event.target as Node)) menu.open = false;
+        const group = menu.closest('.canvas-drawing-control') ?? menu;
+        if (!group.contains(event.target as Node)) menu.open = false;
       });
     };
     const escape = (event: KeyboardEvent) => {

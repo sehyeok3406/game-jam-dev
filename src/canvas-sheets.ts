@@ -1,5 +1,6 @@
-import type { Snapshot } from './project-store.ts';
-import type { CanvasSheets } from './shared.ts';
+import type { Snapshot } from './contracts/project.ts';
+import type { CanvasSheets } from './contracts/canvas.ts';
+import { readCanvasStacking } from './core/canvas/stacking.ts';
 
 export const CANVAS_SHEETS_PATH = '.canvas/canvases.json';
 export const DEFAULT_CANVAS_ID = 'default';
@@ -36,10 +37,15 @@ export function readCanvasSheets(raw?: string): CanvasSheets {
   }
   return {
     version: 1,
-    canvases: value.canvases.map((sheet: { id: string; name: string }) => ({
-      id: sheet.id,
-      name: sheet.name.trim(),
-    })),
+    canvases: value.canvases.map(
+      (sheet: { id: string; name: string; stacking?: unknown }) => ({
+        id: sheet.id,
+        name: sheet.name.trim(),
+        ...(sheet.stacking === undefined
+          ? {}
+          : { stacking: readCanvasStacking(sheet.stacking) }),
+      }),
+    ),
   };
 }
 

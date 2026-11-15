@@ -16,6 +16,11 @@ import type { EraserPreview } from '../drawing/eraserPreview';
 import { isPreviewPath } from '../../preview-output';
 import type { NodeTypes, ReactFlowInstance } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  DEFAULT_CANVAS_TOOL_KEYS,
+  normalizeCanvasToolKeys,
+  type CanvasToolKeys,
+} from '../../canvas-ux';
 import { flushSync } from 'react-dom';
 import {
   AI_FILE_LOCK_MESSAGE,
@@ -126,7 +131,16 @@ import {
 } from '../canvas/useSelectionActions';
 import { WorkspaceCanvas } from '../canvas/WorkspaceCanvas';
 import { WorkspaceContextMenus } from '../canvas/WorkspaceContextMenus';
-import { SelectionContextMenu } from '../canvas/SelectionContextMenu';
+import {
+  SelectionContextMenu,
+  type StackMenuActions,
+} from '../canvas/SelectionContextMenu';
+import {
+  canvasStackKey,
+  isVisibleCanvasNode,
+} from '../canvas/file-card-presentation';
+import { moveCanvasStack, type StackMove } from '../../core/canvas/stacking';
+import { useViewLifetime } from './useViewLifetime';
 import { ProjectCopyDialog } from '../ProjectCopyDialog';
 import {
   contextSelection,
@@ -176,6 +190,7 @@ import {
   EMPTY_AI_QUEUE,
   previewDeletionItem,
   previewNodeId,
+  sameIds,
   sectionNodeId,
   type CanvasNode,
   type ContextMenuState,
@@ -197,6 +212,19 @@ const nodeTypes: NodeTypes = {
 
 export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   const { api, preferences, capabilities } = useRuntime();
+  const [toolKeys, setToolKeys] = useState(() => {
+    try {
+      return normalizeCanvasToolKeys(
+        JSON.parse(preferences.getItem('gamejam:canvas-tool-keys') ?? 'null'),
+      );
+    } catch {
+      return DEFAULT_CANVAS_TOOL_KEYS;
+    }
+  });
+  const saveToolKeys = (keys: CanvasToolKeys) => {
+    preferences.setItem('gamejam:canvas-tool-keys', JSON.stringify(keys));
+    setToolKeys(keys);
+  };
   const panelState = usePanelState();
   const { dockPanel, setDockPanel, restorePanelScope } = panelState;
   const [minimapVisible, setMinimapVisible] = useState(() => {
@@ -381,6 +409,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     canvasId: activeCanvas,
     home,
   });
+  const isStackViewCurrent = useViewLifetime(selectionScope);
 
   const canvasProjectRef = useRef<string | null>(null);
   const switchingCanvasRef = useRef(false);
@@ -2443,7 +2472,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       ),
     );
     closeContextMenus();
-    if (chosen.length < 2 && hit.data.kind !== 'drawing') return false;
+    if (
+      chosen.length < 2 &&
+      hit.data.kind !== 'drawing' &&
+      hit.data.kind !== 'game-ui'
+    )
+      return false;
     setSelectionContextMenu({ x, y, targets: selectionMenuTargets(chosen) });
     return true;
   };
@@ -2582,6 +2616,74 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       setMoveCanvasTarget,
       canvasSheets,
     }));
+
+  const stackActions = (
+    keys: readonly string[],
+  ): StackMenuActions | undefined => {
+    if (!keys.length || collaboration.active) return;
+    const flow = flowRef.current;
+    const selected = new Set(keys);
+    const items = nodes
+      .flatMap((node, index) => {
+        const key = canvasStackKey(node);
+        if (!key) return [];
+        return [
+          {
+            key,
+            index,
+            z: flow?.getInternalNode(node.id)?.internals.z ?? node.zIndex ?? 0,
+            visible: isVisibleCanvasNode(node),
+            locked:
+              node.data.kind === 'document'
+                ? pathLocked(node.data.document.relativePath)
+                : node.data.kind === 'preview'
+                  ? pathLocked(node.data.preview.relativePath)
+                  : false,
+          },
+        ];
+      })
+      .sort((a, b) => a.z - b.z || a.index - b.index);
+    const visible = items.filter((item) => item.visible);
+    if (
+      locked ||
+      editBusy ||
+      visible.some((item) => selected.has(item.key) && item.locked)
+    )
+      return {};
+    if (!visible.some((item) => selected.has(item.key))) return;
+
+    const original = visible.map((item) => item.key);
+    const actions: StackMenuActions = {};
+    for (const move of [
+      'forward',
+      'backward',
+      'front',
+      'back',
+    ] satisfies StackMove[]) {
+      const next = moveCanvasStack(original, selected, move);
+      if (sameIds(original, next)) continue;
+      actions[move] = () => {
+        if (!isStackViewCurrent()) return;
+        closeContextMenus();
+        let index = 0;
+        const stacking = items.map((item) =>
+          item.visible ? next[index++] : item.key,
+        );
+        setEditBusy(true);
+        void changeSheets({
+          action: 'stack',
+          id: activeCanvas,
+          expected: canvasSheets.raw ?? null,
+          stacking,
+        })
+          .catch((error) => {
+            if (isStackViewCurrent()) showError(error);
+          })
+          .finally(() => setEditBusy(false));
+      };
+    }
+    return actions;
+  };
   const openDocumentLink = async (href: string) => {
     if (openingLink.current) return;
     if (linkComposing.current) {
@@ -2937,6 +3039,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     setNotice('삭제할 메모·파일·HTML 결과 또는 섹션 하나를 선택해주세요.');
   };
   useCanvasCommands({
+    toolKeys,
     home: home || materialPicker !== null,
     findOpen,
     find: () => {
@@ -3012,8 +3115,10 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       if (
         [
           'rectangle',
+          'rounded-rectangle',
           'ellipse',
           'triangle',
+          'diamond',
           'arrow',
           'line',
           'pen',
@@ -3745,6 +3850,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       className={`app-shell${materialPicker !== null ? ' app-shell--material-picker' : ''} canvas-workspace${nodes.some((n) => n.selected) && !uiHidden ? ' canvas-workspace--selection' : ''}${uiHidden ? ' canvas-workspace--focus' : ''}${dockPanel && !uiHidden ? ' canvas-workspace--panel' : ''}${navigatorOpen && !uiHidden ? ' canvas-workspace--navigator' : ''} app-shell--tool-${tool}${uiHidden || !workspace.root ? ' app-shell--tabs-hidden' : ''}${findOpen ? ' app-shell--has-find' : ''}${runPanelVisible ? ' app-shell--has-run' : ''}${completionVisible ? ' app-shell--has-completion' : ''}`}
     >
       <WorkspaceDock
+        changeDrawingStack={
+          collaboration.active
+            ? undefined
+            : (ids, direction) =>
+                stackActions(ids.map((id) => 'drawing:' + id))?.[direction]?.()
+        }
         {...{
           activeCanvas,
           openFileNodeSettings: () => setFileNodeSettingsScope(personalScope),
@@ -3903,6 +4014,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           canWriteAiRequest,
           canvasSheets,
           changeEdit,
+          toolKeys,
           chooseDrawingTool,
           collaboration,
           compactChrome,
@@ -3993,6 +4105,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           },
           navigation: { items: canvasItems, activeCanvas, jump: jumpTo },
           commands,
+          shortcuts: { toolKeys, setToolKeys: saveToolKeys },
           compare:
             compareFirst !== null
               ? {
@@ -4278,6 +4391,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
 
       <WorkspaceContextMenus
         {...{
+          stackActions,
           copyLocation,
           copyToProject,
           previewContextMenu,
@@ -4329,6 +4443,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           x={selectionContextMenu.x}
           y={selectionContextMenu.y}
           targets={selectionContextMenu.targets}
+          stackActions={stackActions(selectionContextMenu.targets.stacking)}
           locked={
             locked ||
             editBusy ||

@@ -25,7 +25,12 @@ import type {
   PreviewResult,
 } from '../../shared.ts';
 import { requireDesktopApi } from '../runtime/desktop-api.ts';
-import { CreateEmptySectionMenuItem } from './SelectionContextMenu';
+import {
+  CreateEmptySectionMenuItem,
+  StackMenu,
+  type StackMenuActions,
+} from './SelectionContextMenu';
+import { documentStackKey, htmlStackKey } from './file-card-presentation';
 import {
   previewDeletionItem,
   type CanvasNode,
@@ -35,6 +40,7 @@ import {
   type SectionContextMenuState,
 } from '../workspace/workspace-types.ts';
 interface Props {
+  stackActions?: (keys: readonly string[]) => StackMenuActions | undefined;
   copyLocation?: (
     target: import('../../contracts/location-links.ts').LocationTarget,
   ) => void;
@@ -124,6 +130,7 @@ interface Props {
   }>;
 }
 export function WorkspaceContextMenus({
+  stackActions,
   copyLocation,
   copyToProject,
   previewContextMenu,
@@ -191,10 +198,14 @@ export function WorkspaceContextMenus({
           style={{
             left: previewContextMenu.screenX,
             top: previewContextMenu.screenY,
+            maxHeight: window.innerHeight - previewContextMenu.screenY - 8,
           }}
           role="menu"
           aria-label="HTML 결과 메뉴"
         >
+          <StackMenu
+            actions={stackActions?.([htmlStackKey(previewContextMenu.preview)])}
+          />
           {copyButton(previewContextMenu.preview.relativePath)}
           {copyLocation && (
             <button
@@ -311,9 +322,15 @@ export function WorkspaceContextMenus({
           style={{
             left: documentContextMenu.screenX,
             top: documentContextMenu.screenY,
+            maxHeight: window.innerHeight - documentContextMenu.screenY - 8,
           }}
           role="menu"
         >
+          <StackMenu
+            actions={stackActions?.([
+              documentStackKey(documentContextMenu.document.id),
+            ])}
+          />
           {copyButton(documentContextMenu.document.relativePath)}
           {copyLocation && (
             <button

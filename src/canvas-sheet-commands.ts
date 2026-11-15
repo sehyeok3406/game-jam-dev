@@ -12,9 +12,9 @@ import {
   serializeDrawing,
 } from './drawing-model.ts';
 import type { Snapshot } from './project-store.ts';
-import type { CanvasSection } from './contracts/canvas.ts';
+import type { CanvasSection, CanvasSheetCommand } from './contracts/canvas.ts';
+import { readCanvasStacking } from './core/canvas/stacking.ts';
 import { sectionBranch, sectionTree } from './core/editing/section-tree.ts';
-import type { CanvasSheetCommand } from './shared.ts';
 import { isPreviewPath } from './preview-output.ts';
 import { htmlSourcePath, sourceMetadata } from './html-source.ts';
 import {
@@ -121,6 +121,9 @@ export function changeCanvasSheets(
     sheets.canvases = input.order.map(
       (key) => sheets.canvases.find((item) => item.id === key)!,
     );
+  } else if (input.action === 'stack') {
+    if (!sheet) throw new Error('캔버스를 찾을 수 없습니다.');
+    sheet.stacking = readCanvasStacking(input.stacking);
   } else if (input.action === 'move' || input.action === 'delete') {
     if (!sheet) throw new Error('캔버스를 찾을 수 없습니다.');
     const target = assertCanvas(files, input.targetId);

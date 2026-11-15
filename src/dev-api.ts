@@ -1104,6 +1104,8 @@ export function createDevGameCanvasApi(
         registry.canvases = input.order.map(
           (id) => registry.canvases.find((item) => item.id === id)!,
         );
+      else if (input.action === 'stack' && sheet)
+        sheet.stacking = input.stacking;
       else if (
         (input.action === 'move' || input.action === 'delete') &&
         sheet

@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   canvasShortcut,
+  canvasToolKeyConflict,
+  DEFAULT_CANVAS_TOOL_KEYS,
+  normalizeCanvasToolKeys,
   markdownEdit,
   snapPosition,
 } from '../src/canvas-ux.ts';
@@ -26,11 +29,31 @@ test('canvas shortcuts respect text, dialogs and playable iframe focus', () => {
     canvasShortcut({ key: '@', shiftKey: true }, {}),
     'selection-fit',
   );
-  assert.equal(canvasShortcut({ key: ' ', repeat: true }, {}), null);
+  assert.equal(canvasShortcut({ key: ' ', repeat: true }, {}), 'pan');
+  assert.equal(canvasShortcut({ key: ' ' }, { editable: true }), null);
   assert.equal(canvasShortcut({ key: 'n', altKey: true }, {}), null);
   assert.equal(canvasShortcut({ key: 't' }, {}), 'text');
   assert.equal(canvasShortcut({ key: 'T', shiftKey: true }, {}), 'triangle');
   assert.equal(canvasShortcut({ key: 't' }, { editable: true }), null);
+});
+
+test('custom tool keys replace the default and cannot claim another command', () => {
+  const keys = normalizeCanvasToolKeys({ hand: 'J', diamond: 'Shift+B' });
+  assert.equal(canvasShortcut({ key: 'j' }, {}, keys), 'hand');
+  assert.equal(canvasShortcut({ key: 'h' }, {}, keys), null);
+  assert.equal(
+    canvasShortcut({ key: 'B', shiftKey: true }, {}, keys),
+    'diamond',
+  );
+  assert.equal(canvasShortcut({ key: 'b' }, {}, keys), 'highlighter');
+  assert.equal(canvasShortcut({ key: 'j' }, { editable: true }, keys), null);
+  assert.match(canvasToolKeyConflict(keys, 'select', 'J'), /이동/);
+  assert.match(canvasToolKeyConflict(keys, 'select', 'Ctrl+Z'), /기존/);
+  assert.match(canvasToolKeyConflict(keys, 'select', 'Ctrl+F'), /기존/);
+  assert.equal(
+    normalizeCanvasToolKeys({ hand: 'V' }),
+    DEFAULT_CANVAS_TOOL_KEYS,
+  );
 });
 
 test('Markdown helpers preserve surrounding text and create GFM table and checkbox syntax', () => {

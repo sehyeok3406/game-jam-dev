@@ -107,6 +107,8 @@ export function fileNodeVariables(
 ): CSSProperties {
   const title = kind === 'md' ? style.markdownTitle : style.htmlTitle;
   const body = kind === 'md' ? style.markdownBody : '';
+  const bodyText = kind === 'md' ? style.markdownBodyText : '';
+  const bodyForeground = bodyText || (body ? readableOn(body) : '');
   const titleSize =
     kind === 'md' ? style.markdownTitleSize : style.htmlTitleSize;
   const bodySize = kind === 'md' ? style.markdownBodySize : undefined;
@@ -128,9 +130,8 @@ export function fileNodeVariables(
     ...(title
       ? { '--node-title-bg': title, '--node-title-fg': readableOn(title) }
       : {}),
-    ...(body
-      ? { '--node-body-bg': body, '--node-body-fg': readableOn(body) }
-      : {}),
+    ...(body ? { '--node-body-bg': body } : {}),
+    ...(bodyForeground ? { '--node-body-fg': bodyForeground } : {}),
   } as CSSProperties;
 }
 
@@ -208,11 +209,10 @@ export const FileNodeSurface = memo(function FileNodeSurface({
           aria-label={`${title} 펼치기`}
           onPointerDownCapture={activation?.onPointerDownCapture}
           onKeyDown={(event) => {
-            if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat)
-              return;
+            if (event.key !== 'Enter') return;
             event.preventDefault();
             event.stopPropagation();
-            event.currentTarget.click();
+            if (!event.repeat) event.currentTarget.click();
           }}
           onClick={(event) => {
             if (activation ? activation.canOpen(event) : opensFileNode(event))

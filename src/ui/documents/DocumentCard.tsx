@@ -184,13 +184,10 @@ const DocumentCardContent = memo(function DocumentCardContent({
               void startEdit();
           }}
           onKeyDown={(event) => {
-            if (
-              event.target === event.currentTarget &&
-              (event.key === 'Enter' || event.key === ' ')
-            ) {
+            if (event.target === event.currentTarget && event.key === 'Enter') {
               event.preventDefault();
               event.stopPropagation();
-              event.currentTarget.click();
+              if (!event.repeat) event.currentTarget.click();
             }
           }}
         >
@@ -209,6 +206,9 @@ const DocumentCardContent = memo(function DocumentCardContent({
     document.asset && editing
       ? imageDescription(body, document.asset.path)
       : undefined;
+  const fileNodeAppearance = data.fileNode
+    ? fileNodeVariables(data.fileNode.style, 'md', document.height)
+    : undefined;
 
   return (
     <>
@@ -237,11 +237,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
         inert={data.sectionHidden || undefined}
         data-find-document={document.id}
         data-card-color={cardColor(document.backgroundColor)}
-        style={
-          data.fileNode
-            ? fileNodeVariables(data.fileNode.style, 'md', document.height)
-            : undefined
-        }
+        style={fileNodeAppearance}
         className={`document-card document-card--${document.type}${document.collapsed ? ' document-card--collapsed' : ''}${data.fileNode ? ' file-node-expanded' : ''}`}
       >
         <header className="document-card__header canvas-file-header">
@@ -280,14 +276,14 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 aria-disabled={data.locked}
                 onKeyDown={(event) => {
                   if (
-                    (event.key === 'Enter' || event.key === ' ') &&
+                    event.key === 'Enter' &&
                     !event.ctrlKey &&
                     !event.metaKey &&
                     !event.altKey
                   ) {
                     event.preventDefault();
                     event.stopPropagation();
-                    void startEdit({ title: true });
+                    if (!event.repeat) void startEdit({ title: true });
                   }
                 }}
                 onClick={(event) => {
@@ -359,6 +355,7 @@ const DocumentCardContent = memo(function DocumentCardContent({
                 onKeyDown={handleEditorKeyDown}
               >
                 <MarkdownEditor
+                  bodyStyle={fileNodeAppearance}
                   onCopyBlock={copyBlock}
                   currentCanvas={document.canvasId}
                   referencePreview={

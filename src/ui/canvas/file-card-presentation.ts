@@ -9,6 +9,28 @@ export const isVisibleCanvasNode = (
   node: Pick<CanvasNode, 'hidden' | 'className'>,
 ) => !node.hidden && !node.className?.includes('section-member-hidden');
 
+export const documentStackKey = (id: string) => 'document:' + id;
+export const htmlStackKey = (
+  preview: Pick<
+    Extract<CanvasNode['data'], { kind: 'preview' }>['preview'],
+    'sourceId' | 'identityPath' | 'relativePath'
+  >,
+) =>
+  'html:' + (preview.sourceId ?? preview.identityPath ?? preview.relativePath);
+
+export function canvasStackKey({ data }: CanvasNode): string | undefined {
+  switch (data.kind) {
+    case 'document':
+      return documentStackKey(data.document.id);
+    case 'preview':
+      return htmlStackKey(data.preview);
+    case 'drawing':
+      return 'drawing:' + data.object.id;
+    case 'game-ui':
+      return 'game-ui:' + data.frame.id;
+  }
+}
+
 function openFileCard(node: CanvasNode, imageEditors: ReadonlySet<string>) {
   if (!isVisibleCanvasNode(node)) return false;
   const data = node.data;
@@ -26,7 +48,11 @@ const orderOpenCards = (
 ) => [...new Set([...previous.filter((id) => open.has(id)), ...open])];
 
 /** Presentation only. The logical nodes retain their original layers and dimensions. */
-export function useFileCardPresentation(nodes: CanvasNode[], scope: string) {
+export function useFileCardPresentation(
+  nodes: CanvasNode[],
+  scope: string,
+  stacking: readonly string[] = emptyIds,
+) {
   const activeScope = useRef(scope);
   activeScope.current = scope;
   const projections = useRef(new WeakMap<CanvasNode, CanvasNode>());
@@ -42,14 +68,23 @@ export function useFileCardPresentation(nodes: CanvasNode[], scope: string) {
   const previousOrder = state.scope === scope ? state.order : emptyIds;
   const imageIds = state.scope === scope ? state.images : emptyIds;
   const images = useMemo(() => new Set(imageIds), [imageIds]);
+  const manualRanks = useMemo(
+    () => new Map(stacking.map((key, index) => [key, index])),
+    [stacking],
+  );
   const open = useMemo(
     () =>
       new Set(
         nodes
-          .filter((node) => openFileCard(node, images))
+          .filter(
+            (node) =>
+              openFileCard(node, images) &&
+              (!manualRanks.size ||
+                !manualRanks.has(canvasStackKey(node) ?? '')),
+          )
           .map((node) => node.id),
       ),
-    [nodes, images],
+    [nodes, images, manualRanks],
   );
   const order = useMemo(
     () => orderOpenCards(previousOrder, open),
@@ -98,17 +133,27 @@ export function useFileCardPresentation(nodes: CanvasNode[], scope: string) {
   };
 
   const renderedNodes = useMemo(() => {
-    if (!order.length) return nodes;
+    if (!order.length && !stacking.length) return nodes;
     const ranks = new Map(
       order.map((id, index) => [id, firstOpenLayer + index]),
     );
+    // React Flow keeps children above their section, including nested sections.
+    const stackBase = stacking.length
+      ? 2 + nodes.filter((node) => node.data.kind === 'section').length
+      : 0;
     return nodes.map((node) => {
       const layer = node.zIndex ?? 0;
-      const zIndex =
+      const automatic =
         ranks.get(node.id) ??
         (layer >= firstOpenLayer ? layer + order.length : layer);
+      const key = stacking.length ? canvasStackKey(node) : undefined;
+      const manual = key === undefined ? undefined : manualRanks.get(key);
+      const zIndex =
+        key === undefined
+          ? automatic
+          : stackBase + (manual ?? stacking.length + automatic);
       const className =
-        images.has(node.id) && ranks.has(node.id)
+        images.has(node.id) && isVisibleCanvasNode(node)
           ? `${node.className ?? ''} ${imageDescriptionEditingClass}`
           : node.className;
       if (zIndex === layer && className === node.className) return node;
@@ -119,7 +164,7 @@ export function useFileCardPresentation(nodes: CanvasNode[], scope: string) {
       projections.current.set(node, projected);
       return projected;
     });
-  }, [nodes, order, images]);
+  }, [nodes, order, images, stacking, manualRanks]);
 
   return { renderedNodes, activate, reportImageEditing };
 }

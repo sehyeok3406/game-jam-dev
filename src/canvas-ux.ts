@@ -1,7 +1,9 @@
 export type Shortcut =
   | 'rectangle'
+  | 'rounded-rectangle'
   | 'ellipse'
   | 'triangle'
+  | 'diamond'
   | 'arrow'
   | 'line'
   | 'pen'
@@ -37,17 +39,98 @@ export type Shortcut =
   | 'show-links'
   | 'toggle-links'
   | 'pan';
+
+type ShortcutEvent = {
+  key: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  repeat?: boolean;
+  isComposing?: boolean;
+};
+
+export const CANVAS_TOOLS = {
+  select: ['선택', 'V'],
+  hand: ['이동', 'H'],
+  note: ['새 메모', 'N'],
+  text: ['텍스트', 'T'],
+  shapes: ['기본 도형', 'D'],
+  rectangle: ['직사각형', 'R'],
+  'rounded-rectangle': ['둥근 사각형', ''],
+  ellipse: ['타원', 'O'],
+  triangle: ['삼각형', 'Shift+T'],
+  diamond: ['마름모', ''],
+  arrow: ['화살표', 'A'],
+  line: ['선', 'Shift+L'],
+  pen: ['펜', 'Shift+P'],
+  highlighter: ['형광펜', 'B'],
+  eraser: ['지우개', 'E'],
+  section: ['섹션', 'Shift+S'],
+  import: ['불러오기', 'Ctrl+I'],
+} as const satisfies Partial<Record<Shortcut, readonly [string, string]>>;
+export type CanvasToolAction = keyof typeof CANVAS_TOOLS;
+export type CanvasToolKeys = Record<CanvasToolAction, string>;
+export const canvasToolActions = Object.keys(
+  CANVAS_TOOLS,
+) as CanvasToolAction[];
+export const DEFAULT_CANVAS_TOOL_KEYS = Object.fromEntries(
+  canvasToolActions.map((action) => [action, CANVAS_TOOLS[action][1]]),
+) as CanvasToolKeys;
+
+export function canvasToolKey(event: ShortcutEvent): string | null {
+  if (event.isComposing || event.altKey || !/^[a-z]$/i.test(event.key))
+    return null;
+  return [
+    ...(event.ctrlKey || event.metaKey ? ['Ctrl'] : []),
+    ...(event.shiftKey ? ['Shift'] : []),
+    event.key.toUpperCase(),
+  ].join('+');
+}
+
+function reservedToolKey(chord: string) {
+  const key = chord.at(-1)?.toLowerCase();
+  if (!key || !/^(Ctrl\+)?(Shift\+)?[A-Z]$/.test(chord)) return true;
+  const ctrlKey = chord.startsWith('Ctrl+');
+  const shiftKey = chord.includes('Shift+');
+  // Keep native/system commands and the workspace's separate find handler free.
+  if (ctrlKey && 'fhlnoqprtw'.includes(key)) return true;
+  if (ctrlKey && shiftKey && 'ijc'.includes(key)) return true;
+  return fixedCanvasShortcut({ key, ctrlKey, shiftKey }) !== null;
+}
+
+export function canvasToolKeyConflict(
+  keys: CanvasToolKeys,
+  action: CanvasToolAction,
+  chord: string,
+) {
+  if (chord === '') return null;
+  const duplicate = canvasToolActions.find(
+    (other) => other !== action && keys[other] === chord,
+  );
+  if (duplicate) return `${CANVAS_TOOLS[duplicate][0]}에 이미 사용 중입니다.`;
+  if (reservedToolKey(chord)) return '기존 단축키에서 사용 중입니다.';
+  return null;
+}
+
+export function normalizeCanvasToolKeys(value: unknown): CanvasToolKeys {
+  if (!value || typeof value !== 'object') return DEFAULT_CANVAS_TOOL_KEYS;
+  const keys = { ...DEFAULT_CANVAS_TOOL_KEYS };
+  for (const action of canvasToolActions) {
+    const chord = (value as Record<string, unknown>)[action];
+    if (typeof chord === 'string') keys[action] = chord;
+  }
+  return canvasToolActions.some((action) =>
+    canvasToolKeyConflict(keys, action, keys[action]),
+  )
+    ? DEFAULT_CANVAS_TOOL_KEYS
+    : keys;
+}
+
 export function canvasShortcut(
-  event: {
-    key: string;
-    ctrlKey?: boolean;
-    metaKey?: boolean;
-    altKey?: boolean;
-    shiftKey?: boolean;
-    repeat?: boolean;
-    isComposing?: boolean;
-  },
+  event: ShortcutEvent,
   scope: { editable?: boolean; dialog?: boolean; playing?: boolean },
+  keys: CanvasToolKeys = DEFAULT_CANVAS_TOOL_KEYS,
 ): Shortcut | null {
   if (
     scope.editable ||
@@ -57,11 +140,20 @@ export function canvasShortcut(
     event.isComposing
   )
     return null;
-  const key = event.key.toLowerCase(),
-    command = event.ctrlKey || event.metaKey;
+  const key = event.key.toLowerCase();
   if (event.repeat && !['+', '=', '-', ' '].includes(key)) return null;
+  const chord = canvasToolKey(event);
+  if (chord) {
+    const tool = canvasToolActions.find((action) => keys[action] === chord);
+    if (tool) return tool;
+  }
+  return fixedCanvasShortcut(event);
+}
+
+function fixedCanvasShortcut(event: ShortcutEvent): Shortcut | null {
+  const key = event.key.toLowerCase();
+  const command = event.ctrlKey || event.metaKey;
   if (command) {
-    if (key === 'i') return 'import';
     if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
     if (key === 'y') return 'redo';
     if (key === 'k') return 'search';
@@ -85,25 +177,12 @@ export function canvasShortcut(
   if (key === '@' || (key === '2' && event.shiftKey)) return 'selection-fit';
   if (key === '+' || key === '=') return 'zoom-in';
   if (key === '-') return 'zoom-out';
-  if (key === ' ' && !event.repeat) return 'pan';
-  if (key === 's' && event.shiftKey) return 'section';
+  if (key === ' ') return 'pan';
   if (key === 'g') return event.shiftKey ? 'toggle-links' : 'show-links';
-  if (key === 'l' && event.shiftKey) return 'line';
-  if (key === 'p' && event.shiftKey) return 'pen';
-  if (key === 't' && event.shiftKey) return 'triangle';
+  if (key === 'l' && event.shiftKey) return null;
   return (
     (
       {
-        v: 'select',
-        h: 'hand',
-        n: 'note',
-        r: 'rectangle',
-        o: 'ellipse',
-        t: 'text',
-        a: 'arrow',
-        b: 'highlighter',
-        e: 'eraser',
-        d: 'shapes',
         f: 'search',
         l: 'navigator',
         delete: 'delete',
@@ -114,20 +193,14 @@ export function canvasShortcut(
 }
 
 export const SHORTCUTS = [
-  ['텍스트', 'T'],
   ['모든 연결선 잠시 보기 / 고정', 'G 누르기 / Shift+G'],
-  ['도형: 사각형 / 타원 / 삼각형 / 화살표', 'R / O / Shift+T / A'],
-  ['선 / 펜 / 형광펜 / 획 지우개', 'Shift+L / Shift+P / B / E'],
-  ['Markdown · 이미지 불러오기', 'Ctrl + I'],
   ['선택 추가 / 선택 해제', 'Shift 또는 Ctrl + 클릭'],
-  ['선택 / 이동 / 새 메모', 'V / H / N'],
-  ['새 메모 크기 지정', 'N → 캔버스 드래그'],
   ['잠시 캔버스 이동', 'Space 누른 채 드래그'],
   ['검색 · 명령', 'Ctrl + K 또는 F'],
   ['문서 목록', 'L'],
   ['전체 선택', 'Ctrl + A'],
   ['복사 / 붙여넣기 / 복제', 'Ctrl + C / V / D'],
-  ['선택 파일로 섹션 만들기', 'Ctrl + G 또는 Shift + S'],
+  ['선택 파일로 섹션 만들기', 'Ctrl + G'],
   ['삭제 확인', 'Delete'],
   ['최소화 / 펼치기', 'Ctrl + Shift + M'],
   ['실행 취소', 'Ctrl + Z'],

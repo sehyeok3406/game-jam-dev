@@ -1,6 +1,7 @@
 export type CanvasSheet = {
   id: string;
   name: string;
+  stacking?: string[];
 };
 export type CanvasSheets = {
   version: 1;
@@ -8,13 +9,14 @@ export type CanvasSheets = {
   raw?: string | null;
 };
 export type CanvasSheetCommand = {
-  action: 'add' | 'rename' | 'reorder' | 'move' | 'delete';
+  action: 'add' | 'rename' | 'reorder' | 'move' | 'delete' | 'stack';
   expected: string | null;
   id: string;
   name?: string;
   order?: string[];
   targetId?: string;
   paths?: string[];
+  stacking?: string[];
 };
 export type SectionMember = {
   id: string;

@@ -180,10 +180,7 @@ button.file-node-surface:active:not(:disabled) {
   overflow: auto;
 }
 .file-node-settings > header,
-.file-node-settings__preview-controls,
-.file-node-settings__colors,
-.file-node-settings__colors > div,
-.file-node-settings__colors label {
+.file-node-settings__preview-controls {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -223,10 +220,53 @@ button.file-node-surface:active:not(:disabled) {
   min-width: 0;
 }
 .file-node-settings__colors {
-  flex-wrap: wrap;
+  display: grid;
+  gap: 4px;
+  width: min(100%, 360px);
+  margin-top: 5px;
 }
-.file-node-settings__colors input {
-  width: 34px;
+.file-node-settings__colors > div,
+.file-node-settings__colors label {
+  display: flex;
+  align-items: center;
+}
+.file-node-settings__colors > div {
+  gap: 10px;
+  padding: 3px 0;
+}
+.file-node-settings__colors label {
+  flex: 1;
+  justify-content: space-between;
+  gap: 8px;
+}
+.file-node-settings__colors input[type='color'] {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.file-node-settings__colors input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.file-node-settings__colors input::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+.file-node-settings__colors button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 .file-node-edges {
   position: absolute;

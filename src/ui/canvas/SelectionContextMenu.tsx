@@ -5,9 +5,45 @@ import {
   Minimize2,
   Trash2,
   Link2,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUp,
+  ChevronsDown,
 } from 'lucide-react';
 import { CardColorUnavailable } from './CardColorUnavailable';
 import type { SelectionMenuTargets } from './selection-menu-plan.ts';
+import type { StackMove } from '../../core/canvas/stacking.ts';
+
+export type StackMenuActions = Partial<Record<StackMove, () => void>>;
+const stackItems = [
+  ['forward', '한 단계 앞으로', ChevronUp],
+  ['backward', '한 단계 뒤로', ChevronDown],
+  ['front', '맨 앞으로', ChevronsUp],
+  ['back', '맨 뒤로', ChevronsDown],
+] as const;
+
+export function StackMenu({ actions }: { actions?: StackMenuActions }) {
+  if (!actions) return null;
+  return (
+    <div className="canvas-stack-menu" role="group" aria-label="쌓임 순서">
+      <div className="context-menu-title">쌓임 순서</div>
+      <div className="canvas-stack-menu__actions">
+        {stackItems.map(([move, label, Icon]) => (
+          <button
+            key={move}
+            type="button"
+            role="menuitem"
+            disabled={!actions[move]}
+            onClick={actions[move]}
+          >
+            <Icon size={15} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type EmptySectionAction = { open(): void; blockedReason?: string };
 
@@ -38,6 +74,7 @@ export function SelectionContextMenu({
   locked,
   canMove,
   canCopy,
+  stackActions,
   onCopy,
   emptySection,
   onCopyLocation,
@@ -51,6 +88,7 @@ export function SelectionContextMenu({
   locked: boolean;
   canMove: boolean;
   canCopy: boolean;
+  stackActions?: StackMenuActions;
   onCopy(): void;
   emptySection?: EmptySectionAction;
   onCopyLocation?: () => void;
@@ -59,6 +97,7 @@ export function SelectionContextMenu({
   onDelete(): void;
 }) {
   const colors = [...targets.documents, ...targets.previews];
+  const top = Math.max(0, Math.min(y, window.innerHeight - 420));
   const supported =
     targets.documents.length +
     targets.sections.length +
@@ -72,12 +111,13 @@ export function SelectionContextMenu({
       aria-label="선택 항목 메뉴"
       style={{
         left: Math.max(0, Math.min(x, window.innerWidth - 292)),
-        top: Math.max(0, Math.min(y, window.innerHeight - 350)),
-        maxHeight: 'calc(100vh - 16px)',
+        top,
+        maxHeight: window.innerHeight - top - 8,
         overflowY: 'auto',
       }}
     >
       <div className="context-menu-title">{targets.count}개 선택됨</div>
+      <StackMenu actions={stackActions} />
       {emptySection && <CreateEmptySectionMenuItem {...emptySection} />}
       {onCopyLocation && (
         <button type="button" role="menuitem" onClick={onCopyLocation}>

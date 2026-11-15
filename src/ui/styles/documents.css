@@ -164,19 +164,19 @@
 
 .markdown-body h1 {
   margin: 0 0 10px;
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
   font-size: 2em;
 }
 
 .markdown-body h2 {
   margin: 16px 0 8px;
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
   font-size: calc(5em / 3);
 }
 
 .markdown-body h3 {
   margin: 13px 0 6px;
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
   font-size: calc(17em / 12);
 }
 
@@ -184,7 +184,7 @@
 .markdown-body h5,
 .markdown-body h6 {
   margin: 12px 0 6px;
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
 }
 .markdown-body h4 {
   font-size: 1.25em;
@@ -219,19 +219,19 @@
 }
 
 .markdown-body a {
-  color: var(--selection);
+  color: var(--node-body-fg, var(--selection));
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 
 .markdown-body strong {
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
 }
 
 .markdown-body blockquote {
   padding: 2px 0 2px 11px;
   border-left: 3px solid var(--selection);
-  color: var(--card-muted);
+  color: var(--node-body-fg, var(--card-muted));
   background: color-mix(in srgb, var(--selection) 5%, transparent);
 }
 
@@ -255,7 +255,7 @@
   margin: 10px 0;
   border: 1px solid var(--card-line);
   border-collapse: collapse;
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
   font-size: calc(11em / 12);
   line-height: 1.45;
 }
@@ -270,12 +270,20 @@
 }
 
 .markdown-body th {
-  background: color-mix(in srgb, var(--card-alt) 82%, var(--selection) 18%);
+  background: color-mix(
+    in srgb,
+    var(--node-body-bg, var(--card-alt)) 82%,
+    var(--selection) 18%
+  );
   font-weight: 750;
 }
 
 .markdown-body tbody tr:nth-child(even) {
-  background: color-mix(in srgb, var(--card-alt) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--node-body-bg, var(--card-alt)) 72%,
+    transparent
+  );
 }
 
 .markdown-body pre {
@@ -285,20 +293,20 @@
   overflow: auto;
   border: 1px solid var(--card-line);
   border-radius: 7px;
-  background: var(--card-alt);
+  background: var(--node-body-bg, var(--card-alt));
 }
 
 .markdown-body code {
   padding: 2px 4px;
   border-radius: 4px;
-  color: var(--card-text);
-  background: var(--card-line);
+  color: var(--node-body-fg, var(--card-text));
+  background: var(--node-body-bg, var(--card-line));
   font-size: 0.92em;
 }
 
 .markdown-body pre code {
   padding: 0;
-  color: var(--card-text);
+  color: var(--node-body-fg, var(--card-text));
   background: transparent;
   font-size: calc(5em / 6);
 }
