@@ -1,5 +1,12 @@
 import fs from 'node:fs/promises';
-import type { LocalProjectRepository } from '../../application/ports/local-project-repository.ts';
+import type {
+  CanvasFileScope,
+  LocalProjectRepository,
+} from '../../application/ports/local-project-repository.ts';
+import { CANVAS_SHEETS_PATH } from '../../canvas-sheets.ts';
+import { DRAWING_DIRECTORY } from '../../drawing-model.ts';
+import { GAME_UI_DIRECTORY } from '../../game-ui-types.ts';
+import { PROJECT_LAYOUT_PATH } from '../../contracts/project-layout.ts';
 import {
   captureProject,
   listHistory,
@@ -15,12 +22,34 @@ import {
   recoverDocumentNames,
 } from './document-name-transaction.ts';
 
+const canvasRoots: Record<CanvasFileScope, readonly string[]> = {
+  drawings: [CANVAS_SHEETS_PATH, DRAWING_DIRECTORY],
+  'game-ui': [CANVAS_SHEETS_PATH, GAME_UI_DIRECTORY],
+  layout: [
+    PROJECT_LAYOUT_PATH,
+    CANVAS_SHEETS_PATH,
+    'project.md',
+    'ideas',
+    'docs',
+    'docs/html-sources',
+    '.ai/tasks',
+    'sections',
+    DRAWING_DIRECTORY,
+  ],
+};
+
 /** Keep the existing recovery journal, atomic apply and external modification checks. */
 export function filesystemProjectRepository(
   root: string,
   assertCurrent: () => void = () => {},
 ): LocalProjectRepository {
   return {
+    captureCanvas: async (scope) => {
+      assertCurrent();
+      const files = await captureProject(root, canvasRoots[scope]);
+      assertCurrent();
+      return files;
+    },
     capture: async (paths) => {
       assertCurrent();
       if (!paths) {

@@ -446,6 +446,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       workflowEditable,
       api,
       loadProject,
+      loadFileWorkflow: (paths, kanban) => loadLocalCanvas({ paths, kanban }),
       showError,
       documents,
       previews,
@@ -658,8 +659,12 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   }));
   const [loading, setLoading] = useState(true);
   const [tool, setTool] = useState<CanvasTool>('select');
-  const drawing = useDrawing(workspace.saveScope, activeCanvas);
-  const gameUi = useGameUi(workspace.saveScope);
+  const drawing = useDrawing(
+    workspace.saveScope,
+    activeCanvas,
+    workspace.session?.sessionId,
+  );
+  const gameUi = useGameUi(workspace.saveScope, workspace.session?.sessionId);
   const [gameUiSettings, setGameUiSettings] = usePersonalValue(
     `builtin.game-ui:${personalScope}`,
     { enabled: true },
@@ -1014,11 +1019,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     loadProject,
     loadDocumentLayouts:
       workspace.session && !collaboration.active
-        ? (paths) =>
-            loadDocumentLayouts({
-              sessionId: workspace.session!.sessionId,
-              paths,
-            })
+        ? (paths, sections) => loadLocalCanvas({ paths, sections })
         : undefined,
     showError,
     gameUi,
@@ -1144,6 +1145,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
         return true;
       },
       reload: () => loadProject(false),
+      reloadMembership: () => loadLocalCanvas({ paths: [], sections: true }),
       notice: setNotice,
       error: showError,
     }),
@@ -1744,13 +1746,13 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   }, [draftRegistry, workspace.saveScope, gameUi.flush]);
   const reloadWorkspaceRef = useRef<
     (
-      layouts?: import('../../contracts/project.ts').WorkspaceDocumentLayoutChange,
+      change?: import('../../contracts/project.ts').WorkspaceCanvasChange,
     ) => void
   >(() => {});
   const workspaceData = useWorkspaceData((layouts) =>
     reloadWorkspaceRef.current(layouts),
   );
-  const { loadProject, loadDocumentLayouts } = useProjectLoading(() => ({
+  const { loadProject, loadCanvasChange } = useProjectLoading(() => ({
     workspace,
     viewportIntent,
     workspaceData,
@@ -1796,10 +1798,21 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     flowRef,
     showError,
   }));
-  reloadWorkspaceRef.current = (layouts) => {
-    if (layouts) void loadDocumentLayouts(layouts).catch(showError);
+  reloadWorkspaceRef.current = (change) => {
+    if (change) void loadCanvasChange(change).catch(showError);
     else void loadProject(false);
   };
+  function loadLocalCanvas(
+    change: Omit<
+      import('../../contracts/project.ts').WorkspaceCanvasChange,
+      'sessionId'
+    >,
+  ) {
+    const sessionId = workspace.session?.sessionId;
+    return sessionId && !collaboration.active
+      ? loadCanvasChange({ ...change, sessionId })
+      : loadProject(false);
+  }
   useEffect(() => {
     void loadProject(true);
   }, [loadProject]);

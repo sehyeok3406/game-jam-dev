@@ -61,6 +61,7 @@ export type SectionActionPorts = {
   busy: boolean;
   canEdit: (paths: string[]) => boolean;
   reload: () => Promise<unknown>;
+  reloadMembership?: () => Promise<unknown>;
   notice: (message: string) => void;
   error: (error: unknown) => void;
 };
@@ -276,7 +277,7 @@ export class CanvasSectionActions {
         guard();
       }
       acknowledge();
-      await ports.reload();
+      await (ports.reloadMembership ?? ports.reload)();
       guard();
       if (cancel)
         ports.notice('섹션 변경을 취소하고 파일을 원래 위치로 되돌렸습니다.');

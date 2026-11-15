@@ -1,48 +1,85 @@
 import type { ProjectFileEffects } from '../application/ports/shared-project-files.ts';
-import type { Snapshot } from '../contracts/project.ts';
+import type { Snapshot, WorkspaceCanvasChange } from '../contracts/project.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import matter from '../markdown.ts';
+import { isDrawingPath } from '../drawing-model.ts';
+import { isGameUiPath } from '../game-ui-model.ts';
+import { KANBAN_VIEW_PATH } from '../features/kanban/view.ts';
 
 const digest = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
-/** Recognize watcher echoes of confirmed layout writes by their on-disk contents. */
-export function documentLayoutWrites() {
+const isDocument = (path: string) =>
+  /^(?:project\.md$|(?:ideas|docs)\/.+\.md$)/.test(path) &&
+  !path.startsWith('docs/text-sources/');
+const isSection = (path: string) => /^sections\/.+\.md$/.test(path);
+export const isScopedCanvasFile = (path: string) =>
+  isDocument(path) ||
+  isSection(path) ||
+  isDrawingPath(path) ||
+  isGameUiPath(path) ||
+  path === KANBAN_VIEW_PATH;
+
+/** Only omit a full refresh after classifying the confirmed file changes. */
+export function canvasWrites() {
   let session: string | undefined;
-  const recent = new Map<string, { digest: string; expires: number }>();
+  const recent = new Map<string, { digest: string | null; expires: number }>();
   return {
     record(
       sessionId: string,
       before: Snapshot,
       after: Snapshot,
-      paths = Object.keys(before).filter(
-        (path) => before[path] !== after[path],
-      ),
-    ): string[] | null {
-      const withoutLayout = (raw: string) => {
+      paths = [
+        ...new Set([...Object.keys(before), ...Object.keys(after)]),
+      ].filter((path) => before[path] !== after[path]),
+    ): WorkspaceCanvasChange | null {
+      const change: WorkspaceCanvasChange = { sessionId, paths: [] };
+      const withoutCanvasMetadata = (raw: string, section: boolean) => {
         const { data, content } = matter(raw);
-        const {
-          x: _x,
-          y: _y,
-          width: _width,
-          height: _height,
-          ...metadata
-        } = data;
-        return JSON.stringify([content, metadata]);
+        const ignored = section
+          ? [
+              'x',
+              'y',
+              'width',
+              'height',
+              'members',
+              'parent_section_id',
+              'updated_at',
+            ]
+          : [
+              'x',
+              'y',
+              'width',
+              'height',
+              'status_property_enabled',
+              'workflow_status_id',
+              'workflow_order',
+              'updated_at',
+            ];
+        return JSON.stringify([
+          content,
+          Object.entries(data).filter(([key]) => !ignored.includes(key)),
+        ]);
       };
       try {
-        if (
-          paths.some(
-            (path) =>
-              !/^(?:project\.md$|(?:ideas|docs)\/.+\.md$)/.test(path) ||
-              path.startsWith('docs/html-sources/') ||
-              path.startsWith('docs/text-sources/') ||
+        for (const path of paths) {
+          if (isDrawingPath(path)) change.drawings = true;
+          else if (isGameUiPath(path)) change.gameUi = true;
+          else if (path === KANBAN_VIEW_PATH) change.kanban = true;
+          else {
+            const section = isSection(path);
+            if (
+              (!section && !isDocument(path)) ||
               before[path] === undefined ||
               after[path] === undefined ||
-              withoutLayout(before[path]) !== withoutLayout(after[path]),
-          )
-        )
-          return null;
+              withoutCanvasMetadata(before[path], section) !==
+                withoutCanvasMetadata(after[path], section)
+            )
+              return null;
+            if (section) change.sections = true;
+            else change.paths.push(path);
+          }
+        }
       } catch {
         return null;
       }
@@ -50,18 +87,23 @@ export function documentLayoutWrites() {
       session = sessionId;
       const expires = Date.now() + 5000;
       for (const path of paths)
-        recent.set(path, { digest: digest(after[path]), expires });
-      return paths;
+        recent.set(path, {
+          digest: after[path] === undefined ? null : digest(after[path]),
+          expires,
+        });
+      return change;
     },
     async matches(sessionId: string, relative: string, absolute: string) {
       const write = session === sessionId ? recent.get(relative) : undefined;
       if (!write || write.expires <= Date.now()) return false;
-      const actual = await readFile(absolute, 'utf8').catch(() => null);
+      const actual = await readFile(absolute, 'utf8').catch((error) =>
+        error.code === 'ENOENT' ? null : undefined,
+      );
       return (
-        actual !== null &&
+        actual !== undefined &&
         session === sessionId &&
         recent.get(relative) === write &&
-        digest(actual) === write.digest
+        (actual === null ? null : digest(actual)) === write.digest
       );
     },
   };

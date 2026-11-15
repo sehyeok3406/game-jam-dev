@@ -17,6 +17,7 @@ interface Ports {
   workflowEditable: boolean;
   api: import('../../contracts/app-api.ts').AppApi;
   loadProject: (fit?: boolean, throwOnError?: boolean) => Promise<void>;
+  loadFileWorkflow?: (paths: string[], kanban?: boolean) => Promise<void>;
   showError: (error: unknown) => void;
   documents: CanvasDocument[];
   previews: PreviewResult[];
@@ -32,7 +33,8 @@ export function useFileWorkflow(scope: SelectionScope, ports: () => Ports) {
 
   const workflowChange = useCallback(
     async (input: StatusPropertyInput) => {
-      const { workflowEditable, api, loadProject } = live.current();
+      const { workflowEditable, api, loadProject, loadFileWorkflow, previews } =
+        live.current();
 
       if (workflowPending.current)
         throw Error('이전 상태 저장이 끝난 뒤 다시 선택해주세요.');
@@ -42,7 +44,14 @@ export function useFileWorkflow(scope: SelectionScope, ports: () => Ports) {
       setWorkflowBusy(true);
       try {
         await api.editor.setFileStatusProperty(input);
-        if (isCurrent()) await loadProject(false);
+        if (isCurrent()) {
+          if (loadFileWorkflow) {
+            const preview = previews.find(
+              (item) => item.relativePath === input.relativePath,
+            );
+            await loadFileWorkflow([preview?.sourcePath ?? input.relativePath]);
+          } else await loadProject(false);
+        }
       } finally {
         workflowPending.current = false;
         setWorkflowBusy(false);
@@ -74,8 +83,14 @@ export function useFileWorkflow(scope: SelectionScope, ports: () => Ports) {
       beforeId?: string,
       afterId?: string,
     ) => {
-      const { api, loadProject, documents, previews, kanbanView } =
-        live.current();
+      const {
+        api,
+        loadProject,
+        loadFileWorkflow,
+        documents,
+        previews,
+        kanbanView,
+      } = live.current();
 
       const doc = documents.find((d) => d.id === item.id),
         p = previews.find((p) => previewNodeId(p) === item.id);
@@ -100,7 +115,12 @@ export function useFileWorkflow(scope: SelectionScope, ports: () => Ports) {
           beforeId: resolveId(beforeId),
           afterId: resolveId(afterId),
         });
-        if (isCurrent()) await loadProject(false);
+        if (isCurrent()) {
+          const path = doc?.relativePath ?? p?.sourcePath;
+          await (path && loadFileWorkflow
+            ? loadFileWorkflow([path], true)
+            : loadProject(false));
+        }
       } finally {
         workflowPending.current = false;
         setWorkflowBusy(false);

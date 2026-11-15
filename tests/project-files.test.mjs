@@ -7,7 +7,7 @@ import matter from 'gray-matter';
 import { SharedProjectMirror } from '../src/application/editing/shared-project-mirror.ts';
 import { filesystemSharedProjectFiles } from '../src/adapters/filesystem/shared-project-files.ts';
 import {
-  documentLayoutWrites,
+  canvasWrites,
   sessionProjectFileEffects,
   startSessionProjectWatcher,
 } from '../src/desktop/project-file-effects.ts';
@@ -274,10 +274,10 @@ test('layout notifications suppress only same-session watcher echoes of the exac
   const original = matter.stringify('body\n', { id: 'doc', x: 4, y: 8 });
   const moved = matter.stringify('body\n', { id: 'doc', x: 5, y: 9 });
   const edited = matter.stringify('new body\n', { id: 'doc', x: 5, y: 9 });
-  const writes = documentLayoutWrites();
+  const writes = canvasWrites();
   assert.deepEqual(
     writes.record('a', { [relative]: original }, { [relative]: moved }),
-    [relative],
+    { sessionId: 'a', paths: [relative] },
   );
   await fs.writeFile(absolute, moved);
   assert.equal(await writes.matches('a', relative, absolute), true);
@@ -288,12 +288,32 @@ test('layout notifications suppress only same-session watcher echoes of the exac
     writes.record('a', { [relative]: original }, { [relative]: edited }),
     null,
   );
-  assert.equal(
+  const section = 'sections/layout.md';
+  const drawing = '.canvas/drawings/default.json';
+  const frame = '.canvas/game-ui/4b2eaf91-f1a3-442e-814e-7d17de3752aa.json';
+  const kanban = '.canvas/kanban-view.json';
+  assert.deepEqual(
     writes.record(
       'a',
-      { 'sections/layout.md': original },
-      { 'sections/layout.md': moved },
+      { [section]: original, [drawing]: 'old drawing', [frame]: 'old frame' },
+      {
+        [section]: moved,
+        [drawing]: 'new drawing',
+        [frame]: 'new frame',
+        [kanban]: 'new board',
+      },
     ),
+    {
+      sessionId: 'a',
+      paths: [],
+      sections: true,
+      drawings: true,
+      gameUi: true,
+      kanban: true,
+    },
+  );
+  assert.equal(
+    writes.record('a', { [section]: original }, { [section]: edited }),
     null,
   );
 });

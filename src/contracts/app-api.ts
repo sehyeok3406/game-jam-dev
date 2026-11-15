@@ -53,7 +53,7 @@ import type {
   ProjectTrashEntry,
   SharedProjectLifecycle,
   WorkspaceState,
-  WorkspaceDocumentLayoutChange,
+  WorkspaceCanvasChange,
 } from './project.ts';
 import type { CollaborationRole, CollaborationState } from './collaboration.ts';
 import type {
@@ -445,7 +445,7 @@ export type GameCanvasApi = {
   openWorkspace: () => Promise<void>;
   copyText: (text: string) => Promise<void>;
   onWorkspaceChanged: (
-    listener: (layouts?: WorkspaceDocumentLayoutChange) => void,
+    listener: (change?: WorkspaceCanvasChange) => void,
   ) => () => void;
   onCodexRunEvent: (listener: (event: CodexRunEvent) => void) => () => void;
 };

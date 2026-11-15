@@ -36,7 +36,7 @@ function optimistic(frames: GameUiFrame[], commands: GameUiCommand[]) {
       : frame,
   );
 }
-export function useGameUi(scope: string | undefined) {
+export function useGameUi(scope: string | undefined, sessionId?: string) {
   const { api } = useRuntime();
 
   const [confirmed, setConfirmed] = useState<GameUiFrame[]>([]),
@@ -83,6 +83,7 @@ export function useGameUi(scope: string | undefined) {
     const s = state.current;
     while (s.queue.length) {
       await backup();
+      if (state.current !== s) return;
       const frames = await api.editor.applyGameUiCommand(s.queue[0]);
       if (state.current !== s) return;
       s.epoch++;
@@ -124,11 +125,12 @@ export function useGameUi(scope: string | undefined) {
         }
       }
     })().catch((e) => state.current === s && setError(String(e)));
-    const stop = api.projects.onWorkspaceChanged((layouts) => {
-      if (!layouts) void reload().catch((e) => setError(String(e)));
+    const stop = api.projects.onWorkspaceChanged((change) => {
+      if (!change || (change.sessionId === sessionId && change.gameUi))
+        void reload().catch((e) => state.current === s && setError(String(e)));
     });
     return stop;
-  }, [scope, reload]);
+  }, [scope, sessionId, reload]);
   const submit = useCallback(
     async (c: GameUiCommand) => {
       const s = state.current;

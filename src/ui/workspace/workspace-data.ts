@@ -1,6 +1,6 @@
 import type { AppApi } from '../../contracts/app-api.ts';
 import type {
-  WorkspaceDocumentLayoutChange,
+  WorkspaceCanvasChange,
   WorkspaceState,
 } from '../../contracts/project.ts';
 import type { CanvasDocument } from '../../contracts/documents.ts';
@@ -40,10 +40,10 @@ export class WorkspaceDataLoader {
   invalidate() {
     this.generation++;
   }
-  watch(changed: (layouts?: WorkspaceDocumentLayoutChange) => void) {
-    const stop = this.api.projects.onWorkspaceChanged((layouts) => {
-      if (!layouts) this.invalidate();
-      changed(layouts);
+  watch(changed: (change?: WorkspaceCanvasChange) => void) {
+    const stop = this.api.projects.onWorkspaceChanged((change) => {
+      if (!change) this.invalidate();
+      changed(change);
     });
     return () => {
       this.invalidate();

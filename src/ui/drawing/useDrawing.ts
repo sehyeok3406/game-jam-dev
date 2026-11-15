@@ -48,7 +48,11 @@ const optimistic = (items: DrawingItem[], command: DrawingCommand) => {
     );
   });
 };
-export function useDrawing(scope: string | undefined, canvasId: string) {
+export function useDrawing(
+  scope: string | undefined,
+  canvasId: string,
+  sessionId?: string,
+) {
   const { api } = useRuntime();
 
   const signatures = useRef<Record<string, string>>({});
@@ -104,7 +108,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
           return [...values.values()];
         })()
       : await api.editor.listDrawings();
-    if (state.current.scope !== root || state.current.epoch !== epoch) return;
+    if (state.current !== s || s.epoch !== epoch) return;
     if (changes) signatures.current = changes.signatures;
     const stable = retainUnchangedRecords(s.confirmed, objects);
     s.confirmed = stable;
@@ -143,20 +147,22 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
         }
       })
       .catch((e) => active && setError(`그림 초안 읽기 실패: ${String(e)}`));
-    const stop = api.projects.onWorkspaceChanged((layouts) => {
-      if (!layouts) void reload().catch((e) => active && setError(String(e)));
+    const stop = api.projects.onWorkspaceChanged((change) => {
+      if (!change || (change.sessionId === sessionId && change.drawings))
+        void reload().catch((e) => active && setError(String(e)));
     });
     return () => {
       active = false;
       stop();
     };
-  }, [scope, reload]);
+  }, [scope, sessionId, reload]);
   const drain = useCallback(async () => {
     const s = state.current;
     while (s.commands.length) {
       const cmd = s.commands[0];
       try {
         await backup();
+        if (state.current !== s) return;
         const result = await api.editor.applyDrawingCommand(cmd);
         if (state.current !== s) return;
         s.epoch++;
@@ -168,6 +174,7 @@ export function useDrawing(scope: string | undefined, canvasId: string) {
         setError('');
         await backup();
       } catch (e) {
+        if (state.current !== s) return;
         setError(
           `그림 저장 실패: ${e instanceof Error ? e.message : String(e)}`,
         );

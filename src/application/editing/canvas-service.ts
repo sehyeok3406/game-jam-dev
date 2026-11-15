@@ -1,5 +1,12 @@
-import type { LocalProjectRepository } from '../ports/local-project-repository.ts';
-import { LocalCommandService, snapshotChanges } from './command-service.ts';
+import type {
+  CanvasFileScope,
+  LocalProjectRepository,
+} from '../ports/local-project-repository.ts';
+import {
+  canvasMutationScope,
+  LocalCommandService,
+  snapshotChanges,
+} from './command-service.ts';
 import { readCanvasSheets, CANVAS_SHEETS_PATH } from '../../canvas-sheets.ts';
 import { snapshotDrawings } from '../../drawing-model.ts';
 import { snapshotGameUi, applyGameUi } from '../../game-ui-model.ts';
@@ -26,24 +33,24 @@ export class LocalCanvasService {
   }
 
   async canvases() {
-    const files = await this.repository().capture();
+    const files = await this.capture('drawings');
     return {
       ...readCanvasSheets(files[CANVAS_SHEETS_PATH]),
       raw: files[CANVAS_SHEETS_PATH] ?? null,
     };
   }
   async drawings() {
-    return snapshotDrawings(await this.repository().capture());
+    return snapshotDrawings(await this.capture('drawings'));
   }
   async drawingDelta(known: Record<string, string> = {}) {
     return drawingChanges(
-      await this.repository().capture(),
+      await this.capture('drawings'),
       known,
       this.signature,
     );
   }
   async gameUi() {
-    return snapshotGameUi(await this.repository().capture());
+    return snapshotGameUi(await this.capture('game-ui'));
   }
   execute<K extends CommandName>(
     channel: K,
@@ -55,7 +62,9 @@ export class LocalCanvasService {
     const repository = this.repository();
     const key = `${input.scope}:${input.requestId}`;
     if (input.requestId && this.drawingRequests.has(key))
-      return snapshotDrawings(await repository.capture());
+      return snapshotDrawings(
+        await (repository.captureCanvas?.('drawings') ?? repository.capture()),
+      );
     const plan = await new LocalCommandService(repository).plan(
       'drawings:apply',
       input,
@@ -70,11 +79,18 @@ export class LocalCanvasService {
     if (input.requestId && this.gameUiRequests.has(key))
       return snapshotGameUi(await repository.capture());
     // Preserve the existing local game's model validation; server snapshot quotas are not a desktop entitlement.
-    const before = await repository.capture();
+    const scope = canvasMutationScope('game-ui:apply', input);
+    const before = await (scope && repository.captureCanvas
+      ? repository.captureCanvas(scope)
+      : repository.capture());
     const after = applyGameUi(before, input);
     await repository.apply(before, snapshotChanges(before, after));
     this.acknowledge(this.gameUiRequests, key, input.requestId);
     return snapshotGameUi(after);
+  }
+  private capture(scope: CanvasFileScope) {
+    const repository = this.repository();
+    return repository.captureCanvas?.(scope) ?? repository.capture();
   }
   private acknowledge(requests: Set<string>, key: string, id?: string) {
     if (!id) return;

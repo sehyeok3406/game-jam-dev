@@ -8,9 +8,13 @@ export type WorkspaceState = {
   saveScope?: string;
   clipboardContextId?: string;
 };
-export type WorkspaceDocumentLayoutChange = {
+export type WorkspaceCanvasChange = {
   sessionId: string;
   paths: string[];
+  sections?: boolean;
+  drawings?: boolean;
+  gameUi?: boolean;
+  kanban?: boolean;
 };
 export type ProjectEntry = {
   nameConflict?: boolean;

@@ -28,15 +28,19 @@ import {
 import { layoutMarkdownCodec } from './adapters/markdown/layout-snapshot.ts';
 import { remapLayoutMarkdown } from './adapters/markdown/layout-links.ts';
 import { readDiskProjectLayout } from './adapters/filesystem/project-location.ts';
-import { readProjectLayout } from './core/projects/project-layout.ts';
+import {
+  logicalProjectPath,
+  readProjectLayout,
+} from './core/projects/project-layout.ts';
 import { filesystemSharedProjectFiles } from './adapters/filesystem/shared-project-files';
 import { ensureProjectLayout } from './adapters/filesystem/project-layout';
 import {
-  documentLayoutWrites,
+  canvasWrites,
+  isScopedCanvasFile,
   sessionProjectFileEffects,
   startSessionProjectWatcher,
 } from './desktop/project-file-effects';
-import type { WorkspaceDocumentLayoutChange } from './contracts/project.ts';
+import type { WorkspaceCanvasChange } from './contracts/project.ts';
 import { DesktopProjectModes } from './desktop/projects/project-modes';
 import { ProjectModeFiles } from './adapters/filesystem/project-mode-files';
 import { ProjectHomeService } from './application/projects/home-service';
@@ -86,6 +90,7 @@ import { PreviewExportService } from './application/editing/preview-export-servi
 import { assertPreviewPath } from './preview-output';
 import { inspectImportedHtml } from './html-source';
 import { GAME_ASSET_BOOTSTRAP } from './contracts/game-build-execution.ts';
+import { GAME_BUILDS_DIRECTORY } from './contracts/game-build.ts';
 import { LocalHistoryService } from './application/editing/history-service';
 import { registerHistoryIpc } from './desktop/ipc/history';
 import {
@@ -99,7 +104,7 @@ import {
 } from './adapters/filesystem/local-media';
 import { prepareBlenderGameModel } from './adapters/filesystem/blender-game-model.ts';
 import { stageObjModel } from './adapters/filesystem/obj-import.ts';
-import { decodeAsset } from './file-assets.ts';
+import { decodeAsset, isAssetPath } from './file-assets.ts';
 import { isGameBuildAssetReference } from './core/projects/game-build-assets.ts';
 import {
   readGameBuild,
@@ -714,9 +719,9 @@ const projectModes: DesktopProjectModes = new DesktopProjectModes({
 let changeTimer: NodeJS.Timeout | null = null;
 let pendingWorkspaceChange: {
   sessionId: string | undefined;
-  paths?: string[];
+  change?: WorkspaceCanvasChange;
 } | null = null;
-const layoutWrites = documentLayoutWrites();
+const confirmedCanvasWrites = canvasWrites();
 let lastRunEvent: CodexRunEvent | null = null;
 let runPreparing = false;
 let preparationCancelled = false;
@@ -1018,7 +1023,7 @@ const listDocuments = () =>
 const listSections = () =>
   filesystemProjectReader(requireWorkspace()).sections.list();
 
-const notifyWorkspaceChanged = (documentPaths?: string[]) => {
+const notifyWorkspaceChanged = (change?: WorkspaceCanvasChange) => {
   if (changeTimer) clearTimeout(changeTimer);
   projectSessions.release('workspace-notification');
   const ref = projectSessions.ref;
@@ -1027,17 +1032,23 @@ const notifyWorkspaceChanged = (documentPaths?: string[]) => {
     pendingWorkspaceChange?.sessionId === sessionId
       ? pendingWorkspaceChange
       : null;
-  const paths =
-    documentPaths && (!pending || pending.paths)
-      ? [...new Set([...(pending?.paths ?? []), ...documentPaths])]
+  const previous = pending?.change;
+  const next =
+    change && change.sessionId === sessionId && (!pending || previous)
+      ? {
+          sessionId: change.sessionId,
+          paths: [...new Set([...(previous?.paths ?? []), ...change.paths])],
+          sections: previous?.sections || change.sections,
+          drawings: previous?.drawings || change.drawings,
+          gameUi: previous?.gameUi || change.gameUi,
+          kanban: previous?.kanban || change.kanban,
+        }
       : undefined;
-  pendingWorkspaceChange = { sessionId, paths };
+  pendingWorkspaceChange = { sessionId, change: next };
   changeTimer = setTimeout(() => {
     pendingWorkspaceChange = null;
     if (projectSessions.matches(ref)) {
-      const layouts: WorkspaceDocumentLayoutChange | undefined =
-        sessionId && paths ? { sessionId, paths } : undefined;
-      mainWindow?.webContents.send('workspace:changed', layouts);
+      mainWindow?.webContents.send('workspace:changed', next);
     }
   }, 180);
   const timer = changeTimer;
@@ -1054,25 +1065,22 @@ const startWatcher = () => {
     create: (watchRoot) =>
       chokidar.watch(watchRoot, {
         ignored: (target) => {
-          const relative = path
+          const physical = path
             .relative(watchRoot, target)
             .replaceAll('\\', '/');
+          const relative = logicalProjectPath(physical);
           if (
             relative === '.game-builds' ||
             relative.startsWith('.game-builds/')
           )
             return false;
-          if (
-            relative === '.gamejam' ||
-            relative === '.gamejam/project' ||
-            relative === '.gamejam/project/builds' ||
-            relative.startsWith('.gamejam/project/builds/')
-          )
+          if (physical === '.gamejam' || physical === '.gamejam/project')
             return false;
           if (
             relative === '.canvas' ||
             relative === CANVAS_SHEETS_PATH ||
-            relative === DOCUMENT_STATUSES_PATH
+            relative === DOCUMENT_STATUSES_PATH ||
+            isScopedCanvasFile(relative)
           )
             return false;
           if (relative === DRAWING_DIRECTORY || isDrawingPath(relative))
@@ -1088,16 +1096,29 @@ const startWatcher = () => {
         awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
       }),
     changed: (event, absolute) => {
-      if (!root || !ref || event !== 'change') {
+      const relative = root
+        ? logicalProjectPath(
+            path.relative(root, absolute).replaceAll('\\', '/'),
+          )
+        : '';
+      if (
+        !ref ||
+        !['change', 'add', 'unlink'].includes(event) ||
+        !isScopedCanvasFile(relative)
+      ) {
         notifyWorkspaceChanged();
         return;
       }
-      const relative = path.relative(root, absolute).replaceAll('\\', '/');
-      void layoutWrites
-        .matches(ref.sessionId, relative, absolute)
-        .then((same) => {
-          if (!same && projectSessions.matches(ref)) notifyWorkspaceChanged();
-        });
+      // A watcher can observe bytes before the in-flight command records history.
+      void mutationQueue.then(async () => {
+        if (!projectSessions.matches(ref)) return;
+        const same = await confirmedCanvasWrites.matches(
+          ref.sessionId,
+          relative,
+          absolute,
+        );
+        if (!same && projectSessions.matches(ref)) notifyWorkspaceChanged();
+      });
     },
   });
 };
@@ -2040,17 +2061,17 @@ const handle = (
               after,
               label,
             ),
-          changed: (layout) => {
+          changed: (files) => {
             if (channel === 'layouts:update') return;
-            const paths =
-              layout && requestSession
-                ? layoutWrites.record(
+            const change =
+              files && requestSession
+                ? confirmedCanvasWrites.record(
                     requestSession.sessionId,
-                    layout.before,
-                    layout.after,
+                    files.before,
+                    files.after,
                   )
                 : null;
-            notifyWorkspaceChanged(paths ?? undefined);
+            notifyWorkspaceChanged(change ?? undefined);
           },
         }).execute(channel, args, async () =>
           listener(
@@ -2351,24 +2372,34 @@ const registerIpc = () => {
       const root = requireWorkspace(),
         ref = projectSessions.ref,
         signal = projectSessions.signal;
-      const files = await captureProject(root);
-      projectSessions.assertCurrent(ref);
+      const assertCurrent = () => projectSessions.assertCurrent(ref);
+      const files = await captureProject(root, [
+        GAME_BUILDS_DIRECTORY,
+        relative,
+      ]);
+      assertCurrent();
       const artifact = readGameBuildIndex(files).artifacts.find(
         (item) => item.path === relative,
       );
       if (!artifact || artifact.buildId !== buildId)
         throw Error('게임 버전이 변경되었습니다.');
+      const build = selectGameBuilds(files, new Set([relative]));
+      const embeddedPaths = Object.keys(build).filter(
+        (path) => isAssetPath(path) && build[path] === undefined,
+      );
+      const embedded = await filesystemProjectRepository(
+        root,
+        assertCurrent,
+      ).capture(embeddedPaths);
       const { manifest } = readGameBuild(
-        {
-          ...selectGameBuilds(files, new Set([relative])),
-          [relative]: files[relative],
-        },
+        { ...build, ...embedded, [relative]: files[relative] },
         buildId,
         localGameBuildCodec,
       );
       const assets = manifest.assets.filter(isGameBuildAssetReference);
       if (!assets.length)
         throw Error('게임 버전에 연결된 프로젝트 에셋이 없습니다.');
+      assertCurrent();
       return mediaProtocol.gameAssets(root, assets, signal).urls;
     },
   );
@@ -2421,16 +2452,16 @@ const registerIpc = () => {
         userEdits(root, session),
         (plan) => {
           assertCurrent();
-          const paths =
+          const change =
             plan && session
-              ? layoutWrites.record(
+              ? confirmedCanvasWrites.record(
                   session.sessionId,
                   plan.before,
                   plan.files,
                   Object.keys(plan.changes),
                 )
               : null;
-          notifyWorkspaceChanged(paths ?? undefined);
+          notifyWorkspaceChanged(change ?? undefined);
         },
       ),
     );

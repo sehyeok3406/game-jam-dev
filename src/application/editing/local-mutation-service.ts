@@ -1,6 +1,7 @@
 import type { LocalProjectRepository } from '../ports/local-project-repository.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import { initializeWorkflows } from '../../document-workflow.ts';
+import { canvasMutationScope } from './command-service.ts';
 
 export const LOCAL_MUTATION_LABELS: Record<string, string> = {
   'kanban:move-card': '칸반 카드 이동',
@@ -32,7 +33,7 @@ export const LOCAL_MUTATION_LABELS: Record<string, string> = {
   'tasks:create': 'AI 작업 요청',
 };
 type Ports = {
-  project: Pick<LocalProjectRepository, 'capture' | 'apply'>;
+  project: Pick<LocalProjectRepository, 'capture' | 'captureCanvas' | 'apply'>;
   assertCurrent(): void;
   record(before: Snapshot, after: Snapshot, label: string): Promise<void>;
   changed(layout?: { before: Snapshot; after: Snapshot }): void;
@@ -64,8 +65,13 @@ export class LocalMutationService {
     ].includes(channel)
       ? (args[0] as { relativePath?: string })?.relativePath
       : undefined;
+    const canvasScope = canvasMutationScope(channel, args[0]);
     const capture = () =>
-      p.project.capture(scopedPath?.endsWith('.md') ? [scopedPath] : undefined);
+      canvasScope && p.project.captureCanvas
+        ? p.project.captureCanvas(canvasScope)
+        : p.project.capture(
+            scopedPath?.endsWith('.md') ? [scopedPath] : undefined,
+          );
     const before = label ? await capture() : null;
     p.assertCurrent();
     const result = await operation();
@@ -112,10 +118,8 @@ export class LocalMutationService {
         }
         p.assertCurrent();
       }
-      if (channel === 'documents:update-layout') {
-        p.changed({ before, after });
-        return result;
-      }
+      p.changed({ before, after });
+      return result;
     }
     p.changed();
     return result;

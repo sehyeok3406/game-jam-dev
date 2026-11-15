@@ -2,8 +2,11 @@ import type { CanvasDocument } from '../../contracts/documents.ts';
 import type { Snapshot } from '../../contracts/project.ts';
 import type { HistoryEntry } from '../../contracts/history.ts';
 
+export type CanvasFileScope = 'drawings' | 'game-ui' | 'layout';
+
 export interface LocalProjectRepository {
   capture(paths?: string[]): Promise<Snapshot>;
+  captureCanvas?(scope: CanvasFileScope): Promise<Snapshot>;
   apply(
     before: Snapshot,
     changes: Record<string, string | null>,

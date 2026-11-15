@@ -23,7 +23,7 @@ import type {
 } from '../../shared.ts';
 import { pendingDocument } from '../documents/presentation.ts';
 import { previewNodeId, type CanvasNode } from './workspace-types.ts';
-import type { WorkspaceDocumentLayoutChange } from '../../contracts/project.ts';
+import type { WorkspaceCanvasChange } from '../../contracts/project.ts';
 
 interface Ports {
   workspace: WorkspaceState;
@@ -548,10 +548,22 @@ export function useProjectLoading(ports: () => Ports) {
     },
     [readProject],
   );
-  const loadDocumentLayouts = useCallback(
-    ({ sessionId, paths }: WorkspaceDocumentLayoutChange) => {
+  const loadCanvasChange = useCallback(
+    ({ sessionId, paths, sections, kanban }: WorkspaceCanvasChange) => {
       const load = layoutLoads.current.then(async () => {
-        const { api, setDocuments, setUndoState } = current.current();
+        const {
+          api,
+          workspace,
+          documentSaveStates,
+          reconcile,
+          setDocuments,
+          setSections,
+          setHtmlLinkDocuments,
+          setPreviews,
+          setKanbanView,
+          setKanbanViewError,
+          setUndoState,
+        } = current.current();
         const isCurrent = () =>
           current.current().workspace.session?.sessionId === sessionId;
         while (isCurrent()) {
@@ -560,47 +572,89 @@ export function useProjectLoading(ports: () => Ports) {
             await pending.catch(() => undefined);
             continue;
           }
-          const [saved, undo] = await Promise.all([
-            Promise.all(paths.map((path) => api.editor.getDocument(path))),
+          const [saved, nextSections, board, undo] = await Promise.all([
+            sections
+              ? api.editor.listDocuments()
+              : Promise.all(paths.map((path) => api.editor.getDocument(path))),
+            sections ? api.editor.listSections() : undefined,
+            kanban ? api.editor.getKanbanView() : undefined,
             api.history.getUndoState(),
           ]);
           if (!isCurrent()) return;
           if (version !== fullLoad.current.version) continue;
-          if (
-            saved.some((document) => !document || !isCanvasDocument(document))
-          ) {
-            return loadProject(false);
-          }
-          const confirmed = new Map(
-            saved.flatMap((document) =>
-              document ? [[document.relativePath, document] as const] : [],
-            ),
-          );
-          setDocuments((existing) => {
-            let changed = false;
-            const next = existing.map((document) => {
-              const saved = confirmed.get(document.relativePath);
-              if (
-                saved?.id !== document.id ||
-                (saved.x === document.x &&
-                  saved.y === document.y &&
-                  saved.width === document.width &&
-                  saved.height === document.height &&
-                  saved.modifiedAt === document.modifiedAt)
-              )
-                return document;
-              changed = true;
-              return {
-                ...document,
-                x: saved.x,
-                y: saved.y,
-                width: saved.width,
-                height: saved.height,
-                modifiedAt: saved.modifiedAt,
-              };
+          const documents = saved.filter((document) => document !== null);
+          if (documents.length !== saved.length) return loadProject(false);
+          const patch = (
+            existing: CanvasDocument[],
+            fresh: CanvasDocument[],
+          ) => {
+            const byPath = new Map(fresh.map((doc) => [doc.relativePath, doc]));
+            return reconcile(
+              existing,
+              sections
+                ? fresh
+                : existing.map((doc) => byPath.get(doc.relativePath) ?? doc),
+            );
+          };
+          if (documents.length || sections) {
+            const visible = documents
+              .filter(isCanvasDocument)
+              .map((doc) =>
+                pendingDocument(
+                  doc,
+                  documentSaveStates.current.get(
+                    `${workspace.saveScope}:${doc.id}`,
+                  ),
+                ),
+              );
+            setDocuments((existing) => patch(existing, visible));
+            const htmlLinks = documents.filter((doc) => !!doc.htmlSource);
+            setHtmlLinkDocuments((existing) => patch(existing, htmlLinks));
+            const sources = new Map(
+              htmlLinks.map((doc) => [doc.relativePath, doc]),
+            );
+            setPreviews((existing) => {
+              const next = existing.map((preview) => {
+                const source =
+                  preview.sourcePath && sources.get(preview.sourcePath);
+                if (!source || source.htmlSource !== preview.relativePath)
+                  return preview;
+                const {
+                  statusPropertyEnabled,
+                  workflowStatusId,
+                  workflowOrder,
+                } = source;
+                const initial = preview.initialWindow;
+                const moved =
+                  initial && (source.x !== initial.x || source.y !== initial.y);
+                return moved ||
+                  statusPropertyEnabled !== preview.statusPropertyEnabled ||
+                  workflowStatusId !== preview.workflowStatusId ||
+                  workflowOrder !== preview.workflowOrder
+                  ? {
+                      ...preview,
+                      statusPropertyEnabled,
+                      workflowStatusId,
+                      workflowOrder,
+                      initialWindow: moved
+                        ? { ...initial, x: source.x, y: source.y }
+                        : initial,
+                    }
+                  : preview;
+              });
+              return next.every((preview, i) => preview === existing[i])
+                ? existing
+                : next;
             });
-            return changed ? next : existing;
-          });
+          }
+          if (nextSections)
+            setSections((existing) => reconcile(existing, nextSections));
+          if (board) {
+            setKanbanView((existing) =>
+              existing.raw === board.raw ? existing : board,
+            );
+            setKanbanViewError('');
+          }
           setUndoState(undo);
           return;
         }
@@ -611,5 +665,5 @@ export function useProjectLoading(ports: () => Ports) {
     [loadProject],
   );
 
-  return { loadProject, loadDocumentLayouts };
+  return { loadProject, loadCanvasChange };
 }

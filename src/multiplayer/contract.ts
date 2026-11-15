@@ -33,6 +33,8 @@ export function multiplayerSettings(
 export function readMultiplayerManifest(
   html: string,
 ): MultiplayerManifest | undefined {
+  // Numeric character references can encode the declaration ID in older HTML.
+  if (!html.includes('gamejam-multiplayer') && !html.includes('&#')) return;
   let found: MultiplayerManifest | undefined;
   function visit(node: DefaultTreeAdapterMap['node']) {
     if (

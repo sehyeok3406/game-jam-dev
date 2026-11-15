@@ -98,6 +98,39 @@ test('no-op edit keeps notification behavior without creating empty history', as
   assert.equal(f.records.length, 0);
   assert.deepEqual(f.calls, ['changed']);
 });
+
+test('local drawing and frame geometry history use the canvas files only', async () => {
+  for (const [channel, input, scope, relative] of [
+    [
+      'drawings:apply',
+      { action: 'patch' },
+      'drawings',
+      '.canvas/drawings/default.json',
+    ],
+    [
+      'game-ui:apply',
+      { action: 'frame' },
+      'game-ui',
+      '.canvas/game-ui/frame.json',
+    ],
+    ['sections:update-layout', {}, 'layout', 'sections/layout.md'],
+  ]) {
+    const f = fixture({
+      [relative]: 'before',
+      'output/index.html': 'large HTML',
+    });
+    f.ports.project.captureCanvas = async (requested) => {
+      assert.equal(requested, scope);
+      return { [relative]: f.files[relative] };
+    };
+    await f.service.execute(channel, [input], async () =>
+      f.set(relative, 'after'),
+    );
+    assert.equal(f.captures.length, 0);
+    assert.deepEqual(f.records[0].before, { [relative]: 'before' });
+    assert.deepEqual(f.records[0].after, { [relative]: 'after' });
+  }
+});
 test('creation applies only missing new-document workflow before acknowledging its history', async () => {
   const original = md('a', {
     status_property_enabled: true,

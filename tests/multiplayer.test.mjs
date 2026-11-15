@@ -145,6 +145,15 @@ test('multiplayer contract validates portable games and bounded JSON; SDK preced
     injected.indexOf('installMultiplayerSdk') <
       injected.indexOf('const canvas='),
   );
+  assert.match(
+    withMultiplayerSdk(
+      COOP_REFERENCE_HTML.replace(
+        'id="gamejam-multiplayer"',
+        'id="gamejam&#45;multiplayer"',
+      ),
+    ),
+    /installMultiplayerSdk/,
+  );
   assert.equal(
     withMultiplayerSdk('<body>ordinary game</body>'),
     '<body>ordinary game</body>',

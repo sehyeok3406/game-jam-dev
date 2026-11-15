@@ -86,7 +86,30 @@ export async function projectPath(
   }
   return target;
 }
-export async function captureProject(root: string): Promise<Snapshot> {
+const projectSnapshotRoots = [
+  'project.md',
+  'ideas',
+  'docs',
+  'sections',
+  '.ai/tasks',
+  'docs/html-sources',
+  'docs/text-sources',
+  PROJECT_LAYOUT_PATH,
+  FILE_NAMES_PATH,
+  RESULT_CATALOG_PATH,
+  CANVAS_SHEETS_PATH,
+  DOCUMENT_STATUSES_PATH,
+  KANBAN_VIEW_PATH,
+  DRAWING_DIRECTORY,
+  GAME_UI_DIRECTORY,
+  'output',
+  'assets/images',
+  GAME_BUILDS_DIRECTORY,
+];
+export async function captureProject(
+  root: string,
+  roots: readonly string[] = projectSnapshotRoots,
+): Promise<Snapshot> {
   const snapshot: Snapshot = {};
   const walk = async (relative: string) => {
     const absolute = await projectPath(root, relative);
@@ -129,27 +152,7 @@ export async function captureProject(root: string): Promise<Snapshot> {
       snapshot[relative] = await readSnapshotFile(absolute, relative);
     }
   };
-  for (const relative of [
-    'project.md',
-    'ideas',
-    'docs',
-    'sections',
-    '.ai/tasks',
-    'docs/html-sources',
-    'docs/text-sources',
-    PROJECT_LAYOUT_PATH,
-    FILE_NAMES_PATH,
-    RESULT_CATALOG_PATH,
-    CANVAS_SHEETS_PATH,
-    DOCUMENT_STATUSES_PATH,
-    KANBAN_VIEW_PATH,
-    DRAWING_DIRECTORY,
-    GAME_UI_DIRECTORY,
-    'output',
-    'assets/images',
-    GAME_BUILDS_DIRECTORY,
-  ])
-    await walk(relative);
+  for (const relative of roots) await walk(relative);
   return snapshot;
 }
 export async function materialize(

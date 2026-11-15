@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { WorkspaceDataLoader } from './workspace-data';
-import type { WorkspaceDocumentLayoutChange } from '../../contracts/project.ts';
+import type { WorkspaceCanvasChange } from '../../contracts/project.ts';
 
 export function useWorkspaceData(
-  onChanged: (layouts?: WorkspaceDocumentLayoutChange) => void,
+  onChanged: (change?: WorkspaceCanvasChange) => void,
 ) {
   const { api } = useRuntime();
   const latest = useRef(onChanged);

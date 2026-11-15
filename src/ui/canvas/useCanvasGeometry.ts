@@ -23,7 +23,7 @@ interface GeometryPorts {
   nestedSections?: boolean;
   api: import('../../contracts/app-api.ts').AppApi;
   loadProject: (fit?: boolean, throwOnError?: boolean) => Promise<void>;
-  loadDocumentLayouts?: (paths: string[]) => Promise<void>;
+  loadDocumentLayouts?: (paths: string[], sections?: boolean) => Promise<void>;
   showError: (error: unknown) => void;
   gameUi: {
     frames: import('../../game-ui-types').GameUiFrame[];
@@ -158,7 +158,19 @@ function createGeometryActions(
     } catch (error) {
       if (isCurrent()) showError(error);
     } finally {
-      if (isCurrent()) await loadProject(false).catch(showError);
+      if (isCurrent()) {
+        const paths = nodes.flatMap((node) =>
+          node.data.kind === 'document'
+            ? [node.data.document.relativePath]
+            : [],
+        );
+        if (paths.length)
+          await (
+            loadDocumentLayouts
+              ? loadDocumentLayouts(paths)
+              : loadProject(false)
+          ).catch(showError);
+      }
       for (const node of nodes)
         if (pendingGeometry.current.get(node.id)?.sequence === sequence)
           pendingGeometry.current.delete(node.id);
@@ -196,7 +208,10 @@ function createGeometryActions(
           width,
           height,
         });
-        if (isCurrent()) await loadProject(false);
+        if (isCurrent())
+          await (loadDocumentLayouts
+            ? loadDocumentLayouts([document.relativePath])
+            : loadProject(false));
       } finally {
         if (pendingGeometry.current.get(document.id)?.sequence === sequence)
           pendingGeometry.current.delete(document.id);
@@ -251,23 +266,20 @@ function createGeometryActions(
     try {
       membership = (await performPersistDraggedNodes(primary, dragged)) ?? null;
       if (!isCurrent()) return;
-      if (membership) await loadProject(false);
-      else {
-        const documents = moved.flatMap((node) =>
-          node.data.kind === 'document'
-            ? [node.data.document.relativePath]
-            : [],
-        );
-        if (
-          moved.some(
-            (node) =>
-              node.data.kind === 'section' || node.data.kind === 'drawing',
-          ) ||
-          (documents.length && !loadDocumentLayouts)
-        )
-          await loadProject(false);
-        else if (documents.length) await loadDocumentLayouts?.(documents);
-      }
+      const documents = moved.flatMap((node) =>
+        node.data.kind === 'document' ? [node.data.document.relativePath] : [],
+      );
+      const refreshSections =
+        !!membership || moved.some((node) => node.data.kind === 'section');
+      if (loadDocumentLayouts) {
+        if (documents.length || refreshSections)
+          await loadDocumentLayouts(documents, refreshSections);
+      } else if (
+        documents.length ||
+        refreshSections ||
+        moved.some((node) => node.data.kind === 'drawing')
+      )
+        await loadProject(false);
     } finally {
       for (const node of moved)
         if (pendingGeometry.current.get(node.id)?.sequence === sequence)
