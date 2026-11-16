@@ -18,6 +18,13 @@
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
+.history-panel > header > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.history-panel > header > button {
+  flex-shrink: 0;
+}
 .history-panel {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
@@ -127,6 +134,14 @@
 .history-panel__body {
   display: flex;
   min-height: 0;
+}
+.history-build {
+  overflow-wrap: anywhere;
+}
+.history-build > strong {
+  display: block;
+  padding: 10px 12px 0;
+  font-size: 12px;
 }
 .history-panel__entries {
   flex: 1;

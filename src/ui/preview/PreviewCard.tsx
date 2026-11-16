@@ -26,13 +26,11 @@ import {
   selectPreviewPreset,
   fitPreviewViewport,
 } from '../../preview-window';
-import { isImportedPreviewPath } from '../../preview-output';
 import { FilePropertyBadges } from '../FileProperties';
 import { DocumentBacklinks } from '../DocumentBacklinks';
 import { useDocumentLinks } from '../DocumentLinksContext';
 import { MultiplayerLobby } from '../MultiplayerLobby';
 import { usePreviewPlayback } from './usePreviewPlayback';
-import { GameBuildSummary } from './GameBuildSummary';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { PreviewGameFrame } from './PreviewGameFrame';
 import {
@@ -367,12 +365,6 @@ const PreviewCardContent = memo(function PreviewCardContent({
           </button>
         </div>
         {!collapsed && <PreviewBacklinks path={data.preview.relativePath} />}
-        {!collapsed && (
-          <GameBuildSummary
-            build={data.preview.build}
-            imported={isImportedPreviewPath(data.preview.relativePath)}
-          />
-        )}
         {exportMessage && (
           <div role="status" className="preview-export-message nodrag nowheel">
             {exportMessage}

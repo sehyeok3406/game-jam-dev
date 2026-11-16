@@ -366,6 +366,25 @@ export function createUiPreviewApi(
       ...item,
       relativePath: index ? 'output/versions/v2.html' : 'output/index.html',
     }));
+  if (selection.id === 'preview' && selection.state === 'default')
+    previews = previews.map((item, index) =>
+      index === 0
+        ? {
+            ...item,
+            build: {
+              kind: 'source',
+              libraries: [{ name: 'three', version: '0.180.0' }],
+              documents: [
+                {
+                  path: SAMPLE_DOCUMENT.relativePath,
+                  title: SAMPLE_DOCUMENT.title,
+                  state: 'unchanged',
+                },
+              ],
+            },
+          }
+        : item,
+    );
   if (selection.id === 'preview' && selection.state === 'warning')
     previews = previews.map((item) => ({
       ...item,

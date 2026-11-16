@@ -13,11 +13,17 @@ const labels = {
 export function GameBuildSummary({
   build,
   imported = false,
+  documentLinks,
 }: {
   build?: GameBuildStatus;
   imported?: boolean;
+  documentLinks?: Pick<
+    ReturnType<typeof useDocumentLinks>,
+    'documents' | 'open'
+  >;
 }) {
-  const links = useDocumentLinks();
+  const contextLinks = useDocumentLinks();
+  const links = documentLinks ?? contextLinks;
   return (
     <details className="game-build-summary nodrag nowheel">
       <summary>

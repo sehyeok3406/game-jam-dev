@@ -3893,6 +3893,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
           eraserMode,
           filePropertyViews,
           filteredHistoryEntries,
+          dispatchDocumentLink,
           flowRef,
           focusResultPath,
           focusSource,

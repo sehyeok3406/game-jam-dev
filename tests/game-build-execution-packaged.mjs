@@ -594,9 +594,19 @@ async function roundTrip(previous, label) {
   await js(
     `${previewCard}?.querySelector('button.file-node-surface')?.click()`,
   );
-  await wait(`Boolean(${previewCard}?.querySelector('.game-build-summary'))`);
+  await wait(
+    `Boolean(${previewCard}?.querySelector('[title="HTML 히스토리"]'))`,
+  );
+  assert.equal(
+    await js(`Boolean(${previewCard}?.querySelector('.game-build-summary'))`),
+    false,
+  );
+  await js(`${previewCard}?.querySelector('[title="HTML 히스토리"]').click()`);
+  await wait(
+    `Boolean(document.querySelector('.history-build .game-build-summary'))`,
+  );
   const visibleFacts = await js(
-    `(()=>{const title=[...document.querySelectorAll('.preview-card .canvas-file-header__title[title]')].find(e=>e.title.endsWith(${JSON.stringify(previous.artifact.path)}));const panel=title.closest('.preview-card').querySelector('.game-build-summary');if(!panel.open)panel.querySelector('summary').click();return panel.textContent;})()`,
+    `(()=>{const panel=document.querySelector('.history-build .game-build-summary');if(!panel.open)panel.querySelector('summary').click();return panel.textContent;})()`,
   );
   assert.match(visibleFacts, /수정용 원본 보관됨/);
   assert.match(visibleFacts, /제작 당시 내용과 같음/);
@@ -611,6 +621,7 @@ async function roundTrip(previous, label) {
     `${evidenceDirectory}/transfer-${label}.png`,
     Buffer.from(screenshot.data, 'base64'),
   );
+  await js(`document.querySelector('[title="히스토리 닫기"]')?.click()`);
   const imported = await js(
     `(async()=>{const w=await window.gameCanvas.getWorkspace();return window.gameCanvas.importFiles({scope:w.saveScope,contextId:w.clipboardContextId,x:0,y:0,imagePurpose:'asset',files:[{name:${JSON.stringify(`roundtrip-${label}.html`)},bytes:Uint8Array.from(atob(${JSON.stringify(bytes.toString('base64'))}),c=>c.charCodeAt(0))}]});})()`,
   );

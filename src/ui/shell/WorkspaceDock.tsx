@@ -57,6 +57,8 @@ import { getAiModelLabel } from '../ai/presentation';
 import { previewNodeId } from '../workspace/workspace-types';
 import { sectionNodeId } from '../workspace/workspace-types';
 import { requireDesktopApi } from '../runtime/desktop-api';
+import { isImportedPreviewPath } from '../../preview-output';
+import { GameBuildSummary } from '../preview/GameBuildSummary';
 
 type Props = Pick<
   ComponentProps<typeof WorkspaceCanvasTools>,
@@ -195,6 +197,7 @@ type Props = Pick<
   > &
   Pick<ComponentProps<typeof WorkspaceAiDialogs>, 'noticeProject'> & {
     changeDrawingStack?: ComponentProps<typeof DrawingInspector>['changeStack'];
+    dispatchDocumentLink: (href: string) => void;
     dockPanel: import('../CanvasChrome').CanvasPanelId | null;
     eraserMode: import('../../drawing-types').EraserMode;
     gameUiPanelActive: boolean;
@@ -260,6 +263,7 @@ export function WorkspaceDock({
   completion,
   creatingTask,
   deleteDrawings,
+  dispatchDocumentLink,
   dockPanel,
   documents,
   drawing,
@@ -375,6 +379,12 @@ export function WorkspaceDock({
   workflowReason,
 }: Props) {
   const { capabilities } = useRuntime();
+  const historyPreview =
+    historyOpen && historyFilter
+      ? previews.find(
+          (preview) => preview.exists && preview.relativePath === historyFilter,
+        )
+      : undefined;
   return (
     <>
       {!uiHidden && dockPanel && (
@@ -1372,6 +1382,29 @@ export function WorkspaceDock({
                 </button>
               </div>
               <div className="history-panel__body">
+                {historyPreview && (
+                  <section
+                    key={historyPreview.relativePath}
+                    className="history-build"
+                    aria-label="현재 HTML의 제작 정보"
+                  >
+                    <strong>현재 HTML의 제작 정보</strong>
+                    <GameBuildSummary
+                      build={historyPreview.build}
+                      imported={isImportedPreviewPath(
+                        historyPreview.relativePath,
+                      )}
+                      documentLinks={{
+                        documents,
+                        open: (href) => {
+                          historyRequest.current += 1;
+                          setHistoryOpen(false);
+                          dispatchDocumentLink(href);
+                        },
+                      }}
+                    />
+                  </section>
+                )}
                 <div className="history-panel__entries">
                   {filteredHistoryEntries.map((entry) => (
                     <div

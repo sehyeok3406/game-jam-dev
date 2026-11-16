@@ -59,10 +59,26 @@ async function run() {
           await js('!!document.querySelector(".preview-card")'),
           rendererErrors.join('\n'),
         );
+        const openCard = async () => {
+          await js(
+            `document.querySelector('.preview-card button.file-node-surface')?.click()`,
+          );
+          for (let n = 0; n < 60; n++) {
+            if (
+              await js(
+                `document.querySelector('.preview-card').matches(':not(.preview-card--collapsed)') && !!document.querySelector('.preview-card iframe')`,
+              )
+            )
+              return;
+            await sleep(70);
+          }
+          assert.fail('The HTML card did not expand and mount its game iframe');
+        };
         if (state === 'collapsed') {
-          assert.equal(
-            await js('document.querySelector(".preview-card").clientHeight'),
-            36,
+          assert.ok(
+            await js(
+              `(()=>{const card=document.querySelector('.preview-card');return card.matches('.preview-card--node-collapsed')&&card.clientHeight<300;})()`,
+            ),
           );
           assert.equal(
             await js(
@@ -79,6 +95,7 @@ async function run() {
           results.push({ theme, state });
           continue;
         }
+        await openCard();
         for (const [width, height] of [
           [420, 300],
           [720, 520],
@@ -89,14 +106,15 @@ async function run() {
           );
           await sleep(130);
           const layout = await js(
-            `(()=>{const card=document.querySelector('.preview-card');const header=card.querySelector('header');const warning=card.querySelector('.preview-import-warning');const summary=card.querySelector('.game-build-summary');const play=card.querySelector('.preview-card__play-area');const iframe=play.querySelector('iframe');return {card:card.clientHeight,header:header.offsetHeight,warning:warning?.offsetHeight??0,summary:summary?.offsetHeight??0,game:play.offsetHeight,iframe:iframe.clientHeight,warningClass:card.classList.contains('preview-card--warning')};})()`,
+            `(()=>{const card=document.querySelector('.preview-card');const header=card.querySelector('header');const warning=card.querySelector('.preview-import-warning');const play=card.querySelector('.preview-card__play-area');const iframe=play.querySelector('iframe');return {card:card.clientHeight,header:header.offsetHeight,warning:warning?.offsetHeight??0,hasBuildSummary:!!card.querySelector('.game-build-summary'),game:play.offsetHeight,iframe:iframe.clientHeight,warningClass:card.classList.contains('preview-card--warning')};})()`,
           );
           assert.equal(layout.warningClass, state === 'warning');
           assert.equal(layout.header, 38);
           assert.ok(layout.warning < 75, JSON.stringify(layout));
+          assert.equal(layout.hasBuildSummary, false);
           assert.equal(
             layout.game,
-            layout.card - layout.header - layout.warning - layout.summary,
+            layout.card - layout.header - layout.warning,
           );
           assert.equal(layout.iframe, layout.game);
           assert.ok(
@@ -108,75 +126,59 @@ async function run() {
             path.join(output, `${theme}-${state}-${width}.png`),
             (await win.webContents.capturePage()).toPNG(),
           );
-          if (width === 720) {
-            await js(
-              'document.querySelector(".game-build-summary summary").click()',
-            );
-            await sleep(130);
-            const expanded = await js(
-              `(()=>{const card=document.querySelector('.preview-card');const panel=card.querySelector('.game-build-summary');return {open:panel.open,height:panel.offsetHeight,play:card.querySelector('.preview-card__play-area').offsetHeight};})()`,
-            );
-            assert.equal(expanded.open, true);
-            assert.ok(
-              expanded.height > layout.summary && expanded.height <= 180,
-              JSON.stringify(expanded),
-            );
-            assert.equal(
-              expanded.play,
-              layout.game - expanded.height + layout.summary,
-            );
-            assert.ok(expanded.play > 200);
-            results.push({ theme, state, expanded });
-            await fs.writeFile(
-              path.join(output, `${theme}-${state}-summary.png`),
-              (await win.webContents.capturePage()).toPNG(),
-            );
-            await js(
-              'document.querySelector(".game-build-summary summary").click()',
-            );
-          }
         }
-        if (state === 'independent') {
+        if (state === 'default') {
           await js(
-            'document.querySelector(\'[title="함께 플레이 연결 확인"]\').click()',
-          );
-          await sleep(100);
-          assert.ok(
-            await js(
-              'document.querySelector(".multiplayer-lobby").textContent.includes("GC-MP-030")',
-            ),
-          );
-          assert.ok(
-            await js(
-              '(()=>{const b=document.querySelector(".multiplayer-lobby button");const r=b.getBoundingClientRect();const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return b===top||b.contains(top)})()',
-            ),
-            'Repair action must be clickable above neighboring HTML cards',
-          );
-          await fs.writeFile(
-            path.join(output, `${theme}-independent-connection.png`),
-            (await win.webContents.capturePage()).toPNG(),
-          );
-          await js(
-            'Array.from(document.querySelectorAll(".multiplayer-lobby button")).find(button=>button.textContent.includes("수정 요청")).click()',
+            `document.querySelector('.preview-card [title="HTML 히스토리"]').click()`,
           );
           await sleep(150);
-          assert.ok(await js('!!document.querySelector(".ai-request-dialog")'));
+          const summary = '.history-panel .history-build .game-build-summary';
+          assert.match(
+            await js(
+              `document.querySelector('${summary} summary').textContent`,
+            ),
+            /수정용 원본 보관됨/,
+          );
+          await js(`document.querySelector('${summary} summary').click()`);
+          const facts = await js(
+            `(()=>{const summary=document.querySelector('${summary}');return {open:summary.open,text:summary.textContent,document:summary.querySelector('button')?.textContent,emptyHistory:document.querySelector('.history-panel__entries').textContent};})()`,
+          );
+          assert.equal(facts.open, true);
+          assert.match(facts.text, /three 0\.180\.0/);
+          assert.match(facts.text, /제작 당시 내용과 같음/);
+          assert.match(facts.emptyHistory, /아직 저장된 버전이 없습니다/);
+          assert.equal(facts.document, '전투 시스템 아이디어');
           assert.ok(
             await js(
-              'Array.from(document.querySelectorAll(".ai-request-dialog textarea")).some(input=>input.value.includes("규칙·화면·조작·콘텐츠를 유지"))',
+              `(()=>{const panel=document.querySelector('.history-panel');return panel.scrollWidth===panel.clientWidth&&panel.querySelector('[title="히스토리 닫기"]').getBoundingClientRect().right<=panel.getBoundingClientRect().right;})()`,
+            ),
+            'The file path and build information must fit the history panel',
+          );
+          await sleep(120);
+          await fs.writeFile(
+            path.join(output, `${theme}-build-history.png`),
+            (await win.webContents.capturePage()).toPNG(),
+          );
+          await js(`document.querySelector('${summary} button').click()`);
+          await sleep(150);
+          assert.equal(
+            await js(`!!document.querySelector('${summary}')`),
+            false,
+          );
+          assert.ok(
+            await js(
+              `!!document.querySelector('[data-id="ui-sample-note"].selected .file-node-expanded')`,
             ),
           );
+          results.push({ theme, state: 'build-history', ...facts });
+        }
+        if (state === 'independent') {
           assert.equal(
             await js(
-              'document.querySelector(".ai-request-dialog #ai-html-result").value',
+              `!!document.querySelector('.preview-card [title="함께 플레이 연결 확인"]')`,
             ),
-            'output/inbox/combat/v001/index.html',
+            false,
           );
-          results.push({
-            theme,
-            state: 'independent-repair-request',
-            sourcePreserved: true,
-          });
         }
         if (state === 'warning') {
           await js(
@@ -195,10 +197,7 @@ async function run() {
             ),
             false,
           );
-          await js(
-            'document.querySelector(\'[title="HTML 창 펼치기"]\').click()',
-          );
-          await sleep(150);
+          await openCard();
           assert.equal(
             await js(
               '!!document.querySelector(".preview-card").querySelector(".preview-import-warning")',
@@ -211,12 +210,9 @@ async function run() {
           await sleep(220);
           assert.equal(await js('!!document.fullscreenElement'), true);
           const layout = await js(
-            "(()=>{const c=document.fullscreenElement;const w=c.querySelector('.preview-import-warning');const p=c.querySelector('.preview-card__play-area');return {card:c.clientHeight,warning:w.offsetHeight,summary:c.querySelector('.game-build-summary').offsetHeight,game:p.offsetHeight};})()",
+            "(()=>{const c=document.fullscreenElement;const w=c.querySelector('.preview-import-warning');const p=c.querySelector('.preview-card__play-area');return {card:c.clientHeight,warning:w.offsetHeight,game:p.offsetHeight};})()",
           );
-          assert.equal(
-            layout.game,
-            layout.card - 38 - layout.warning - layout.summary,
-          );
+          assert.equal(layout.game, layout.card - 38 - layout.warning);
           results.push({ theme, state: 'fullscreen-warning', ...layout });
           await fs.writeFile(
             path.join(output, `${theme}-fullscreen-warning.png`),
@@ -230,7 +226,7 @@ async function run() {
       JSON.stringify(results, null, 2),
     );
     console.log(
-      'PASS: production preview, light/dark, warnings/no warnings, 3 card sizes, collapse/expand, fullscreen; game fills remaining height.',
+      'PASS: production preview and build history, light/dark, warnings/no warnings, 3 card sizes, collapse/expand, fullscreen; game fills remaining height.',
     );
   } finally {
     clearTimeout(watchdog);
