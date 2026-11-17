@@ -5,6 +5,7 @@ import { trashDeletedFiles } from '../../result-deletion.ts';
 import { localMediaFromMarkdown } from './local-media.ts';
 import type { FileTrashService } from '../../application/editing/file-trash-service.ts';
 import type { Snapshot } from '../../contracts/project.ts';
+import { isDrawingPath } from '../../core/editing/drawing-path.ts';
 import {
   managedPreviewPaths,
   previewDeletionTarget,
@@ -260,14 +261,15 @@ export function filesystemHistoryPublisher(
   };
   return {
     publish: async (before, after, paths) => {
+      const changes = Object.fromEntries(
+        paths.map((path) => [path, after[path] ?? null]),
+      );
+      if (paths.every(isDrawingPath)) return repository.apply(before, changes);
       const rollback = await suspended(() =>
         moveResultFiles(root, before, after),
       );
       try {
-        await repository.apply(
-          resultFileBaseline(before, after),
-          Object.fromEntries(paths.map((path) => [path, after[path] ?? null])),
-        );
+        await repository.apply(resultFileBaseline(before, after), changes);
       } catch (error) {
         await suspended(rollback);
         throw error;

@@ -61,6 +61,19 @@ try {
   await expectDrawingCount(1);
   const [shape] = await drawings();
   assert.equal(shape.kind, 'shape');
+  await js(`(() => {
+    window.drawingUndoChanges = [];
+    window.gameCanvas.onWorkspaceChanged(change => window.drawingUndoChanges.push(change ?? null));
+    window.drawingUndoDocumentLoads = 0;
+    const notice = () => document.querySelector('.status-toast')?.textContent;
+    let previous = notice();
+    new MutationObserver(() => {
+      const current = notice();
+      if (current !== previous && current?.includes('개를 불러왔습니다.'))
+        window.drawingUndoDocumentLoads++;
+      previous = current;
+    }).observe(document.body, { childList: true, characterData: true, subtree: true });
+  })()`);
   await changeHistory('undo');
   await expectDrawingCount(0);
   await changeHistory('redo');
@@ -97,8 +110,15 @@ try {
   await changeHistory('redo');
   await expectDrawingCount(1);
   assert.deepEqual(await drawings(), [restoredShape]);
+  await wait('window.drawingUndoChanges.some(change => change?.drawings)');
+  assert.equal(await js('window.drawingUndoDocumentLoads'), 0);
+  assert.equal(
+    await js(`window.drawingUndoChanges.every(change => change?.drawings &&
+    !change.paths.length && !change.sections && !change.gameUi && !change.kanban)`),
+    true,
+  );
   console.log(
-    'PASS: packaged rectangle, pen stroke and eraser Undo/Redo update disk and canvas',
+    'PASS: packaged rectangle, pen stroke and eraser Undo/Redo update drawings without reloading documents',
   );
 } catch (error) {
   console.error(

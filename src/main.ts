@@ -1122,6 +1122,7 @@ const startWatcher = () => {
             path.relative(root, absolute).replaceAll('\\', '/'),
           )
         : '';
+      if (event === 'addDir' && relative === DRAWING_DIRECTORY) return;
       if (
         !ref ||
         !['change', 'add', 'unlink'].includes(event) ||
@@ -2067,7 +2068,12 @@ const handle = (
         return listener(event, ...args);
       return enqueueMutation(async () => {
         await assertMutationAllowed(channel, args);
-        if (channel === 'workspace:select' || channel.startsWith('projects:'))
+        if (
+          channel === 'workspace:select' ||
+          channel.startsWith('projects:') ||
+          channel === 'edit:undo' ||
+          channel === 'edit:redo'
+        )
           return listener(event, ...args);
         const root = requireWorkspace(),
           editJournal = journal();
@@ -2912,7 +2918,7 @@ const registerIpc = () => {
         projectFileEffects(session).pauseWatcher,
       );
     },
-    () => {
+    async (direction) => {
       const root = requireWorkspace(),
         session = projectSessions.ref;
       const repository = editHistoryRepository(root, session);
@@ -2921,10 +2927,27 @@ const registerIpc = () => {
         repository,
         projectFileEffects(session),
       );
-      return new LocalEditHistoryService(repository, journal(), publisher, {
-        id: historyId,
-        now: Date.now,
-      });
+      const result = await new LocalEditHistoryService(
+        repository,
+        journal(),
+        publisher,
+        {
+          id: historyId,
+          now: Date.now,
+        },
+      ).change(direction);
+      projectSessions.assertCurrent(session);
+      const change =
+        result.drawingOnly && session
+          ? confirmedCanvasWrites.record(
+              session.sessionId,
+              result.before,
+              result.after,
+              result.paths,
+            )
+          : null;
+      notifyWorkspaceChanged(change ?? undefined);
+      return change ?? undefined;
     },
     () => (projectSessions.root ? journal().state : { undo: null, redo: null }),
   );

@@ -33,7 +33,11 @@ import {
   checkSnapshot,
 } from '../src/collaboration-model.ts';
 import { CANVAS_SHEETS_PATH } from '../src/canvas-sheets.ts';
-import { invertEdit } from '../src/edit-journal.ts';
+import { EditJournal, invertEdit } from '../src/edit-journal.ts';
+import { LocalEditHistoryService } from '../src/application/editing/edit-history-service.ts';
+import { UserEditRecorder } from '../src/application/editing/user-edit-recorder.ts';
+import { filesystemProjectRepository } from '../src/adapters/filesystem/local-project-repository.ts';
+import { filesystemHistoryPublisher } from '../src/adapters/filesystem/command-publisher.ts';
 import { planOfflineMerge } from '../src/offline-sync.ts';
 import { captureProject, materialize } from '../src/project-store.ts';
 import { projectForWeb } from '../src/web-viewer.ts';
@@ -310,6 +314,52 @@ test('mixed operations and canvas deletion are atomic, survive disk capture and 
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await materialize(directory, redone);
   assert.deepEqual(await captureProject(directory), redone);
+});
+
+test('local stroke undo and redo publish through the drawing scope without reading project documents', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'drawing-history-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const pen = stroke();
+  const before = { 'project.md': md };
+  const after = create(before, [pen]);
+  await materialize(root, after);
+  const repository = filesystemProjectRepository(root);
+  const environment = { id: randomUUID, now: Date.now };
+  const journal = new EditJournal();
+  await new UserEditRecorder(repository, journal, environment).record(
+    before,
+    after,
+    '펜 획 추가',
+  );
+  const publisher = filesystemHistoryPublisher(root, repository, {
+    pauseWatcher: () =>
+      assert.fail('drawing history must keep watching external writes'),
+    trashItem: () => assert.fail('drawing history has no native file deletion'),
+  });
+  const history = new LocalEditHistoryService(
+    repository,
+    journal,
+    publisher,
+    environment,
+  );
+  const read = fs.readFile;
+  t.mock.method(fs, 'readFile', (filename, ...options) => {
+    assert.notEqual(filename, path.join(root, 'project.md'));
+    return read(filename, ...options);
+  });
+
+  const undo = await history.change('undo');
+  assert.equal(undo.drawingOnly, true);
+  assert.deepEqual(undo.paths, [file]);
+  assert.equal((await repository.captureCanvas('drawings'))[file], undefined);
+  const redo = await history.change('redo');
+  assert.equal(redo.drawingOnly, true);
+  const [restored] = snapshotDrawings(
+    await repository.captureCanvas('drawings'),
+  );
+  assert.equal(restored.id, pen.id);
+  assert.deepEqual(restored.geometry, pen.geometry);
+  assert.equal(await read(path.join(root, 'project.md'), 'utf8'), md);
 });
 
 test('object deltas omit untouched points; web uses safe SVG and AI cannot modify drawings', () => {

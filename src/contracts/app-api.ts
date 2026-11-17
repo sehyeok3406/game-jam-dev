@@ -297,8 +297,8 @@ export type GameCanvasApi = {
     undo: string | null;
     redo: string | null;
   }>;
-  undo: () => Promise<void>;
-  redo: () => Promise<void>;
+  undo: () => Promise<WorkspaceCanvasChange | void>;
+  redo: () => Promise<WorkspaceCanvasChange | void>;
   getCollaboration: () => Promise<CollaborationState>;
   getTestUsers: () => Promise<TestUsersState>;
   launchTestUsers: (input: LaunchTestUsersInput) => Promise<TestUserWindow[]>;

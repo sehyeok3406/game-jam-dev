@@ -140,7 +140,7 @@ import {
   isVisibleCanvasNode,
 } from '../canvas/file-card-presentation';
 import { moveCanvasStack, type StackMove } from '../../core/canvas/stacking';
-import { useViewLifetime } from './useViewLifetime';
+import { useProjectLifetime, useViewLifetime } from './useViewLifetime';
 import { ProjectCopyDialog } from '../ProjectCopyDialog';
 import {
   contextSelection,
@@ -410,6 +410,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     home,
   });
   const isStackViewCurrent = useViewLifetime(selectionScope);
+  const isEditProjectCurrent = useProjectLifetime(selectionScope);
 
   const canvasProjectRef = useRef<string | null>(null);
   const switchingCanvasRef = useRef(false);
@@ -2578,16 +2579,24 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     setEditBusy(true);
     try {
       await flushEditors();
-      await api.history[direction]();
-      await drawing.reload();
-      await loadProject(false);
+      if (!isEditProjectCurrent()) return;
+      const change = await api.history[direction]();
+      if (!isEditProjectCurrent()) return;
+      if (change) {
+        await Promise.all([drawing.reload(), loadCanvasChange(change)]);
+      } else {
+        await drawing.reload();
+        if (!isEditProjectCurrent()) return;
+        await loadProject(false);
+      }
+      if (!isEditProjectCurrent()) return;
       setNotice(
         direction === 'undo'
           ? '내 작업을 되돌렸습니다.'
           : '내 작업을 다시 실행했습니다.',
       );
     } catch (error) {
-      showError(error);
+      if (isEditProjectCurrent()) showError(error);
     } finally {
       setEditBusy(false);
     }

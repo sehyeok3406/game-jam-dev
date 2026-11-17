@@ -10,6 +10,12 @@ import { SHAPE_NAMES } from './drawing-types.ts';
 import { visibleStroke, withErasure } from './drawing-geometry.ts';
 import { validateTextDocument } from './text-document.ts';
 import type { ErasureRegion, StrokeObject } from './drawing-types.ts';
+import {
+  DRAWING_DIRECTORY,
+  drawingPath,
+  isDrawingPath,
+} from './core/editing/drawing-path.ts';
+export { DRAWING_DIRECTORY, drawingPath, isDrawingPath };
 export const MAX_ERASURE_VERTICES = 2_000;
 export const MAX_CANVAS_ERASURE_VERTICES = 25_000;
 export const MAX_STROKE_ERASURES = 128;
@@ -48,7 +54,6 @@ export function baseStrokeGeometry(g: DrawingObject['geometry']) {
   const { erasures: _erasures, ...base } = g;
   return base;
 }
-export const DRAWING_DIRECTORY = '.canvas/drawings';
 export const MAX_DRAWING_BYTES = 2_000_000;
 export const MAX_DRAWING_POINTS = 5_000;
 const uuid = (s: unknown) =>
@@ -64,13 +69,6 @@ const keys = (v: unknown, allowed: string[]) =>
   typeof v === 'object' &&
   !Array.isArray(v) &&
   Object.keys(v).every((k) => allowed.includes(k));
-export const isDrawingPath = (path: string) =>
-  /^\.canvas\/drawings\/[a-zA-Z0-9_-]{1,100}\.json$/.test(path);
-export const drawingPath = (canvasId: string) => {
-  const path = `${DRAWING_DIRECTORY}/${canvasId}.json`;
-  if (!isDrawingPath(path)) fail('그림 캔버스 ID가 올바르지 않습니다.');
-  return path;
-};
 export function validateDrawingObject(o: DrawingObject) {
   if (
     !keys(o, [

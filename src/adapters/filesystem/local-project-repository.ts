@@ -30,7 +30,7 @@ const RECENT_EDIT_BYTES = 8 * 1024 * 1024;
 type EditHistory = Awaited<ReturnType<typeof readHistorySnapshots>>;
 
 const canvasRoots: Record<CanvasFileScope, readonly string[]> = {
-  drawings: [CANVAS_SHEETS_PATH, DRAWING_DIRECTORY],
+  drawings: [PROJECT_LAYOUT_PATH, CANVAS_SHEETS_PATH, DRAWING_DIRECTORY],
   'game-ui': [CANVAS_SHEETS_PATH, GAME_UI_DIRECTORY],
   layout: [
     PROJECT_LAYOUT_PATH,
