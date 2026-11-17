@@ -13,6 +13,11 @@ export interface LocalProjectRepository {
     cancelled?: () => boolean,
   ): Promise<void>;
   history(): Promise<HistoryEntry[]>;
+  historyEntry(id: string): Promise<HistoryEntry | null>;
+  readEditHistory(
+    id: string,
+  ): Promise<{ entry: HistoryEntry; before: Snapshot; after: Snapshot } | null>;
+  rememberUndo?(entry: HistoryEntry, before: Snapshot, after: Snapshot): void;
   readHistory(
     id: string,
     relative: string,

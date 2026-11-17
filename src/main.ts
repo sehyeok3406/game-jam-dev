@@ -227,8 +227,8 @@ import { testProfilePath, TEST_BOOTSTRAP_KEY_ENV } from './test-users';
 import {
   captureProject,
   historyId,
-  listHistory,
   projectPath,
+  readHistoryEntry,
   readHistoryFile,
   recoverInterruptedHistory,
   saveHistory,
@@ -531,16 +531,32 @@ const journal = () => {
   if (!value) editJournals.set(key, (value = new EditJournal()));
   return value;
 };
+type ProjectSessionRef =
+  import('./contracts/project-session').ProjectSessionRef;
+const editHistoryRepositories = new WeakMap<
+  ProjectSessionRef,
+  ReturnType<typeof filesystemProjectRepository>
+>();
+const editHistoryRepository = (root: string, ref: ProjectSessionRef | null) => {
+  const assertCurrent = () => projectSessions.assertCurrent(ref);
+  assertCurrent();
+  if (!ref) return filesystemProjectRepository(root, assertCurrent);
+  let repository = editHistoryRepositories.get(ref);
+  if (!repository) {
+    repository = filesystemProjectRepository(root, assertCurrent, true);
+    editHistoryRepositories.set(ref, repository);
+  }
+  return repository;
+};
 const userEdits = (
   root: string,
-  ref: import('./contracts/project-session').ProjectSessionRef | null,
+  ref: ProjectSessionRef | null,
   editJournal = journal(),
 ) =>
-  new UserEditRecorder(
-    filesystemProjectRepository(root, () => projectSessions.assertCurrent(ref)),
-    editJournal,
-    { id: historyId, now: Date.now },
-  );
+  new UserEditRecorder(editHistoryRepository(root, ref), editJournal, {
+    id: historyId,
+    now: Date.now,
+  });
 const fileTrashAt = (root: string, assertCurrent: () => void = () => {}) =>
   new FileTrashService(
     filesystemFileTrash(root),
@@ -872,7 +888,12 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
       channel === 'history:restore'
         ? args[0]
         : journal().peek(channel === 'edit:undo' ? 'undo' : 'redo').id;
-    const entry = (await listHistory(root)).find((entry) => entry.id === id);
+    const entry =
+      channel === 'history:restore'
+        ? await readHistoryEntry(root, String(id))
+        : await editHistoryRepository(root, projectSessions.ref).historyEntry(
+            String(id),
+          );
     const paths =
       entry?.files
         .filter(
@@ -2894,8 +2915,7 @@ const registerIpc = () => {
     () => {
       const root = requireWorkspace(),
         session = projectSessions.ref;
-      const assertCurrent = () => projectSessions.assertCurrent(session);
-      const repository = filesystemProjectRepository(root, assertCurrent);
+      const repository = editHistoryRepository(root, session);
       const publisher = filesystemHistoryPublisher(
         root,
         repository,

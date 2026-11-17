@@ -37,27 +37,9 @@ export class LocalEditHistoryService {
   }
   async change(direction: 'undo' | 'redo') {
     const item = this.journal.peek(direction);
-    const entry = (await this.repository.history()).find(
-      (entry) => entry.id === item.id,
-    );
-    if (!entry || entry.kind !== 'user')
-      throw Error('되돌릴 기록을 찾을 수 없습니다.');
-    const before: Snapshot = {},
-      after: Snapshot = {};
-    for (const file of entry.files) {
-      const left = await this.repository.readHistory(
-        item.id,
-        file.relativePath,
-        'before',
-      );
-      const right = await this.repository.readHistory(
-        item.id,
-        file.relativePath,
-        'after',
-      );
-      if (left !== null) before[file.relativePath] = left;
-      if (right !== null) after[file.relativePath] = right;
-    }
+    const record = await this.repository.readEditHistory(item.id);
+    if (!record) throw Error('되돌릴 기록을 찾을 수 없습니다.');
+    const { entry, before, after } = record;
     const current = await this.repository.capture();
     const next = localHistoryInverse(current, before, after, direction);
     await this.publisher.publish(

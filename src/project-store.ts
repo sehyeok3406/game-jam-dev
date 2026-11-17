@@ -354,6 +354,24 @@ export async function recoverInterruptedHistory(root: string) {
 export function historyId() {
   return `${Date.now()}-${randomUUID()}`;
 }
+export async function readHistoryEntry(root: string, id: string) {
+  validateId(id);
+  try {
+    const raw = await fs.readFile(
+      await projectPath(root, `.history/${id}/entry.json`),
+      'utf8',
+    );
+    const entry = JSON.parse(raw) as HistoryEntry | null;
+    return entry?.id === id && Array.isArray(entry.files) ? entry : null;
+  } catch (error) {
+    if (
+      error instanceof SyntaxError ||
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
+    )
+      return null;
+    throw error;
+  }
+}
 export async function listHistory(root: string): Promise<HistoryEntry[]> {
   const folder = await projectPath(root, '.history');
   let ids: string[];
@@ -367,12 +385,8 @@ export async function listHistory(root: string): Promise<HistoryEntry[]> {
   for (const id of ids) {
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) continue;
     try {
-      let entry = JSON.parse(
-        await fs.readFile(
-          await projectPath(root, `.history/${id}/entry.json`),
-          'utf8',
-        ),
-      ) as HistoryEntry;
+      let entry = await readHistoryEntry(root, id);
+      if (!entry) continue;
       const taskPath = historyTaskPath(entry);
       if (!entry.aiTask?.requestSnapshot && taskPath) {
         for (const version of ['input', 'after', 'before']) {
@@ -420,17 +434,39 @@ export async function readHistoryFile(
   relative: string,
   version: 'before' | 'after',
 ) {
-  validateId(id);
   if (version !== 'before' && version !== 'after')
     throw new Error('올바르지 않은 버전입니다.');
-  const entry = (await listHistory(root)).find((item) => item.id === id);
+  const entry = await readHistoryEntry(root, id);
   const file = entry?.files.find((item) => item.relativePath === relative);
   if (!file) throw new Error('기록에 없는 파일입니다.');
+  return readHistoryVersion(root, id, file, version);
+}
+async function readHistoryVersion(
+  root: string,
+  id: string,
+  file: HistoryEntry['files'][number],
+  version: 'before' | 'after',
+) {
   if (!file[version]) return null;
+  const relative = file.relativePath;
   return readSnapshotFile(
     await projectPath(root, `.history/${id}/${version}/${relative}`),
     relative,
   );
+}
+export async function readHistorySnapshots(root: string, entry: HistoryEntry) {
+  validateId(entry.id);
+  const before: Snapshot = {},
+    after: Snapshot = {};
+  for (const file of entry.files) {
+    const [left, right] = await Promise.all([
+      readHistoryVersion(root, entry.id, file, 'before'),
+      readHistoryVersion(root, entry.id, file, 'after'),
+    ]);
+    if (left !== null) before[file.relativePath] = left;
+    if (right !== null) after[file.relativePath] = right;
+  }
+  return { entry, before, after };
 }
 export async function applyChanges(
   root: string,
@@ -569,7 +605,7 @@ export async function restoreHistory(
     requestedVersion !== 'after'
   )
     throw new Error('올바르지 않은 복원 버전입니다.');
-  const entry = (await listHistory(root)).find((item) => item.id === id);
+  const entry = await readHistoryEntry(root, id);
   if (!entry || entry.status !== 'completed')
     throw new Error('완료된 기록만 복원할 수 있습니다.');
   if (relative?.startsWith('sections/'))

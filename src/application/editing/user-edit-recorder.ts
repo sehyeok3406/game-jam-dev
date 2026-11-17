@@ -6,13 +6,18 @@ import type { CommandPublisher, CommandPlan } from './command-service.ts';
 import type { CommandName } from '../../contracts/commands.ts';
 import { COMMAND_LABELS } from '../../contracts/commands.ts';
 
+type HistoryWriter = Pick<
+  LocalProjectRepository,
+  'saveHistory' | 'rememberUndo'
+>;
+
 /** The history repository and journal are captured before the originating edit awaits. */
 export class UserEditRecorder {
-  private repository: Pick<LocalProjectRepository, 'saveHistory'>;
+  private repository: HistoryWriter;
   private journal: Pick<EditJournal, 'push'>;
   private environment: CommandEnvironment;
   constructor(
-    repository: Pick<LocalProjectRepository, 'saveHistory'>,
+    repository: HistoryWriter,
     journal: Pick<EditJournal, 'push'>,
     environment: CommandEnvironment,
   ) {
@@ -26,7 +31,7 @@ export class UserEditRecorder {
     );
     if (!touched.length) return;
     const id = this.environment.id();
-    await this.repository.saveHistory(before, after, {
+    const entry = await this.repository.saveHistory(before, after, {
       id,
       label,
       kind: 'user',
@@ -40,8 +45,10 @@ export class UserEditRecorder {
         label === '문서 최소화·펼치기' &&
         touched.every((relative) => relative.startsWith('.ai/tasks/'))
       )
-    )
+    ) {
+      this.repository.rememberUndo?.(entry, before, after);
       this.journal.push({ id, label });
+    }
   }
 }
 

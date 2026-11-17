@@ -55,7 +55,7 @@ export function useDrawing(
 ) {
   const { api } = useRuntime();
 
-  const signatures = useRef<Record<string, string>>({});
+  const signatures = useRef<Record<string, string> | null>(null);
   const [confirmed, setConfirmed] = useState<DrawingItem[]>([]),
     [pending, setPending] = useState<DrawingCommand[]>([]),
     [error, setError] = useState(''),
@@ -93,14 +93,15 @@ export function useDrawing(
   }, []);
   const reload = useCallback(async () => {
     const s = state.current,
-      epoch = s.epoch,
+      epoch = ++s.epoch,
       root = s.scope;
     if (!root || !api.editor.listDrawings) return;
-    const changes = await api.editor.getDrawingChanges?.(signatures.current);
+    const known = signatures.current;
+    const changes = await api.editor.getDrawingChanges?.(known ?? {});
     const objects = changes
       ? (() => {
           const values = new Map(
-            s.confirmed
+            (known ? s.confirmed : [])
               .filter((o) => !changes.removed.includes(o.id))
               .map((o) => [o.id, o]),
           );
@@ -109,7 +110,7 @@ export function useDrawing(
         })()
       : await api.editor.listDrawings();
     if (state.current !== s || s.epoch !== epoch) return;
-    if (changes) signatures.current = changes.signatures;
+    signatures.current = changes?.signatures ?? null;
     const stable = retainUnchangedRecords(s.confirmed, objects);
     s.confirmed = stable;
     setConfirmed(stable);
@@ -125,7 +126,7 @@ export function useDrawing(
       sequence: Date.now(),
       epoch: 0,
     };
-    signatures.current = {};
+    signatures.current = null;
     chain.current = Promise.resolve();
     setPending([]);
     setConfirmed([]);
@@ -166,6 +167,8 @@ export function useDrawing(
         const result = await api.editor.applyDrawingCommand(cmd);
         if (state.current !== s) return;
         s.epoch++;
+        // The command returns a full list without the signatures for that list.
+        signatures.current = null;
         const stable = retainUnchangedRecords(s.confirmed, result);
         s.confirmed = stable;
         s.commands.shift();

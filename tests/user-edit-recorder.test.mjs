@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import {
   UserEditRecorder,
@@ -6,6 +9,7 @@ import {
 } from '../src/application/editing/user-edit-recorder.ts';
 import { EditJournal } from '../src/edit-journal.ts';
 import { COMMAND_LABELS } from '../src/contracts/commands.ts';
+import { filesystemProjectRepository } from '../src/adapters/filesystem/local-project-repository.ts';
 
 function setup(save = async () => {}) {
   const journal = new EditJournal(),
@@ -92,6 +96,63 @@ test('failed history is not acknowledged, and an async record stays in its captu
   await record;
   assert.equal(captured.journal.state.undo, '이전 프로젝트');
   assert.equal(next.state.undo, null);
+});
+test('recent Undo keeps 20 edits in memory and older edits read only their own record', async (t) => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'gamejam-recent-edits-'),
+  );
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const repository = filesystemProjectRepository(root, () => {}, true);
+  const journal = new EditJournal();
+  let number = 0;
+  const recorder = new UserEditRecorder(repository, journal, {
+    id: () => `edit-${++number}`,
+    now: Date.now,
+  });
+  for (let i = 1; i <= 21; i++) {
+    await recorder.record(
+      { 'docs/a.md': String(i - 1), 'docs/unchanged.md': 'unrelated' },
+      { 'docs/a.md': String(i), 'docs/unchanged.md': 'unrelated' },
+      `Edit ${i}`,
+    );
+  }
+  assert.equal((await repository.history()).length, 21);
+  assert.equal(journal.undoStack.length, 21);
+
+  const readdir = fs.readdir;
+  t.mock.method(fs, 'readdir', (directory, ...options) => {
+    assert.notEqual(path.basename(directory), '.history');
+    return readdir(directory, ...options);
+  });
+  const readFile = fs.readFile;
+  const reads = t.mock.method(fs, 'readFile', readFile);
+
+  for (let i = 2; i <= 21; i++) {
+    const change = await repository.readEditHistory(`edit-${i}`);
+    assert.deepEqual(change.before, { 'docs/a.md': String(i - 1) });
+    assert.deepEqual(change.after, { 'docs/a.md': String(i) });
+  }
+  assert.equal(reads.mock.callCount(), 0);
+
+  const older = await repository.readEditHistory('edit-1');
+  assert.deepEqual(older.before, { 'docs/a.md': '0' });
+  assert.deepEqual(older.after, { 'docs/a.md': '1' });
+  assert.equal(reads.mock.callCount(), 3);
+  assert.ok(
+    reads.mock.calls.every(({ arguments: [filename] }) =>
+      filename.includes(`${path.sep}edit-1${path.sep}`),
+    ),
+  );
+  assert.equal(
+    await repository.readHistory('edit-1', 'docs/a.md', 'before'),
+    '0',
+  );
+
+  const reopened = filesystemProjectRepository(root, () => {}, true);
+  assert.deepEqual((await reopened.readEditHistory('edit-21')).after, {
+    'docs/a.md': '21',
+  });
+  assert.equal(reads.mock.callCount(), 8);
 });
 test('manual commands publish then record once; failed publish/history cannot notify success', async () => {
   const plan = {
