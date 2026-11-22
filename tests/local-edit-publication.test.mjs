@@ -15,7 +15,7 @@ const after = { [first]: '# edited first\n', [second]: '# edited second\n' };
 const external = '# external edit\n';
 
 async function fixture(t) {
-  const temporary = path.resolve(os.tmpdir());
+  const temporary = await fs.realpath(os.tmpdir());
   const root = await fs.mkdtemp(path.join(temporary, 'gamejam-local-publish-'));
   t.after(async () => {
     assert.equal(path.dirname(path.resolve(root)), temporary);
