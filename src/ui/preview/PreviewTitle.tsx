@@ -42,7 +42,11 @@ export function PreviewTitle({
         workspace = await api.projects.getWorkspace();
       if (!workspace.saveScope || !preview.sourceId)
         throw Error('프로젝트와 HTML 결과를 다시 확인해주세요.');
-      await api.saves.flushDocumentSaves(workspace.saveScope);
+      await api.saves.flushDocumentSaves(
+        workspace.saveScope,
+        undefined,
+        workspace.session?.sessionId,
+      );
       const hash = [
         ...new Uint8Array(
           await crypto.subtle.digest(

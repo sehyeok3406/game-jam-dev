@@ -2,6 +2,12 @@
 
 ## 로컬 중심 Windows 패키지 · 2026-11-14
 
+로컬 복구 초안은 `tests/draft-checkpoint.test.mjs`의 고정 시계와 파일 교체 실패로 확인한다. `npm run package` 후 `node tests/local-draft-checkpoint-packaged.mjs`는 펜 입력의 30초 기록 전후 강제 종료, 구형 초안과 명시적 폐기를 검사한다. 같은 검사에 `--markdown` 또는 `--text`를 추가하면 원본 이름 확정 전 Markdown 제목과 연속 입력 중인 캔버스 텍스트를 실제 Windows 패키지에서 복구한다. 짧은 편집의 쓰기 횟수는 `node tests/local-save-baseline.mjs`로 비교한다.
+
+로컬 원본 저장은 `tests/local-edit-batch.test.mjs`와 `tests/document-save-queue.test.mjs`에서 2분 타이머, 한 버전의 여러 파일, 작업별 되돌리기, 저장 도중의 새 입력과 이력 쓰기 재시도를 검사한다. `npm run package` 후 `node tests/local-idle-save-packaged.mjs`와 `--idle`, `--switch`, `--recovery`, `--ai` 모드를 사용한다. 실제 Windows 패키지에서 직접 저장과 정상 종료, 2분 자동 저장, 프로젝트 전환, 대기 그림의 30초 복구와 모의 AI CLI 입력을 확인한다.
+
+저장 도중 강제 종료는 `tests/local-edit-publication.test.mjs`와 `node tests/local-save-recovery-packaged.mjs`로 확인한다. 패키지의 동일 Electron 버전에서 첫 파일 교체 직후 멈춘 다음 강제 종료하고, 실제 Windows 실행 파일로 같은 경로를 다시 연다. 외부 수정 및 최신 초안 보존, 이전 세션 요청 거부, 충돌 해결 후 한 버전 확정을 한 경로에서 확인한다.
+
 `npm run package` 후 `node tests/local-first-packaged.mjs`와 `node tests/project-trash-packaged.mjs`를 실행한다. 전자는 격리된 공유 등록·캐시와 내장/외부 서버에서 시작 차단과 선택 정리를 검사하며 후자는 로컬 프로젝트의 휴지통 UI를 검사한다. `GAMEJAM_BUILD_EDITING=1`, `GAMEJAM_LOCAL_EXPORT=1`을 지정한 `node tests/game-build-execution-packaged.mjs`는 로컬 Git 프로젝트에서 모의 AI CLI, 실제 번들·검증, 기록 복원, 독립 실행 HTML 내보내기와 재시작을 검사한다. 아래 공유 UI와 서버 연동 패키지 시나리오는 종료 전 경로에 해당하며 현재의 공유 서버 서비스 검증은 `npm run test:server`에 포함된다.
 
 공유 위치 링크는 기본 `npm test`의 URL/세션·배율·앵커 왕복/복제/Undo/구버전 검사를 사용한다. `test:location-links:main`은 production main/IPC와 실제 임시 서버, `test:location-links:ui`는 빌드된 renderer의 스크롤/강조/복사 메뉴, package 뒤 `test:location-links:packaged`는 Windows 종료/실행 중 수신과 실제 OS 전달·극대/극소 도형/이미지를 확인한다. UUID 프로필·임시 서버만 사용하고 OS 프로토콜의 원래 등록을 복원한다. 한 PC 검사와 실제 두 PC/메신저 검증은 구분한다. 상세 경계는 [공유 위치 링크](location-links.md)를 따른다.

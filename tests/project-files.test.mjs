@@ -284,6 +284,14 @@ test('layout notifications suppress only same-session watcher echoes of the exac
   assert.equal(await writes.matches('b', relative, absolute), false);
   await fs.writeFile(absolute, edited);
   assert.equal(await writes.matches('a', relative, absolute), false);
+  assert.deepEqual(writes.acknowledgeDocumentSave('a', relative, moved), {
+    sessionId: 'a',
+    paths: [],
+  });
+  assert.equal(await writes.matches('a', relative, absolute), false);
+  await fs.writeFile(absolute, moved);
+  assert.equal(await writes.matches('a', relative, absolute), true);
+  assert.equal(await writes.matches('b', relative, absolute), false);
   assert.equal(
     writes.record('a', { [relative]: original }, { [relative]: edited }),
     null,

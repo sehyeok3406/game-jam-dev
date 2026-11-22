@@ -635,7 +635,7 @@ test('AI preparation cannot launch a CLI in another session after editor flush',
         aiBusy: false,
         locked: false,
         onBlocked: () => {},
-        editorsRef: { current: new Map([['editor', () => flush.promise]]) },
+        flushEditors: () => flush.promise,
         setPreparingTask: () => {},
         showError: (error) => {
           throw error;
@@ -713,7 +713,7 @@ test('AI connection preparation busy state and late completion belong to one pro
         aiBusy: false,
         locked: false,
         onBlocked: () => {},
-        editorsRef: { current: new Map() },
+        flushEditors: async () => {},
         showError: (error) => {
           throw error;
         },

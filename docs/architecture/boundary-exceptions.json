@@ -94,7 +94,6 @@
         "compatibility-import|src/preview-output.ts|src/shared.ts": 1,
         "compatibility-import|src/preview-window.ts|src/shared.ts": 1,
         "compatibility-import|src/project-library.ts|src/shared.ts": 1,
-        "compatibility-import|src/project-store.ts|src/shared.ts": 2,
         "compatibility-import|src/project-trash.ts|src/shared.ts": 1,
         "compatibility-import|src/renderer.tsx|src/shared.ts": 1,
         "compatibility-import|src/request-deletion-notices.ts|src/shared.ts": 1,

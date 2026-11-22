@@ -1032,7 +1032,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       aiBusy,
       locked,
       onBlocked,
-      editorsRef,
+      flushEditors: () => flushEditors(),
     }),
   );
   const {
@@ -1762,9 +1762,22 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   useEffect(
     () =>
       api.saves.onDraftFlushRequested?.(async () => {
-        await draftRegistry.flush();
+        try {
+          await flushEditors();
+        } catch (error) {
+          showError(error);
+          throw error;
+        }
       }),
-    [draftRegistry],
+    [draftRegistry, workspace.saveScope],
+  );
+  useEffect(
+    () =>
+      api.saves.onLocalEditSaveFailed?.((failure) => {
+        if (failure.sessionId === workspace.session?.sessionId)
+          showError(new Error(failure.message));
+      }),
+    [workspace.session?.sessionId],
   );
   useEffect(() => {
     const key = `drawing:${workspace.saveScope}`;
@@ -1784,6 +1797,8 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
   );
   const { loadProject, loadCanvasChange } = useProjectLoading(() => ({
     workspace,
+    documents,
+    htmlLinkDocuments,
     viewportIntent,
     workspaceData,
     setWorkspace,
@@ -2312,7 +2327,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     setNotice,
     collaboration,
     creatingTaskRef,
-    flushMaterialDrafts: () => draftRegistry.flush(),
+    flushMaterialDrafts: () => flushEditors(),
     locked,
     onBlocked,
     documents,
@@ -2552,12 +2567,22 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       ]),
     ]);
 
-  const flushEditors = async (finish = true) => {
-    await gameUi.flush();
-    await drawing.flush();
+  const flushEditors = async (finish = true, saveOriginal = true) => {
     await Promise.all(
       [...editorsRef.current.values()].map((flush) => flush(finish)),
     );
+    await draftRegistry.flush();
+    if (
+      saveOriginal &&
+      workspace.saveScope &&
+      api.saves.touchLocalEditing &&
+      !collaboration.active
+    )
+      await api.saves.flushDocumentSaves(
+        workspace.saveScope,
+        undefined,
+        workspace.session?.sessionId,
+      );
   };
   useEffect(
     () =>
@@ -2578,7 +2603,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     if (editBusy) return;
     setEditBusy(true);
     try {
-      await flushEditors();
+      await flushEditors(true, false);
       if (!isEditProjectCurrent()) return;
       const change = await api.history[direction]();
       if (!isEditProjectCurrent()) return;
@@ -2608,7 +2633,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
       preferences,
       activeCanvasRef,
       switchingCanvasRef,
-      flushEditors,
+      flushEditors: (finish) => flushEditors(finish, false),
       api,
       setActiveCanvas,
       setSelectedIds,
@@ -2702,7 +2727,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     openingLink.current = true;
     const scope = workspace.root;
     try {
-      if (!locked && editorsRef.current.size) await flushEditors();
+      if (!locked && editorsRef.current.size) await flushEditors(true, false);
       if (scope !== linkScopeRef.current) return;
       const resolved = resolveDocumentLink(href, linkDocumentsRef.current);
       if (resolved.status !== 'found') {
@@ -3053,7 +3078,7 @@ export function WorkspaceScreen({ preview }: { preview?: UiDebugSelection }) {
     findOpen,
     find: () => {
       if (!findOpen)
-        void flushEditors()
+        void flushEditors(true, false)
           .then(() => setFindOpen(true))
           .catch(showError);
     },

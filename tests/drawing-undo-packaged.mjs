@@ -113,7 +113,7 @@ try {
   await wait('window.drawingUndoChanges.some(change => change?.drawings)');
   assert.equal(await js('window.drawingUndoDocumentLoads'), 0);
   assert.equal(
-    await js(`window.drawingUndoChanges.every(change => change?.drawings &&
+    await js(`window.drawingUndoChanges.every(change => change &&
     !change.paths.length && !change.sections && !change.gameUi && !change.kanban)`),
     true,
   );

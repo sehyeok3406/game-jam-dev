@@ -3,6 +3,8 @@ export type { EditorDraft } from './contracts/drafts.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+export const isLocalDrawingBatchDraft = (key: string) =>
+  key.startsWith('game-canvas-drawing-batch:');
 export class EditorDraftStore {
   private queues = new Map<string, Promise<void>>();
   private directory: string;
@@ -18,7 +20,8 @@ export class EditorDraftStore {
     );
   }
   async get(key: string): Promise<EditorDraft | null> {
-    await this.queues.get(key);
+    // A failed replacement leaves the last successful file available to recover.
+    await this.queues.get(key)?.catch(() => undefined);
     return this.read(this.filename(key));
   }
   private async read(filename: string): Promise<EditorDraft | null> {
@@ -36,7 +39,7 @@ export class EditorDraftStore {
       (draft &&
         (typeof draft.title !== 'string' ||
           typeof draft.body !== 'string' ||
-          draft.body.length > 2000000))
+          (!isLocalDrawingBatchDraft(key) && draft.body.length > 2000000)))
     )
       throw new Error('초안 내용이 올바르지 않습니다.');
     const next = (this.queues.get(key) ?? Promise.resolve())
@@ -53,23 +56,29 @@ export class EditorDraftStore {
           current.baseTitle === draft.baseTitle
         )
           return;
-        await fs.mkdir(this.directory, { recursive: true });
         if (!draft) {
-          await fs.rm(filename, { force: true });
+          if (current) await fs.rm(filename, { force: true });
           return;
         }
+        await fs.mkdir(this.directory, { recursive: true });
         const temporary = filename + '-' + randomUUID() + '.tmp';
-        await fs.writeFile(
-          temporary,
-          JSON.stringify({ ...draft, sequence, key }),
-          {
-            mode: 0o600,
-            flush: true,
-          },
-        );
-        await fs.rename(temporary, filename);
+        try {
+          await fs.writeFile(
+            temporary,
+            JSON.stringify({ ...draft, sequence, key }),
+            { mode: 0o600, flush: true },
+          );
+          await fs.rename(temporary, filename);
+        } catch (error) {
+          await fs.rm(temporary, { force: true }).catch(() => undefined);
+          throw error;
+        }
       });
     this.queues.set(key, next);
+    const release = () => {
+      if (this.queues.get(key) === next) this.queues.delete(key);
+    };
+    void next.then(release, release);
     return next;
   }
   async flush() {

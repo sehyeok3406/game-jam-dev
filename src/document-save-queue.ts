@@ -6,6 +6,7 @@ import type { DocumentSavePhase } from './contracts/document-save-queue.ts';
 export type { DocumentSavePhase } from './contracts/document-save-queue.ts';
 import { editorDraftMatches, type EditorDraft } from './editor-ux.ts';
 import type { CanvasDocument, SaveDocumentInput } from './shared.ts';
+import type { LocalDocumentPlan } from './application/editing/local-edit-batch.ts';
 export type DocumentSaveRecord = {
   request: DocumentSaveRequest;
   base: EditorDraft;
@@ -24,6 +25,11 @@ export type DocumentSaveStorage = {
   flush: (scope?: string, key?: string) => Promise<void>;
 };
 export type DocumentSaveAdapter = {
+  prepareLocal?: (input: SaveDocumentInput) => Promise<{
+    before: string;
+    after: string;
+    document: CanvasDocument;
+  }>;
   remapDraft?: (
     value: EditorDraft,
     from: string,
@@ -67,6 +73,7 @@ export class DocumentSaveQueue {
   private entries = new Map<string, DocumentSaveRecord>();
   private documents = new Map<string, CanvasDocument>();
   private running = new Map<string, Promise<void>>();
+  private checkpointed = new Map<string, number>();
   private ready: Promise<void>;
   private adapter?: DocumentSaveAdapter;
   private timer?: ReturnType<typeof setTimeout>;
@@ -86,6 +93,10 @@ export class DocumentSaveQueue {
         this.entries.set(
           identity(record.request.scope, record.request.key),
           record,
+        );
+        this.checkpointed.set(
+          identity(record.request.scope, record.request.key),
+          record.request.sequence,
         );
       }
     });
@@ -140,6 +151,7 @@ export class DocumentSaveQueue {
     if (!this.adapter?.isCurrent() || this.adapter.scope !== request.scope)
       throw new Error('프로젝트가 변경되었습니다. 초안은 이 PC에 보관됩니다.');
     const adapter = this.adapter;
+    if (adapter.prepareLocal) return this.stageLocal(request);
     if (adapter.resolvePath) {
       const previousPath = request.relativePath;
       request = {
@@ -233,6 +245,172 @@ export class DocumentSaveQueue {
     this.emit(entry);
     this.kick(key);
     return this.state(entry);
+  }
+  private stageLocal(request: DocumentSaveRequest) {
+    const key = identity(request.scope, request.key);
+    const entry = this.entries.get(key);
+    if (entry && request.sequence <= entry.request.sequence) {
+      if (
+        request.sequence === entry.request.sequence &&
+        !editorDraftMatches(request, entry.request)
+      )
+        throw Error('같은 변경 번호에 서로 다른 내용이 있습니다.');
+      return this.state(entry);
+    }
+    if (entry && entry.request.documentId !== request.documentId)
+      throw Error('저장할 문서 식별자가 변경되었습니다.');
+    const next: DocumentSaveRecord = entry ?? {
+      request,
+      base: draft(request.base),
+      savedSequence: 0,
+      phase: 'queued',
+    };
+    if (
+      entry?.phase === 'saved' &&
+      entry.request.sessionId !== request.sessionId
+    )
+      next.adoptBase = draft(request.base);
+    next.request = structuredClone(request);
+    if (next.phase !== 'conflict') {
+      next.phase = 'queued';
+      delete next.error;
+    }
+    this.entries.set(key, next);
+    this.emit(next);
+    return this.state(next);
+  }
+
+  hasLocalPending(scope: string) {
+    return [...this.entries.values()].some(
+      ({ request, savedSequence }) =>
+        request.scope === scope && request.sequence > savedSequence,
+    );
+  }
+
+  async checkpointLocal(scope: string) {
+    await this.ready;
+    for (const [key, entry] of this.entries) {
+      if (
+        entry.request.scope !== scope ||
+        entry.request.sequence <= entry.savedSequence ||
+        this.checkpointed.get(key) === entry.request.sequence
+      )
+        continue;
+      await this.storage.put(structuredClone(entry));
+      this.checkpointed.set(key, entry.request.sequence);
+    }
+  }
+
+  async prepareLocal(scope: string): Promise<LocalDocumentPlan> {
+    await this.ready;
+    const adapter = this.adapter;
+    const before: Record<string, string> = {};
+    const after: Record<string, string> = {};
+    const plans: {
+      key: string;
+      entry: DocumentSaveRecord;
+      sequence: number;
+      document: CanvasDocument;
+    }[] = [];
+    const mark = (
+      entry: DocumentSaveRecord,
+      error: unknown,
+      conflict: boolean,
+    ) => {
+      entry.phase = conflict ? 'conflict' : 'failed';
+      entry.error = error instanceof Error ? error.message : String(error);
+      this.emit(entry);
+    };
+    if (
+      adapter?.prepareLocal &&
+      adapter.scope === scope &&
+      adapter.isCurrent()
+    ) {
+      for (const [key, entry] of this.entries) {
+        if (
+          entry.request.scope !== scope ||
+          entry.savedSequence >= entry.request.sequence
+        )
+          continue;
+        try {
+          if (entry.phase === 'conflict') throw new SaveConflict(entry.error);
+          await this.relocate(entry, adapter);
+          const request = entry.request;
+          const current = await adapter.read(request.relativePath);
+          if (!adapter.isCurrent())
+            throw Error('프로젝트 세션이 변경되었습니다.');
+          if (!current || current.id !== request.documentId)
+            throw new SaveConflict(
+              '문서가 이동되거나 삭제되었습니다. 초안은 이 PC에 보관됩니다.',
+            );
+          const accepted = editorDraftMatches(current, request);
+          if (
+            !accepted &&
+            ![entry.base, entry.adoptBase, entry.attempt].some(
+              (base) => base && editorDraftMatches(current, base),
+            )
+          )
+            throw new SaveConflict(
+              '문서가 다른 곳에서 변경되었습니다. 초안을 유지하고 최신 내용을 확인해주세요.',
+            );
+          const planned = accepted
+            ? null
+            : await adapter.prepareLocal({
+                relativePath: request.relativePath,
+                objectId: request.documentId,
+                expectedTitle: current.title,
+                expectedBody: current.body,
+                title: request.title,
+                body: request.body,
+              });
+          if (planned) {
+            before[request.relativePath] = planned.before;
+            after[request.relativePath] = planned.after;
+          }
+          plans.push({
+            key,
+            entry,
+            sequence: request.sequence,
+            document: planned?.document ?? current,
+          });
+        } catch (error) {
+          mark(
+            entry,
+            error,
+            error instanceof SaveConflict ||
+              /외부에서 변경|식별자가 변경/.test(String(error)),
+          );
+          throw error;
+        }
+      }
+    }
+    return {
+      before,
+      after,
+      fail: async (error) => {
+        // The atomic apply can fail after planning. A retry checks the baseline again.
+        for (const { entry } of plans) mark(entry, error, false);
+      },
+      accept: async () => {
+        for (const { key, entry, sequence, document } of plans) {
+          if (entry.savedSequence >= sequence) continue;
+          if (this.checkpointed.has(key)) {
+            await this.storage.remove(scope, entry.request.key);
+            this.checkpointed.delete(key);
+          }
+          entry.base = draft(document);
+          entry.savedSequence = sequence;
+          entry.phase =
+            entry.request.sequence === sequence ? 'saved' : 'queued';
+          delete entry.error;
+          delete entry.attempt;
+          delete entry.adoptBase;
+          this.documents.set(key, document);
+          this.emit(entry, entry.phase === 'saved' ? document : undefined);
+        }
+        return plans.map(({ document }) => document);
+      },
+    };
   }
   private async relocate(
     entry: DocumentSaveRecord,
@@ -338,6 +516,7 @@ export class DocumentSaveQueue {
       this.disposed ||
       !entry ||
       !adapter ||
+      adapter.prepareLocal ||
       !adapter.isCurrent() ||
       adapter.scope !== entry.request.scope ||
       this.running.has(key) ||
@@ -505,6 +684,7 @@ export class DocumentSaveQueue {
     if (this.running.has(id) || entry.request.sequence !== sequence)
       throw new Error('저장이 진행 중이거나 초안이 변경되었습니다.');
     await this.storage.remove(scope, key);
+    this.checkpointed.delete(id);
     this.entries.delete(id);
     this.documents.delete(id);
     this.publish({ ...this.state(entry), phase: 'discarded' });

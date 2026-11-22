@@ -44,14 +44,20 @@ let frameSessions = [];
 async function boot(
   openDefault = true,
   env = process.env,
-  { extraArgs = [], showWindow = false } = {},
+  {
+    extraArgs = [],
+    showWindow = false,
+    executable = path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
+    appArgs = [],
+  } = {},
 ) {
   if (showWindow)
     await fs.rm(path.join(profile, 'launch-status.json'), { force: true });
   const debugPort = await port();
   child = spawn(
-    path.resolve('out/Game Jam!-win32-x64/Game Canvas.exe'),
+    executable,
     [
+      ...appArgs,
       `--game-canvas-test-profile=${profileId}`,
       `--remote-debugging-port=${debugPort}`,
       ...extraArgs,

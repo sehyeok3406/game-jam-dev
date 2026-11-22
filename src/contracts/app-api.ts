@@ -148,14 +148,26 @@ export type GameCanvasApi = {
     request: DocumentSaveRequest,
   ) => Promise<DocumentSaveState>;
   getDocumentSaveStates: () => Promise<DocumentSaveState[]>;
+  touchLocalEditing?: (scope: string, sessionId: string) => Promise<void>;
+  checkpointLocalDrawings?: (scope: string, sessionId: string) => Promise<void>;
+  recoverDrawingBatch?: (
+    scope: string,
+    sessionId: string,
+    action: 'restore' | 'discard',
+  ) => Promise<void>;
+  onLocalEditSaveFailed?: (
+    listener: (failure: { sessionId: string; message: string }) => void,
+  ) => () => void;
   flushDocumentSaves: (
     scope: string,
     key?: string,
+    workspaceSessionId?: string,
   ) => Promise<DocumentSaveState[]>;
   discardDocumentSave: (
     scope: string,
     key: string,
     sequence: number,
+    workspaceSessionId?: string,
   ) => Promise<void>;
   onDocumentSaveChanged: (
     listener: (state: DocumentSaveState) => void,
@@ -402,7 +414,10 @@ export type GameCanvasApi = {
     }[];
   }) => Promise<unknown[]>;
   getDrawingChanges: (known: Record<string, string>) => Promise<DrawingChanges>;
-  applyDrawingCommand: (command: DrawingCommand) => Promise<DrawingItem[]>;
+  applyDrawingCommand: (
+    command: DrawingCommand,
+    stagedSessionId?: string,
+  ) => Promise<DrawingItem[]>;
   listSections: () => Promise<CanvasSection[]>;
   createIdea: (input: CreateIdeaInput) => Promise<CanvasDocument>;
   createSection: (input: CreateSectionInput) => Promise<CanvasSection>;
@@ -473,6 +488,10 @@ export const APP_API_GROUPS = {
   onDraftFlushRequested: 'saves',
   enqueueDocumentSave: 'saves',
   getDocumentSaveStates: 'saves',
+  touchLocalEditing: 'saves',
+  checkpointLocalDrawings: 'saves',
+  recoverDrawingBatch: 'saves',
+  onLocalEditSaveFailed: 'saves',
   flushDocumentSaves: 'saves',
   discardDocumentSave: 'saves',
   onDocumentSaveChanged: 'saves',

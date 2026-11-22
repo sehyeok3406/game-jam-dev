@@ -27,6 +27,8 @@ import type { WorkspaceCanvasChange } from '../../contracts/project.ts';
 
 interface Ports {
   workspace: WorkspaceState;
+  documents: CanvasDocument[];
+  htmlLinkDocuments: CanvasDocument[];
   workspaceData: import('./workspace-data').WorkspaceDataLoader;
   setWorkspace: import('react').Dispatch<
     import('react').SetStateAction<WorkspaceState>
@@ -575,7 +577,11 @@ export function useProjectLoading(ports: () => Ports) {
           const [saved, nextSections, board, undo] = await Promise.all([
             sections
               ? api.editor.listDocuments()
-              : Promise.all(paths.map((path) => api.editor.getDocument(path))),
+              : Promise.all(
+                  paths.map((path) =>
+                    api.editor.getDocument(path).catch(() => null),
+                  ),
+                ),
             sections ? api.editor.listSections() : undefined,
             kanban ? api.editor.getKanbanView() : undefined,
             api.history.getUndoState(),
@@ -584,6 +590,28 @@ export function useProjectLoading(ports: () => Ports) {
           if (version !== fullLoad.current.version) continue;
           const documents = saved.filter((document) => document !== null);
           if (documents.length !== saved.length) return loadProject(false);
+          if (!sections && documents.length) {
+            const view = current.current();
+            const known = new Map(
+              [...view.documents, ...view.htmlLinkDocuments].map((doc) => [
+                doc.relativePath,
+                doc,
+              ]),
+            );
+            if (
+              documents.some((doc) => {
+                const previous = known.get(doc.relativePath);
+                return (
+                  !previous ||
+                  previous.id !== doc.id ||
+                  previous.type !== doc.type ||
+                  previous.htmlSource !== doc.htmlSource ||
+                  canvasId(previous.canvasId) !== canvasId(doc.canvasId)
+                );
+              })
+            )
+              return loadProject(false);
+          }
           const patch = (
             existing: CanvasDocument[],
             fresh: CanvasDocument[],

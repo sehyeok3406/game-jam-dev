@@ -37,7 +37,14 @@ test('grouped bridge forwards arguments, binding, rejection and unsubscribe with
     },
   };
   const api = groupBridge(bridge);
-  assert.equal(Object.keys(APP_API_GROUPS).length, 151);
+  assert.equal(Object.keys(APP_API_GROUPS).length, 155);
+  for (const method of [
+    'touchLocalEditing',
+    'checkpointLocalDrawings',
+    'recoverDrawingBatch',
+    'onLocalEditSaveFailed',
+  ])
+    assert.equal(APP_API_GROUPS[method], 'saves');
   assert.equal(APP_API_GROUPS.readGameAssetUrls, 'preview');
   for (const method of ['listFileTrash', 'restoreFileTrash', 'purgeFileTrash'])
     assert.equal(APP_API_GROUPS[method], 'projects');

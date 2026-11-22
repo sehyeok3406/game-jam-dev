@@ -6,28 +6,48 @@ import type { Snapshot } from './project-store.ts';
 import { assertRemovedImagesUnreferenced } from './asset-reference-safety.ts';
 import { FILE_NAMES_PATH } from './contracts/document-names.ts';
 
-export type EditRecord = { id: string; label: string };
+export type EditRecord = {
+  id: string;
+  label: string;
+  memory?: { before: Snapshot; after: Snapshot; drawingOnly: boolean };
+};
 
 /** A session journal of this client's operations, never another member's history. */
 export class EditJournal {
   undoStack: EditRecord[] = [];
   redoStack: EditRecord[] = [];
-  push(record: EditRecord) {
+  push(record: EditRecord, preserveRedo = false) {
     if (
       [...this.undoStack, ...this.redoStack].some(
         (item) => item.id === record.id,
       )
     )
       return;
-    this.undoStack.push(record);
+    if (preserveRedo) {
+      // A document version acknowledges existing edits. Keep the recent drawing
+      // gestures in their original Undo order across that disk checkpoint.
+      let index = this.undoStack.length;
+      while (index > 0 && this.undoStack[index - 1].memory?.drawingOnly)
+        index--;
+      this.undoStack.splice(index, 0, record);
+    } else this.undoStack.push(record);
     this.undoStack = this.undoStack.slice(-100);
-    this.redoStack = [];
+    if (this.undoStack.filter((item) => item.memory).length > 20)
+      this.undoStack.splice(
+        this.undoStack.findIndex((item) => item.memory),
+        1,
+      );
+    if (!preserveRedo) this.redoStack = [];
   }
   get state() {
     return {
       undo: this.undoStack.at(-1)?.label ?? null,
       redo: this.redoStack.at(-1)?.label ?? null,
     };
+  }
+  clearMemory() {
+    this.undoStack = this.undoStack.filter((item) => !item.memory);
+    this.redoStack = this.redoStack.filter((item) => !item.memory);
   }
   peek(direction: 'undo' | 'redo') {
     const record = (direction === 'undo' ? this.undoStack : this.redoStack).at(

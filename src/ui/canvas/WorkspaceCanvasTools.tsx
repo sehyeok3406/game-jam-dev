@@ -105,6 +105,7 @@ interface Props {
     recovery: DrawingCommand[] | null;
     recover: () => Promise<void>;
     discardRecovery: () => Promise<void>;
+    drawingPersistence?: 'pending' | 'draft' | 'saved';
     retry: () => void;
     hold: () => Promise<void>;
     saving: boolean;
@@ -551,12 +552,20 @@ export function WorkspaceCanvasTools({
           )}
         </aside>
       )}
-      {(drawing.error || drawing.recovery || drawing.saving) && (
+      {(drawing.error ||
+        drawing.recovery ||
+        drawing.saving ||
+        (drawing.drawingPersistence &&
+          drawing.drawingPersistence !== 'saved')) && (
         <aside className="drawing-save-alert floating-surface" role="status">
           {drawing.error ||
             (drawing.recovery
               ? '이전에 저장하지 못한 그림 초안이 있습니다.'
-              : '그림 저장 중…')}
+              : drawing.saving
+                ? '그림 저장 중…'
+                : drawing.drawingPersistence === 'draft'
+                  ? '그림 초안 보관됨 · 원본 저장 대기'
+                  : '그림 원본 저장 대기')}
           {drawing.recovery ? (
             <>
               <button onClick={() => void drawing.recover().catch(showError)}>

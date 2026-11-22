@@ -15,7 +15,7 @@ import path from 'node:path';
 import { projectRelativeLocation } from './adapters/filesystem/project-location.ts';
 import { PROJECT_LAYOUT_PATH } from './contracts/project-layout.ts';
 import { FILE_NAMES_PATH } from './contracts/document-names.ts';
-import type { HistoryEntry } from './shared';
+import type { HistoryEntry } from './contracts/history.ts';
 import { isPreviewPath } from './preview-output.ts';
 import { isAssetPath, encodeAsset, decodeAsset } from './file-assets.ts';
 import {
@@ -23,7 +23,7 @@ import {
   rebuildAuthorship,
   resolveAuthorship,
 } from './file-authorship.ts';
-import type { FileAuthorshipMap } from './shared';
+import type { FileAuthorshipMap } from './contracts/documents.ts';
 import { isImportedPreviewPath } from './preview-output.ts';
 import { taskHistoryRecord, withTaskHistory } from './ai-task-history.ts';
 import { historyTaskPath } from './ai-task-records.ts';
@@ -44,6 +44,15 @@ async function readSnapshotFile(absolute: string, relative: string) {
   return isAssetPath(relative)
     ? encodeAsset(relative, await fs.readFile(absolute))
     : fs.readFile(absolute, 'utf8');
+}
+export async function readProjectValue(root: string, relative: string) {
+  const absolute = await projectPath(root, relative);
+  return readSnapshotFile(absolute, relative).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    },
+  );
 }
 function snapshotBytes(relative: string, content: string) {
   return isAssetPath(relative) ? decodeAsset(relative, content) : content;
@@ -159,6 +168,7 @@ export async function materialize(
   root: string,
   snapshot: Snapshot,
   raw = false,
+  flush = false,
 ) {
   if (!raw) validateGameBuilds(snapshot, gameBuildCodec);
   if (!raw && snapshot[PROJECT_LAYOUT_PATH]) {
@@ -169,18 +179,22 @@ export async function materialize(
   for (const [relative, content] of Object.entries(snapshot)) {
     const absolute = await projectPath(root, relative, raw);
     await fs.mkdir(path.dirname(absolute), { recursive: true });
-    await fs.writeFile(absolute, snapshotBytes(relative, content), 'utf8');
+    await fs.writeFile(absolute, snapshotBytes(relative, content), {
+      encoding: 'utf8',
+      flush,
+    });
   }
 }
 function validateId(id: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(id))
     throw new Error('올바르지 않은 기록 ID입니다.');
 }
-export async function saveHistory(
+export async function stageHistory(
   root: string,
   before: Snapshot,
   after: Snapshot,
   meta: Omit<HistoryEntry, 'files'>,
+  flush = false,
 ) {
   validateId(meta.id);
   const files = [...new Set([...Object.keys(before), ...Object.keys(after)])]
@@ -201,10 +215,18 @@ export async function saveHistory(
         selected[file.relativePath] = snapshot[file.relativePath];
     const versionRoot = path.join(folder, version);
     await fs.mkdir(versionRoot, { recursive: true });
-    await materialize(versionRoot, selected, true);
+    await materialize(versionRoot, selected, true, flush);
   }
+  return entry;
+}
+export async function publishHistory(
+  root: string,
+  before: Snapshot,
+  after: Snapshot,
+  entry: HistoryEntry,
+) {
   await writeHistoryEntry(root, entry);
-  if (entry.status === 'completed' && files.length) {
+  if (entry.status === 'completed' && entry.files.length) {
     const ledger = advanceAuthorship(
       await localAuthorshipMap(root),
       before,
@@ -214,6 +236,15 @@ export async function saveHistory(
     await writeLocalAuthorshipMap(root, ledger);
   }
   return entry;
+}
+export async function saveHistory(
+  root: string,
+  before: Snapshot,
+  after: Snapshot,
+  meta: Omit<HistoryEntry, 'files'>,
+) {
+  const entry = await stageHistory(root, before, after, meta);
+  return publishHistory(root, before, after, entry);
 }
 async function writeLocalAuthorshipMap(
   root: string,
@@ -301,7 +332,9 @@ async function writeHistoryEntry(root: string, entry: HistoryEntry) {
     });
   const previous = await read();
   try {
-    await fs.writeFile(temporary, JSON.stringify(entry, null, 2));
+    await fs.writeFile(temporary, JSON.stringify(entry, null, 2), {
+      flush: true,
+    });
     await replaceFileWithRetry(temporary, absolute, async () => {
       if ((await read()) !== previous)
         throw Error('작업 기록이 변경되어 저장을 보류합니다.');
@@ -468,11 +501,56 @@ export async function readHistorySnapshots(root: string, entry: HistoryEntry) {
   }
   return { entry, before, after };
 }
+async function assertProjectValue(
+  root: string,
+  relative: string,
+  expected: string | undefined,
+) {
+  if ((await readProjectValue(root, relative)) !== expected)
+    throw new Error(
+      `외부 변경을 발견했습니다. 덮어쓰기를 보류합니다: ${relative}`,
+    );
+}
+
+/** Compare again after preparing the replacement, including every sharing-violation retry. */
+export async function replaceProjectValue(
+  root: string,
+  relative: string,
+  expected: string | undefined,
+  content: string | null,
+  assertApplying: () => void,
+  flush = false,
+) {
+  assertApplying();
+  const absolute = await projectPath(root, relative);
+  const check = async () => {
+    await assertProjectValue(root, relative, expected);
+    assertApplying();
+  };
+  if (content === null) {
+    await check();
+    await fs.rm(absolute, { force: true });
+    return;
+  }
+  await fs.mkdir(path.dirname(absolute), { recursive: true });
+  const temporary = `${absolute}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, snapshotBytes(relative, content), {
+      encoding: 'utf8',
+      flush,
+    });
+    await replaceFileWithRetry(temporary, absolute, check);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+}
+export class ProjectRollbackError extends Error {}
 export async function applyChanges(
   root: string,
   baseline: Snapshot,
   changes: Record<string, string | null>,
   shouldCancel = () => false,
+  flush = false,
 ) {
   if (
     hasGameBuilds(baseline) ||
@@ -488,19 +566,8 @@ export async function applyChanges(
     validateGameBuilds(candidate, localGameBuildCodec);
   }
   // Check every target before writing, and restore already-written targets if a write fails.
-  for (const relative of Object.keys(changes)) {
-    const absolute = await projectPath(root, relative);
-    let current: string | undefined;
-    try {
-      current = await readSnapshotFile(absolute, relative);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-    if (current !== baseline[relative])
-      throw new Error(
-        `외부 변경을 발견했습니다. 덮어쓰기를 보류합니다: ${relative}`,
-      );
-  }
+  for (const relative of Object.keys(changes))
+    await assertProjectValue(root, relative, baseline[relative]);
   const written: string[] = [];
   const createdMedia: string[] = [];
   const removedMedia: { file: string; object: string }[] = [];
@@ -521,52 +588,14 @@ export async function applyChanges(
       createdMedia.push(file);
     }
     for (const [relative, content] of Object.entries(changes)) {
-      if (shouldCancel()) throw new Error('결과 반영을 중지했습니다.');
-      const absolute = await projectPath(root, relative);
-      if (content === null) await fs.rm(absolute, { force: true });
-      else {
-        await fs.mkdir(path.dirname(absolute), { recursive: true });
-        const temporary = `${absolute}.${randomUUID()}.tmp`;
-        try {
-          await fs.writeFile(
-            temporary,
-            snapshotBytes(relative, content),
-            'utf8',
-          );
-          for (let attempt = 0; ; attempt++) {
-            if (shouldCancel()) throw new Error('결과 반영을 중지했습니다.');
-            try {
-              await fs.rename(temporary, absolute);
-              break;
-            } catch (error) {
-              const code = (error as NodeJS.ErrnoException).code;
-              if (
-                process.platform !== 'win32' ||
-                !['EPERM', 'EBUSY', 'EACCES'].includes(code ?? '') ||
-                attempt >= 4
-              )
-                throw error;
-              // A watcher/virus scanner can briefly hold the old file open on Windows.
-              // Recheck the baseline rather than overwriting an external edit after waiting.
-              await new Promise((resolve) =>
-                setTimeout(resolve, 20 * 2 ** attempt),
-              );
-              const current = await readSnapshotFile(absolute, relative).catch(
-                (readError) => {
-                  if (readError.code === 'ENOENT') return undefined;
-                  throw readError;
-                },
-              );
-              if (current !== baseline[relative])
-                throw new Error(
-                  `외부 변경을 발견했습니다. 덮어쓰기를 보류합니다: ${relative}`,
-                );
-            }
-          }
-        } finally {
-          await fs.rm(temporary, { force: true });
-        }
-      }
+      await replaceProjectValue(
+        root,
+        relative,
+        baseline[relative],
+        content,
+        assertApplying,
+        flush,
+      );
       written.push(relative);
     }
     for (const asset of media.remove) {
@@ -575,21 +604,29 @@ export async function applyChanges(
       removedMedia.push(asset);
     }
   } catch (error) {
-    for (const { file, object } of removedMedia.reverse())
-      await fs.copyFile(object, file, constants.COPYFILE_EXCL);
-    for (const relative of written.reverse()) {
-      const absolute = await projectPath(root, relative);
-      if (baseline[relative] === undefined)
-        await fs.rm(absolute, { force: true });
-      else
-        await fs.writeFile(
-          absolute,
-          snapshotBytes(relative, baseline[relative]),
-          'utf8',
-        );
+    try {
+      for (const { file, object } of removedMedia.reverse())
+        await fs.copyFile(object, file, constants.COPYFILE_EXCL);
+      for (const relative of written.reverse()) {
+        const writtenValue = changes[relative] ?? undefined;
+        if ((await readProjectValue(root, relative)) === writtenValue)
+          await replaceProjectValue(
+            root,
+            relative,
+            writtenValue,
+            baseline[relative] ?? null,
+            () => {},
+            flush,
+          );
+      }
+      for (const file of createdMedia.reverse())
+        await fs.rm(file, { force: true });
+    } catch (rollback) {
+      throw new ProjectRollbackError(
+        '일부 파일을 되돌리지 못했습니다. 복구 자료를 확인해주세요.',
+        { cause: new AggregateError([error, rollback]) },
+      );
     }
-    for (const file of createdMedia.reverse())
-      await fs.rm(file, { force: true });
     throw error;
   }
 }

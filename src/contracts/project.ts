@@ -13,6 +13,7 @@ export type WorkspaceCanvasChange = {
   paths: string[];
   sections?: boolean;
   drawings?: boolean;
+  drawingPersistence?: 'pending' | 'draft' | 'saved';
   gameUi?: boolean;
   kanban?: boolean;
 };

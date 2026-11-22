@@ -36,6 +36,7 @@ import { filesystemSharedProjectFiles } from './adapters/filesystem/shared-proje
 import { ensureProjectLayout } from './adapters/filesystem/project-layout';
 import {
   canvasWrites,
+  isOrdinaryMarkdownPath,
   isScopedCanvasFile,
   sessionProjectFileEffects,
   startSessionProjectWatcher,
@@ -139,7 +140,10 @@ import { registerDocumentIpc } from './desktop/ipc/documents';
 import { registerCanvasIpc } from './desktop/ipc/canvas';
 import { LocalCanvasService } from './application/editing/canvas-service';
 import { readDocument } from './adapters/filesystem/documents';
-import { filesystemDocumentRepository } from './adapters/filesystem/document-repository';
+import {
+  filesystemDocumentRepository,
+  planDocumentReplacement,
+} from './adapters/filesystem/document-repository';
 import { DocumentEditingService } from './application/editing/document-service';
 import { filesystemProjectRepository } from './adapters/filesystem/local-project-repository';
 import { DesktopProjectSessions } from './desktop/project-session';
@@ -152,13 +156,21 @@ import {
   queueFileLock,
   type AiQueueTask,
 } from './ai-task-queue.ts';
-import { DRAWING_DIRECTORY, isDrawingPath } from './drawing-model.ts';
+import {
+  DRAWING_DIRECTORY,
+  isDrawingPath,
+  snapshotDrawings,
+  sparseDrawingEdit,
+} from './drawing-model.ts';
+import { LocalEditBatch } from './application/editing/local-edit-batch.ts';
+import { localHistoryInverse } from './application/editing/edit-history-service.ts';
 import type { DrawingCommand } from './drawing-types.ts';
 import { installUiDebugShortcut } from './ui-debug-shortcut';
 import { DOCUMENT_STATUSES_PATH } from './document-statuses';
 import { CanvasView } from './canvas-view.ts';
 import { readClientCache } from './client-cache.ts';
-import { EditorDraftStore } from './editor-drafts.ts';
+import { EditorDraftStore, isLocalDrawingBatchDraft } from './editor-drafts.ts';
+import { prepareLocalEditPublication } from './adapters/filesystem/local-edit-publication.ts';
 import {
   DocumentSaveQueue,
   type DocumentSaveRequest,
@@ -230,7 +242,6 @@ import {
   projectPath,
   readHistoryEntry,
   readHistoryFile,
-  recoverInterruptedHistory,
   saveHistory,
 } from './project-store';
 import { taskHistoryRecord } from './ai-task-history';
@@ -391,6 +402,7 @@ const registerUpdates = async () => {
         pendingWrites:
           pendingAppOperations > 0 ||
           !!documentSaveQueue?.hasPending() ||
+          !!activeEditBatch?.hasPendingDrawings() ||
           !!projectSessions.client?.offline ||
           !!projectSessions.client?.outgoing,
         disconnected:
@@ -738,6 +750,8 @@ let pendingWorkspaceChange: {
   change?: WorkspaceCanvasChange;
 } | null = null;
 const confirmedCanvasWrites = canvasWrites();
+// Keep the exact bytes written by the adapter until history confirms the save.
+const documentSaveBytes = new WeakMap<CanvasDocument, string>();
 let lastRunEvent: CodexRunEvent | null = null;
 let runPreparing = false;
 let preparationCancelled = false;
@@ -753,6 +767,96 @@ const enqueueMutation = <T>(
   });
   mutationQueue = next.catch(() => undefined);
   return next;
+};
+let activeEditBatch: LocalEditBatch | undefined;
+const localEditBatch = () => {
+  const ref = projectSessions.ref;
+  if (!ref || projectSessions.client) return undefined;
+  if (activeEditBatch) return activeEditBatch;
+  const root = requireWorkspace();
+  const scope = documentSaveScope();
+  const key = `game-canvas-drawing-batch:${root}`;
+  const editJournal = journal();
+  const session = new LocalEditBatch({
+    repository: editHistoryRepository(root, ref),
+    preparePublication: (before, after, entry) =>
+      prepareLocalEditPublication(root, before, after, entry, () =>
+        projectSessions.assertCurrent(ref),
+      ),
+    serial: (work) => enqueueMutation(work, ref),
+    planDocuments: () => documentSaveQueue.prepareLocal(scope),
+    checkpointDocuments: () => documentSaveQueue.checkpointLocal(scope),
+    pendingDocuments: () => documentSaveQueue.hasLocalPending(scope),
+    assertWritable: (paths) => {
+      projectSessions.assertCurrent(ref);
+      if (aiIsActive() && !executionFileLock()) assertEditable();
+      assertAiFilesUnlocked(currentAiFileLock(), paths);
+    },
+    readDraft: () => draftStore.get(key),
+    writeDraft: (draft, sequence) => draftStore.set(key, draft, sequence),
+    drawingEdit: sparseDrawingEdit,
+    invertDrawing: (current, { before, after }, direction) =>
+      localHistoryInverse(current, before, after, direction),
+    pushEdit: (edit, drawingOnly) =>
+      editJournal.push(
+        {
+          id: randomUUID(),
+          label: drawingOnly ? '도형 · 그림 편집' : '문서 저장',
+          memory: { ...edit, drawingOnly },
+        },
+        !drawingOnly,
+      ),
+    drawingPersistence: (drawingPersistence) =>
+      notifyWorkspaceChanged({
+        sessionId: ref.sessionId,
+        paths: [],
+        drawingPersistence,
+      }),
+    published: ({ before, after }, documents) => {
+      const paths = Object.keys({ ...before, ...after }).filter(
+        (path) => before[path] !== after[path],
+      );
+      const visiblePaths = paths.filter(
+        (path) =>
+          !isDrawingPath(path) &&
+          !documents.some((document) => document.relativePath === path),
+      );
+      confirmedCanvasWrites.record(
+        ref.sessionId,
+        before,
+        after,
+        paths.filter(isDrawingPath),
+      );
+      for (const path of paths)
+        if (after[path] !== undefined)
+          confirmedCanvasWrites.acknowledgeDocumentSave(
+            ref.sessionId,
+            path,
+            after[path],
+          );
+      notifyWorkspaceChanged({ sessionId: ref.sessionId, paths: visiblePaths });
+    },
+    failed: (error) => {
+      if (!projectSessions.matches(ref)) return;
+      console.error('편집 내용 저장 실패', error);
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('local-edits:failed', {
+          sessionId: ref.sessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+    },
+    id: historyId,
+  });
+  activeEditBatch = session;
+  projectSessions.own('local-edit-batch', () => {
+    session.dispose();
+    editJournal.clearMemory();
+    if (activeEditBatch === session) activeEditBatch = undefined;
+  });
+  return session;
+};
+const flushLocalEdits = async () => {
+  await activeEditBatch?.flush();
 };
 const aiIsActive = () =>
   runPreparing ||
@@ -884,6 +988,17 @@ const assertMutationAllowed = async (channel: string, args: unknown[]) => {
     channel === 'edit:redo'
   ) {
     const root = requireWorkspace();
+    const memory =
+      channel === 'history:restore'
+        ? undefined
+        : journal().peek(channel === 'edit:undo' ? 'undo' : 'redo').memory;
+    if (memory) {
+      assertAiFilesUnlocked(
+        lock,
+        Object.keys({ ...memory.before, ...memory.after }),
+      );
+      return;
+    }
     const id =
       channel === 'history:restore'
         ? args[0]
@@ -1061,6 +1176,8 @@ const notifyWorkspaceChanged = (change?: WorkspaceCanvasChange) => {
           paths: [...new Set([...(previous?.paths ?? []), ...change.paths])],
           sections: previous?.sections || change.sections,
           drawings: previous?.drawings || change.drawings,
+          drawingPersistence:
+            change.drawingPersistence ?? previous?.drawingPersistence,
           gameUi: previous?.gameUi || change.gameUi,
           kanban: previous?.kanban || change.kanban,
         }
@@ -1068,9 +1185,8 @@ const notifyWorkspaceChanged = (change?: WorkspaceCanvasChange) => {
   pendingWorkspaceChange = { sessionId, change: next };
   changeTimer = setTimeout(() => {
     pendingWorkspaceChange = null;
-    if (projectSessions.matches(ref)) {
-      mainWindow?.webContents.send('workspace:changed', next);
-    }
+    if (projectSessions.matches(ref) && mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send('workspace:changed', next);
   }, 180);
   const timer = changeTimer;
   projectSessions.own('workspace-notification', () => clearTimeout(timer));
@@ -1139,7 +1255,18 @@ const startWatcher = () => {
           relative,
           absolute,
         );
-        if (!same && projectSessions.matches(ref)) notifyWorkspaceChanged();
+        if (same || !projectSessions.matches(ref)) return;
+        if (isDrawingPath(relative)) activeEditBatch?.invalidateDrawings();
+        const ordinaryEdit =
+          !projectSessions.client &&
+          event === 'change' &&
+          relative !== 'project.md' &&
+          isOrdinaryMarkdownPath(relative);
+        notifyWorkspaceChanged(
+          ordinaryEdit
+            ? { sessionId: ref.sessionId, paths: [relative] }
+            : undefined,
+        );
       });
     },
   });
@@ -1182,7 +1309,7 @@ const setWorkspace = async (root: string) => {
   const activeRoot = requireWorkspace();
   await recoverProjectLayout(activeRoot, undefined, true);
   await ensureWorkspace();
-  await filesystemProjectRepository(activeRoot).recover();
+  await editHistoryRepository(activeRoot, projectSessions.ref).recover();
   await saveSettings();
   await projectLibrary.rememberLocal(
     activeRoot,
@@ -1509,6 +1636,7 @@ const prepareCodexRun = async (
   queuedTask?: AiQueueTask,
 ) => {
   assertEditable();
+  await flushLocalEdits();
   const root = requireWorkspace(),
     sessionRef = projectSessions.ref,
     client = projectSessions.client;
@@ -2050,11 +2178,13 @@ const handle = (
               async () => {},
               input.queueVersion === 1,
             ).start(input)
-          : enqueueMutation(() =>
-              input.queueVersion === 1
-                ? enqueueAiTask(input)
-                : prepareCodexRun(input),
-            );
+          : enqueueMutation(async () => {
+              if (input.queueVersion === 1) {
+                await flushLocalEdits();
+                return enqueueAiTask(input);
+              }
+              return prepareCodexRun(input);
+            });
         return operation.then((result) => {
           void pumpAiQueue();
           return result;
@@ -2067,6 +2197,51 @@ const handle = (
       )
         return listener(event, ...args);
       return enqueueMutation(async () => {
+        if (
+          channel === 'drawings:apply' &&
+          args[1] !== undefined &&
+          !projectSessions.client
+        ) {
+          const command = args[0] as DrawingCommand;
+          if (
+            !isUpdateSender(event) ||
+            args[1] !== requestSession?.sessionId ||
+            command?.scope !== documentSaveScope()
+          )
+            throw Error(
+              '프로젝트가 변경되었습니다. 그림 초안은 이 PC에 보관됩니다.',
+            );
+          const files = await localEditBatch()!.draw(command);
+          notifyWorkspaceChanged({
+            sessionId: requestSession!.sessionId,
+            paths: [],
+          });
+          return snapshotDrawings(files);
+        }
+        if (
+          !projectSessions.client &&
+          ((guardedChannels.has(channel) &&
+            ![
+              'edit:undo',
+              'edit:redo',
+              'documents:update-layout',
+              'sections:update-layout',
+              'documents:set-collapsed',
+              'documents:set-color',
+              'layouts:update',
+              'game-ui:apply',
+            ].includes(channel)) ||
+            [
+              'projects:home',
+              'projects:open',
+              'projects:create',
+              'projects:layout-upgrade',
+              'projects:trash',
+              'projects:trash-restore',
+              'projects:trash-files-restore',
+            ].includes(channel))
+        )
+          await flushLocalEdits();
         await assertMutationAllowed(channel, args);
         if (
           channel === 'workspace:select' ||
@@ -2088,8 +2263,36 @@ const handle = (
               after,
               label,
             ),
-          changed: (files) => {
+          changed: (files, result) => {
+            if (
+              channel === 'drawings:apply' ||
+              channel === 'canvas:batch' ||
+              channel === 'canvases:change' ||
+              channel === 'history:restore'
+            )
+              activeEditBatch?.invalidateDrawings();
             if (channel === 'layouts:update') return;
+            if (channel === 'documents:save' && requestSession) {
+              const document = result as CanvasDocument | undefined;
+              const written = document && documentSaveBytes.get(document);
+              if (document) documentSaveBytes.delete(document);
+              if (
+                document &&
+                written !== undefined &&
+                isOrdinaryMarkdownPath(document.relativePath) &&
+                document.type !== 'ai-task' &&
+                !document.htmlSource
+              ) {
+                notifyWorkspaceChanged(
+                  confirmedCanvasWrites.acknowledgeDocumentSave(
+                    requestSession.sessionId,
+                    document.relativePath,
+                    written,
+                  ),
+                );
+                return;
+              }
+            }
             const change =
               files && requestSession
                 ? confirmedCanvasWrites.record(
@@ -2351,6 +2554,8 @@ const registerIpc = () => {
       draft: import('./editor-drafts.ts').EditorDraft | null,
       sequence: number,
     ) => {
+      if (typeof key === 'string' && isLocalDrawingBatchDraft(key))
+        throw Error('그림 일괄 초안은 편집 저장 경로에서만 쓸 수 있습니다.');
       if (
         projectTrash
           ?.list()
@@ -2365,12 +2570,16 @@ const registerIpc = () => {
       return draftStore.set(key, draft, sequence);
     },
   );
-  const canvasService = new LocalCanvasService(() => {
-    const session = projectSessions.ref;
-    return filesystemProjectRepository(requireWorkspace(), () =>
-      projectSessions.assertCurrent(session),
-    );
-  }, drawingSignature);
+  const canvasService = new LocalCanvasService(
+    () => {
+      const session = projectSessions.ref;
+      return filesystemProjectRepository(requireWorkspace(), () =>
+        projectSessions.assertCurrent(session),
+      );
+    },
+    drawingSignature,
+    (files) => activeEditBatch?.overlay(files) ?? files,
+  );
   registerCanvasIpc(handle, canvasService, () => {
     const session = projectSessions.ref;
     return new ProjectSettingsService(
@@ -2569,8 +2778,10 @@ const registerIpc = () => {
         const root = requireWorkspace(),
           session = projectSessions.ref;
         return new DocumentEditingService(
-          filesystemDocumentRepository(root, () =>
-            projectSessions.assertCurrent(session),
+          filesystemDocumentRepository(
+            root,
+            () => projectSessions.assertCurrent(session),
+            (document, written) => documentSaveBytes.set(document, written),
           ),
         );
       },
@@ -2921,6 +3132,20 @@ const registerIpc = () => {
     async (direction) => {
       const root = requireWorkspace(),
         session = projectSessions.ref;
+      const editJournal = journal();
+      const edit = editJournal.peek(direction);
+      if (session && edit.memory?.drawingOnly) {
+        await localEditBatch()!.changeDrawing(edit.memory, direction);
+        editJournal.finish(direction, edit.id);
+        const change = {
+          sessionId: session.sessionId,
+          paths: [],
+          drawings: true,
+        };
+        notifyWorkspaceChanged(change);
+        return change;
+      }
+      await flushLocalEdits();
       const repository = editHistoryRepository(root, session);
       const publisher = filesystemHistoryPublisher(
         root,
@@ -2937,6 +3162,7 @@ const registerIpc = () => {
         },
       ).change(direction);
       projectSessions.assertCurrent(session);
+      if (result.drawingOnly) activeEditBatch?.invalidateDrawings();
       const change =
         result.drawingOnly && session
           ? confirmedCanvasWrites.record(
@@ -2971,7 +3197,11 @@ const registerIpc = () => {
       path.join(app.getPath('userData'), 'document-save-queue'),
     ),
     (state) => {
-      if (mainWindow && !mainWindow.webContents.isDestroyed())
+      if (
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        !mainWindow.webContents.isDestroyed()
+      )
         mainWindow.webContents.send('document-saves:changed', state);
     },
   );
@@ -2996,7 +3226,14 @@ const registerIpc = () => {
     )
       return documentSaveQueue.list(scope);
     saveQueueContext = { scope, root, client, sessionId: session?.sessionId };
-    return documentSaveQueue.activate({
+    const states = await documentSaveQueue.activate({
+      prepareLocal:
+        !client && root
+          ? (input) => {
+              projectSessions.assertCurrent(session);
+              return planDocumentReplacement(root, input);
+            }
+          : undefined,
       remapDraft: async (value, from, to) => {
         const files = client?.files ?? (root ? await captureProject(root) : {}),
           entries = readFileNames(files).entries;
@@ -3067,26 +3304,105 @@ const registerIpc = () => {
           queueSessionId: session?.sessionId,
         }) as Promise<CanvasDocument>,
     });
+    if (!client && root && documentSaveQueue.hasLocalPending(scope))
+      localEditBatch()?.touch();
+    return states;
   };
   handle('document-saves:list', (event) => activateDocumentSaves(event));
   handle(
     'document-saves:enqueue',
     async (event, request: DocumentSaveRequest) => {
-      if (request.scope !== documentSaveScope())
+      if (
+        request.scope !== documentSaveScope() ||
+        (request.workspaceSessionId &&
+          request.workspaceSessionId !== projectSessions.ref?.sessionId)
+      )
         throw new Error('프로젝트가 변경되었습니다.');
-      await activateDocumentSaves(event);
-      return documentSaveQueue.enqueue(request);
+      if (projectSessions.client) {
+        await activateDocumentSaves(event);
+        return documentSaveQueue.enqueue(request);
+      }
+      return enqueueMutation(async () => {
+        await activateDocumentSaves(event);
+        const state = await documentSaveQueue.enqueue(request);
+        if (state.savedSequence < request.sequence) localEditBatch()?.touch();
+        return state;
+      });
     },
   );
-  handle('document-saves:flush', (_event, scope: string, key?: string) =>
-    documentSaveQueue.flush(scope, key),
+  handle(
+    'document-saves:flush',
+    (event, scope: string, key?: string, sessionId?: string) =>
+      projectSessions.client
+        ? documentSaveQueue.flush(scope, key)
+        : enqueueMutation(async () => {
+            if (scope !== documentSaveScope())
+              throw Error('프로젝트가 변경되었습니다.');
+            if (sessionId !== undefined)
+              assertLocalEditSession(scope, sessionId);
+            await activateDocumentSaves(event);
+            await flushLocalEdits();
+            return (await documentSaveQueue.list(scope)).filter(
+              (state) => !key || state.key === key,
+            );
+          }),
+  );
+  const assertLocalEditSession = (scope: string, sessionId: string) => {
+    if (
+      !sessionId ||
+      sessionId !== projectSessions.ref?.sessionId ||
+      scope !== documentSaveScope() ||
+      projectSessions.client
+    )
+      throw Error('프로젝트가 변경되었습니다.');
+  };
+  handle('local-edits:touch', (event, scope: string, sessionId: string) => {
+    if (!isUpdateSender(event))
+      throw Error('앱의 캔버스에서만 편집할 수 있습니다.');
+    assertLocalEditSession(scope, sessionId);
+    activeEditBatch?.touch();
+  });
+  handle(
+    'local-edits:checkpoint-drawings',
+    (event, scope: string, sessionId: string) =>
+      enqueueMutation(async () => {
+        if (!isUpdateSender(event))
+          throw Error('앱의 캔버스에서만 편집할 수 있습니다.');
+        assertLocalEditSession(scope, sessionId);
+        await activeEditBatch?.backupDrawings();
+      }),
+  );
+  handle(
+    'local-edits:recover-drawings',
+    (event, scope: string, sessionId: string, action: 'restore' | 'discard') =>
+      enqueueMutation(async () => {
+        if (
+          !isUpdateSender(event) ||
+          (action !== 'restore' && action !== 'discard')
+        )
+          throw Error('복구 요청이 올바르지 않습니다.');
+        assertLocalEditSession(scope, sessionId);
+        await localEditBatch()!.recover(action);
+        notifyWorkspaceChanged({ sessionId, paths: [], drawings: true });
+      }),
   );
   handle(
     'document-saves:discard',
-    (_event, scope: string, key: string, sequence: number) => {
-      if (scope !== documentSaveScope())
-        throw new Error('프로젝트가 변경되었습니다.');
-      return documentSaveQueue.discard(scope, key, sequence);
+    (
+      _event,
+      scope: string,
+      key: string,
+      sequence: number,
+      sessionId?: string,
+    ) => {
+      const discard = () => {
+        if (scope !== documentSaveScope())
+          throw Error('프로젝트가 변경되었습니다.');
+        if (!projectSessions.client && sessionId !== undefined)
+          assertLocalEditSession(scope, sessionId);
+        return documentSaveQueue.discard(scope, key, sequence);
+      };
+      return projectSessions.client ? discard() : enqueueMutation(discard);
     },
   );
   handle('codex:status', getCodexStatus);
@@ -3169,44 +3485,61 @@ const createWindow = async () => {
   let draftsFlushed = false,
     closing = false,
     draftFlushReady = false;
-  ipcMain.on('drafts:ready', (event) => {
+  const markDraftsReady = (event: Electron.IpcMainEvent) => {
     if (
       event.sender === closingWindow.webContents &&
       event.senderFrame === closingWindow.webContents.mainFrame
     )
       draftFlushReady = true;
-  });
+  };
+  ipcMain.on('drafts:ready', markDraftsReady);
+  closingWindow.once('closed', () =>
+    ipcMain.removeListener('drafts:ready', markDraftsReady),
+  );
   closingWindow.on('close', (event) => {
     if (
       draftsFlushed ||
-      !draftFlushReady ||
-      closingWindow.webContents.isDestroyed()
+      updateRestartPrepared ||
+      (!draftFlushReady && !activeEditBatch)
     )
       return;
     event.preventDefault();
     if (closing) return;
     closing = true;
-    const flushed = async (ipcEvent: Electron.IpcMainEvent) => {
-      if (
-        ipcEvent.sender !== closingWindow.webContents ||
-        ipcEvent.senderFrame !== closingWindow.webContents.mainFrame
-      )
-        return;
-      ipcMain.removeListener('drafts:flushed', flushed);
+    const finish = async () => {
       try {
         await propertyQueue.flush();
+        await enqueueMutation(flushLocalEdits);
         await lifecycle.preserve('window-close');
         draftsFlushed = true;
         closingWindow.close();
-      } catch {
+      } catch (error) {
         closing = false;
+        console.error('창 종료 전 편집 내용 저장 실패', error);
       }
     };
-    ipcMain.on('drafts:flushed', flushed);
-    ipcMain.once('drafts:flush-failed', () => {
-      closing = false;
+    if (!draftFlushReady || closingWindow.webContents.isDestroyed()) {
+      void finish();
+      return;
+    }
+    const removeListeners = () => {
       ipcMain.removeListener('drafts:flushed', flushed);
-    });
+      ipcMain.removeListener('drafts:flush-failed', failed);
+      closingWindow.removeListener('closed', removeListeners);
+    };
+    const flushed = (ipcEvent: Electron.IpcMainEvent) => {
+      if (!isUpdateSender(ipcEvent)) return;
+      removeListeners();
+      void finish();
+    };
+    const failed = (ipcEvent: Electron.IpcMainEvent) => {
+      if (!isUpdateSender(ipcEvent)) return;
+      removeListeners();
+      closing = false;
+    };
+    ipcMain.on('drafts:flushed', flushed);
+    ipcMain.on('drafts:flush-failed', failed);
+    closingWindow.once('closed', removeListeners);
     closingWindow.webContents.send('drafts:flush-request');
   });
   closingWindow.on('show', () => {
@@ -3456,7 +3789,10 @@ app.whenReady().then(async () => {
       path.basename(projectSessions.root),
     );
     await ensureWorkspace();
-    await recoverInterruptedHistory(projectSessions.root);
+    await editHistoryRepository(
+      projectSessions.root,
+      projectSessions.ref,
+    ).recover();
     await startWatcher();
   }
   if (!testProfile) {
@@ -3511,13 +3847,38 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+let quitPreserved = false;
+app.on('before-quit', (event) => {
+  if (quitPreserved) return;
+  if (mainWindow && !mainWindow.isDestroyed() && !updateRestartPrepared) {
+    event.preventDefault();
+    mainWindow.close();
+    return;
+  }
+  event.preventDefault();
+  if (queueShutdown) return;
   queueShutdown = true;
-  documentSaveQueue?.dispose();
-  for (const error of desktopBootstrap.dispose())
-    console.error('데스크톱 연결 종료 실패', error);
-  void lifecycle
-    .preserve('quit')
-    .then(() => projectSessions.close())
-    .catch((error) => console.error('프로젝트 종료 보존 실패', error));
+  void (async () => {
+    try {
+      await propertyQueue.flush();
+      await enqueueMutation(flushLocalEdits);
+    } catch (error) {
+      // Scripted close can destroy the renderer before the window close handshake.
+      // A failed final publish keeps the staged changes available to recover.
+      console.error('앱 종료 전 편집 내용 저장 실패', error);
+      await enqueueMutation(async () => {
+        await activeEditBatch?.backup();
+      }).catch(console.error);
+    }
+    await lifecycle.preserve('quit');
+    documentSaveQueue?.dispose();
+    for (const error of desktopBootstrap.dispose())
+      console.error('데스크톱 연결 종료 실패', error);
+    await projectSessions.close();
+  })()
+    .catch((error) => console.error('프로젝트 종료 보존 실패', error))
+    .finally(() => {
+      quitPreserved = true;
+      app.quit();
+    });
 });

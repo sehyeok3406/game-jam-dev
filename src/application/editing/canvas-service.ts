@@ -12,6 +12,7 @@ import { snapshotDrawings } from '../../drawing-model.ts';
 import { snapshotGameUi, applyGameUi } from '../../game-ui-model.ts';
 import type { DrawingCommand } from '../../contracts/drawing-types.ts';
 import type { GameUiCommand } from '../../contracts/game-ui-types.ts';
+import type { Snapshot } from '../../contracts/project.ts';
 import type {
   CommandName,
   CommandInput,
@@ -24,12 +25,15 @@ export class LocalCanvasService {
   private gameUiRequests = new Set<string>();
   private repository: () => LocalProjectRepository;
   private signature: (value: unknown) => string;
+  private overlay: (files: Snapshot) => Snapshot;
   constructor(
     repository: () => LocalProjectRepository,
     signature: (value: unknown) => string,
+    overlay: (files: Snapshot) => Snapshot = (files) => files,
   ) {
     this.repository = repository;
     this.signature = signature;
+    this.overlay = overlay;
   }
 
   async canvases() {
@@ -40,11 +44,11 @@ export class LocalCanvasService {
     };
   }
   async drawings() {
-    return snapshotDrawings(await this.capture('drawings'));
+    return snapshotDrawings(this.overlay(await this.capture('drawings')));
   }
   async drawingDelta(known: Record<string, string> = {}) {
     return drawingChanges(
-      await this.capture('drawings'),
+      this.overlay(await this.capture('drawings')),
       known,
       this.signature,
     );

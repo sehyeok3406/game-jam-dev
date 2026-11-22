@@ -58,6 +58,7 @@ import {
   CanvasContentSummary,
 } from '../canvas/CanvasContent';
 import { useOptionalCanvasViewport } from '../canvas/CanvasViewport';
+import { DraftCheckpoint } from '../editor/draft-checkpoint';
 
 type TextNodeProps = Pick<NodeProps<DrawingCanvasNode>, 'data' | 'selected'> & {
   object: TextObject;
@@ -269,7 +270,7 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
     saving = useRef(false),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chain = useRef<Promise<void>>(Promise.resolve());
-  const sequence = useRef(Date.now()),
+  const sequence = useRef(Date.now() * 1000),
     ready = useRef(false);
   const root = useRef<HTMLDivElement>(null);
   const mounted = useRef(true),
@@ -279,6 +280,14 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
   const finishAfterLoad = useRef(false);
   const finishing = useRef(false);
   const key = `canvas-text:${data.scope}:${object.id}`;
+  const checkpoint = useMemo(
+    () =>
+      new DraftCheckpoint(
+        (draft, sequence) => api.saves.setEditorDraft(key, draft, sequence),
+        (failure) => setError(`텍스트 초안 보관 실패: ${String(failure)}`),
+      ),
+    [api, key, data.draftRegistry],
+  );
   const callbacks = useRef({
     changed: (_document: string) => {},
     flush: async () => {},
@@ -325,29 +334,36 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
         : null,
     }),
   });
-  const backup = async () => {
-    if (!data.scope) return;
-    await api.saves.setEditorDraft(
-      key,
-      {
-        title: '캔버스 텍스트 복구',
-        body: JSON.stringify({ geometry: local.current, base: base.current }),
-        sequence: ++sequence.current,
-      },
-      sequence.current,
-    );
+  const readDraft = () => {
+    if (
+      !data.scope ||
+      !ready.current ||
+      !dirty.current ||
+      latest.current.draftRegistry !== data.draftRegistry
+    )
+      return null;
+    return {
+      title: '캔버스 텍스트 복구',
+      body: JSON.stringify({ geometry: local.current, base: base.current }),
+      sequence: ++sequence.current,
+    };
   };
   const flush = () => {
     if (timer.current) clearTimeout(timer.current);
     const next = chain.current
       .catch(() => undefined)
       .then(async () => {
-        if (!dirty.current || !editor || !ready.current) return;
+        if (
+          !dirty.current ||
+          !editor ||
+          !ready.current ||
+          latest.current.draftRegistry !== data.draftRegistry
+        )
+          return;
         saving.current = true;
         const value = local.current;
         try {
           validateTextDocument(value.document);
-          await backup();
           const height = editor.isDestroyed
             ? latest.current.object.transform.height
             : measuredTextHeight(editor.view.dom);
@@ -366,10 +382,19 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
           base.current = value;
           if (local.current === value) {
             dirty.current = false;
-            await api.saves.setEditorDraft(key, null, ++sequence.current);
+            const revision = ++sequence.current;
+            await checkpoint.reviseSaved(async () => {
+              if (data.scope?.startsWith('local:') && data.sessionId)
+                await api.saves.checkpointLocalDrawings?.(
+                  data.scope,
+                  data.sessionId,
+                );
+              return { draft: null, sequence: revision };
+            });
           }
           setError('');
         } catch (failure) {
+          await checkpoint.flush(readDraft).catch(() => undefined);
           setError(
             `텍스트 저장 실패: ${failure instanceof Error ? failure.message : String(failure)}`,
           );
@@ -383,10 +408,16 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
     return next;
   };
   const change = (next: TextObject['geometry']) => {
-    local.current = next;
-    dirty.current = true;
-    setGeometry(next);
-    void backup().catch((failure) => setError(String(failure)));
+    if (next !== local.current) {
+      local.current = next;
+      dirty.current = true;
+      setGeometry(next);
+      checkpoint.schedule(readDraft);
+      if (data.scope?.startsWith('local:') && data.sessionId)
+        void api.saves
+          .touchLocalEditing?.(data.scope, data.sessionId)
+          .catch(() => undefined);
+    }
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       if (editor?.view.composing) {
@@ -435,7 +466,7 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
             },
           ],
         });
-        await api.saves.setEditorDraft(key, null, ++sequence.current);
+        await checkpoint.clear(++sequence.current);
       })
       .catch((failure) => setError(`텍스트 편집 종료 실패: ${String(failure)}`))
       .finally(() => {
@@ -462,11 +493,12 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
         };
         validateTextDocument(saved.geometry.document);
         validateDrawingObject({ ...object, geometry: saved.geometry });
+        sequence.current = Math.max(sequence.current, draft.sequence);
+        checkpoint.remember(draft);
         if (
           JSON.stringify(object.geometry) === JSON.stringify(saved.geometry)
         ) {
-          sequence.current = Math.max(sequence.current, draft.sequence);
-          await api.saves.setEditorDraft(key, null, ++sequence.current);
+          await checkpoint.clear(++sequence.current);
           return;
         }
         // A changed server value must never be silently overwritten by a recovered draft.
@@ -477,7 +509,6 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
           );
           return;
         }
-        sequence.current = Math.max(sequence.current, draft.sequence);
         local.current = saved.geometry;
         base.current = saved.base;
         dirty.current = true;
@@ -503,10 +534,11 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
       mounted.current = false;
       active = false;
       unregister();
+      checkpoint.cancelTimer();
       if (timer.current) clearTimeout(timer.current);
       void callbacks.current.flush().catch(() => undefined);
     };
-  }, [editor, key]);
+  }, [editor, key, checkpoint]);
   useEffect(() => {
     if (!editor || dirty.current || saving.current) return;
     local.current = object.geometry;
@@ -887,8 +919,8 @@ const EditableTextDrawingNode = memo(function EditableTextDrawingNode({
               </button>
               <button
                 onClick={() => {
-                  void api.saves
-                    .setEditorDraft(key, null, ++sequence.current)
+                  void checkpoint
+                    .clear(++sequence.current)
                     .then(() => {
                       setRecovered(null);
                       setError('');

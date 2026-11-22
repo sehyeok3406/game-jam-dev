@@ -13,6 +13,8 @@ const isDocument = (path: string) =>
   /^(?:project\.md$|(?:ideas|docs)\/.+\.md$)/.test(path) &&
   !path.startsWith('docs/text-sources/');
 const isSection = (path: string) => /^sections\/.+\.md$/.test(path);
+export const isOrdinaryMarkdownPath = (path: string) =>
+  isDocument(path) && !path.startsWith('docs/html-sources/');
 export const isScopedCanvasFile = (path: string) =>
   isDocument(path) ||
   isSection(path) ||
@@ -24,7 +26,21 @@ export const isScopedCanvasFile = (path: string) =>
 export function canvasWrites() {
   let session: string | undefined;
   const recent = new Map<string, { digest: string | null; expires: number }>();
+  const remember = (sessionId: string, paths: string[], after: Snapshot) => {
+    if (session !== sessionId || recent.size > 1000) recent.clear();
+    session = sessionId;
+    const expires = Date.now() + 5000;
+    for (const path of paths)
+      recent.set(path, {
+        digest: after[path] === undefined ? null : digest(after[path]),
+        expires,
+      });
+  };
   return {
+    acknowledgeDocumentSave(sessionId: string, path: string, written: string) {
+      remember(sessionId, [path], { [path]: written });
+      return { sessionId, paths: [] } satisfies WorkspaceCanvasChange;
+    },
     record(
       sessionId: string,
       before: Snapshot,
@@ -83,14 +99,7 @@ export function canvasWrites() {
       } catch {
         return null;
       }
-      if (session !== sessionId || recent.size > 1000) recent.clear();
-      session = sessionId;
-      const expires = Date.now() + 5000;
-      for (const path of paths)
-        recent.set(path, {
-          digest: after[path] === undefined ? null : digest(after[path]),
-          expires,
-        });
+      remember(sessionId, paths, after);
       return change;
     },
     async matches(sessionId: string, relative: string, absolute: string) {

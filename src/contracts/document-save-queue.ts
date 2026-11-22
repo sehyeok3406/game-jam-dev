@@ -7,6 +7,7 @@ export type DocumentSaveRequest = EditorDraft & {
   documentId: string;
   sequence: number;
   sessionId?: string;
+  workspaceSessionId?: string;
   base: EditorDraft;
 };
 export type DocumentSaveState = {

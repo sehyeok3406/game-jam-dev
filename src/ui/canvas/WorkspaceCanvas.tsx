@@ -234,6 +234,7 @@ interface Props {
     recovery: DrawingCommand[] | null;
     recover: () => Promise<void>;
     discardRecovery: () => Promise<void>;
+    drawingPersistence?: 'pending' | 'draft' | 'saved';
     retry: () => void;
     hold: () => Promise<void>;
     saving: boolean;

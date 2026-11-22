@@ -38,10 +38,14 @@ export class LocalEditHistoryService {
   }
   async change(direction: 'undo' | 'redo') {
     const item = this.journal.peek(direction);
-    const record = await this.repository.readEditHistory(item.id);
+    const record =
+      item.memory ?? (await this.repository.readEditHistory(item.id));
     if (!record) throw Error('되돌릴 기록을 찾을 수 없습니다.');
-    const { entry, before, after } = record;
-    const paths = entry.files.map((file) => file.relativePath);
+    const { before, after } = record;
+    const paths =
+      'entry' in record
+        ? record.entry.files.map((file) => file.relativePath)
+        : [...new Set([...Object.keys(before), ...Object.keys(after)])];
     const drawingOnly = paths.length > 0 && paths.every(isDrawingPath);
     const current = await (drawingOnly && this.repository.captureCanvas
       ? this.repository.captureCanvas('drawings')

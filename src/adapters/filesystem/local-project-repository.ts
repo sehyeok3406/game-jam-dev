@@ -24,6 +24,7 @@ import {
   applyDocumentNames,
   recoverDocumentNames,
 } from './document-name-transaction.ts';
+import { recoverLocalEditPublication } from './local-edit-publication.ts';
 
 const RECENT_EDIT_LIMIT = 20;
 const RECENT_EDIT_BYTES = 8 * 1024 * 1024;
@@ -165,6 +166,7 @@ export function filesystemProjectRepository(
       return saveHistory(root, before, after, entry);
     },
     recover: async () => {
+      await recoverLocalEditPublication(root, assertCurrent);
       await recoverDocumentNames(root, assertCurrent);
       return recoverInterruptedHistory(root);
     },

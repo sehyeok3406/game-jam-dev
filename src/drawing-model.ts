@@ -445,6 +445,40 @@ export function drawingDelta(
     deleted: after === undefined,
   };
 }
+
+/** Undo stores just the objects touched by the gesture on each affected sheet. */
+export function sparseDrawingEdit(before: Snapshot, after: Snapshot) {
+  const left: Snapshot = {},
+    right: Snapshot = {};
+  for (const path of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (!isDrawingPath(path) || before[path] === after[path]) continue;
+    if (before[path] !== undefined) {
+      const { canvasId, version, upsert } = drawingDelta(
+        path,
+        after[path],
+        before[path],
+      );
+      left[path] = serializeDrawing({
+        canvasId,
+        version: version ?? 1,
+        objects: upsert,
+      });
+    }
+    if (after[path] !== undefined) {
+      const { canvasId, version, upsert } = drawingDelta(
+        path,
+        before[path],
+        after[path],
+      );
+      right[path] = serializeDrawing({
+        canvasId,
+        version: version ?? 1,
+        objects: upsert,
+      });
+    }
+  }
+  return { before: left, after: right };
+}
 export function applyDrawingDelta(
   files: Snapshot,
   path: string,

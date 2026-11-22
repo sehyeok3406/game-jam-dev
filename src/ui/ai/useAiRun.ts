@@ -63,9 +63,7 @@ interface Ports {
   aiBusy: boolean;
   locked: boolean;
   onBlocked: () => void;
-  editorsRef: import('react').RefObject<
-    Map<string, (finish?: boolean) => Promise<void>>
-  >;
+  flushEditors: () => Promise<void>;
 }
 export function useAiRun(data: Data, ports: () => Ports) {
   const {
@@ -340,8 +338,14 @@ export function useAiRun(data: Data, ports: () => Ports) {
     task: Pick<CanvasDocument, 'relativePath' | 'title'>,
     approval?: ApprovalStart,
   ) => {
-    const { queueSupported, canRunAi, aiBusy, locked, onBlocked, editorsRef } =
-      ports();
+    const {
+      queueSupported,
+      canRunAi,
+      aiBusy,
+      locked,
+      onBlocked,
+      flushEditors,
+    } = ports();
 
     if (!capabilities.localAiExecution)
       throw new Error('AI 실행은 CLI가 연결된 PC 앱에서 사용할 수 있습니다.');
@@ -364,9 +368,7 @@ export function useAiRun(data: Data, ports: () => Ports) {
     if (!currentOperation() || starting.current === version) return;
     starting.current = version;
     try {
-      await Promise.all(
-        [...editorsRef.current.values()].map((flush) => flush()),
-      );
+      await flushEditors();
       if (!currentOperation()) return;
       setPreparingTask(true);
       const status = approval

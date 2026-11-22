@@ -11,6 +11,9 @@ import type {
   DrawingItem,
   DrawingObject,
 } from '../../drawing-types';
+import { DraftCheckpoint } from '../editor/draft-checkpoint';
+
+const draftKey = (scope: string) => `drawing:${scope}`;
 
 const optimistic = (items: DrawingItem[], command: DrawingCommand) => {
   const files: Record<string, string> = {};
@@ -54,6 +57,14 @@ export function useDrawing(
   sessionId?: string,
 ) {
   const { api } = useRuntime();
+  const deferred =
+    scope?.startsWith('local:') &&
+    !!sessionId &&
+    !!api.saves.recoverDrawingBatch;
+  const [batchRecovery, setBatchRecovery] = useState(false);
+  const [drawingPersistence, setDrawingPersistence] = useState<
+    'pending' | 'draft' | 'saved'
+  >('saved');
 
   const signatures = useRef<Record<string, string> | null>(null);
   const [confirmed, setConfirmed] = useState<DrawingItem[]>([]),
@@ -62,35 +73,72 @@ export function useDrawing(
     [recovery, setRecovery] = useState<DrawingCommand[] | null>(null);
   const state = useRef({
     scope,
+    sessionId,
     commands: [] as DrawingCommand[],
     confirmed: [] as DrawingItem[],
     partial: null as DrawingCommand | null,
     recovery: [] as DrawingCommand[],
-    persisted: false,
-    sequence: Date.now(),
+    sequence: Date.now() * 1000,
+    lastActivity: 0,
     epoch: 0,
   });
   const chain = useRef<Promise<unknown>>(Promise.resolve());
-  const key = (s: string) => `drawing:${s}`;
-  const backup = useCallback(async () => {
-    const s = state.current;
-    if (!s.scope) return;
-    const commands = [
-        ...s.recovery,
-        ...s.commands,
-        ...(s.partial ? [s.partial] : []),
-      ],
-      sequence = ++s.sequence;
-    if (!commands.length && !s.persisted) return;
-    await api.saves.setEditorDraft(
-      key(s.scope),
-      commands.length
-        ? { title: '그림 복구', body: JSON.stringify(commands), sequence }
-        : null,
-      sequence,
-    );
-    if (s.sequence === sequence) s.persisted = commands.length > 0;
+  const showDraftError = useCallback((error: unknown) => {
+    setError(`그림 초안 보관 실패: ${String(error)}`);
   }, []);
+  const checkpoint = useMemo(
+    () =>
+      new DraftCheckpoint(
+        (draft, sequence) =>
+          api.saves.setEditorDraft(draftKey(scope!), draft, sequence),
+        showDraftError,
+      ),
+    [api, scope, sessionId, showDraftError],
+  );
+  const readDraft = useCallback(() => {
+    const s = state.current;
+    if (!scope || s.scope !== scope || s.sessionId !== sessionId) return null;
+    const commands = [...s.recovery, ...s.commands];
+    if (s.partial) commands.push(s.partial);
+    return commands.length
+      ? {
+          title: '그림 복구',
+          body: JSON.stringify(commands),
+          sequence: ++s.sequence,
+        }
+      : null;
+  }, [scope, sessionId]);
+  const backup = useCallback(
+    () => checkpoint.flush(readDraft),
+    [checkpoint, readDraft],
+  );
+  const removeSaved = useCallback(
+    (matches: (command: DrawingCommand) => boolean, staged = false) => {
+      const s = state.current;
+      return checkpoint.reviseSaved(async (saved) => {
+        if (
+          s !== state.current ||
+          s.scope !== scope ||
+          s.sessionId !== sessionId
+        )
+          return;
+        const commands = JSON.parse(saved.body) as DrawingCommand[];
+        const remaining = commands.filter((cmd) => !matches(cmd));
+        if (commands.length === remaining.length) return;
+        if (staged && deferred && scope && sessionId)
+          await api.saves.checkpointLocalDrawings?.(scope, sessionId);
+        if (s !== state.current) return;
+        const sequence = ++s.sequence;
+        return {
+          sequence,
+          draft: remaining.length
+            ? { ...saved, body: JSON.stringify(remaining), sequence }
+            : null,
+        };
+      });
+    },
+    [api, checkpoint, deferred, scope, sessionId],
+  );
   const reload = useCallback(async () => {
     const s = state.current,
       epoch = ++s.epoch,
@@ -118,12 +166,13 @@ export function useDrawing(
   useEffect(() => {
     state.current = {
       scope,
+      sessionId,
       commands: [],
       confirmed: [],
       partial: null,
       recovery: [],
-      persisted: false,
-      sequence: Date.now(),
+      sequence: Date.now() * 1000,
+      lastActivity: 0,
       epoch: 0,
     };
     signatures.current = null;
@@ -131,17 +180,30 @@ export function useDrawing(
     setPending([]);
     setConfirmed([]);
     setRecovery(null);
+    setBatchRecovery(false);
+    setDrawingPersistence('saved');
     setError('');
     if (!scope) return;
     let active = true;
     void reload().catch((e) => active && setError(String(e)));
+    if (deferred)
+      void api.saves
+        .getEditorDraft(
+          `game-canvas-drawing-batch:${scope.slice('local:'.length)}`,
+        )
+        .then((draft) => {
+          if (active) setBatchRecovery(!!draft);
+        })
+        .catch((error) => active && showDraftError(error));
     void api.saves
-      .getEditorDraft(key(scope))
+      .getEditorDraft(draftKey(scope))
       .then((d) => {
         if (!active || !d) return;
-        state.current.persisted = true;
         state.current.sequence = Math.max(state.current.sequence, d.sequence);
         const commands = JSON.parse(d.body) as DrawingCommand[];
+        if (Array.isArray(commands)) {
+          checkpoint.remember(d);
+        }
         if (Array.isArray(commands) && commands.length) {
           state.current.recovery = commands;
           setRecovery(commands);
@@ -149,42 +211,55 @@ export function useDrawing(
       })
       .catch((e) => active && setError(`그림 초안 읽기 실패: ${String(e)}`));
     const stop = api.projects.onWorkspaceChanged((change) => {
+      if (change?.sessionId === sessionId && change?.drawingPersistence)
+        setDrawingPersistence(change.drawingPersistence);
       if (!change || (change.sessionId === sessionId && change.drawings))
         void reload().catch((e) => active && setError(String(e)));
     });
     return () => {
       active = false;
+      checkpoint.cancelTimer();
       stop();
     };
-  }, [scope, sessionId, reload]);
-  const drain = useCallback(async () => {
-    const s = state.current;
-    while (s.commands.length) {
-      const cmd = s.commands[0];
-      try {
-        await backup();
-        if (state.current !== s) return;
-        const result = await api.editor.applyDrawingCommand(cmd);
-        if (state.current !== s) return;
-        s.epoch++;
-        // The command returns a full list without the signatures for that list.
-        signatures.current = null;
-        const stable = retainUnchangedRecords(s.confirmed, result);
-        s.confirmed = stable;
-        s.commands.shift();
-        setConfirmed(stable);
-        setPending([...s.commands]);
-        setError('');
-        await backup();
-      } catch (e) {
-        if (state.current !== s) return;
-        setError(
-          `그림 저장 실패: ${e instanceof Error ? e.message : String(e)}`,
-        );
-        throw e;
+  }, [scope, sessionId, reload, checkpoint, deferred, showDraftError]);
+  const drain = useCallback(
+    async (s: typeof state.current) => {
+      while (s === state.current && s.commands.length) {
+        const cmd = s.commands[0];
+        try {
+          const result = await api.editor.applyDrawingCommand(
+            cmd,
+            deferred ? sessionId : undefined,
+          );
+          if (state.current !== s) return;
+          s.epoch++;
+          // The command returns a full list without the signatures for that list.
+          signatures.current = null;
+          const stable = retainUnchangedRecords(s.confirmed, result);
+          s.confirmed = stable;
+          s.commands.shift();
+          setConfirmed(stable);
+          setPending([...s.commands]);
+          setError('');
+        } catch (e) {
+          if (state.current !== s) return;
+          await backup().catch(showDraftError);
+          if (state.current !== s) return;
+          setError(
+            `그림 저장 실패: ${e instanceof Error ? e.message : String(e)}`,
+          );
+          throw e;
+        }
+        // Prune a checkpoint that included this command without writing a new
+        // checkpoint for any newer gesture that may already be in progress.
+        await removeSaved(
+          (saved) => saved.requestId === cmd.requestId,
+          true,
+        ).catch((error) => state.current === s && showDraftError(error));
       }
-    }
-  }, [backup]);
+    },
+    [api, backup, removeSaved, showDraftError, deferred, sessionId],
+  );
   const submit = useCallback(
     async (
       command: Omit<DrawingCommand, 'canvasId' | 'scope'> & {
@@ -192,13 +267,20 @@ export function useDrawing(
       },
     ) => {
       const s = state.current;
-      if (!s.scope)
+      if (!s.scope || s.scope !== scope || s.sessionId !== sessionId)
         return Promise.reject(new Error('프로젝트를 먼저 열어주세요.'));
+      const gesture = s.partial;
+      const completesGesture =
+        command.action === 'create' &&
+        gesture !== null &&
+        gesture.objects?.[0]?.id === command.objects?.[0]?.id;
       const cmd: DrawingCommand = {
         ...structuredClone(command),
         canvasId: command.canvasId ?? canvasId,
         scope: s.scope,
-        requestId: command.requestId ?? crypto.randomUUID(),
+        requestId:
+          command.requestId ??
+          (completesGesture ? gesture.requestId : crypto.randomUUID()),
       };
       try {
         let current = s.confirmed;
@@ -207,77 +289,120 @@ export function useDrawing(
       } catch (error) {
         // Local quota/conflict failures must be recoverable too; never throw
         // synchronously out of a pointer event or lose the completed gesture.
-        s.partial = null;
+        if (completesGesture) s.partial = null;
         s.recovery.unshift(cmd);
         setRecovery([...s.recovery]);
         setError(
           `그림 저장 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
-        await backup();
+        await backup().catch(showDraftError);
         throw error;
       }
       s.commands.push(cmd);
       s.epoch++;
       setPending([...s.commands]);
-      s.partial = null;
-      const next = chain.current.catch(() => undefined).then(drain);
+      if (completesGesture) s.partial = null;
+      checkpoint.schedule(readDraft);
+      const next = chain.current.catch(() => undefined).then(() => drain(s));
       chain.current = next;
       return next;
     },
-    [canvasId, drain, backup],
+    [
+      canvasId,
+      drain,
+      backup,
+      checkpoint,
+      readDraft,
+      showDraftError,
+      scope,
+      sessionId,
+    ],
   );
   const flush = useCallback(async () => {
-    await backup();
+    const s = state.current;
     await chain.current;
-    if (state.current.commands.length)
+    if (s !== state.current) return;
+    await backup();
+    if (s.commands.length)
       throw new Error('그림 저장을 완료한 뒤 다시 시도해주세요.');
   }, [backup]);
   const retry = () => {
-    const next = chain.current.catch(() => undefined).then(drain);
+    const s = state.current;
+    const next = chain.current.catch(() => undefined).then(() => drain(s));
     chain.current = next;
     void next.catch(() => undefined);
   };
   const recover = async () => {
+    const s = state.current;
+    if (batchRecovery && scope && sessionId) {
+      await api.saves.recoverDrawingBatch?.(scope, sessionId, 'restore');
+      if (state.current !== s) return;
+      setBatchRecovery(false);
+      await reload();
+    }
     if (!recovery) return;
-    const existing = new Set(state.current.confirmed.map((o) => o.id));
-    const commands = recovery.flatMap((cmd) =>
-      cmd.action === 'create'
-        ? cmd.objects?.filter((o) => !existing.has(o.id)).length
-          ? [
-              {
-                ...cmd,
-                objects: cmd.objects?.filter((o) => !existing.has(o.id)),
-              },
-            ]
-          : []
-        : [cmd],
-    );
+    const existing = new Set(s.confirmed.map((o) => o.id));
     setRecovery(null);
-    state.current.recovery = commands;
-    for (const cmd of commands) {
-      state.current.recovery = state.current.recovery.filter((c) => c !== cmd);
+    for (const original of recovery) {
+      if (state.current !== s) return;
+      s.recovery = s.recovery.filter((cmd) => cmd !== original);
+      const cmd =
+        original.action === 'create'
+          ? {
+              ...original,
+              objects: original.objects?.filter((o) => !existing.has(o.id)),
+            }
+          : original;
       try {
-        await submit(cmd);
+        if (cmd.action === 'create' && !cmd.objects?.length) {
+          await removeSaved(
+            (saved) => JSON.stringify(saved) === JSON.stringify(original),
+          );
+        } else {
+          await submit(cmd);
+          if (state.current !== s) return;
+          if (!original.requestId)
+            await removeSaved(
+              (saved) => JSON.stringify(saved) === JSON.stringify(original),
+              true,
+            );
+        }
       } catch (error) {
         // submit keeps failed commands in the pending queue; remaining recovery survives.
-        setRecovery(
-          state.current.recovery.length ? [...state.current.recovery] : null,
-        );
+        if (state.current === s)
+          setRecovery(s.recovery.length ? [...s.recovery] : null);
         throw error;
       }
     }
-    await backup();
+    if (state.current === s) await backup();
   };
   const discardRecovery = async () => {
+    const s = state.current;
+    if (batchRecovery && scope && sessionId) {
+      await api.saves.recoverDrawingBatch?.(scope, sessionId, 'discard');
+      if (state.current !== s) return;
+      setBatchRecovery(false);
+    }
+    const discarded = s.recovery;
+    s.recovery = [];
+    const payloads = new Set(discarded.map((cmd) => JSON.stringify(cmd)));
+    try {
+      await removeSaved((saved) => payloads.has(JSON.stringify(saved)));
+    } catch (error) {
+      if (state.current === s) {
+        s.recovery = [...discarded, ...s.recovery];
+        showDraftError(error);
+      }
+      throw error;
+    }
+    if (state.current !== s) return;
     setRecovery(null);
-    state.current.recovery = [];
-    state.current.partial = null;
-    if (!state.current.commands.length) setError('');
-    await backup();
+    if (!s.commands.length) setError('');
   };
   const hold = async () => {
-    await chain.current.catch(() => undefined);
     const s = state.current;
+    await chain.current.catch(() => undefined);
+    if (state.current !== s) return;
     s.recovery.push(...s.commands);
     s.commands = [];
     s.partial = null;
@@ -290,18 +415,42 @@ export function useDrawing(
   };
   const partial = useCallback(
     (object: DrawingObject | null) => {
-      state.current.partial = object
+      const s = state.current;
+      const previous = s.partial;
+      s.partial = object
         ? {
             canvasId,
-            scope: state.current.scope,
+            scope: s.scope,
             action: 'create',
             objects: [object],
-            requestId: crypto.randomUUID(),
+            requestId: object.id,
           }
         : null;
-      void backup().catch((e) => setError(`그림 초안 보관 실패: ${String(e)}`));
+      if (object) {
+        checkpoint.schedule(readDraft);
+        const now = Date.now();
+        if (deferred && scope && sessionId && now - s.lastActivity >= 150) {
+          s.lastActivity = now;
+          void api.saves
+            .touchLocalEditing?.(scope, sessionId)
+            .catch(() => undefined);
+        }
+      } else if (previous)
+        void removeSaved(
+          (saved) => saved.requestId === previous.requestId,
+        ).catch((error) => state.current === s && showDraftError(error));
     },
-    [canvasId, backup],
+    [
+      api,
+      canvasId,
+      checkpoint,
+      deferred,
+      readDraft,
+      removeSaved,
+      scope,
+      sessionId,
+      showDraftError,
+    ],
   );
   const items = useMemo(() => {
     let current = confirmed;
@@ -321,11 +470,12 @@ export function useDrawing(
     reload,
     partial,
     error,
-    recovery,
+    recovery: recovery ?? (batchRecovery ? [] : null),
     recover,
     discardRecovery,
     retry,
     hold,
     saving: pending.length > 0,
+    drawingPersistence,
   };
 }

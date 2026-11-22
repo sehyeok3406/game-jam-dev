@@ -115,6 +115,38 @@ const adapter = (read, write, extra = {}) => ({
   ...extra,
 });
 
+test('local staging checkpoints only its latest body and acknowledges it after batch publication', async () => {
+  const store = memory();
+  const queue = new DocumentSaveQueue(store);
+  const committed = doc();
+  await queue.activate(
+    adapter(
+      async () => committed,
+      async () => assert.fail('individual write'),
+      {
+        prepareLocal: async (input) => ({
+          before: committed.body,
+          after: input.body,
+          document: doc(input.body),
+        }),
+      },
+    ),
+  );
+  await queue.enqueue(request(1, 'first'));
+  await queue.enqueue(request(2, 'newest'));
+  await tick();
+  assert.equal(store.data.size, 0);
+  await queue.checkpointLocal('one');
+  assert.equal([...store.data.values()][0].request.body, 'newest');
+  const plan = await queue.prepareLocal('one');
+  assert.equal(plan.after['ideas/note.md'], 'newest');
+  assert.equal((await queue.list('one'))[0].phase, 'queued');
+  await plan.accept();
+  assert.equal((await queue.list('one'))[0].phase, 'saved');
+  assert.equal(store.data.size, 0);
+  queue.dispose();
+});
+
 test('a completed queue follows a verified renamed document, while pending work cannot switch paths', async () => {
   const queue = new DocumentSaveQueue(memory());
   let current = doc();

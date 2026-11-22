@@ -730,6 +730,7 @@ export function useCanvasNodes(
             !collaboration.active ||
             collaboration.drawingTextAlignmentVersion === 1,
           scope: workspace.saveScope,
+          sessionId: workspace.session?.sessionId,
           draftRegistry,
           onCommand: async (command) => {
             // Check and delete in one existing atomic batch, including on older
@@ -778,13 +779,20 @@ export function useCanvasNodes(
             // do not enqueue a second copy of a failed text save on retry.
             await drawing.flush();
             if (!isCurrent()) throw new StaleCanvasNodeError();
-            await api.editor.applyDrawingCommand({
-              canvasId: activeCanvas,
-              scope: workspace.saveScope,
-              requestId: crypto.randomUUID(),
-              action: 'patch',
-              patches: [patch],
-            });
+            await api.editor.applyDrawingCommand(
+              {
+                canvasId: activeCanvas,
+                scope: workspace.saveScope,
+                requestId: crypto.randomUUID(),
+                action: 'patch',
+                patches: [patch],
+              },
+              patch.geometry &&
+                api.saves.recoverDrawingBatch &&
+                !collaboration.active
+                ? workspace.session?.sessionId
+                : undefined,
+            );
             if (isCurrent()) await drawing.reload();
           },
           object,

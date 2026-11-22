@@ -40,6 +40,7 @@ export type DrawingNodeData = {
   ) => Promise<void>;
   scope?: string;
   draftRegistry: import('../editor/draft-flushers').DraftFlusherRegistry;
+  sessionId?: string;
   onSave: (patch: DrawingPatch) => Promise<void>;
   kind: 'drawing';
   object: DrawingObject;

@@ -33,10 +33,35 @@ const api: GameCanvasApi = {
   enqueueDocumentSave: (request) =>
     ipcRenderer.invoke('document-saves:enqueue', request),
   getDocumentSaveStates: () => ipcRenderer.invoke('document-saves:list'),
-  flushDocumentSaves: (scope, key) =>
-    ipcRenderer.invoke('document-saves:flush', scope, key),
-  discardDocumentSave: (scope, key, sequence) =>
-    ipcRenderer.invoke('document-saves:discard', scope, key, sequence),
+  touchLocalEditing: (scope, sessionId) =>
+    ipcRenderer.invoke('local-edits:touch', scope, sessionId),
+  checkpointLocalDrawings: (scope, sessionId) =>
+    ipcRenderer.invoke('local-edits:checkpoint-drawings', scope, sessionId),
+  recoverDrawingBatch: (scope, sessionId, action) =>
+    ipcRenderer.invoke(
+      'local-edits:recover-drawings',
+      scope,
+      sessionId,
+      action,
+    ),
+  onLocalEditSaveFailed: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      value: Parameters<typeof listener>[0],
+    ) => listener(value);
+    ipcRenderer.on('local-edits:failed', wrapped);
+    return () => ipcRenderer.removeListener('local-edits:failed', wrapped);
+  },
+  flushDocumentSaves: (scope, key, sessionId) =>
+    ipcRenderer.invoke('document-saves:flush', scope, key, sessionId),
+  discardDocumentSave: (scope, key, sequence, sessionId) =>
+    ipcRenderer.invoke(
+      'document-saves:discard',
+      scope,
+      key,
+      sequence,
+      sessionId,
+    ),
   onDocumentSaveChanged: (listener) => {
     const wrapped = (
       _event: Electron.IpcRendererEvent,
@@ -218,7 +243,8 @@ const api: GameCanvasApi = {
   listDocuments: () => ipcRenderer.invoke('documents:list'),
   listDrawings: () => ipcRenderer.invoke('drawings:list'),
   getDrawingChanges: (known) => ipcRenderer.invoke('drawings:changes', known),
-  applyDrawingCommand: (input) => ipcRenderer.invoke('drawings:apply', input),
+  applyDrawingCommand: (input, sessionId) =>
+    ipcRenderer.invoke('drawings:apply', input, sessionId),
   listGameUi: () => ipcRenderer.invoke('game-ui:list'),
   applyGameUiCommand: (input) => ipcRenderer.invoke('game-ui:apply', input),
   exportGameUiPng: (input) => ipcRenderer.invoke('game-ui:export-png', input),

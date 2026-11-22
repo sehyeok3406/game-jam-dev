@@ -6,11 +6,42 @@ import matter from '../../markdown.ts';
 import { projectPath } from '../../project-store.ts';
 import type { DocumentRepository } from '../../application/ports/local-project-repository.ts';
 import { readDocument } from './documents.ts';
+import type { CanvasDocument } from '../../contracts/documents.ts';
+import type { SaveDocumentInput } from '../../contracts/documents.ts';
+import {
+  assertDocumentBase,
+  documentEditContent,
+} from '../../core/editing/document-edit.ts';
+
+function replacement(raw: string, content: { title: string; body: string }) {
+  const parsed = matter(raw);
+  return matter.stringify(`\n${content.body}\n`, {
+    ...parsed.data,
+    title: content.title,
+  });
+}
+
+export async function planDocumentReplacement(
+  root: string,
+  input: SaveDocumentInput,
+) {
+  const absolute = await projectPath(root, input.relativePath);
+  const before = await fs.readFile(absolute, 'utf8');
+  const current = await readDocument(root, absolute, before);
+  assertDocumentBase(
+    { id: current.id, title: current.title, body: current.body },
+    input,
+  );
+  const after = replacement(before, documentEditContent(input));
+  const document = await readDocument(root, absolute, after);
+  return { before, after, document };
+}
 
 /** A one-document atomic replacement; never captures the whole project. */
 export function filesystemDocumentRepository(
   root: string,
   assertCurrent: () => void,
+  onSave?: (document: CanvasDocument, written: string) => void,
 ): DocumentRepository {
   const writeRaw = async (relative: string, expected: string, raw: string) => {
     assertCurrent();
@@ -57,13 +88,11 @@ export function filesystemDocumentRepository(
     },
     replace: async (relative, expected, content) => {
       assertCurrent();
-      const parsed = matter(expected);
-      parsed.data.title = content.title;
-      return writeRaw(
-        relative,
-        expected,
-        matter.stringify(`\n${content.body}\n`, parsed.data),
-      );
+      const written = replacement(expected, content);
+      const document = await writeRaw(relative, expected, written);
+      assertCurrent();
+      onSave?.(document, written);
+      return document;
     },
   };
 }

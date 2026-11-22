@@ -75,7 +75,6 @@ export function DrawingInputLayer({
     partial: Map<string, DrawingErasure>;
     samples: number;
     eraseId: string;
-    backupAt: number;
     zoom: number;
     shift: boolean;
     alt: boolean;
@@ -252,10 +251,7 @@ export function DrawingInputLayer({
         frame.current = null;
         if (gesture.current) setDraft(gesture.current.object);
       });
-    if (Date.now() - g.backupAt > 300) {
-      g.backupAt = Date.now();
-      onPartial(g.object);
-    }
+    onPartial(g.object);
   };
   const vp = flow.getViewport(),
     bounds = draft ? drawingBounds(draft) : null;
@@ -338,7 +334,6 @@ export function DrawingInputLayer({
           partial: new Map(),
           samples: 0,
           eraseId: crypto.randomUUID(),
-          backupAt: Date.now(),
           zoom: flow.getZoom(),
           shift: e.shiftKey,
           alt: e.altKey,

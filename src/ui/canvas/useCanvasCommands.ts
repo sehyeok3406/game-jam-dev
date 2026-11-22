@@ -80,6 +80,20 @@ export function useCanvasCommands(commands: CanvasCommands) {
     // Claim Space before React Flow can change selection or a node can activate.
     const panKeydown = (event: KeyboardEvent) => {
       if (event.key === ' ') keydown(event);
+      if (
+        !event.repeat &&
+        !event.isComposing &&
+        !event.altKey &&
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 's' &&
+        event.target instanceof Element &&
+        event.target.closest('.canvas-text-node--editing') &&
+        !latest.current.home &&
+        !document.querySelector('[aria-modal="true"], .ui-debug-console[open]')
+      ) {
+        event.stopPropagation();
+        latest.current.action('save', event);
+      }
     };
     const otherKeydown = (event: KeyboardEvent) => {
       if (event.key !== ' ') keydown(event);

@@ -1,4 +1,11 @@
-import { useRef, useState, useId, useEffect, useCallback } from 'react';
+import {
+  useRef,
+  useState,
+  useId,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRuntime } from '../runtime/RuntimeProvider';
 import { previewState } from '../debug/uiDebugPreviewState';
 import type { DocumentSaveState } from '../../contracts/document-save-queue';
@@ -8,6 +15,7 @@ import type { DocumentNodeData } from './types';
 import type { MarkdownEditFocus } from './markdown-title';
 import { documentName } from '../../core/documents/file-name';
 import type { CanvasDocument } from '../../contracts/documents';
+import { DraftCheckpoint } from '../editor/draft-checkpoint';
 
 export type DocumentEditingInput = Pick<
   DocumentNodeData,
@@ -29,6 +37,8 @@ export type DocumentEditingInput = Pick<
 /** Owns one editor's IME, draft recovery, lock and save-queue subscriptions. */
 export function useDocumentEditing(data: DocumentEditingInput) {
   const { api, preferences } = useRuntime();
+  const deferred =
+    !data.collaborative && !!data.sessionId && !!api.saves.touchLocalEditing;
 
   const { document } = data;
   const cardRef = useRef<HTMLElement>(null);
@@ -40,6 +50,9 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   const draftSequence = useRef(Date.now() * 1000);
   const editSession = useRef(crypto.randomUUID());
   const taskBusy = useRef(false);
+  const stageTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const [taskError, setTaskError] = useState('');
   const [editing, setEditing] = useState(
     !!previewState('editor') && document.id === 'ui-sample-note',
@@ -49,6 +62,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
   const [saving, setSaving] = useState(false);
   const [nameSaving, setNameSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [draftError, setDraftError] = useState(false);
   const [queueState, setQueueState] = useState<DocumentSaveState | null>(null);
   const lastSaveState = useRef<DocumentSaveState | null>(null);
   const [startingEdit, setStartingEdit] = useState(false);
@@ -90,6 +104,45 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     relativePath?: string;
     baseTitle?: string;
   } | null>(null);
+  const checkpoint = useMemo(
+    () =>
+      new DraftCheckpoint(
+        async (draft, sequence) => {
+          await api.saves.setEditorDraft(data.draftKey, draft, sequence);
+          setDraftError(false);
+        },
+        () => setDraftError(true),
+      ),
+    [api, data.draftKey, data.sessionId],
+  );
+  const readDraft = useCallback(
+    (forceBody = false) => {
+      if (
+        dataRef.current.draftKey !== data.draftKey ||
+        dataRef.current.sessionId !== data.sessionId ||
+        (!forceBody &&
+          deferred &&
+          latestRef.current.title === savedRef.current.title &&
+          !composingRef.current &&
+          !['conflict', 'failed'].includes(
+            lastSaveState.current?.phase ?? '',
+          )) ||
+        editorDraftMatches(latestRef.current, savedRef.current)
+      )
+        return null;
+      return {
+        ...latestRef.current,
+        sequence: draftSequence.current,
+        relativePath: editingPath.current,
+        baseTitle: savedRef.current.title,
+      };
+    },
+    [data.draftKey, data.sessionId, deferred],
+  );
+  const backupDraft = useCallback(
+    () => checkpoint.flush(() => readDraft(true)),
+    [checkpoint, readDraft],
+  );
 
   useEffect(() => {
     let active = true;
@@ -97,11 +150,18 @@ export function useDocumentEditing(data: DocumentEditingInput) {
       try {
         const raw = preferences.getItem(data.draftKey);
         const old = raw ? JSON.parse(raw) : null;
-        const draft = (await api.saves.getEditorDraft(data.draftKey)) ?? old;
+        const stored = await api.saves.getEditorDraft(data.draftKey);
+        const draft = stored ?? old;
         const archive = await api.saves.getEditorDraft(
           `${data.draftKey}:conflict`,
         );
         if (active) {
+          if (stored) checkpoint.remember(stored);
+          draftSequence.current = Math.max(
+            draftSequence.current,
+            stored?.sequence ?? 0,
+            archive?.sequence ?? 0,
+          );
           archivedDraft.current = archive;
           setCachedDraft(
             typeof draft?.title === 'string' && typeof draft?.body === 'string'
@@ -116,99 +176,99 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     void load();
     return () => {
       active = false;
+      checkpoint.cancelTimer();
     };
-  }, [data.draftKey]);
+  }, [data.draftKey, checkpoint]);
 
-  const backupDraft = useCallback(async () => {
-    const current = latestRef.current;
-    const sequence = draftSequence.current;
-    if (!editorDraftMatches(current, savedRef.current)) {
-      await api.saves.setEditorDraft(
-        dataRef.current.draftKey,
-        {
-          ...current,
-          sequence,
-          relativePath: editingPath.current,
-          baseTitle: savedRef.current.title,
-        },
-        sequence,
-      );
-    }
-  }, []);
-  const acceptSave = useCallback((state: DocumentSaveState) => {
-    const current = dataRef.current;
-    if (
-      state.scope !== current.saveScope ||
-      (state.projectSession &&
-        state.projectSession.sessionId !== current.sessionId) ||
-      state.key !== current.draftKey ||
-      state.documentId !== current.document.id
-    )
-      return;
-    const previous = lastSaveState.current;
-    if (
-      previous &&
-      (previous.sequence > state.sequence ||
-        (previous.sequence === state.sequence &&
-          previous.savedSequence > state.savedSequence))
-    )
-      return;
-    lastSaveState.current = state;
-    // Discard acknowledges the completed pre-rename queue entry. Its old path
-    // and body must never rebase the editor that has already adopted the name.
-    if (state.phase === 'discarded') {
-      lastSaveState.current = null;
-      setQueueState(null);
-      setSaving(false);
-      setSaveFailed(false);
-      return;
-    }
-    if (
-      editingPath.current !== state.relativePath &&
-      state.sequence >= draftSequence.current
-    ) {
-      editingPath.current = state.relativePath;
-      if (latestRef.current.body !== state.latest.body) {
-        latestRef.current = { ...latestRef.current, body: state.latest.body };
-        setBody(state.latest.body);
-      }
-    }
-    setQueueState((previous) =>
-      previous &&
-      (previous.sequence > state.sequence ||
-        (previous.sequence === state.sequence &&
-          previous.savedSequence > state.savedSequence))
-        ? previous
-        : state,
-    );
-    setSaving(['queued', 'saving'].includes(state.phase));
-    setSaveFailed(['failed', 'conflict'].includes(state.phase));
-    if (
-      state.savedSequence > 0 &&
-      state.savedSequence >= acknowledgedSequence.current
-    ) {
-      acknowledgedSequence.current = state.savedSequence;
-      const previousTitle = savedRef.current.title;
+  const acceptSave = useCallback(
+    (state: DocumentSaveState) => {
+      const current = dataRef.current;
       if (
-        latestRef.current.title === previousTitle &&
-        state.saved.title !== previousTitle
-      ) {
-        latestRef.current = { ...latestRef.current, title: state.saved.title };
-        setTitle(state.saved.title);
+        state.scope !== current.saveScope ||
+        (state.projectSession &&
+          state.projectSession.sessionId !== current.sessionId) ||
+        state.key !== current.draftKey ||
+        state.documentId !== current.document.id
+      )
+        return;
+      const previous = lastSaveState.current;
+      if (
+        previous &&
+        (previous.sequence > state.sequence ||
+          (previous.sequence === state.sequence &&
+            previous.savedSequence > state.savedSequence))
+      )
+        return;
+      lastSaveState.current = state;
+      // Discard acknowledges the completed pre-rename queue entry. Its old path
+      // and body must never rebase the editor that has already adopted the name.
+      if (state.phase === 'discarded') {
+        lastSaveState.current = null;
+        setQueueState(null);
+        setSaving(false);
+        setSaveFailed(false);
+        return;
       }
-      savedRef.current = state.saved;
-    }
-    if (
-      state.phase === 'saved' &&
-      state.savedSequence >= draftSequence.current &&
-      editorDraftMatches(latestRef.current, state.saved)
-    ) {
-      setCachedDraft(archivedDraft.current);
-      void api.saves
-        .setEditorDraft(current.draftKey, null, state.savedSequence)
-        .catch(() => undefined);
-    }
-  }, []);
+      if (
+        editingPath.current !== state.relativePath &&
+        state.sequence >= draftSequence.current
+      ) {
+        editingPath.current = state.relativePath;
+        if (latestRef.current.body !== state.latest.body) {
+          latestRef.current = { ...latestRef.current, body: state.latest.body };
+          setBody(state.latest.body);
+        }
+      }
+      setQueueState((previous) =>
+        previous &&
+        (previous.sequence > state.sequence ||
+          (previous.sequence === state.sequence &&
+            previous.savedSequence > state.savedSequence))
+          ? previous
+          : state,
+      );
+      setSaving(
+        state.phase === 'saving' || (!deferred && state.phase === 'queued'),
+      );
+      setSaveFailed(['failed', 'conflict'].includes(state.phase));
+      if (
+        state.savedSequence > 0 &&
+        state.savedSequence >= acknowledgedSequence.current
+      ) {
+        acknowledgedSequence.current = state.savedSequence;
+        const previousTitle = savedRef.current.title;
+        if (
+          latestRef.current.title === previousTitle &&
+          state.saved.title !== previousTitle
+        ) {
+          latestRef.current = {
+            ...latestRef.current,
+            title: state.saved.title,
+          };
+          setTitle(state.saved.title);
+        }
+        savedRef.current = state.saved;
+      }
+      if (deferred && state.phase === 'queued' && state.savedSequence === 0)
+        savedRef.current = state.saved;
+      if (
+        state.phase === 'saved' &&
+        state.savedSequence >= draftSequence.current &&
+        editorDraftMatches(latestRef.current, state.saved)
+      ) {
+        setCachedDraft(archivedDraft.current);
+        void checkpoint
+          .clear(state.savedSequence)
+          .catch(() => setDraftError(true));
+      }
+      if (
+        ['conflict', 'failed'].includes(state.phase) &&
+        previous?.phase !== state.phase
+      )
+        void backupDraft().catch(() => setDraftError(true));
+    },
+    [backupDraft, checkpoint, deferred],
+  );
   useEffect(() => {
     const stop = api.saves.onDocumentSaveChanged(acceptSave);
     let active = true;
@@ -235,8 +295,10 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     };
   }, [acceptSave, data.draftKey, data.saveScope, data.sessionId]);
   useEffect(() => {
-    return data.draftRegistry.register(data.draftKey, backupDraft);
-  }, [data.draftRegistry, data.draftKey, backupDraft]);
+    return data.draftRegistry.register(data.draftKey, () =>
+      checkpoint.flush(readDraft),
+    );
+  }, [data.draftRegistry, data.draftKey, checkpoint, readDraft]);
 
   useEffect(() => {
     if (!editing) {
@@ -244,9 +306,12 @@ export function useDocumentEditing(data: DocumentEditingInput) {
       renamedDocument.current = null;
       setTitle(document.title);
       setBody(document.body);
-      savedRef.current = { title: document.title, body: document.body };
+      savedRef.current =
+        deferred && lastSaveState.current?.phase === 'queued'
+          ? lastSaveState.current.saved
+          : { title: document.title, body: document.body };
     }
-  }, [document.body, document.title, document.relativePath, editing]);
+  }, [document.body, document.title, document.relativePath, editing, deferred]);
   useEffect(() => {
     if (renamedDocument.current?.relativePath === document.relativePath)
       renamedDocument.current = null;
@@ -254,6 +319,14 @@ export function useDocumentEditing(data: DocumentEditingInput) {
 
   const persist = useCallback(
     async (finish: boolean, retry = false) => {
+      const started = dataRef.current;
+      const checkSession = () => {
+        if (
+          dataRef.current.sessionId !== started.sessionId ||
+          dataRef.current.draftKey !== started.draftKey
+        )
+          throw Error('프로젝트 세션이 변경되었습니다.');
+      };
       if (finishingRef.current) {
         await savingRef.current;
         return;
@@ -271,7 +344,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
               await new Promise<void>((resolve) =>
                 compositionWaiters.current.push(resolve),
               );
-            await backupDraft();
+            checkSession();
             const current = dataRef.current;
             const doc = currentDocument();
             const requested = { ...latestRef.current };
@@ -288,29 +361,45 @@ export function useDocumentEditing(data: DocumentEditingInput) {
             )
               return;
             submitted = draftSequence.current;
-            const state = await api.saves.enqueueDocumentSave({
-              scope: current.saveScope,
-              key: current.draftKey,
-              documentId: current.document.id,
-              relativePath: editingPath.current,
-              sequence: submitted,
-              sessionId: editSession.current,
-              title: nameChanged ? savedRef.current.title : requested.title,
-              body: requested.body,
-              base: { ...savedRef.current },
-            });
-            acceptSave(state);
-            if (finish || retry) {
+            const previous = lastSaveState.current;
+            const shouldStage =
+              !deferred ||
+              commitName ||
+              (previous?.sequence !== submitted &&
+                requested.body !==
+                  (previous?.latest.body ?? savedRef.current.body));
+            if (shouldStage) {
+              const state = await api.saves.enqueueDocumentSave({
+                scope: current.saveScope,
+                key: current.draftKey,
+                documentId: current.document.id,
+                relativePath: editingPath.current,
+                sequence: submitted,
+                sessionId: editSession.current,
+                workspaceSessionId: current.sessionId,
+                title: nameChanged ? savedRef.current.title : requested.title,
+                body: requested.body,
+                base: { ...savedRef.current },
+              });
+              acceptSave(state);
+            }
+            if (retry || commitName || (!deferred && finish)) {
               const states = await api.saves.flushDocumentSaves(
                 current.saveScope,
                 current.draftKey,
+                current.sessionId,
               );
               for (const ack of states) acceptSave(ack);
             }
             if (commitName) {
               // Flush acknowledged body writes first. Rename is one explicit structural operation.
-              await api.saves.flushDocumentSaves(current.saveScope);
+              await api.saves.flushDocumentSaves(
+                current.saveScope,
+                undefined,
+                current.sessionId,
+              );
               const base = await api.editor.getDocument(doc.relativePath);
+              checkSession();
               if (!base || base.id !== doc.id)
                 throw Error(
                   '문서가 이동되거나 삭제되었습니다. 입력한 이름은 유지됩니다.',
@@ -329,6 +418,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
                 current.saveScope,
                 current.draftKey,
                 submitted,
+                current.sessionId,
               );
               savedRef.current = {
                 title: result.document.title,
@@ -356,11 +446,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
                 setBody(result.document.body);
               }
               if (editorDraftMatches(latestRef.current, savedRef.current)) {
-                await api.saves.setEditorDraft(
-                  current.draftKey,
-                  null,
-                  submitted,
-                );
+                await checkpoint.clear(submitted);
                 setCachedDraft(archivedDraft.current);
               }
               if (current.collaborative) {
@@ -383,7 +469,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
             setEditing(false);
           }
         } catch (error) {
-          await backupDraft().catch(() => undefined);
+          await backupDraft().catch(() => setDraftError(true));
           setTaskError(
             error instanceof Error
               ? error.message
@@ -402,7 +488,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
         if (finish) finishingRef.current = false;
       }
     },
-    [backupDraft, acceptSave],
+    [backupDraft, acceptSave, checkpoint, deferred],
   );
   const save = useCallback(() => persist(false, true), [persist]);
   const finishEdit = useCallback(() => persist(true), [persist]);
@@ -411,8 +497,8 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     return persist(true);
   }, [persist]);
   const flushRegistered = useCallback(
-    (finish = true) => persist(finish, !finish),
-    [persist],
+    (finish = true) => persist(finish, !finish && !deferred),
+    [persist, deferred],
   );
   const loadLatest = async () => {
     if (!queueState || !['conflict', 'failed'].includes(queueState.phase))
@@ -434,6 +520,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
       data.saveScope,
       data.draftKey,
       queueState.sequence,
+      data.sessionId,
     );
     setCachedDraft({ ...latestRef.current });
     savedRef.current = { title: current.title, body: current.body };
@@ -500,16 +587,53 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     }
   };
   useEffect(() => {
-    if (!editing || editorDraftMatches({ title, body }, savedRef.current))
+    if (
+      dirty &&
+      (!deferred ||
+        saveFailed ||
+        title !== savedRef.current.title ||
+        composingRef.current)
+    )
+      checkpoint.schedule(readDraft);
+  }, [dirty, title, body, checkpoint, readDraft, deferred, saveFailed]);
+  useEffect(() => {
+    if (!deferred || !editing || !data.sessionId || data.locked || saveFailed)
       return;
-    const timer = setTimeout(
-      () => void backupDraft().catch(() => setSaveFailed(true)),
-      300,
-    );
-    return () => clearTimeout(timer);
-  }, [editing, title, body, backupDraft]);
+    if (
+      editorDraftMatches(latestRef.current, savedRef.current) &&
+      lastSaveState.current?.phase !== 'queued'
+    )
+      return;
+    void api.saves
+      .touchLocalEditing?.(data.saveScope, data.sessionId)
+      .catch(() => undefined);
+    if (stageTimer.current !== undefined) return;
+    stageTimer.current = setTimeout(() => {
+      stageTimer.current = undefined;
+      if (!composingRef.current && !finishingRef.current)
+        void persist(false).catch(() => undefined);
+    }, 100);
+  }, [
+    deferred,
+    editing,
+    data.saveScope,
+    data.sessionId,
+    data.locked,
+    title,
+    body,
+    saveFailed,
+    persist,
+  ]);
+  useEffect(
+    () => () => {
+      clearTimeout(stageTimer.current);
+      stageTimer.current = undefined;
+    },
+    [data.sessionId, editing],
+  );
   useEffect(() => {
     if (
+      deferred ||
       !editing ||
       editorDraftMatches({ title, body }, savedRef.current) ||
       data.locked ||
@@ -521,9 +645,9 @@ export function useDocumentEditing(data: DocumentEditingInput) {
         void persist(false).catch(() => undefined);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [editing, title, body, data.locked, saveFailed, persist]);
+  }, [deferred, editing, title, body, data.locked, saveFailed, persist]);
   useEffect(() => {
-    if (!editing || data.locked || saveFailed) return;
+    if (deferred || !editing || data.locked || saveFailed) return;
     const timer = setInterval(() => {
       if (
         !composingRef.current &&
@@ -533,7 +657,7 @@ export function useDocumentEditing(data: DocumentEditingInput) {
         void persist(false).catch(() => undefined);
     }, 3000);
     return () => clearInterval(timer);
-  }, [editing, data.locked, saveFailed, persist]);
+  }, [deferred, editing, data.locked, saveFailed, persist]);
   const setComposing = (value: boolean) => {
     composingRef.current = value;
     if (!value)
@@ -608,19 +732,21 @@ export function useDocumentEditing(data: DocumentEditingInput) {
       ? '충돌 · 초안은 이 PC에 보관됨'
       : queueState?.phase === 'offline'
         ? '이 PC에 보관됨 · 연결 후 전송'
-        : saveFailed
-          ? '저장 실패 · 초안 보관됨'
-          : nameSaving
-            ? '파일 이름 변경 중…'
-            : saving
-              ? '저장 중…'
-              : title !== savedRef.current.title
-                ? '이름 변경 대기 · Enter 또는 Ctrl+S로 확정'
-                : dirty
-                  ? '자동 저장 대기…'
-                  : data.collaborative
-                    ? '서버에 저장됨'
-                    : '저장됨';
+        : draftError && dirty
+          ? '복구 초안 보관 실패 · 다시 시도 중'
+          : saveFailed
+            ? '저장 실패 · 초안 보관됨'
+            : nameSaving
+              ? '파일 이름 변경 중…'
+              : saving
+                ? '저장 중…'
+                : title !== savedRef.current.title
+                  ? '이름 변경 대기 · Enter 또는 Ctrl+S로 확정'
+                  : dirty
+                    ? '자동 저장 대기…'
+                    : data.collaborative
+                      ? '서버에 저장됨'
+                      : '저장됨';
 
   const restoreDraft = () => {
     if (!cachedDraft) return;
@@ -639,21 +765,11 @@ export function useDocumentEditing(data: DocumentEditingInput) {
     };
     archivedDraft.current = null;
     const sequence = draftSequence.current;
-    void api.saves
-      .setEditorDraft(
-        data.draftKey,
-        {
-          ...cachedDraft,
-          title: restoredTitle,
-          baseTitle: savedRef.current.title,
-          sequence,
-        },
-        sequence,
-      )
+    void backupDraft()
       .then(() =>
         api.saves.setEditorDraft(`${data.draftKey}:conflict`, null, sequence),
       )
-      .catch(() => setSaveFailed(true));
+      .catch(() => setDraftError(true));
     setCachedDraft(null);
   };
 

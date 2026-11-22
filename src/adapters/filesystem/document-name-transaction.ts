@@ -3,10 +3,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import matter from '../../markdown.ts';
 import type { Snapshot } from '../../contracts/project.ts';
-import { applyChanges, projectPath } from '../../project-store.ts';
+import {
+  applyChanges,
+  projectPath,
+  readProjectValue,
+} from '../../project-store.ts';
 import { fileNameKey } from '../../core/documents/file-name.ts';
 import { readFileNames } from '../../core/documents/name-registry.ts';
-import { isAssetPath, encodeAsset, decodeAsset } from '../../file-assets.ts';
+import { isAssetPath, decodeAsset } from '../../file-assets.ts';
 
 const JOURNAL = '.gamejam/local/document-names/pending.json';
 type Journal = {
@@ -19,16 +23,6 @@ const read = async (filename: string) =>
     if (error.code === 'ENOENT') return undefined;
     throw error;
   });
-async function readProjectValue(root: string, relative: string) {
-  const absolute = await projectPath(root, relative);
-  if (!isAssetPath(relative)) return read(absolute);
-  try {
-    return encodeAsset(relative, await fs.readFile(absolute));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-}
 function moves(before: Snapshot, changes: Record<string, string | null>) {
   const after = { ...before };
   for (const [p, raw] of Object.entries(changes)) {
